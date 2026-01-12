@@ -1,0 +1,111 @@
+name: Deploy Services
+
+on:
+  push:
+    branches: [production, testing]
+    paths:
+      - 'milvus/**'
+      - 'backend/**'
+      - 'ingestion/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to deploy (all, milvus, backend, ingestion)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - milvus
+          - backend
+          - ingestion
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Services
+        run: |
+          SERVICE="${{ github.event.inputs.service || 'all' }}"
+          
+          # Copy files
+          if [ "$SERVICE" = "all" ] || [ "$SERVICE" = "milvus" ]; then
+            scp -r milvus/* ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:~/milvus/
+          fi
+          
+          if [ "$SERVICE" = "all" ] || [ "$SERVICE" = "backend" ]; then
+            scp -r backend/* ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:~/backend/
+          fi
+          
+          if [ "$SERVICE" = "all" ] || [ "$SERVICE" = "ingestion" ]; then
+            scp -r ingestion/* ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:~/ingestion/
+          fi
+          
+          # Deploy on server
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << EOF
+            set -e
+            
+            # Install dependencies
+            command -v pm2 || (curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs && sudo npm install -g pm2)
+            command -v python3 || sudo apt-get install -y python3 python3-pip python3-venv
+            
+            # Deploy Milvus
+            if [ "$SERVICE" = "all" ] || [ "$SERVICE" = "milvus" ]; then
+              echo "🚀 Deploying Milvus..."
+              cd ~/milvus
+              chmod +x pm2-docker-wrapper.sh
+              [ -f .env ] || cp env.template .env
+              mkdir -p logs data/etcd data/minio data/milvus
+              pm2 delete milvus 2>/dev/null || true
+              docker-compose down 2>/dev/null || docker compose down 2>/dev/null || true
+              pm2 start ecosystem.config.js
+              pm2 save
+              echo "✅ Milvus deployed"
+            fi
+            
+            # Deploy Backend
+            if [ "$SERVICE" = "all" ] || [ "$SERVICE" = "backend" ]; then
+              echo "🚀 Deploying Backend..."
+              cd ~/backend
+              mkdir -p logs
+              python3 -m venv venv 2>/dev/null || true
+              source venv/bin/activate
+              pip install --upgrade pip -q
+              pip install -r requirements.txt -q
+              [ -f .env ] || echo "# Add your .env variables here" > .env
+              pm2 delete backend 2>/dev/null || true
+              pm2 start ecosystem.config.js
+              pm2 save
+              echo "✅ Backend deployed"
+            fi
+            
+            # Deploy Ingestion
+            if [ "$SERVICE" = "all" ] || [ "$SERVICE" = "ingestion" ]; then
+              echo "🚀 Deploying Ingestion..."
+              cd ~/ingestion
+              mkdir -p logs data/checkpoints data/logs
+              python3 -m venv venv 2>/dev/null || true
+              source venv/bin/activate
+              pip install --upgrade pip -q
+              pip install -r requirements.txt -q
+              [ -f .env ] || echo "# Add your .env variables here" > .env
+              pm2 delete ingestion 2>/dev/null || true
+              pm2 start ecosystem.config.js
+              pm2 save
+              echo "✅ Ingestion deployed"
+            fi
+            
+            echo ""
+            echo "📊 PM2 Status:"
+            pm2 status
+          EOF
