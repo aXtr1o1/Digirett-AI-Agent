@@ -37,9 +37,6 @@ AI-powered Norwegian legal assistant with RAG pipeline, Lovdata integration, and
 ├── ingestion/          # Data ingestion pipeline
 ├── .github/
 │   └── workflows/      # CI/CD pipelines
-├── docs/               # Documentation
-├── docker/             # Docker configurations
-└── scripts/            # Utility scripts
 ```
 
 ## 🌿 Branch Strategy
@@ -157,29 +154,6 @@ docker-compose -f docker/production.yml up -d
 - **Embeddings**: OpenAI / Azure OpenAI
 - **Scheduling**: Cron / APScheduler
 
-## 🤝 Contributing
-
-1. Create feature branch from appropriate base branch
-2. Follow code style guidelines
-3. Write tests for new features
-4. Update documentation
-5. Submit PR to `testing` branch
-
-See [CONTRIBUTING.md](./docs/CONTRIBUTING.md) for detailed guidelines.
-
-## 📄 License
-
-[Your License Here]
-
-## 👥 Team
-
-[Your Team Information]
-
-## 📞 Support
-
-For issues and questions:
-- Create an issue in the repository
-- Contact: [support email]
 
 ## 🗺️ Roadmap
 
@@ -190,11 +164,6 @@ For issues and questions:
 - 🔄 Human-in-the-loop workflow
 - 🔄 Audit logging
 
-### Phase 2 (Future)
-- Document intelligence features
-- Advanced analytics
-- Multi-tenant support
-- Enhanced ML models
 
 ---
 
