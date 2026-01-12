@@ -31,6 +31,12 @@ ENV/
 .env.local
 .env.*.local
 
+# Data and logs
+data/logs/*
+data/checkpoints/*
+!data/logs/.gitkeep
+!data/checkpoints/.gitkeep
+
 # IDE
 .vscode/
 .idea/
@@ -46,7 +52,6 @@ htmlcov/
 
 # Logs
 *.log
-logs/
 
 # OS
 .DS_Store
