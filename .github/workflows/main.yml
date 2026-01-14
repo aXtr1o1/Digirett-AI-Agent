@@ -6,6 +6,7 @@ on: [push]
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: EC2_HOST
 
     steps:
     - name: Checkout code
