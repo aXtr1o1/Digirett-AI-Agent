@@ -1,0 +1,35 @@
+name: CI/CD Deploy to AWS EC2
+
+on: [push]
+  
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    - name: Deploy to EC2 via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          cd ${{ secrets.APP_DIR }}
+
+          echo "Pulling latest code..."
+          git pull origin ${{ github.ref_name }}
+
+          echo "Installing dependencies..."
+          pip3 install -r requirements.txt
+
+          echo "Restarting service..."
+          sudo systemctl restart app.service
