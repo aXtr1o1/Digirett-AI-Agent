@@ -23,6 +23,7 @@ jobs:
         run: |
           cd backend
           python -m pip install -r requirements.txt
+          pip show pytest || pip install pytest
       - name: Backend - Unit Tests
         run: |
           cd backend
@@ -31,11 +32,11 @@ jobs:
       - name: Ingestion - Install Dependecies
         run: |
           cd ingestion
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
       - name: Ingestion - Run unit Tests
         run: |
           cd ingestion
-          pytest
+          python -m pytest
       - name:  Setup Node
         uses: actions/setup-node@v4
         with:
