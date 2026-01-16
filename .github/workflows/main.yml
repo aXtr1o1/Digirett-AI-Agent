@@ -23,6 +23,7 @@ jobs:
         run: |
           cd backend
           python -m pip install -r requirements.txt
+          pip show pytest || pip install pytest
       - name: Backend - Unit Tests
         run: |
           cd backend
