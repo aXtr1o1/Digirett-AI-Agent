@@ -69,8 +69,8 @@ AI-powered Norwegian legal assistant with RAG pipeline, Lovdata integration, and
 
 ```bash
 # Clone repository
-git clone 
-cd legal-rag-chatbot
+git clone https://github.com/aXtr1o1/Digirett-AI-Agent.git 
+cd Digirett-AI-Agent
 
 # Checkout desired branch
 git checkout 
