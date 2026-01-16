@@ -1,0 +1,41 @@
+name: CI/CD Deploy to AWS EC2
+
+on: 
+  push:
+    branches:
+      - testing
+  
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: EC2_HOST
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    - name: Deploy to EC2
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ubuntu
+        key: ${{ secrets.EC2_SSH_KEY }}
+        port: 22
+        timeout: 30s
+        command_timeout: 10m
+        script: |
+          cd /var/www/app/Digirett-AI-Agent
+    
+          echo "Pulling latest code..."
+          git pull origin Production
+    
+          echo "Installing dependencies..."
+          pip3 install -r requirements.txt
+    
+          echo "Restarting service..."
+          sudo systemctl restart app
