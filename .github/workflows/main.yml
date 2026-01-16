@@ -47,7 +47,7 @@ jobs:
           npm install
       - name: Frontend - Run unit tests
         run: |
-          cd frontend
+          cd frontend/digirett-frontend
           npm test -- --watch=false
       
   deploy:
