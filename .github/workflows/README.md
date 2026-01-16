@@ -5,8 +5,9 @@ Unified deployment workflow for all services: Milvus, Backend, and Ingestion.
 ## Usage
 
 ### Automatic Deployment
-- Push to `production` or `testing` branch
+- Push to  `testing` branch
 - Automatically deploys changed services
+- `production` is not yet configured Yet to recevie creds from client
 
 ### Manual Deployment
 1. Go to Actions → Deploy Services
