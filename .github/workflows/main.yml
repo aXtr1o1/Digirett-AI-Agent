@@ -1,8 +1,10 @@
 name: CI/CD Deploy to AWS EC2
 
-on: [push]
+on: 
+  push:
+    branches:
+      - testing
   
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
