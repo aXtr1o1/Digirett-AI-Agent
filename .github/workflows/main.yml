@@ -3,12 +3,57 @@ name: CI/CD Deploy to AWS EC2
 on: 
   push:
     branches:
-      - testing
+      - Testing
+  pull_request:
+    branches:
+      - Testing
   
 jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Python for Backend
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Backend - Install Dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+      - name: Backend - Unit Tests
+        run: |
+          cd backend
+          pytest
+          
+      - name: Ingestion - Install Dependecies
+        run: |
+          cd ingestion
+          pip install -r requirements.txt
+      - name: Ingestion - Run unit Tests
+        run: |
+          cd ingestion
+          pytest
+      - name:  Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+      - name: Frontend- Install dependencies
+        run: |
+          cd frontend
+          npm install
+      - name: Frontend - Run unit tests
+        run: |
+          cd frontend
+          npm test -- --watch=false
+      
   deploy:
+    needs: tests
     runs-on: ubuntu-latest
     environment: EC2_HOST
+    if: github.event_name == 'push'
 
     steps:
     - name: Checkout code
@@ -39,3 +84,4 @@ jobs:
     
           echo "Restarting service..."
           sudo systemctl restart app
+         
