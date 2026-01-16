@@ -43,11 +43,11 @@ jobs:
           node-version: "18"
       - name: Frontend- Install dependencies
         run: |
-          cd frontend
+          cd frontend/digirett-frontend
           npm install
       - name: Frontend - Run unit tests
         run: |
-          cd frontend
+          cd frontend/digirett-frontend
           npm test -- --watch=false
       
   deploy:
