@@ -22,11 +22,11 @@ jobs:
       - name: Backend - Install Dependencies
         run: |
           cd backend
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
       - name: Backend - Unit Tests
         run: |
           cd backend
-          pytest
+          python -m pytest
           
       - name: Ingestion - Install Dependecies
         run: |
