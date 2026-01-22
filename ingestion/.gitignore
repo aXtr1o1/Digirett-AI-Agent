@@ -32,10 +32,9 @@ ENV/
 .env.*.local
 
 # Data and logs
-data/logs/*
-data/checkpoints/*
-!data/logs/.gitkeep
-!data/checkpoints/.gitkeep
+data/archives/*
+data/raw_xml/*
+data/cleaned_text/*
 
 # IDE
 .vscode/
