@@ -19,8 +19,8 @@ DATA_DIR = os.path.join(os.path.join(REPO_PATH, "ingestion"), "data")
 RAW_XML_DIR = Path(os.path.join(DATA_DIR, "raw_xml"))
 ARCHIVE_DIR = Path(os.path.join(DATA_DIR, "archives"))
 
-# RAW_XML_DIR.mkdir(parents=True, exist_ok=True)
-# ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+RAW_XML_DIR.mkdir(parents=True, exist_ok=True)
+ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 

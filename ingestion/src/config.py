@@ -11,7 +11,7 @@ BASE_DIR = Path(os.path.join(sys.path[0],"ingestion"))
 RAW_XML_DIR = os.path.join(BASE_DIR, "data/raw_xml")
 CLEAN_TEXT_DIR = os.path.join(BASE_DIR, "data/cleaned_text")
 CHECKPOINT_DIR = os.path.join(BASE_DIR, "data/checkpoints")
-LOG_DIR = os.path.join(BASE_DIR, "logs")
+LOG_DIR = os.path.join(BASE_DIR, "data/logs")
 
 os.makedirs(RAW_XML_DIR, exist_ok=True)
 os.makedirs(CLEAN_TEXT_DIR, exist_ok=True)
@@ -85,6 +85,5 @@ logging.basicConfig(
 
 logger = logging.getLogger("lovdata-ingestion")
 
-if __name__ == "__main__":
-    logger.info("✅ Configuration loaded successfully")
-    logger.info(f"Milvus → {MILVUS_HOST}:{MILVUS_PORT}, collection={MILVUS_COLLECTION}")
+logger.info("✅ Configuration loaded successfully")
+logger.info(f"Milvus → {MILVUS_HOST}:{MILVUS_PORT}, collection={MILVUS_COLLECTION}")

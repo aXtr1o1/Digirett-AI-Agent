@@ -6,7 +6,14 @@ from tqdm import tqdm
 import logging
 
 # Configure logging
-logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('xml_processing.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
 
 def extract_all_metadata(root):
     """
