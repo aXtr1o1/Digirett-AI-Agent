@@ -1,3 +1,4 @@
+from importlib.metadata import files
 import pytest
 import time
 from pathlib import Path
@@ -194,10 +195,9 @@ def test_error_resilience_score(mocker):
         return_value=error
     )
 
-    with pytest.raises(Exception):
-        fetch_lovdata_files(limit=1)
-
-
+    files, archies = fetch_lovdata_files(limit=10)
+    assert len(files) != 0
+    assert archies is not None
 def test_limit_enforcement(
     mock_lovdata_response, mock_tar_extraction, mocker, tmp_path
 ):
@@ -211,6 +211,6 @@ def test_limit_enforcement(
 # ==================================================
 
 def test_maintainability_index():
-    src = Path("collectors/lovdata_collector.py").read_text(encoding="utf-8")
+    src = Path("../collectors/lovdata_collector.py").read_text(encoding="utf-8")
     mi = mi_visit(src, multi=True)
     assert mi >= 55

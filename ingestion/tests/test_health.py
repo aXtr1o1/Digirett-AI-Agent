@@ -11,7 +11,8 @@ import sys
 
 # 1. Pathing for the Digirett-AI-Agent package structure
 try:
-    from ingestion.src.processors.chunker import (
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    from src.processors.chunker import (
         NorwegianLovdataParser,
         NorwegianLovdataChunker,
         FileHasher,
