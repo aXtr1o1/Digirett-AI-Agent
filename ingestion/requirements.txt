@@ -19,3 +19,22 @@ pytest-mock==3.15.1
 # Code quality & metrics
 # -------------------------------
 radon==6.0.1
+
+# -------------------------------
+# External Services SDKs
+# -------------------------------
+supabase==2.11.0          # Client for Supabase Storage and Database
+pymilvus==2.5.4           # Python SDK for Milvus Vector Database
+
+# -------------------------------
+# AI & Embedding Model
+# -------------------------------
+sentence-transformers     # Required to load and run BGE-M3 model
+torch                     # Core backend for sentence-transformers
+numpy                     # Required for handling embedding vectors
+
+# -------------------------------
+# Environment & Utilities
+# -------------------------------
+# Loosened to allow pymilvus and other packages to resolve dependencies
+python-dotenv>=1.0.1
