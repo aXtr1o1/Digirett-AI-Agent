@@ -1,6 +1,6 @@
 {
-  "last_run": "2026-01-24T10:55:27.156716",
-  "files_processed": 195,
-  "milvus_inserted": 4273,
-  "status": "success"
+  "last_run": "2026-01-23T12:40:32.306379",
+  "files_processed": 200,
+  "total_chunks": 4273,
+  "status": "storage_and_chunking_complete"
 }

@@ -18,24 +18,6 @@ class SupabaseStore:
             for byte_block in iter(lambda: f.read(4096), b""):
                 sha256_hash.update(byte_block)
         return sha256_hash.hexdigest()
-    
-    def upload_xml_to_storage(self, file_path: str, destination_path: str) -> bool:
-        """
-        Pure storage upload without creating a database log entry.
-        """
-        try:
-            with open(file_path, "rb") as f:
-                # This only sends the file to the 'Storage' bucket
-                # It does NOT add a row to the 'lovdata_metadata' table
-                self.supabase.storage.from_("lovdata-raw-xml").upload(
-                    path=f"raw/{destination_path}",
-                    file=f,
-                    file_options={"cache-control": "3600", "upsert": "true"}
-                )
-            return True
-        except Exception as e:
-            logger.error(f"❌ Storage upload failed: {e}")
-            return False
 
     def upload_xml_and_log(self, file_path: str, zip_name: str, file_hash: str = None):
         base_name = os.path.basename(file_path)
