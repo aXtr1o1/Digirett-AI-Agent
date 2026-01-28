@@ -14,7 +14,7 @@ current_dir=os.path.dirname(os.path.abspath(__file__))
 
 REPO_PATH=os.path.abspath(os.path.join(current_dir,"..",".."))
 
-DATA_DIR = os.path.join(os.path.join(REPO_PATH, "ingestion"), "data")
+DATA_DIR = os.path.join(os.path.join(REPO_PATH), "data")
 
 RAW_XML_DIR = Path(os.path.join(DATA_DIR, "raw_xml"))
 ARCHIVE_DIR = Path(os.path.join(DATA_DIR, "archives"))
@@ -54,8 +54,10 @@ def _fetch_archive_name() -> str:
 
 
 def _download_archive(archive_name: str) -> Path:
+    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+
     archive_path = Path(os.path.join(ARCHIVE_DIR, archive_name))
-    \
+    
     if archive_path.exists():
         return archive_path
 
@@ -77,7 +79,7 @@ def _download_archive(archive_name: str) -> Path:
 def _extract_xml_files(archive_path: Path, limit: int) -> List[Path]:
     if limit == 0:
         return []
-
+    RAW_XML_DIR.mkdir(parents=True, exist_ok=True)
     extracted: List[Path] = []
     
     tar = tarfile.open(archive_path, "r:bz2")
