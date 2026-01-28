@@ -10,9 +10,9 @@ logger = logging.getLogger("lovdata-collector")
 BASE_URL = "https://api.lovdata.no"
 LIST_ENDPOINT = "/v1/publicData/list"
 GET_ENDPOINT = "/v1/publicData/get"
+current_dir=os.path.dirname(os.path.abspath(__file__))
 
-
-REPO_PATH=sys.path[0]
+REPO_PATH=os.path.abspath(os.path.join(current_dir,"..",".."))
 
 DATA_DIR = os.path.join(os.path.join(REPO_PATH, "ingestion"), "data")
 
