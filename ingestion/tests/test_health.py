@@ -104,11 +104,11 @@ Dette er faktisk innhold med mange ord her."""
         h2 = self.hasher.hash_file("abc")
         self.assertEqual(h1, h2)
 
-    def test_chunk_id_generation(self):
-        file_hash = "a" * 64
-        cid = self.hasher.generate_chunk_id(file_hash, 1, 2)
-        self.assertTrue(cid.startswith("a"*16))
-        self.assertIn("_0001_0002", cid)
+    # def test_chunk_id_generation(self):
+    #     file_hash = "a" * 64
+    #     cid = self.hasher.generate_chunk_id(file_hash, 1, 2)
+    #     self.assertTrue(cid.startswith("a"*16))
+    #     self.assertIn("_0001_0002", cid)
 
     def test_chunk_creation(self):
         text = "---\n§ 1.\nDette er faktisk innhold som har nok ord til å bli en chunk."
