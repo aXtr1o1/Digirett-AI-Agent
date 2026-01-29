@@ -18,7 +18,7 @@ jobs:
       - name: Setup Python for Backend
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
       - name: Backend - Install Dependencies
         run: |
           cd backend
@@ -63,7 +63,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: "3.10"
+        python-version: "3.11"
 
     - name: Deploy to EC2
       uses: appleboy/ssh-action@v1.0.3
