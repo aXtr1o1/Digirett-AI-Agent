@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 load_dotenv()
 
-BASE_DIR = Path(os.path.join(sys.path[0],"ingestion"))
+BASE_DIR = Path(os.path.join(sys.path[0]))
 # ============================
 # Directories
 # ============================
