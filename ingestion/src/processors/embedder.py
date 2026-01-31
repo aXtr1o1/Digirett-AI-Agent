@@ -1,293 +1,325 @@
 """
-BGE-M3 Embedding Module for Norwegian Lovdata
-Clean production version - FlagEmbedding only, no caching
+SageMaker BGE Embedder - TOKEN-AWARE VERSION
+Works with token-based chunking (no truncation needed)
+
+Key features:
+1. Processes token-bounded chunks safely
+2. Batch processing with configurable size
+3. Automatic retry on worker crashes
+4. No text truncation (chunks are already optimally sized)
+5. Progress tracking and detailed logging
 """
 
 import logging
-import torch
-import numpy as np
-from typing import List, Dict, Any, Union
-
-# FlagEmbedding imports
-try:
-    from FlagEmbedding import BGEM3FlagModel
-    FLAG_EMBEDDING_AVAILABLE = True
-except ImportError:
-    FLAG_EMBEDDING_AVAILABLE = False
-    raise ImportError(
-        "FlagEmbedding not found. Install with:\n"
-        "pip install FlagEmbedding"
-    )
+import json
+import time
+from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
 
-class BGEEmbeddingGenerator:
+class TokenAwareSageMakerEmbedder:
     """
-    BGE-M3 Embedding Generator for Norwegian legal text.
-    
-    Features:
-    - Dense embeddings (semantic similarity) - 1024 dimensions
-    - Sparse embeddings (lexical matching, BM25-like)
-    - ColBERT embeddings (fine-grained token matching)
-    - Multi-vector retrieval support
-    
-    Usage for Lovdata:
-    - Use 'dense' for semantic search (default, recommended)
-    - Use 'sparse' for exact term matching (legal citations)
-    - Use 'colbert' for detailed clause matching
-    - Use 'all' to get all three types
+    Embedder for token-bounded chunks.
+    Processes chunks in safe batches without truncation.
     """
     
     def __init__(
-        self, 
-        model_name: str = "BAAI/bge-m3",
-        embedding_type: str = "dense",
-        use_fp16: bool = True,
-        batch_size: int = 16,
-        max_length: int = 8192
+        self,
+        endpoint_name: str,
+        region_name: str = "ap-south-1",
+        max_retries: int = 3,
+        retry_delay: int = 15,
+        chunk_delay: float = 1.0,  # Faster processing since chunks are pre-sized
+        batch_size: int = 1,  # Process 5 chunks at a time
+        warn_token_threshold: int = 400  # Warn if chunks exceed this
     ):
         """
-        Initialize BGE-M3 embedder.
+        Initialize token-aware embedder.
         
         Args:
-            model_name: Model identifier (default: BAAI/bge-m3)
-            embedding_type: Type of embeddings to generate
-                - 'dense': Standard vector embeddings (1024 dim)
-                - 'sparse': Sparse lexical embeddings (BM25-like)
-                - 'colbert': Token-level embeddings for fine-grained matching
-                - 'all': Generate all three types
-            use_fp16: Use half precision (faster on GPU)
-            batch_size: Batch size for encoding
-            max_length: Maximum sequence length (BGE-M3 supports 8192)
+            endpoint_name: SageMaker endpoint name
+            region_name: AWS region
+            max_retries: Maximum retry attempts on failure
+            retry_delay: Seconds to wait before retry
+            chunk_delay: Seconds between batches (can be shorter with pre-sized chunks)
+            batch_size: Number of chunks to process in parallel
+            warn_token_threshold: Log warning if chunk exceeds this token count
         """
-        if not FLAG_EMBEDDING_AVAILABLE:
-            raise RuntimeError("FlagEmbedding not installed")
+        import boto3
         
-        self.model_name = model_name
-        self.embedding_type = embedding_type.lower()
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.use_fp16 = use_fp16 and (self.device == "cuda")
+        self.endpoint_name = endpoint_name
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        self.chunk_delay = chunk_delay
         self.batch_size = batch_size
-        self.max_length = max_length
+        self.warn_token_threshold = warn_token_threshold
         
-        # Validate embedding type
-        valid_types = ['dense', 'sparse', 'colbert', 'all']
-        if self.embedding_type not in valid_types:
-            raise ValueError(f"embedding_type must be one of {valid_types}")
-
-        self._load_model()
-
-    def _load_model(self):
-        """Load BGE-M3 model with FlagEmbedding."""
-        try:
-            logger.info(f"🚀 Loading BGE-M3 via FlagEmbedding")
-            logger.info(f"   Device: {self.device}")
-            logger.info(f"   FP16: {self.use_fp16}")
-            logger.info(f"   Embedding Type: {self.embedding_type}")
-            logger.info(f"   Max Length: {self.max_length}")
-            
-            self.model = BGEM3FlagModel(
-                self.model_name, 
-                use_fp16=self.use_fp16,
-                device=self.device
-            )
-            
-            logger.info(f"✅ BGE-M3 loaded successfully")
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to load BGE-M3: {e}")
-            raise
-
-    def _encode_batch(self, texts: List[str]) -> Dict[str, Any]:
-        """
-        Encode texts using BGE-M3 with proper FlagEmbedding API.
+        self.client = boto3.client(
+            "sagemaker-runtime",
+            region_name=region_name
+        )
         
-        Returns:
-            Dictionary containing:
-            - 'dense_vecs': Dense embeddings (batch_size, 1024)
-            - 'lexical_weights': Sparse embeddings (batch_size, vocab_size)
-            - 'colbert_vecs': ColBERT embeddings (batch_size, seq_len, 1024)
-        """
-        try:
-            embeddings = self.model.encode(
-                texts,
-                batch_size=self.batch_size,
-                max_length=self.max_length,
-                return_dense=True,
-                return_sparse=True,
-                return_colbert_vecs=True
-            )
-            
-            return embeddings
-            
-        except Exception as e:
-            logger.error(f"Error encoding batch: {e}")
-            raise
+        logger.info(
+            f"✅ Token-Aware SageMaker Embedder initialized | "
+            f"batch_size={batch_size} | chunk_delay={chunk_delay}s | "
+            f"No truncation (using pre-sized chunks)"
+        )
 
-    def _process_embeddings(
-        self, 
-        raw_embeddings: Dict[str, Any], 
-        emb_type: str
-    ) -> List[Any]:
+    def _invoke_batch(
+        self,
+        texts: List[str],
+        retry_count: int = 0
+    ) -> List[List[float]]:
         """
-        Process raw embeddings based on type.
+        Invoke endpoint for a BATCH of texts with retry logic.
         
         Args:
-            raw_embeddings: Output from model.encode()
-            emb_type: 'dense', 'sparse', 'colbert', or 'all'
+            texts: List of texts to embed (already token-bounded)
+            retry_count: Current retry attempt
             
         Returns:
-            List of processed embeddings (one per input text)
+            List of embeddings (or None for failed items)
         """
-        if emb_type == 'dense':
-            return raw_embeddings['dense_vecs'].tolist()
-        
-        elif emb_type == 'sparse':
-            return raw_embeddings['lexical_weights']
-        
-        elif emb_type == 'colbert':
-            return [vec.tolist() for vec in raw_embeddings['colbert_vecs']]
-        
-        elif emb_type == 'all':
-            batch_size = len(raw_embeddings['dense_vecs'])
-            return [
-                {
-                    'dense': raw_embeddings['dense_vecs'][i].tolist(),
-                    'sparse': raw_embeddings['lexical_weights'][i] if isinstance(raw_embeddings['lexical_weights'], list) else raw_embeddings['lexical_weights'],
-                    'colbert': raw_embeddings['colbert_vecs'][i].tolist()
-                }
-                for i in range(batch_size)
-            ]
-        
-        else:
-            raise ValueError(f"Unknown embedding type: {emb_type}")
+        try:
+            # Validate inputs
+            if not texts or not all(texts):
+                logger.warning(f"Empty or invalid texts in batch")
+                return [None] * len(texts)
+            
+            # Build payload
+            payload = {"inputs": texts}
+            
+            # Invoke endpoint
+            response = self.client.invoke_endpoint(
+                EndpointName=self.endpoint_name,
+                ContentType="application/json",
+                Body=json.dumps(payload)
+            )
+            
+            # Parse response
+            result = json.loads(response["Body"].read().decode())
+            
+            # Extract embeddings
+            if isinstance(result, list):
+                # Result is directly a list of embeddings
+                return result
+            elif isinstance(result, dict) and "embeddings" in result:
+                return result["embeddings"]
+            else:
+                logger.error(f"Unexpected response format: {type(result)}")
+                return [None] * len(texts)
+                
+        except Exception as e:
+            error_msg = str(e)
+            
+            # Check for worker crash or memory error
+            if any(err in error_msg for err in ["Worker died", "ModelError", "Memory", "OOM"]):
+                if retry_count < self.max_retries:
+                    # Exponential backoff
+                    wait_time = self.retry_delay * (2 ** retry_count)
+                    logger.warning(
+                        f"⚠️  Worker crashed on batch of {len(texts)} "
+                        f"(attempt {retry_count + 1}/{self.max_retries}). "
+                        f"Waiting {wait_time}s..."
+                    )
+                    time.sleep(wait_time)
+                    return self._invoke_batch(texts, retry_count + 1)
+                else:
+                    logger.error(
+                        f"❌ Worker failed after {self.max_retries} retries "
+                        f"for batch of {len(texts)}"
+                    )
+                    return [None] * len(texts)
+            else:
+                logger.error(f"❌ Invocation failed: {error_msg}")
+                return [None] * len(texts)
 
     def embed_chunks(
-        self, 
-        chunks: List[Any], 
-        text_field: str = "text",
-        show_progress: bool = True
+        self,
+        chunks: List[Dict[str, Any]],
+        text_field: str = "text"
     ) -> List[Dict[str, Any]]:
         """
-        Generate embeddings for chunks using BGE-M3.
+        Embed chunks with token-aware batch processing.
+        
+        Strategy:
+        1. Process chunks in batches of `batch_size`
+        2. Check token counts and warn if oversized
+        3. Delay between batches for VRAM stability
+        4. Track progress and success rate
         
         Args:
-            chunks: List of Chunk objects or dictionaries
-            text_field: Field name containing text to embed
-            show_progress: Show progress information
+            chunks: List of chunk dictionaries
+            text_field: Field name containing text
             
         Returns:
-            List of chunk dictionaries with embeddings added
+            Chunks with 'embedding' field added
         """
         if not chunks:
-            logger.warning("No chunks provided for embedding")
+            logger.warning("No chunks provided")
             return []
 
-        # Convert chunks to dictionaries and collect texts
-        processed_chunks = []
+        # Collect valid texts
         texts_to_embed = []
+        chunk_indices = []
+        oversized_count = 0
         
         for i, chunk in enumerate(chunks):
-            # Handle both dataclass objects and dictionaries
-            if hasattr(chunk, 'to_dict'):
-                c_dict = chunk.to_dict()
-            elif isinstance(chunk, dict):
-                c_dict = chunk.copy()
-            else:
-                raise TypeError(f"Chunk must be dict or have to_dict() method, got {type(chunk)}")
-            
-            processed_chunks.append(c_dict)
-            
-            text = c_dict.get(text_field, "")
-            if not text:
-                logger.warning(f"Chunk {i} has no text in field '{text_field}'")
-                c_dict['embedding'] = None
-                c_dict['embedding_type'] = self.embedding_type
-                texts_to_embed.append("")
-            else:
+            text = chunk.get(text_field, "")
+            if text and text.strip():
+                # Check token count if available
+                token_count = chunk.get("token_count", 0)
+                if token_count > self.warn_token_threshold:
+                    oversized_count += 1
+                    logger.warning(
+                        f"⚠️  Chunk {i} has {token_count} tokens "
+                        f"(threshold: {self.warn_token_threshold})"
+                    )
+                
                 texts_to_embed.append(text)
+                chunk_indices.append(i)
+            else:
+                chunk['embedding'] = None
 
-        # Generate embeddings
-        if show_progress:
-            logger.info(f"🧠 Generating BGE-M3 embeddings ({self.embedding_type})...")
-            logger.info(f"   Total chunks: {len(chunks)}")
+        if not texts_to_embed:
+            logger.error("No valid texts to embed")
+            return chunks
+
+        total = len(texts_to_embed)
+        estimated_batches = (total + self.batch_size - 1) // self.batch_size
+        estimated_time = estimated_batches * (self.chunk_delay + 2.0)  # ~2s per batch
         
-        try:
-            all_embeddings = []
-            
-            # Process in batches
-            for batch_start in range(0, len(texts_to_embed), self.batch_size):
-                batch_end = min(batch_start + self.batch_size, len(texts_to_embed))
-                batch_texts = texts_to_embed[batch_start:batch_end]
-                
-                # Filter out empty texts for this batch
-                valid_texts = [t for t in batch_texts if t]
-                
-                if not valid_texts:
-                    # All texts in this batch are empty
-                    all_embeddings.extend([None] * len(batch_texts))
-                    continue
-                
-                if show_progress and len(texts_to_embed) > self.batch_size:
-                    logger.info(f"   Processing batch {batch_start//self.batch_size + 1}/{(len(texts_to_embed)-1)//self.batch_size + 1}")
-                
-                # Get raw embeddings from model
-                raw_embeddings = self._encode_batch(valid_texts)
-                
-                # Process based on embedding type
-                batch_embeddings = self._process_embeddings(raw_embeddings, self.embedding_type)
-                
-                # Map back to original batch (accounting for empty texts)
-                valid_idx = 0
-                for text in batch_texts:
-                    if text:
-                        all_embeddings.append(batch_embeddings[valid_idx])
-                        valid_idx += 1
-                    else:
-                        all_embeddings.append(None)
-            
-            # Add embeddings to chunks
-            for i, embedding in enumerate(all_embeddings):
-                processed_chunks[i]['embedding'] = embedding
-                processed_chunks[i]['embedding_type'] = self.embedding_type
-            
-            if show_progress:
-                valid_count = sum(1 for e in all_embeddings if e is not None)
-                logger.info(f"✅ Embedded {valid_count} chunks successfully")
-            
-        except Exception as e:
-            logger.error(f"❌ Error during embedding generation: {e}")
-            raise
-
-        return processed_chunks
-
-    def embed_text(self, text: str) -> Union[List[float], Dict[str, Any]]:
-        """
-        Embed a single text string.
+        logger.info(
+            f"🧠 Token-aware embedding | chunks={total} | "
+            f"batch_size={self.batch_size} | batches={estimated_batches} | "
+            f"estimated={estimated_time:.0f}s"
+        )
         
-        Args:
-            text: Text to embed
-            
-        Returns:
-            Embedding (format depends on embedding_type)
-        """
-        if not text:
-            logger.warning("Empty text provided for embedding")
-            return None
-        
-        raw_embeddings = self._encode_batch([text])
-        processed = self._process_embeddings(raw_embeddings, self.embedding_type)
-        return processed[0]
+        if oversized_count > 0:
+            logger.warning(
+                f"   ⚠️  {oversized_count}/{total} chunks exceed token threshold"
+            )
 
-    def get_embedding_info(self) -> Dict[str, Any]:
-        """Get information about the embedding configuration."""
-        return {
-            "model_name": self.model_name,
-            "embedding_type": self.embedding_type,
-            "device": self.device,
-            "use_fp16": self.use_fp16,
-            "max_length": self.max_length,
-            "batch_size": self.batch_size,
-            "dimension": 1024 if self.embedding_type == 'dense' else 'varies'
+        # Process in batches
+        embeddings = []
+        failed_count = 0
+        
+        for batch_idx in range(0, total, self.batch_size):
+            batch_end = min(batch_idx + self.batch_size, total)
+            batch_texts = texts_to_embed[batch_idx:batch_end]
+            batch_num = (batch_idx // self.batch_size) + 1
+            
+            logger.info(
+                f"   Processing batch {batch_num}/{estimated_batches} "
+                f"({len(batch_texts)} chunks)"
+            )
+            
+            # Get embeddings for batch
+            batch_embeddings = self._invoke_batch(batch_texts)
+            
+            # Validate results
+            if batch_embeddings and len(batch_embeddings) == len(batch_texts):
+                embeddings.extend(batch_embeddings)
+                
+                # Count failures in batch
+                batch_failures = sum(1 for e in batch_embeddings if e is None)
+                if batch_failures > 0:
+                    failed_count += batch_failures
+                    logger.warning(
+                        f"   ⚠️  {batch_failures}/{len(batch_texts)} failed in batch"
+                    )
+            else:
+                # Entire batch failed
+                logger.error(
+                    f"   ❌ Batch {batch_num} failed completely"
+                )
+                embeddings.extend([None] * len(batch_texts))
+                failed_count += len(batch_texts)
+                
+                # Stop if too many failures
+                if failed_count >= total * 0.5:  # >50% failure rate
+                    logger.error(
+                        f"❌ Stopping: failure rate too high "
+                        f"({failed_count}/{len(embeddings)} failed)"
+                    )
+                    # Fill remaining with None
+                    remaining = total - len(embeddings)
+                    if remaining > 0:
+                        embeddings.extend([None] * remaining)
+                    break
+            
+            # Delay between batches (except last one)
+            if batch_end < total:
+                time.sleep(self.chunk_delay)
+            
+            # Log progress every 5 batches
+            if batch_num % 5 == 0:
+                success = sum(1 for e in embeddings if e is not None)
+                logger.info(
+                    f"   Progress: {success}/{len(embeddings)} successful so far"
+                )
+
+        # Assign embeddings to chunks
+        for i, chunk_idx in enumerate(chunk_indices):
+            if i < len(embeddings):
+                chunks[chunk_idx]['embedding'] = embeddings[i]
+            else:
+                chunks[chunk_idx]['embedding'] = None
+
+        # Final stats
+        successful = sum(1 for e in embeddings if e is not None)
+        success_rate = (successful / total * 100) if total > 0 else 0
+        
+        logger.info(
+            f"✅ Embedded {successful}/{total} chunks ({success_rate:.1f}%)"
+        )
+        
+        if failed_count > 0:
+            logger.warning(f"⚠️  {failed_count} chunks failed")
+
+        return chunks
+
+
+class SageMakerBGEEmbedder(TokenAwareSageMakerEmbedder):
+    """Alias for compatibility"""
+    pass
+
+
+# ============================================================================
+# EXAMPLE USAGE
+# ============================================================================
+
+if __name__ == "__main__":
+    import sys
+    
+    # Example chunks with token counts
+    example_chunks = [
+        {
+            "text": "This is a test chunk with some Norwegian legal text.",
+            "token_count": 12,
+            "chunk_id": "test-001"
+        },
+        {
+            "text": "Another chunk with more content to test the embedder.",
+            "token_count": 11,
+            "chunk_id": "test-002"
         }
+    ]
+    
+    # Initialize embedder
+    embedder = SageMakerBGEEmbedder(
+        endpoint_name="embedding-bge-m3-endpoint",
+        region_name="ap-south-1",
+        batch_size=1,
+        chunk_delay=0.5
+    )
+    
+    # Generate embeddings
+    print("\n🧠 Testing token-aware embedder...")
+    result_chunks = embedder.embed_chunks(example_chunks)
+    
+    # Show results
+    for chunk in result_chunks:
+        has_embedding = chunk.get('embedding') is not None
+        print(f"  Chunk {chunk['chunk_id']}: {'✅ Success' if has_embedding else '❌ Failed'}")
