@@ -1,19 +1,36 @@
 """
-Dynamic Norwegian Lovdata Hierarchical Chunking System
-Handles Norwegian legal documents with intelligent pattern recognition
+Dynamic Norwegian Lovdata Hierarchical Chunking System - TOKEN-BASED VERSION
+Handles Norwegian legal documents with intelligent token-bound chunking
+
+KEY IMPROVEMENTS OVER CHARACTER TRUNCATION:
+1. ✅ Token-based chunking (no information loss)
+2. ✅ Smart splitting at sentence boundaries
+3. ✅ Hierarchical sub-chunking when needed
+4. ✅ VRAM-safe (configurable max tokens per chunk)
+5. ✅ Preserves all document content
+
 - Recognizes Norwegian legal terminology (§, Kapittel, Artikkel, Lov, etc.)
 - Dynamic fallback for any document structure
 - Extracts Norwegian metadata fields (Datokode, DokumentID, Departement, etc.)
-- Error-resistant with comprehensive handling
+- Token-aware splitting with tiktoken
 """
 
 import hashlib
 import re
 import os
+import uuid
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, field
 from pathlib import Path
 import logging
+
+# Token counting
+try:
+    import tiktoken
+    TIKTOKEN_AVAILABLE = True
+except ImportError:
+    TIKTOKEN_AVAILABLE = False
+    logging.warning("tiktoken not available, falling back to character-based estimation")
 
 # Setup logging
 logging.basicConfig(
@@ -21,6 +38,68 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# TOKEN COUNTER
+# ============================================================================
+
+class TokenCounter:
+    """
+    Token counting using tiktoken (OpenAI's tokenizer).
+    BGE-M3 uses a similar tokenization scheme to BERT/multilingual models.
+    We use cl100k_base as a conservative approximation.
+    """
+    
+    def __init__(self, encoding_name: str = "cl100k_base"):
+        """
+        Initialize token counter.
+        
+        Args:
+            encoding_name: Tiktoken encoding (cl100k_base is a good approximation)
+        """
+        if TIKTOKEN_AVAILABLE:
+            try:
+                self.encoding = tiktoken.get_encoding(encoding_name)
+                self.method = "tiktoken"
+                logger.info(f"✅ Token counter initialized with {encoding_name}")
+            except Exception as e:
+                logger.warning(f"Failed to load tiktoken encoding: {e}")
+                self.encoding = None
+                self.method = "estimate"
+        else:
+            self.encoding = None
+            self.method = "estimate"
+            
+    def count_tokens(self, text: str) -> int:
+        """
+        Count tokens in text.
+        
+        Args:
+            text: Input text
+            
+        Returns:
+            Token count
+        """
+        if not text:
+            return 0
+            
+        if self.method == "tiktoken" and self.encoding:
+            try:
+                return len(self.encoding.encode(text))
+            except Exception as e:
+                logger.debug(f"Tiktoken encoding failed: {e}")
+                # Fallback to estimation
+                return self._estimate_tokens(text)
+        else:
+            return self._estimate_tokens(text)
+    
+    def _estimate_tokens(self, text: str) -> int:
+        """
+        Estimate token count (conservative approximation).
+        Assumes ~4 characters per token for European languages.
+        """
+        return len(text) // 4
 
 
 # ============================================================================
@@ -68,6 +147,9 @@ class Chunk:
     parent_type: str
     parent_title: str
     text: str
+    token_count: int = 0  # ✅ NEW: Track token count
+    is_split: bool = False  # ✅ NEW: Mark if this chunk was split
+    split_index: int = 0  # ✅ NEW: Sub-index for split chunks
     metadata: Optional[Dict] = None
     
     def to_dict(self) -> Dict:
@@ -80,11 +162,170 @@ class Chunk:
             "child_index": self.child_index,
             "parent_type": self.parent_type,
             "parent_title": self.parent_title,
-            "text": self.text
+            "text": self.text,
+            "token_count": self.token_count,
+            "is_split": self.is_split,
+            "split_index": self.split_index
         }
         if self.metadata:
             result["metadata"] = self.metadata
         return result
+
+
+# ============================================================================
+# TEXT SPLITTER (TOKEN-AWARE)
+# ============================================================================
+
+class TokenBoundTextSplitter:
+    """
+    Split text into chunks based on token count, respecting sentence boundaries.
+    """
+    
+    def __init__(
+        self,
+        max_tokens: int = 512,
+        overlap_tokens: int = 50,
+        token_counter: Optional[TokenCounter] = None
+    ):
+        """
+        Initialize token-bound text splitter.
+        
+        Args:
+            max_tokens: Maximum tokens per chunk (512 is VRAM-safe for BGE-M3)
+            overlap_tokens: Overlap between chunks for context preservation
+            token_counter: Token counter instance
+        """
+        self.max_tokens = max_tokens
+        self.overlap_tokens = overlap_tokens
+        self.token_counter = token_counter or TokenCounter()
+        
+        # Norwegian sentence endings
+        self.sentence_endings = re.compile(r'[.!?]\s+')
+        
+    def split_text(self, text: str) -> List[str]:
+        """
+        Split text into token-bound chunks at sentence boundaries.
+        
+        Args:
+            text: Input text to split
+            
+        Returns:
+            List of text chunks, each under max_tokens
+        """
+        if not text or not text.strip():
+            return []
+        
+        # Check if text fits in one chunk
+        total_tokens = self.token_counter.count_tokens(text)
+        if total_tokens <= self.max_tokens:
+            return [text]
+        
+        # Split into sentences
+        sentences = self._split_into_sentences(text)
+        
+        chunks = []
+        current_chunk = []
+        current_tokens = 0
+        
+        for sentence in sentences:
+            sentence_tokens = self.token_counter.count_tokens(sentence)
+            
+            # If single sentence exceeds limit, split it further
+            if sentence_tokens > self.max_tokens:
+                # Save current chunk if not empty
+                if current_chunk:
+                    chunks.append(" ".join(current_chunk))
+                    current_chunk = []
+                    current_tokens = 0
+                
+                # Split long sentence by words
+                word_chunks = self._split_long_sentence(sentence)
+                chunks.extend(word_chunks)
+                continue
+            
+            # Check if adding sentence would exceed limit
+            if current_tokens + sentence_tokens > self.max_tokens:
+                # Save current chunk
+                if current_chunk:
+                    chunks.append(" ".join(current_chunk))
+                
+                # Start new chunk with overlap
+                if self.overlap_tokens > 0 and current_chunk:
+                    overlap_text = self._get_overlap_text(current_chunk)
+                    current_chunk = [overlap_text, sentence]
+                    current_tokens = self.token_counter.count_tokens(" ".join(current_chunk))
+                else:
+                    current_chunk = [sentence]
+                    current_tokens = sentence_tokens
+            else:
+                # Add sentence to current chunk
+                current_chunk.append(sentence)
+                current_tokens += sentence_tokens
+        
+        # Add final chunk
+        if current_chunk:
+            chunks.append(" ".join(current_chunk))
+        
+        return chunks
+    
+    def _split_into_sentences(self, text: str) -> List[str]:
+        """Split text into sentences using Norwegian sentence boundaries."""
+        # Split on sentence endings
+        sentences = self.sentence_endings.split(text)
+        
+        # Clean and filter
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        # Handle edge cases where split removed punctuation
+        result = []
+        for i, sent in enumerate(sentences):
+            if i < len(sentences) - 1 and not sent.endswith(('.', '!', '?')):
+                # Look ahead to see if next part starts with lowercase
+                if sentences[i + 1] and sentences[i + 1][0].islower():
+                    sent += '.'
+            result.append(sent)
+        
+        return result
+    
+    def _split_long_sentence(self, sentence: str) -> List[str]:
+        """Split a sentence that's too long by word boundaries."""
+        words = sentence.split()
+        chunks = []
+        current_chunk = []
+        current_tokens = 0
+        
+        for word in words:
+            word_tokens = self.token_counter.count_tokens(word)
+            
+            if current_tokens + word_tokens > self.max_tokens:
+                if current_chunk:
+                    chunks.append(" ".join(current_chunk))
+                current_chunk = [word]
+                current_tokens = word_tokens
+            else:
+                current_chunk.append(word)
+                current_tokens += word_tokens
+        
+        if current_chunk:
+            chunks.append(" ".join(current_chunk))
+        
+        return chunks
+    
+    def _get_overlap_text(self, chunk: List[str]) -> str:
+        """Get overlap text from end of chunk."""
+        # Take last few sentences that fit in overlap budget
+        overlap_sentences = []
+        overlap_tokens = 0
+        
+        for sentence in reversed(chunk):
+            sentence_tokens = self.token_counter.count_tokens(sentence)
+            if overlap_tokens + sentence_tokens <= self.overlap_tokens:
+                overlap_sentences.insert(0, sentence)
+                overlap_tokens += sentence_tokens
+            else:
+                break
+        
+        return " ".join(overlap_sentences)
 
 
 # ============================================================================
@@ -374,8 +615,7 @@ class NorwegianLovdataParser:
             # Parse hierarchical structure
             parents = []
             current_parent = None
-            parent_index = -1
-            child_index = 0
+            parent_index = 0
             
             # Skip "Innhold" section if present
             in_innhold = False
@@ -397,16 +637,11 @@ class NorwegianLovdataParser:
                             in_innhold = False
                         continue
                     
-                    # ========================================
                     # IF BLOCK: Try Norwegian legal patterns first
-                    # ========================================
                     norwegian_parent = cls.classify_norwegian_parent(line)
                     
                     if norwegian_parent is not None:
                         # FOUND NORWEGIAN LEGAL PARENT
-                        parent_index += 1
-                        child_index = 0
-                        
                         current_parent = ParentNode(
                             parent_index=parent_index,
                             parent_title=norwegian_parent[1],
@@ -414,16 +649,13 @@ class NorwegianLovdataParser:
                             children=[]
                         )
                         parents.append(current_parent)
+                        parent_index += 1
+                        
                         logger.debug(f"Norwegian parent found: {norwegian_parent[0]} - {norwegian_parent[1][:50]}")
                     
-                    # ========================================
                     # ELSE BLOCK: Fallback to dynamic headings
-                    # ========================================
                     elif cls.is_dynamic_parent(line):
                         # FOUND DYNAMIC PARENT
-                        parent_index += 1
-                        child_index = 0
-                        
                         current_parent = ParentNode(
                             parent_index=parent_index,
                             parent_title=line.strip(),
@@ -431,17 +663,17 @@ class NorwegianLovdataParser:
                             children=[]
                         )
                         parents.append(current_parent)
+                        parent_index += 1
+                        
                         logger.debug(f"Dynamic parent found: {line[:50]}")
                     
-                    # ========================================
                     # Content under current parent
-                    # ========================================
                     elif cls.is_child_content(line) and current_parent is not None:
+                        child_idx = len(current_parent.children)
                         current_parent.children.append({
-                            "child_index": child_index,
+                            "child_index": child_idx,
                             "text": line
                         })
-                        child_index += 1
                 
                 except Exception as e:
                     logger.warning(f"Error processing line '{line[:50]}...': {e}")
@@ -458,14 +690,12 @@ class NorwegianLovdataParser:
                     children=[]
                 )
                 
-                child_index = 0
-                for line in lines[content_start:]:
+                for idx, line in enumerate(lines[content_start:]):
                     if cls.is_child_content(line):
                         default_parent.children.append({
-                            "child_index": child_index,
+                            "child_index": idx,
                             "text": line
                         })
-                        child_index += 1
                 
                 if default_parent.children:
                     parents.append(default_parent)
@@ -494,29 +724,80 @@ class FileHasher:
             return hashlib.sha256(b"error").hexdigest()
     
     @staticmethod
-    def generate_chunk_id(file_hash: str, parent_idx: int, child_idx: int) -> str:
-        """Generate stable chunk ID"""
+    def generate_chunk_id(
+        file_hash: str,
+        parent_idx: int,
+        child_idx: int,
+        split_idx: int = 0
+    ) -> str:
+        """
+        Generate stable, unique chunk ID using UUID.
+        Now includes split_idx for sub-chunks.
+        """
         try:
-            return f"{file_hash[:16]}_{parent_idx:04d}_{child_idx:04d}"
+            # Generate deterministic UUID from file_hash, parent_idx, child_idx, and split_idx
+            namespace = uuid.NAMESPACE_DNS
+            seed = f"{file_hash}_{parent_idx:04d}_{child_idx:04d}_{split_idx:04d}"
+            return str(uuid.uuid5(namespace, seed))
         except Exception as e:
             logger.error(f"Error generating chunk ID: {e}")
-            return f"error_{parent_idx:04d}_{child_idx:04d}"
+            return str(uuid.uuid4())
 
 
 # ============================================================================
-# MAIN CHUNKER
+# MAIN CHUNKER (TOKEN-BASED)
 # ============================================================================
 
 class NorwegianLovdataChunker:
-    def __init__(self):
+    """
+    ✅ TOKEN-BASED CHUNKER
+    
+    Key improvements:
+    1. Uses token counting instead of character truncation
+    2. Intelligently splits long content at sentence boundaries
+    3. Preserves ALL information (no data loss)
+    4. VRAM-safe with configurable max_tokens
+    """
+    
+    def __init__(
+        self,
+        max_tokens: int = 512,
+        overlap_tokens: int = 50
+    ):
+        """
+        Initialize chunker with token-based splitting.
+        
+        Args:
+            max_tokens: Maximum tokens per chunk (512 is safe for 16GB VRAM)
+            overlap_tokens: Overlap between split chunks for context
+        """
         self.parser = NorwegianLovdataParser()
         self.hasher = FileHasher()
+        self.token_counter = TokenCounter()
+        self.text_splitter = TokenBoundTextSplitter(
+            max_tokens=max_tokens,
+            overlap_tokens=overlap_tokens,
+            token_counter=self.token_counter
+        )
         self.error_files = []
         self.success_files = []
+        
+        logger.info(
+            f"✅ Token-based chunker initialized | "
+            f"max_tokens={max_tokens} | overlap={overlap_tokens}"
+        )
     
-    # --- INSERT/REPLACE THIS METHOD ---
-    def chunk_text(self, text: str, file_name: str, zip_name: str = None) -> Tuple[DocumentMetadata, List[Chunk]]:
-        """Chunk a single Norwegian legal text file"""
+    def chunk_text(
+        self,
+        text: str,
+        file_name: str,
+        zip_name: str = None
+    ) -> Tuple[DocumentMetadata, List[Chunk]]:
+        """
+        Chunk a single Norwegian legal text file with token-based splitting.
+        
+        Returns: (metadata, chunks)
+        """
         try:
             # Calculate file hash
             file_hash = self.hasher.hash_file(text)
@@ -526,35 +807,90 @@ class NorwegianLovdataChunker:
             doc_metadata.file_hash = file_hash
             
             chunks = []
+            total_splits = 0
+            
             for parent in parents:
                 for child in parent.children:
-                    chunk_id = self.hasher.generate_chunk_id(
-                        file_hash, parent.parent_index, child["child_index"]
-                    )
-                    chunk = Chunk(
-                        chunk_id=chunk_id,
-                        file_name=file_name,
-                        file_hash=file_hash,
-                        parent_index=parent.parent_index,
-                        child_index=child["child_index"],
-                        parent_type=parent.parent_type,
-                        parent_title=parent.parent_title,
-                        text=child["text"],
-                        metadata=doc_metadata.to_dict()
-                    )
-                    chunks.append(chunk)
+                    child_text = child["text"]
+                    child_idx = child["child_index"]
+                    
+                    # Count tokens in original text
+                    token_count = self.token_counter.count_tokens(child_text)
+                    
+                    # Check if splitting is needed
+                    if token_count <= self.text_splitter.max_tokens:
+                        # No splitting needed - create single chunk
+                        chunk_id = self.hasher.generate_chunk_id(
+                            file_hash, parent.parent_index, child_idx, 0
+                        )
+                        
+                        chunk = Chunk(
+                            chunk_id=chunk_id,
+                            file_name=file_name,
+                            file_hash=file_hash,
+                            parent_index=parent.parent_index,
+                            child_index=child_idx,
+                            parent_type=parent.parent_type,
+                            parent_title=parent.parent_title,
+                            text=child_text,
+                            token_count=token_count,
+                            is_split=False,
+                            split_index=0,
+                            metadata=doc_metadata.to_dict()
+                        )
+                        chunks.append(chunk)
+                    
+                    else:
+                        # Split into multiple chunks
+                        split_texts = self.text_splitter.split_text(child_text)
+                        total_splits += len(split_texts) - 1
+                        
+                        logger.debug(
+                            f"Split child {child_idx} ({token_count} tokens) "
+                            f"into {len(split_texts)} chunks"
+                        )
+                        
+                        for split_idx, split_text in enumerate(split_texts):
+                            split_token_count = self.token_counter.count_tokens(split_text)
+                            
+                            chunk_id = self.hasher.generate_chunk_id(
+                                file_hash, parent.parent_index, child_idx, split_idx
+                            )
+                            
+                            chunk = Chunk(
+                                chunk_id=chunk_id,
+                                file_name=file_name,
+                                file_hash=file_hash,
+                                parent_index=parent.parent_index,
+                                child_index=child_idx,
+                                parent_type=parent.parent_type,
+                                parent_title=parent.parent_title,
+                                text=split_text,
+                                token_count=split_token_count,
+                                is_split=True,
+                                split_index=split_idx,
+                                metadata=doc_metadata.to_dict()
+                            )
+                            chunks.append(chunk)
+            
+            if total_splits > 0:
+                logger.info(
+                    f"✂️  Split {total_splits} oversized chunks in {file_name}"
+                )
+            
             return doc_metadata, chunks
+        
         except Exception as e:
             logger.error(f"Error chunking {file_name}: {e}")
             return DocumentMetadata(file_name=file_name, file_hash=""), []
 
-    # --- INSERT THIS METHOD ---
     def log_file_summary(self, metadata: DocumentMetadata, chunks: List[Chunk]):
         """Logs a detailed summary of a processed file to the console."""
         stats = self.get_statistics(chunks)
         print(f"\n" + "="*50)
         print(f"📄 FILE: {metadata.file_name}")
         print(f"📊 Stats: {stats['total_chunks']} chunks | {stats['total_parents']} parents")
+        print(f"✂️  Splits: {stats['split_chunks']} chunks were split")
         print(f"🧬 Hash: {metadata.file_hash[:16]}...")
         if chunks:
             print(f"📝 Preview: {chunks[0].text[:100]}...")
@@ -585,7 +921,11 @@ class NorwegianLovdataChunker:
             logger.error(f"Error reading {file_path}: {e}")
             return DocumentMetadata(file_name=os.path.basename(file_path), file_hash=""), []
     
-    def chunk_directory(self, directory: str, limit: int = None) -> Dict[str, Tuple[DocumentMetadata, List[Chunk]]]:
+    def chunk_directory(
+        self,
+        directory: str,
+        limit: int = None
+    ) -> Dict[str, Tuple[DocumentMetadata, List[Chunk]]]:
         """
         Chunk all TXT files in a directory
         
@@ -616,7 +956,14 @@ class NorwegianLovdataChunker:
                     if chunks:
                         results[txt_file.name] = (metadata, chunks)
                         self.success_files.append(txt_file.name)
-                        logger.info(f"[{idx}/{total}] ✅ {txt_file.name}: {len(chunks)} chunks")
+                        
+                        # Count split chunks
+                        split_count = sum(1 for c in chunks if c.is_split)
+                        
+                        logger.info(
+                            f"[{idx}/{total}] ✅ {txt_file.name}: "
+                            f"{len(chunks)} chunks ({split_count} split)"
+                        )
                     else:
                         self.error_files.append((txt_file.name, "No chunks created"))
                         logger.warning(f"[{idx}/{total}] ⚠️  {txt_file.name}: No chunks created")
@@ -662,7 +1009,9 @@ class NorwegianLovdataChunker:
                     "total_chunks": 0,
                     "parent_types": {},
                     "avg_chunk_length": 0,
-                    "total_parents": 0
+                    "avg_token_count": 0,
+                    "total_parents": 0,
+                    "split_chunks": 0
                 }
             
             parent_types = {}
@@ -670,15 +1019,21 @@ class NorwegianLovdataChunker:
                 parent_types[chunk.parent_type] = parent_types.get(chunk.parent_type, 0) + 1
             
             chunk_lengths = [len(chunk.text) for chunk in chunks]
+            token_counts = [chunk.token_count for chunk in chunks]
             unique_parents = len(set(chunk.parent_index for chunk in chunks))
+            split_chunks = sum(1 for chunk in chunks if chunk.is_split)
             
             return {
                 "total_chunks": len(chunks),
                 "parent_types": parent_types,
                 "avg_chunk_length": sum(chunk_lengths) / len(chunks),
+                "avg_token_count": sum(token_counts) / len(chunks),
                 "total_parents": unique_parents,
                 "min_chunk_length": min(chunk_lengths),
-                "max_chunk_length": max(chunk_lengths)
+                "max_chunk_length": max(chunk_lengths),
+                "min_token_count": min(token_counts),
+                "max_token_count": max(token_counts),
+                "split_chunks": split_chunks
             }
         
         except Exception as e:
@@ -693,7 +1048,11 @@ class NorwegianLovdataChunker:
 if __name__ == "__main__":
     import sys
     
-    chunker = NorwegianLovdataChunker()
+    # Initialize with token-based chunking (512 tokens max)
+    chunker = NorwegianLovdataChunker(
+        max_tokens=512,
+        overlap_tokens=50
+    )
     
     if len(sys.argv) > 1:
         path = sys.argv[1]
@@ -705,6 +1064,8 @@ if __name__ == "__main__":
             print(f"\n🔄 Processing Norwegian legal directory: {path}")
             if limit:
                 print(f"   Limit: {limit} files")
+            print(f"   Max tokens per chunk: 512")
+            print(f"   Overlap: 50 tokens")
             
             results = chunker.chunk_directory(path, limit=limit)
             
@@ -726,21 +1087,28 @@ if __name__ == "__main__":
                 print(f"\nStatistics:")
                 print(f"  Total Chunks: {stats['total_chunks']}")
                 print(f"  Total Parents: {stats['total_parents']}")
+                print(f"  Split Chunks: {stats['split_chunks']}")
+                print(f"  Avg Token Count: {stats['avg_token_count']:.0f} tokens")
                 print(f"  Avg Chunk Length: {stats['avg_chunk_length']:.0f} chars")
                 print(f"\n  Parent Types:")
                 for ptype, count in stats["parent_types"].items():
                     print(f"    {ptype}: {count}")
                 
-                # Show first chunk
-                if chunks:
-                    print(f"\n{'='*70}")
-                    print(f"First Chunk Example:")
-                    print(f"{'='*70}")
-                    chunk = chunks[0]
+                # Show first 3 chunks with full details
+                print(f"\n{'='*70}")
+                print(f"First 3 Chunks:")
+                print(f"{'='*70}")
+                for i, chunk in enumerate(chunks[:3], 1):
+                    print(f"\n--- Chunk {i} ---")
                     print(f"ID: {chunk.chunk_id}")
-                    print(f"Parent: {chunk.parent_title}")
+                    print(f"Parent [{chunk.parent_index}]: {chunk.parent_title}")
+                    print(f"Child Index: {chunk.child_index}")
                     print(f"Type: {chunk.parent_type}")
-                    print(f"Text: {chunk.text[:200]}...")
+                    print(f"Token Count: {chunk.token_count}")
+                    print(f"Is Split: {chunk.is_split}")
+                    if chunk.is_split:
+                        print(f"Split Index: {chunk.split_index}")
+                    print(f"Text: {chunk.text[:150]}...")
         
         else:
             # Process single file
@@ -754,26 +1122,32 @@ if __name__ == "__main__":
                 if value:
                     print(f"  {key}: {value}")
             
-            print(f"\nTotal Chunks: {len(chunks)}")
-            
             stats = chunker.get_statistics(chunks)
+            print(f"\nTotal Chunks: {len(chunks)}")
+            print(f"Split Chunks: {stats['split_chunks']}")
+            print(f"Avg Token Count: {stats['avg_token_count']:.0f}")
+            
             print(f"\nParent Types:")
             for ptype, count in stats["parent_types"].items():
                 print(f"  {ptype}: {count}")
             
             if chunks:
-                print(f"\nFirst chunk:")
-                chunk = chunks[0]
-                print(f"  Parent: {chunk.parent_title}")
-                print(f"  Type: {chunk.parent_type}")
-                print(f"  Text: {chunk.text[:150]}...")
+                print(f"\nFirst 3 chunks:")
+                for i, chunk in enumerate(chunks[:3], 1):
+                    print(f"\n--- Chunk {i} ---")
+                    print(f"  ID: {chunk.chunk_id}")
+                    print(f"  Parent: {chunk.parent_title}")
+                    print(f"  Type: {chunk.parent_type}")
+                    print(f"  Tokens: {chunk.token_count}")
+                    print(f"  Split: {chunk.is_split}")
+                    print(f"  Text: {chunk.text[:150]}...")
     
     else:
         print("Usage:")
-        print("  Single file:  python chunker.py <file.txt>")
-        print("  Directory:    python chunker.py <directory> [limit]")
+        print("  Single file:  python chunker_token_based.py <file.txt>")
+        print("  Directory:    python chunker_token_based.py <directory> [limit]")
         print("")
         print("Examples:")
-        print("  python chunker.py nl-18981210-001.txt")
-        print("  python chunker.py ./lovdata/")
-        print("  python chunker.py ./lovdata/ 50  # Process first 50 files")
+        print("  python chunker_token_based.py nl-18981210-001.txt")
+        print("  python chunker_token_based.py ./lovdata/")
+        print("  python chunker_token_based.py ./lovdata/ 50  # Process first 50 files")

@@ -23,18 +23,21 @@ radon==6.0.1
 # -------------------------------
 # External Services SDKs
 # -------------------------------
-supabase==2.11.0          # Client for Supabase Storage and Database
-pymilvus==2.5.4           # Python SDK for Milvus Vector Database
+supabase==2.11.0
+pymilvus==2.5.4
 
 # -------------------------------
 # AI & Embedding Model
 # -------------------------------
-sentence-transformers     # Required to load and run BGE-M3 model
-torch                     # Core backend for sentence-transformers
-numpy                     # Required for handling embedding vectors
+transformers>=4.38.0,<5.0.0   # 🔴 REQUIRED (YOU WERE MISSING THIS)
+sentence-transformers>=5.2.2
+torch>=2.10.0
+numpy>=2.4.1
+tiktoken>=0.5.1              # ✅ REQUIRED for token counting
 
 # -------------------------------
 # Environment & Utilities
 # -------------------------------
-# Loosened to allow pymilvus and other packages to resolve dependencies
-python-dotenv>=1.0.1
+python-dotenv>=1.2.1
+
+APScheduler>=3.10.0

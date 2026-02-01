@@ -57,7 +57,7 @@ jobs:
             
             # Install dependencies
             command -v pm2 || (curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs && sudo npm install -g pm2)
-            command -v python3 || sudo apt-get install -y python3 python3-pip python3-venv
+            command -v python3.11 || sudo apt-get install -y python3.11 python3.11-pip python3.11-venv
             
             # Deploy Milvus
             if [ "$SERVICE" = "all" ] || [ "$SERVICE" = "milvus" ]; then
@@ -78,7 +78,7 @@ jobs:
               echo "🚀 Deploying Backend..."
               cd ~/backend
               mkdir -p logs
-              python3 -m venv venv 2>/dev/null || true
+              python3.11 -m venv venv 2>/dev/null || true
               source venv/bin/activate
               pip install --upgrade pip -q
               pip install -r requirements.txt -q
@@ -94,7 +94,7 @@ jobs:
               echo "🚀 Deploying Ingestion..."
               cd ~/ingestion
               mkdir -p logs data/checkpoints data/logs
-              python3 -m venv venv 2>/dev/null || true
+              python3.11 -m venv venv 2>/dev/null || true
               source venv/bin/activate
               pip install --upgrade pip -q
               pip install -r requirements.txt -q

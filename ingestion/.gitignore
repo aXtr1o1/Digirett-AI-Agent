@@ -25,6 +25,7 @@ venv/
 env/
 ENV/
 .venv
+venv_new/
 
 # Environment variables
 .env
@@ -55,3 +56,6 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+
+deployment/*.csv
