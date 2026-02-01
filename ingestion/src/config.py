@@ -24,7 +24,7 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 # ============================
 # External Services
 # ============================
-LOVDATA_API_URL = os.getenv("LOVDATA_API_URL")
+LOVDATA_API_URL = os.getenv("LOVDATA_API_URL", "")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
