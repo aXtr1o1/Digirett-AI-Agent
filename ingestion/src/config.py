@@ -26,15 +26,15 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 # ============================
 LOVDATA_API_URL = os.getenv("LOVDATA_API_URL")
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
-SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "")
 
 # ============================
 # Milvus Configuration
 # ============================
-MILVUS_HOST = os.getenv("MILVUS_HOST")
-MILVUS_PORT = int(os.getenv("MILVUS_PORT"))
+MILVUS_HOST = os.getenv("MILVUS_HOST", "")
+MILVUS_PORT = int(os.getenv("MILVUS_PORT", "19530"))
 
 MILVUS_COLLECTION = os.getenv(
     "MILVUS_COLLECTION"  # ✅ SAFE DEFAULT
