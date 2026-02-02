@@ -1,3 +1,11 @@
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message="pkg_resources is deprecated as an API",
+    category=UserWarning
+)
+
 import gc
 import os
 import logging
@@ -150,6 +158,12 @@ def run_pipeline(limit: int = None):
         # Calculate file metadata
         file_hash = db_store.calculate_hash(xml_path)
         file_size = os.path.getsize(xml_path)
+
+        # ✅ NEW: Short-circuit if already processed
+        if db_store.file_exists(file_hash):
+            logger.info(f"⏭️  File already processed (hash exists) → skipping: {clean_name}")
+            skipped_count += 1
+            continue
 
         logger.info(f"\n{'='*70}")
         logger.info(f"[{idx}/{len(documents)}] Processing {clean_name}")

@@ -8,6 +8,13 @@ Run with:
     pytest tests/test_cron_scheduler.py -v --cov=ingestion.src.scheduler.cron_scheduler
 """
 
+# ---------- PATH FIX (MUST BE FIRST) ----------
+import sys, os
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+# --------------------------------------------
+
 import json
 import pytest
 from unittest.mock import Mock, patch, MagicMock, mock_open

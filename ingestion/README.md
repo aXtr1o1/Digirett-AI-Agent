@@ -2,6 +2,19 @@
 
 Data ingestion pipeline for collecting, processing, and storing Norwegian legal documents from Lovdata.
 
+## 🚀 What This Pipeline Does
+
+For every Lovdata archive:
+
+1. Download XML files from Lovdata API
+2. Convert XML → structured legal text
+3. Perform hierarchical token-based chunking (no truncation)
+4. Generate embeddings using SageMaker BGE-M3
+5. Store vectors in Milvus
+6. Store XML + metadata in Supabase
+7. Skip already processed files using SHA256 hash
+8. Run automatically every day via APScheduler
+
 ## 📁 Structure
 
 ```
@@ -42,6 +55,7 @@ pip install -r requirements.txt
 
 # Run ingestion pipeline
 python src/main.py
+python -m ingestion.src.main
 ```
 
 ## 🔧 Environment Variables
@@ -50,18 +64,24 @@ Create `.env` file:
 
 ```env
 # Lovdata API
-LOVDATA_API_KEY=your-lovdata-api-key
 LOVDATA_BASE_URL=https://api.lovdata.no
 
 # Milvus
-MILVUS_HOST=localhost
+MILVUS_HOST=...
 MILVUS_PORT=19530
-MILVUS_COLLECTION=legal_documents
-
+MILVUS_COLLECTION=lovdata_chunks_v2
 
 # Processing
 CHUNK_SIZE=1000
 CHUNK_OVERLAP=200
+
+# Supabase
+SUPABASE_SERVICE_KEY=...
+SUPABASE_BUCKET=...
+
+# AWS / SageMaker
+AWS_REGION=ap-south-1   # Region where your BGE-M3 SageMaker endpoint exists
+
 ```
 
 ## 📚 Tech Stack
@@ -69,7 +89,7 @@ CHUNK_OVERLAP=200
 - **Language**: Python 3.11+
 - **API**: Lovdata API
 - **Vector DB**: Milvus
-- **Embeddings**: (Pending) 
+- **Embeddings**: BGE-M3 SageMaker 
 - **Scheduling**: Cron / APScheduler
 
 ---
