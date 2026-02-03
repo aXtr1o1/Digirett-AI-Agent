@@ -1,3 +1,43 @@
+<<<<<<< HEAD
+# Open .gitignore in notepad
+notepad .gitignore
+```
+
+This will open Notepad. **Copy and paste this into Notepad:**
+```
+# Data
+data/
+ingestion/data/
+!**/.gitkeep
+*.txt
+*.xml
+*.csv
+*.json
+!requirements.txt
+!ecosystem.config.js
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Environment
+.env
+.aws/
+
+# Databases
+milvus/
+*.db
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+=======
 # Python
 __pycache__/
 *.py[cod]

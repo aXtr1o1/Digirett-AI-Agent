@@ -1,87 +1,114 @@
-# Frontend - Digirett AI Agent
+Lovdata RAG Chat - React Frontend
+Clean, minimal chat interface for Norwegian legal AI assistant powered by FastAPI RAG backend.
 
-Next.js frontend application for the Digirett AI Agent legal assistant.
+🎯 Features
+✅ Real-time streaming responses - Token-by-token display
+✅ Source citations - Direct Lovdata links with context
+✅ Markdown rendering - Formatted legal text
+✅ Thinking process hidden - Clean UX without internal reasoning
+✅ Responsive design - Mobile-friendly interface
+✅ Error handling - Graceful fallbacks
 
-## 📋 Overview
+📁 Project Structure
+rag-chat-frontend/
+├── public/
+│   └── index.html
+├── src/
+│   ├── App.js              # Main chat component
+│   ├── App.css             # Styling
+│   ├── index.js            # React entry point
+│   └── index.css           # Global styles
+├── package.json            # Dependencies
+├── .gitignore
+└── README.md
 
-This frontend is built with **Next.js** and will be hosted on **Vercel**.
+🚀 Quick Start
+1. Install Dependencies
+bashnpm install
+2. Configure API Endpoint
+Update API_BASE_URL in src/App.js:
+javascriptconst API_BASE_URL = 'https://your-backend-url.ngrok-free.dev';
+3. Run Development Server
+bashnpm start
+Open http://localhost:3000
 
-## 🎨 Development Workflow
+Run command 
+----npm install
+----npm start
+   
+🔧 Available Scripts
+CommandDescriptionnpm startRuns dev server on port 3000npm run buildCreates production build in /buildnpm testLaunches test runner
 
-1. **Design Phase**: Create Figma design first
-2. **Client Validation**: Validate design with the client
-3. **Implementation**: 
-   - Add authentication
-   - Implement the design interface
+📦 Dependencies
+PackageVersionPurposereact^19.2.4UI frameworkreact-markdown^10.1.0Render formatted responsesreact-scripts5.0.1CRA build tools
 
-## 🚀 Quick Start
+🎨 UI Components
+Chat Container
 
-### Prerequisites
+Auto-scrolling message list
+User/assistant message bubbles
+Empty state placeholder
 
-- Node.js 18+ 
-- npm or yarn or pnpm
+Message Display
 
-### Installation
+Markdown rendering (headings, lists, code)
+Source citations with:
 
-```bash
-# Install dependencies
-npm install
+Numbered badges
+Clickable Lovdata URLs
+Context snippets
 
-# Run development server
-npm run dev
-```
 
-Visit: http://localhost:3000
 
-## 📁 Project Structure
+Input Area
 
-```
-frontend/
-├── app/                 # Next.js app directory
-├── components/          # React components
-├── lib/                 # Utilities and helpers
-├── public/              # Static assets
-├── styles/              # Global styles
-└── package.json
-```
+Text input with Enter-to-send
+Send button with loading spinner
+Disabled state during requests
 
-## 🔧 Environment Variables
 
-Create a `.env.local` file:
+🔄 Streaming Logic
+Event Types Handled:
+javascript{type: 'token', data: 'word'}      // Append to response
+{type: 'sources', data: [...]}     // Store citations
+{type: 'complete', metadata: {}}   // Finalize message
+{type: 'error', message: '...'}    // Show error
+Thinking Process Filtering:
 
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_APP_NAME=Digirett AI Agent
-```
+Hides content between <think> and </think> tags
+Only displays final reasoning output
 
-## 🛠️ Available Scripts
 
-```bash
-npm run dev          # Start development server
-npm run build        # Build for production
-npm run start        # Start production server
-npm run lint         # Run ESLint
-```
+🎯 Key Features Explained
+1. Real-time Streaming
+Uses Server-Sent Events (SSE) to stream tokens as backend generates them.
+2. Source Management
+Displays top 3 sources with:
 
-## 🚢 Deployment
+Document title
+Lovdata URL
+Relevant text snippet
 
-This frontend will be hosted on **Vercel**.
+3. Error Handling
 
- - connect your repository to Vercel for automatic deployments.
+Network errors → Red error bubble
+Empty responses → Graceful fallback
+Loading states → Spinner animation
 
-## 📚 Tech Stack
 
-- **Framework**: Next.js 14
-- **Styling**: Tailwind CSS
-- **Authentication**: NextAuth.js
-- **Deployment**: Vercel
+🔐 Security Notes
 
-## 🤝 Contributing
+No API keys in frontend
+Backend handles authentication
+CORS configured on FastAPI
+ngrok headers added automatically
 
-1. Create a feature branch
-2. Make your changes
-3. Submit a pull request
 
----
+🐛 Troubleshooting
+Issue: CORS errors
+Fix: Ensure backend allows Access-Control-Allow-Origin: *
+Issue: Streaming doesn't work
+Fix: Check Accept: text/event-stream header
+Issue: Sources not showing
+Fix: Verify include_sources: true in request
 
-**Last Updated**: January 2026
