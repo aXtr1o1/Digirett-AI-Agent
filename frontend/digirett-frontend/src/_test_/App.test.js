@@ -33,5 +33,4 @@ describe('Digirett App basic tests', () => {
     fireEvent.change(input, { target: { value: 'Hello' } });
     expect(input.value).toBe('Hello');
   });
-
 });
