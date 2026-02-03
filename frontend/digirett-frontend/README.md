@@ -1,36 +1,114 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Lovdata RAG Chat - React Frontend
+Clean, minimal chat interface for Norwegian legal AI assistant powered by FastAPI RAG backend.
 
-## Getting Started
+🎯 Features
+✅ Real-time streaming responses - Token-by-token display
+✅ Source citations - Direct Lovdata links with context
+✅ Markdown rendering - Formatted legal text
+✅ Thinking process hidden - Clean UX without internal reasoning
+✅ Responsive design - Mobile-friendly interface
+✅ Error handling - Graceful fallbacks
 
-First, run the development server:
+📁 Project Structure
+rag-chat-frontend/
+├── public/
+│   └── index.html
+├── src/
+│   ├── App.js              # Main chat component
+│   ├── App.css             # Styling
+│   ├── index.js            # React entry point
+│   └── index.css           # Global styles
+├── package.json            # Dependencies
+├── .gitignore
+└── README.md
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+🚀 Quick Start
+1. Install Dependencies
+bashnpm install
+2. Configure API Endpoint
+Update API_BASE_URL in src/App.js:
+javascriptconst API_BASE_URL = 'https://your-backend-url.ngrok-free.dev';
+3. Run Development Server
+bashnpm start
+Open http://localhost:3000
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Run command 
+----npm install
+----npm start
+   
+🔧 Available Scripts
+CommandDescriptionnpm startRuns dev server on port 3000npm run buildCreates production build in /buildnpm testLaunches test runner
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+📦 Dependencies
+PackageVersionPurposereact^19.2.4UI frameworkreact-markdown^10.1.0Render formatted responsesreact-scripts5.0.1CRA build tools
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+🎨 UI Components
+Chat Container
 
-## Learn More
+Auto-scrolling message list
+User/assistant message bubbles
+Empty state placeholder
 
-To learn more about Next.js, take a look at the following resources:
+Message Display
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Markdown rendering (headings, lists, code)
+Source citations with:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Numbered badges
+Clickable Lovdata URLs
+Context snippets
 
-## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Input Area
+
+Text input with Enter-to-send
+Send button with loading spinner
+Disabled state during requests
+
+
+🔄 Streaming Logic
+Event Types Handled:
+javascript{type: 'token', data: 'word'}      // Append to response
+{type: 'sources', data: [...]}     // Store citations
+{type: 'complete', metadata: {}}   // Finalize message
+{type: 'error', message: '...'}    // Show error
+Thinking Process Filtering:
+
+Hides content between <think> and </think> tags
+Only displays final reasoning output
+
+
+🎯 Key Features Explained
+1. Real-time Streaming
+Uses Server-Sent Events (SSE) to stream tokens as backend generates them.
+2. Source Management
+Displays top 3 sources with:
+
+Document title
+Lovdata URL
+Relevant text snippet
+
+3. Error Handling
+
+Network errors → Red error bubble
+Empty responses → Graceful fallback
+Loading states → Spinner animation
+
+
+🔐 Security Notes
+
+No API keys in frontend
+Backend handles authentication
+CORS configured on FastAPI
+ngrok headers added automatically
+
+
+🐛 Troubleshooting
+Issue: CORS errors
+Fix: Ensure backend allows Access-Control-Allow-Origin: *
+Issue: Streaming doesn't work
+Fix: Check Accept: text/event-stream header
+Issue: Sources not showing
+Fix: Verify include_sources: true in request
+
