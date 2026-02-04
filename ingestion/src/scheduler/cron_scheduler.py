@@ -137,27 +137,6 @@ def fetch_latest_archive_name() -> str:
     return data[0]["filename"]
 
 
-def has_new_data(state: dict) -> tuple:
-    """
-    Check whether Lovdata has published a new archive since last run.
-
-    Returns:
-        (changed: bool, latest_name: str)
-        - changed=True  → new archive name detected, run pipeline
-        - changed=False → same archive, skip
-    """
-    latest_name = fetch_latest_archive_name()
-    last_name   = state.get("last_archive_name", "")
-
-    if latest_name != last_name:
-        logger.info(f"🔔 New archive detected!")
-        logger.info(f"   Previous : {last_name or '(none – first run)'}")
-        logger.info(f"   Latest   : {latest_name}")
-        return True, latest_name
-
-    logger.info(f"ℹ️  No change. Current archive: {latest_name}")
-    return False, latest_name
-
 
 # ===========================================================================
 # Core job – called by APScheduler every tick
@@ -180,26 +159,20 @@ def ingestion_job():
     logger.info("=" * 70)
 
     # ------------------------------------------------------------------
-    # Step 1: Check Lovdata API for changes
+    # Step 1: Ask Lovdata what archive is current (for logging only)
     # ------------------------------------------------------------------
     state["last_check_time"] = now
 
     try:
-        changed, latest_archive = has_new_data(state)
+        latest_archive = fetch_latest_archive_name()
+        logger.info(f"📦 Latest Lovdata archive: {latest_archive}")
     except Exception as e:
         logger.error(f"❌ Failed to check Lovdata API: {e}")
         state["last_run_status"] = "api_check_failed"
         save_state(state)
         return
 
-    # ------------------------------------------------------------------
-    # Step 2: No change → exit early
-    # ------------------------------------------------------------------
-    if not changed:
-        state["last_run_status"] = "skipped_no_change"
-        save_state(state)
-        logger.info("✅ No new data. Exiting tick.\n")
-        return
+    logger.info("🔁 Running pipeline to detect new XML files via Supabase hash...")
 
     # ------------------------------------------------------------------
     # Step 3: New data → run pipeline
@@ -212,20 +185,24 @@ def ingestion_job():
         # (boto3, pymilvus, supabase) when just doing the API check.
         from ingestion.src.main import run_pipeline   # noqa: E402
 
-        run_pipeline(limit=BATCH_SIZE)
+        stats = run_pipeline(limit=BATCH_SIZE)
 
         # ------------------------------------------------------------------
         # Step 4: Success → update state
         # ------------------------------------------------------------------
-        state["last_archive_name"]     = latest_archive
-        state["last_run_status"]       = "success"
-        state["total_files_processed"] = state.get("total_files_processed", 0) + BATCH_SIZE
+        state["last_archive_name"] = latest_archive
+        state["last_run_status"] = "success"
+        state["last_run_time"] = now
 
         logger.info("=" * 70)
-        logger.info("✅ Ingestion completed successfully")
-        logger.info(f"   Archive : {latest_archive}")
-        logger.info(f"   Files   : +{BATCH_SIZE} (total: {state['total_files_processed']})")
+        logger.info("📊 INGESTION SUMMARY")
+        logger.info(f"Archive              : {latest_archive}")
+        logger.info(f"New files processed  : {stats['success']}")
+        logger.info(f"Skipped (duplicate)  : {stats['skipped']}")
+        logger.info(f"Failed               : {stats['failed']}")
+        logger.info(f"Total checked        : {stats['total_files']}")
         logger.info("=" * 70)
+
 
     except Exception as e:
         logger.error(f"❌ Pipeline failed: {e}", exc_info=True)

@@ -39,9 +39,9 @@ from ingestion.src.config import LOG_DIR, LOG_FILE                   # noqa: E40
 from ingestion.src.scheduler.cron_scheduler import (                 # noqa: E402
     load_state,
     save_state,
-    has_new_data,
     BATCH_SIZE as DEFAULT_BATCH,
     STATE_FILE,
+    fetch_latest_archive_name,
 )
 
 # ---------------------------------------------------------------------------
@@ -90,11 +90,23 @@ def run_trigger(batch_size: int, force: bool, dry_run: bool):
     # Check API for changes
     # ------------------------------------------------------------------
     state["last_check_time"] = now
+    previous_archive = state.get("last_archive_name")
+
 
     try:
-        changed, latest_archive = has_new_data(state)
+        latest_archive = fetch_latest_archive_name()
+        logger.info(f"📦 Latest Lovdata archive: {latest_archive}")
     except Exception as e:
         logger.error(f"❌ API check failed: {e}")
+        return
+    
+    # --------------------------------------------------------------
+    # Skip run if no change and not forced
+    # --------------------------------------------------------------
+    if not force and previous_archive == latest_archive:
+        logger.info("\n⏭️  No new archive detected. Skipping ingestion.")
+        state["last_run_status"] = "no_change"
+        save_state(state)
         return
 
     # ------------------------------------------------------------------
@@ -103,24 +115,10 @@ def run_trigger(batch_size: int, force: bool, dry_run: bool):
     if dry_run:
         logger.info("\n🔍 DRY-RUN results:")
         logger.info(f"   Latest archive : {latest_archive}")
-        logger.info(f"   Changed        : {changed}")
-        if changed:
-            logger.info("   → Pipeline WOULD run if not in dry-run mode")
-        else:
-            logger.info("   → Pipeline would be SKIPPED (no change)")
-        logger.info("\n✅ Dry-run complete. No data was modified.\n")
+        logger.info("   → Pipeline WOULD run in normal mode")
+        logger.info("\n✅ Dry-run complete.\n")
         return
 
-    # ------------------------------------------------------------------
-    # Decide whether to run
-    # ------------------------------------------------------------------
-    if not changed and not force:
-        logger.info("\nℹ️  No new data and --force not set. Exiting.")
-        logger.info("   Use --force to run anyway.\n")
-        return
-
-    if not changed and force:
-        logger.info("\n⚡ --force set: running pipeline despite no archive change")
 
     # ------------------------------------------------------------------
     # Run the pipeline
@@ -131,18 +129,22 @@ def run_trigger(batch_size: int, force: bool, dry_run: bool):
     try:
         from ingestion.src.main import run_pipeline   # noqa: E402
 
-        run_pipeline(limit=batch_size)
+        stats = run_pipeline(limit=batch_size)
 
         # Success
         state["last_archive_name"]     = latest_archive
         state["last_run_status"]       = "success"
-        state["total_files_processed"] = state.get("total_files_processed", 0) + batch_size
+        state["total_files_processed"] = state.get("total_files_processed", 0) + stats["success"]
 
-        logger.info("\n" + "=" * 70)
-        logger.info("✅ Manual trigger completed successfully")
-        logger.info(f"   Archive : {latest_archive}")
-        logger.info(f"   Files   : +{batch_size} (total: {state['total_files_processed']})")
-        logger.info("=" * 70 + "\n")
+        logger.info("=" * 70)
+        logger.info("📊 MANUAL TRIGGER SUMMARY")
+        logger.info(f"Archive              : {latest_archive}")
+        logger.info(f"New files processed  : {stats['success']}")
+        logger.info(f"Skipped (duplicate)  : {stats['skipped']}")
+        logger.info(f"Failed               : {stats['failed']}")
+        logger.info(f"Total checked        : {stats['total_files']}")
+        logger.info("=" * 70)
+
 
     except Exception as e:
         logger.error(f"❌ Pipeline failed: {e}", exc_info=True)

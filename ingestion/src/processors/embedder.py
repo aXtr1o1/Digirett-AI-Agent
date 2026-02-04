@@ -14,6 +14,13 @@ import logging
 import json
 import time
 from typing import List, Dict, Any
+from ingestion.src.config import (
+    EMBEDDING_CHUNK_DELAY,
+    SAGEMAKER_ENDPOINT,
+    AWS_REGION,
+    EMBED_BATCH_SIZE,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +33,11 @@ class TokenAwareSageMakerEmbedder:
     
     def __init__(
         self,
-        endpoint_name: str,
-        region_name: str = "ap-south-1",
         max_retries: int = 3,
         retry_delay: int = 15,
-        chunk_delay: float = 1.0,  # Faster processing since chunks are pre-sized
-        batch_size: int = 1,  # Process 5 chunks at a time
-        warn_token_threshold: int = 400  # Warn if chunks exceed this
+        warn_token_threshold: int = 400
     ):
+
         """
         Initialize token-aware embedder.
         
@@ -48,21 +52,25 @@ class TokenAwareSageMakerEmbedder:
         """
         import boto3
         
-        self.endpoint_name = endpoint_name
+        self.endpoint_name = SAGEMAKER_ENDPOINT
+        self.chunk_delay = EMBEDDING_CHUNK_DELAY
+        self.batch_size = EMBED_BATCH_SIZE
+
+        # ✅ ADD THESE 3 LINES (CRITICAL FIX)
+        self.warn_token_threshold = warn_token_threshold
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        self.chunk_delay = chunk_delay
-        self.batch_size = batch_size
-        self.warn_token_threshold = warn_token_threshold
-        
+
+
         self.client = boto3.client(
             "sagemaker-runtime",
-            region_name=region_name
+            region_name=AWS_REGION
         )
+
         
         logger.info(
             f"✅ Token-Aware SageMaker Embedder initialized | "
-            f"batch_size={batch_size} | chunk_delay={chunk_delay}s | "
+            f"batch_size={self.batch_size} | chunk_delay={self.chunk_delay}s | "
             f"No truncation (using pre-sized chunks)"
         )
 
@@ -170,12 +178,13 @@ class TokenAwareSageMakerEmbedder:
             if text and text.strip():
                 # Check token count if available
                 token_count = chunk.get("token_count", 0)
-                if token_count > self.warn_token_threshold:
-                    oversized_count += 1
-                    logger.warning(
-                        f"⚠️  Chunk {i} has {token_count} tokens "
-                        f"(threshold: {self.warn_token_threshold})"
-                    )
+                if token_count > 120:
+                    words = text.split()
+                    mini_chunks = [" ".join(words[i:i+120]) for i in range(0, len(words), 120)]
+                    for mc in mini_chunks:
+                        texts_to_embed.append(mc)
+                        chunk_indices.append(i)
+                    continue
                 
                 texts_to_embed.append(text)
                 chunk_indices.append(i)
@@ -284,42 +293,3 @@ class TokenAwareSageMakerEmbedder:
 class SageMakerBGEEmbedder(TokenAwareSageMakerEmbedder):
     """Alias for compatibility"""
     pass
-
-
-# ============================================================================
-# EXAMPLE USAGE
-# ============================================================================
-
-if __name__ == "__main__":
-    import sys
-    
-    # Example chunks with token counts
-    example_chunks = [
-        {
-            "text": "This is a test chunk with some Norwegian legal text.",
-            "token_count": 12,
-            "chunk_id": "test-001"
-        },
-        {
-            "text": "Another chunk with more content to test the embedder.",
-            "token_count": 11,
-            "chunk_id": "test-002"
-        }
-    ]
-    
-    # Initialize embedder
-    embedder = SageMakerBGEEmbedder(
-        endpoint_name="embedding-bge-m3-endpoint",
-        region_name="ap-south-1",
-        batch_size=1,
-        chunk_delay=0.5
-    )
-    
-    # Generate embeddings
-    print("\n🧠 Testing token-aware embedder...")
-    result_chunks = embedder.embed_chunks(example_chunks)
-    
-    # Show results
-    for chunk in result_chunks:
-        has_embedding = chunk.get('embedding') is not None
-        print(f"  Chunk {chunk['chunk_id']}: {'✅ Success' if has_embedding else '❌ Failed'}")

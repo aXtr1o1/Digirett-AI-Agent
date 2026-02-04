@@ -183,7 +183,7 @@ class TokenBoundTextSplitter:
     
     def __init__(
         self,
-        max_tokens: int = 512,
+        max_tokens: int = 400,
         overlap_tokens: int = 50,
         token_counter: Optional[TokenCounter] = None
     ):
@@ -761,7 +761,7 @@ class NorwegianLovdataChunker:
     
     def __init__(
         self,
-        max_tokens: int = 512,
+        max_tokens: int = 400,
         overlap_tokens: int = 50
     ):
         """
@@ -851,28 +851,59 @@ class NorwegianLovdataChunker:
                         )
                         
                         for split_idx, split_text in enumerate(split_texts):
+                            # 🔥 FINAL HARD TOKEN SAFETY (THIS IS WHAT YOU ARE MISSING)
+                            token_ids = None
                             split_token_count = self.token_counter.count_tokens(split_text)
+
+                            if split_token_count > self.text_splitter.max_tokens:
+                                # Force token slicing (guaranteed safe)
+                                encoding = self.token_counter.encoding
+                                token_ids = encoding.encode(split_text)
+
+                                for force_idx, i in enumerate(range(0, len(token_ids), self.text_splitter.max_tokens)):
+                                    sub_ids = token_ids[i:i + self.text_splitter.max_tokens]
+                                    safe_text = encoding.decode(sub_ids)
+
+                                    chunk_id = self.hasher.generate_chunk_id(
+                                        file_hash, parent.parent_index, child_idx, force_idx
+                                    )
                             
-                            chunk_id = self.hasher.generate_chunk_id(
-                                file_hash, parent.parent_index, child_idx, split_idx
-                            )
+                                    chunk = Chunk(
+                                        chunk_id=chunk_id,
+                                        file_name=file_name,
+                                        file_hash=file_hash,
+                                        parent_index=parent.parent_index,
+                                        child_index=child_idx,
+                                        parent_type=parent.parent_type,
+                                        parent_title=parent.parent_title,
+                                        text=safe_text,
+                                        token_count=len(sub_ids),
+                                        is_split=True,
+                                        split_index=force_idx,
+                                        metadata=doc_metadata.to_dict()
+                                    )
+                                    chunks.append(chunk)
                             
-                            chunk = Chunk(
-                                chunk_id=chunk_id,
-                                file_name=file_name,
-                                file_hash=file_hash,
-                                parent_index=parent.parent_index,
-                                child_index=child_idx,
-                                parent_type=parent.parent_type,
-                                parent_title=parent.parent_title,
-                                text=split_text,
-                                token_count=split_token_count,
-                                is_split=True,
-                                split_index=split_idx,
-                                metadata=doc_metadata.to_dict()
-                            )
-                            chunks.append(chunk)
-            
+                            else:
+                                chunk_id = self.hasher.generate_chunk_id(
+                                    file_hash, parent.parent_index, child_idx, split_idx
+                                )
+                                chunk = Chunk(
+                                    chunk_id=chunk_id,
+                                    file_name=file_name,
+                                    file_hash=file_hash,
+                                    parent_index=parent.parent_index,
+                                    child_index=child_idx,
+                                    parent_type=parent.parent_type,
+                                    parent_title=parent.parent_title,
+                                    text=split_text,
+                                    token_count=split_token_count,
+                                    is_split=True,
+                                    split_index=split_idx,
+                                    metadata=doc_metadata.to_dict()
+                                )
+                                chunks.append(chunk)
+
             if total_splits > 0:
                 logger.info(
                     f"✂️  Split {total_splits} oversized chunks in {file_name}"
@@ -1050,7 +1081,7 @@ if __name__ == "__main__":
     
     # Initialize with token-based chunking (512 tokens max)
     chunker = NorwegianLovdataChunker(
-        max_tokens=512,
+        max_tokens=400,
         overlap_tokens=50
     )
     

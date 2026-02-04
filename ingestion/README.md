@@ -8,7 +8,7 @@ For every Lovdata archive:
 
 1. Download XML files from Lovdata API
 2. Convert XML → structured legal text
-3. Perform hierarchical token-based chunking (no truncation)
+3. Perform hierarchical token-based chunking
 4. Generate embeddings using SageMaker BGE-M3
 5. Store vectors in Milvus
 6. Store XML + metadata in Supabase
@@ -83,6 +83,15 @@ SUPABASE_BUCKET=...
 AWS_REGION=ap-south-1   # Region where your BGE-M3 SageMaker endpoint exists
 
 ```
+## ⏰ Scheduler 
+
+The pipeline can run automatically using APScheduler.
+
+## 🧪 Testing
+
+``` bash
+pytest
+```
 
 ## 📚 Tech Stack
 
@@ -94,4 +103,4 @@ AWS_REGION=ap-south-1   # Region where your BGE-M3 SageMaker endpoint exists
 
 ---
 
-**Last Updated**: January 2026
+**Last Updated**: February 2026

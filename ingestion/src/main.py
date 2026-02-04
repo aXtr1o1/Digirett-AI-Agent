@@ -20,11 +20,12 @@ from ingestion.collectors.lovdata_collector import fetch_lovdata_files
 from ingestion.src.processors.text_processor import process_xml_to_text
 from ingestion.src.storage.supabase_store import SupabaseStore
 from ingestion.src.storage.milvus_store import MilvusTextStore
+from ingestion.src.config import SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_BUCKET
+from ingestion.src.config import MAX_TOKENS_PER_CHUNK, OVERLAP_TOKENS
 from ingestion.src.config import (
-    LOG_FILE,
-    MILVUS_HOST,
-    MILVUS_PORT,
-    MILVUS_COLLECTION
+    AWS_REGION,
+    SAGEMAKER_ENDPOINT,
+    LOG_FILE
 )
 
 # -------------------------------------------------
@@ -47,7 +48,7 @@ logger = logging.getLogger("lovdata-ingestion")
 # Pipeline WITH TOKEN-BASED CHUNKING (CORRECTED)
 # -------------------------------------------------
 
-def run_pipeline(limit: int = None):
+def run_pipeline(limit: int | None = None):
     """
     Complete ingestion pipeline WITH TOKEN-BASED CHUNKING.
     
@@ -72,18 +73,15 @@ def run_pipeline(limit: int = None):
     """
     logger.info("🚀 Lovdata ingestion started (TOKEN-BASED CHUNKING)")
     logger.info("   Max tokens/chunk: 512 | Overlap: 50 | Batch size: 1")
-    logger.info("   ✅ NO DATA LOSS (no truncation)")
+    logger.info("   ✅ NO DATA LOSS")
 
     # ============================================================
     # Initialize stores (UNCHANGED)
     # ============================================================
     
     db_store = SupabaseStore()
-    milvus_store = MilvusTextStore(
-        MILVUS_HOST,
-        MILVUS_PORT,
-        MILVUS_COLLECTION
-    )
+    milvus_store = MilvusTextStore()
+
 
     # ============================================================
     # Initialize processors (✅ CHANGED: Token-based versions)
@@ -91,21 +89,12 @@ def run_pipeline(limit: int = None):
     
     # Token-based chunker (512 tokens max, 50 token overlap)
     chunker = NorwegianLovdataChunker(
-        max_tokens=512,      # VRAM-safe limit
-        overlap_tokens=50    # Context preservation
+    max_tokens=MAX_TOKENS_PER_CHUNK,
+    overlap_tokens=OVERLAP_TOKENS
     )
     
     # Token-aware embedder (no truncation, batch processing)
-    embedder = SageMakerBGEEmbedder(
-        endpoint_name="embedding-bge-m3-endpoint",
-        region_name="ap-south-1",
-        max_retries=3,
-        retry_delay=15,
-        chunk_delay=1.0,      # ✅ Faster: 0.5s (was 1.0s)
-        batch_size=1,         # ✅ Batch processing (was 1)
-        warn_token_threshold=400,   # ⚠️ Soft warning
-    )
-
+    embedder = SageMakerBGEEmbedder()
     # ============================================================
     # Fetch and convert XML to text (UNCHANGED)
     # ============================================================
@@ -113,9 +102,14 @@ def run_pipeline(limit: int = None):
     xml_files, archive_name = fetch_lovdata_files(limit=limit)
 
     if not xml_files:
-        logger.error("❌ No XML files fetched")
-        return
-    
+        logger.warning("⚠️ No XML files fetched")
+        return {
+            "total_files": 0,
+            "success": 0,
+            "skipped": 0,
+            "failed": 0,
+        }
+
     logger.info(f"\n{'='*70}")
     logger.info(f"📊 PIPELINE OVERVIEW")
     logger.info(f"{'='*70}")
@@ -156,14 +150,13 @@ def run_pipeline(limit: int = None):
         xml_path = next(p for p in xml_files if clean_name in p)
 
         # Calculate file metadata
-        file_hash = db_store.calculate_hash(xml_path)
-        file_size = os.path.getsize(xml_path)
-
-        # ✅ NEW: Short-circuit if already processed
-        if db_store.file_exists(file_hash):
-            logger.info(f"⏭️  File already processed (hash exists) → skipping: {clean_name}")
+        if db_store.file_name_exists(clean_name):
+            logger.info(f"⏭️  Already processed by name → skipping: {clean_name}")
             skipped_count += 1
             continue
+
+        file_hash = db_store.calculate_hash(xml_path)
+
 
         logger.info(f"\n{'='*70}")
         logger.info(f"[{idx}/{len(documents)}] Processing {clean_name}")
@@ -194,7 +187,7 @@ def run_pipeline(limit: int = None):
             _, chunks = chunker.chunk_text(
                 doc["text"],
                 clean_name,
-                archive_name[0] if archive_name else "unknown"
+                doc["archive_name"]
             )
 
             if not chunks:
@@ -308,20 +301,20 @@ def run_pipeline(limit: int = None):
         # ============================================================
         # STEP 6: Store metadata in Supabase (UNCHANGED)
         # ============================================================
-        
+        file_size = os.path.getsize(xml_path)
         try:
             db_store.insert_file_metadata(
                 file_name=clean_name,
                 file_hash=file_hash,
                 file_size=file_size,
-                zip_name=archive_name,
+                zip_name=doc["archive_name"],
                 url=storage_uri
             )
             logger.info(f"  ✅ Metadata stored in Supabase")
             success_count += 1
 
             # ✅ Track per-archive stats
-            archive_key = archive_name[0] if archive_name else "unknown"
+            archive_key = doc["archive_name"]
             if archive_key not in archive_stats:
                 archive_stats[archive_key] = {"files": 0, "chunks": 0}
             archive_stats[archive_key]["files"] += 1
@@ -363,7 +356,7 @@ def run_pipeline(limit: int = None):
         logger.info(f"  Split chunks:          {total_split_chunks} ({total_split_chunks/total_chunks*100:.1f}%)")
         logger.info(f"  Total tokens:          {total_tokens:,}")
         logger.info(f"  Avg tokens/chunk:      {total_tokens/total_chunks:.0f}")
-        logger.info(f"  Content preserved:     100% (zero truncation)")
+        logger.info(f"  Content preserved:     100% ")
     
     # Archive breakdown
     if archive_stats:
@@ -374,6 +367,14 @@ def run_pipeline(limit: int = None):
             logger.info(f"    Chunks: {stats['chunks']}")
     
     logger.info("="*70)
+
+    # ✅ RETURN PIPELINE STATS TO SCHEDULER / TRIGGER
+    return {
+    "total_files": len(documents),
+    "success": success_count,
+    "skipped": skipped_count,
+    "failed": failed_count,
+}
 
 # -------------------------------------------------
 # Entry Point

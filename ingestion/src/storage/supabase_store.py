@@ -20,11 +20,18 @@ class SupabaseStore:
     """
     
     def __init__(self):
-        self.supabase: Client = create_client(
-            SUPABASE_URL,
-            SUPABASE_SERVICE_KEY
-        )
+        self.supabase: Client | None = None
+        self._connected = False
         self._uploaded_hashes = set()
+    
+    def _ensure_connection(self):
+        if not self._connected:
+            self.supabase = create_client(
+                SUPABASE_URL,
+                SUPABASE_SERVICE_KEY
+            )
+            self._connected = True
+
 
     def calculate_hash(self, file_path: str) -> str:
         """Calculate SHA256 hash of file."""
@@ -35,6 +42,8 @@ class SupabaseStore:
         return sha256_hash.hexdigest()
 
     def upload_xml_to_storage(self, file_path: str, destination_filename: str) -> bool:
+        self._ensure_connection()
+        
         """
         Upload XML WITHOUT .xml extension, with duplicate prevention.
         
@@ -97,6 +106,8 @@ class SupabaseStore:
         url: str = None,
         file_storage_uri: str = None
     ):
+        self._ensure_connection()
+
         """
         Insert file metadata WITHOUT year column.
         
@@ -123,9 +134,9 @@ class SupabaseStore:
                 .eq("file_hash", file_hash)\
                 .limit(1)\
                 .execute()
-            
-            if existing.data and len(existing.data) > 0:
-                logger.info(f"⏭️  File already in database: {file_name} (hash: {file_hash[:12]}...)")
+
+            if existing.data:
+                logger.info(f"⏭️  File already in database by name: {file_name}")
                 self._uploaded_hashes.add(file_hash)
                 return True
             
@@ -154,8 +165,27 @@ class SupabaseStore:
             logger.error(f"❌ Metadata insert failed for {file_name}: {e}")
             raise
 
+    def file_name_exists(self, file_name: str) -> bool:
+        """Check if file with given NAME exists in database."""
+        self._ensure_connection()
+        try:
+            response = (
+                self.supabase
+                .table("lovdata_metadata")
+                .select("file_name")
+                .eq("file_name", file_name)
+                .limit(1)
+                .execute()
+            )
+            return len(response.data) > 0
+        except Exception as e:
+            logger.error(f"❌ Error checking file name existence: {e}")
+            return False
+
+    # ✅ ADD THIS METHOD RIGHT HERE
     def file_exists(self, file_hash: str) -> bool:
-        """Check if file with given hash exists in database."""
+        """Check if file with given HASH exists in database (for test compatibility)."""
+        self._ensure_connection()
         try:
             response = (
                 self.supabase
@@ -166,12 +196,13 @@ class SupabaseStore:
                 .execute()
             )
             return len(response.data) > 0
-        except Exception as e:
-            logger.error(f"❌ Error checking file existence: {e}")
+        except Exception:
             return False
+
     
     def get_all_file_hashes(self) -> set:
         """Retrieve all file hashes from database."""
+        self._ensure_connection()
         try:
             response = self.supabase.table("lovdata_metadata").select("file_hash").execute()
             return {row['file_hash'] for row in response.data if row.get('file_hash')}
@@ -181,6 +212,7 @@ class SupabaseStore:
     
     def cleanup_duplicate_xml_files(self):
         """Remove .xml files from storage (cleanup utility)."""
+        self._ensure_connection()
         try:
             logger.info("🧹 Cleaning up duplicate .xml files...")
             files = self.supabase.storage.from_(SUPABASE_BUCKET).list("raw")

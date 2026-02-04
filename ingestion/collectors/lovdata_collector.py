@@ -2,18 +2,16 @@ import os
 import tarfile
 import requests
 import logging
+import xml.etree.ElementTree as ET
+from ingestion.src.storage.supabase_store import SupabaseStore
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional
 
 logger = logging.getLogger("lovdata-collector")
 
-BASE_URL = "https://api.lovdata.no"
-LIST_ENDPOINT = "/v1/publicData/list"
-GET_ENDPOINT = "/v1/publicData/get"
+from ingestion.src.config import LOVDATA_API_URL, RAW_XML_DIR, ARCHIVE_DIR
 
-from ingestion.src.config import RAW_XML_DIR
-ARCHIVE_DIR = Path(os.path.join(RAW_XML_DIR.parent, "archives"))
-
+BASE_URL = LOVDATA_API_URL
 
 # --------------------------------------------------
 # Small helpers
@@ -23,7 +21,11 @@ def _is_safe_path(name: str) -> bool:
 
 
 def _is_valid_xml(data: bytes) -> bool:
-    return isinstance(data, (bytes, bytearray)) and data.strip().startswith(b"<")
+    try:
+        ET.fromstring(data)
+        return True
+    except ET.ParseError:
+        return False
 
 
 # --------------------------------------------------
@@ -44,7 +46,7 @@ def _fetch_all_archives() -> List[Dict]:
     try:
         logger.info("📡 Fetching ALL archives from Lovdata API...")
         
-        resp = requests.get(f"{BASE_URL}{LIST_ENDPOINT}", timeout=30)
+        resp = requests.get(f"{LOVDATA_API_URL}/list", timeout=30)
         resp.raise_for_status()
         
         archives = resp.json()
@@ -56,7 +58,7 @@ def _fetch_all_archives() -> List[Dict]:
         logger.info(f"✅ Found {len(archives)} archives:")
         for archive in archives:
             size_gb = archive.get('size', 0) / (1024**3)
-            logger.info(f"   📦 {archive['filename']} ({size_gb:.2f} GB)")
+            logger.info(f"   📦 {archive['filename']}")
         
         return archives
     
@@ -76,42 +78,27 @@ def _fetch_all_archives() -> List[Dict]:
 # --------------------------------------------------
 def _download_archive(archive_name: str) -> Path:
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    
-    archive_path = Path(os.path.join(ARCHIVE_DIR, archive_name))
-    
+
+    archive_path = ARCHIVE_DIR / archive_name
+
     if archive_path.exists():
         logger.info(f"✅ Using cached: {archive_name}")
         return archive_path
-    
-    logger.info(f"⬇️  Downloading: {archive_name}")
-    
-    url = f"{BASE_URL}{GET_ENDPOINT}/{archive_name}"
-    
-    try:
-        with requests.get(url, stream=True, timeout=120) as r:
-            r.raise_for_status()
-            
-            total_size = int(r.headers.get('content-length', 0))
-            downloaded = 0
-            
-            with open(archive_path, "wb") as f:
-                for chunk in r.iter_content(8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        
-                        # Progress every 100 MB
-                        if total_size > 0 and downloaded % (100 * 1024 * 1024) == 0:
-                            progress = (downloaded / total_size * 100)
-                            logger.info(f"   {downloaded / (1024**2):.0f} MB ({progress:.0f}%)")
-        
-        logger.info(f"✅ Downloaded: {archive_name}")
-        return archive_path
-    
-    except Exception as e:
-        logger.error(f"❌ Download failed: {e}")
-        raise
 
+    # ✅ Correct Lovdata download URL
+    url = f"{LOVDATA_API_URL}/get/{archive_name}"
+
+    logger.info(f"⬇️  Downloading: {archive_name}")
+    logger.info(f"   URL: {url}")
+
+    with requests.get(url, stream=True, timeout=120) as r:
+        r.raise_for_status()
+        with open(archive_path, "wb") as f:
+            for chunk in r.iter_content(8192):
+                f.write(chunk)
+
+    logger.info(f"✅ Downloaded: {archive_name}")
+    return archive_path
 
 # --------------------------------------------------
 # Extract XML files
@@ -148,12 +135,18 @@ def _extract_xml_files(
                 if limit is not None and len(extracted) >= limit:
                     break
                 
-                target = RAW_XML_DIR / os.path.basename(member.name)
-                
-                if target.exists():
-                    extracted.append(target)
+                original_name = os.path.basename(member.name)      # nl-20010105-001.xml
+                clean_name = os.path.splitext(original_name)[0]    # nl-20010105-001
+
+                target = RAW_XML_DIR / original_name              # ✅ keep .xml locally
+
+                db = SupabaseStore()
+
+                # Check DB using name WITHOUT extension
+                if db.file_name_exists(clean_name):
+                    logger.info(f"⏭️  Already processed in DB, skipping: {clean_name}")
                     continue
-                
+
                 file_obj = tar.extractfile(member)
                 if not file_obj:
                     continue
@@ -181,7 +174,7 @@ def _extract_xml_files(
 # Public API - NEW VERSION (processes ALL archives)
 # --------------------------------------------------
 def fetch_lovdata_files(
-    limit: Optional[int] = None
+    limit: Optional[int] = 50
 ) -> Tuple[List[str], List[str]]:
     """
     Fetch XML files from ALL Lovdata archives.

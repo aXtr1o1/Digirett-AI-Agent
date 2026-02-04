@@ -13,6 +13,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 RAW_XML_DIR = BASE_DIR / "data" / "raw_xml"
 CLEAN_TEXT_DIR = BASE_DIR / "data" / "cleaned_text"
 CHECKPOINT_DIR = BASE_DIR / "data" / "checkpoints"
+ARCHIVE_DIR = BASE_DIR / "data" / "archives"
 LOG_DIR = BASE_DIR / "logs"
 
 for d in [RAW_XML_DIR, CLEAN_TEXT_DIR, CHECKPOINT_DIR, LOG_DIR]:
@@ -25,6 +26,8 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 # External Services
 # ============================
 LOVDATA_API_URL = os.getenv("LOVDATA_API_URL", "")
+LOVDATA_GET_ENDPOINT = "/get"
+
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
@@ -35,6 +38,8 @@ SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "")
 # ============================
 MILVUS_HOST = os.getenv("MILVUS_HOST", "")
 MILVUS_PORT = int(os.getenv("MILVUS_PORT", "19530"))
+MILVUS_DIMENSION = int(os.getenv("MILVUS_DIMENSION", "1024"))
+
 
 MILVUS_COLLECTION = os.getenv(
     "MILVUS_COLLECTION"  # ✅ SAFE DEFAULT
@@ -58,8 +63,10 @@ CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
 
 EMBED_MODEL = os.getenv("EMBED_MODEL")
 
-AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
-
+AWS_REGION = os.getenv("AWS_DEFAULT_REGION")
+SAGEMAKER_ENDPOINT = os.getenv("SAGEMAKER_ENDPOINT")
+EMBED_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", 1))
+CHUNK_DELAY = float(os.getenv("EMBEDDING_CHUNK_DELAY", "1.0"))
 
 # ============================
 # Validation (IMPORTANT)

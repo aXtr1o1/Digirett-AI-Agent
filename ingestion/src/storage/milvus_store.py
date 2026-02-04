@@ -1,4 +1,12 @@
 import logging
+from ingestion.src.storage.supabase_store import SupabaseStore
+from ingestion.src.config import (
+    MILVUS_HOST,
+    MILVUS_PORT,
+    MILVUS_COLLECTION,
+    MILVUS_DIMENSION,
+)
+
 from typing import List, Dict, Any, Set
 
 from pymilvus import (
@@ -14,24 +22,21 @@ logger = logging.getLogger(__name__)
 
 
 class MilvusTextStore:
-    def __init__(
-        self,
-        milvus_host: str,
-        milvus_port: int,
-        collection_name: str,
-        embedding_dim: int = 1024,
-    ):
-        self.collection_name = collection_name
-        self.embedding_dim = embedding_dim
-        self._processed_hashes: Set[str] = set()
+    def __init__(self):
+        self.collection_name = MILVUS_COLLECTION
+        self.embedding_dim = MILVUS_DIMENSION
+        self._connected = False
+        self.collection = None
+    def _ensure_connection(self):
+        if not self._connected:
+            connections.connect(
+                alias="default",
+                host=MILVUS_HOST,
+                port=MILVUS_PORT,
+            )
+            self.collection = self._get_or_create_collection()
+            self._connected = True
 
-        connections.connect(
-            alias="default",
-            host=milvus_host,
-            port=milvus_port,
-        )
-
-        self.collection = self._get_or_create_collection()
 
     # --------------------------------------------------
     # IMPROVED EMBEDDING NORMALIZATION
@@ -162,11 +167,26 @@ class MilvusTextStore:
         logger.info(f"   Metric: IP (Inner Product)")
         
         return collection
+        
 
     # --------------------------------------------------
     # INSERT
     # --------------------------------------------------
     def insert_chunks(self, chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
+        if not chunks:
+            return {"inserted": 0}
+
+        file_hash = chunks[0]["file_hash"]
+        supabase = SupabaseStore()
+
+        if supabase.file_exists(file_hash):
+            logger.info("⏭️ File already exists in Supabase metadata, skipping Milvus insert")
+            return {"skipped": True}
+
+        # ✅ CONNECT HERE (THIS WAS MISSING)
+        self._ensure_connection()
+
+
         """
         Insert chunks into Milvus WITHOUT year field.
         
@@ -215,12 +235,6 @@ class MilvusTextStore:
                             logger.error(f"First element length: {len(c['embedding'][0])}")
                 raise
 
-        file_hash = normalized[0]["file_hash"]
-
-        if file_hash in self._processed_hashes:
-            logger.info("Duplicate file detected, skipping insertion")
-            return {"skipped": True}
-
         # ✅ Data arrays in EXACT schema order (excluding auto-generated 'id')
         # Schema order WITHOUT YEAR: id (auto), chunk_id, file_name, file_hash, url,
         #                           chunk_index, parent_index, child_index, parent_type,
@@ -244,12 +258,12 @@ class MilvusTextStore:
         result = self.collection.insert(data)
         self.collection.flush()
 
-        self._processed_hashes.add(file_hash)
-
         return {
             "inserted": len(normalized),
             "milvus_ids": result.primary_keys,
         }
 
     def close(self):
-        connections.disconnect("default")
+        if self._connected:
+            connections.disconnect("default")
+            self._connected = False
