@@ -48,7 +48,7 @@ logger = logging.getLogger("lovdata-ingestion")
 # Pipeline WITH TOKEN-BASED CHUNKING (CORRECTED)
 # -------------------------------------------------
 
-def run_pipeline(limit: int | None = None):
+def run_pipeline(limit: int = 50):
     """
     Complete ingestion pipeline WITH TOKEN-BASED CHUNKING.
     
@@ -99,7 +99,13 @@ def run_pipeline(limit: int | None = None):
     # Fetch and convert XML to text (UNCHANGED)
     # ============================================================
     
-    xml_files, archive_name = fetch_lovdata_files(limit=limit)
+    xml_files, archive_name = fetch_lovdata_files(limit=50)
+    latest_zip = archive_name[-1]
+
+    if db_store.zip_already_processed(latest_zip):
+        logger.info("⏭️ Latest ZIP already processed. Cron exiting.")
+        return
+
 
     if not xml_files:
         logger.warning("⚠️ No XML files fetched")
@@ -120,6 +126,10 @@ def run_pipeline(limit: int | None = None):
     logger.info(f"{'='*70}\n")
 
     documents = process_xml_to_text(xml_files)
+    
+    # Attach archive name to documents
+    for doc in documents:
+        doc["archive_name"] = archive_name[0]
 
     logger.info(f"📊 Processing {len(documents)} documents")
 
@@ -149,11 +159,26 @@ def run_pipeline(limit: int | None = None):
         clean_name = doc["file_name"].split(".")[0]
         xml_path = next(p for p in xml_files if clean_name in p)
 
-        # Calculate file metadata
-        if db_store.file_name_exists(clean_name):
-            logger.info(f"⏭️  Already processed by name → skipping: {clean_name}")
+
+        # --------------------------------------------------
+        # Calculate file hash FIRST
+        # --------------------------------------------------
+        file_hash = db_store.calculate_hash(xml_path)
+
+        # --------------------------------------------------
+        # Classify file
+        # --------------------------------------------------
+        status = db_store.classify_file(clean_name, file_hash)
+
+        if status == "UNCHANGED":
+            logger.info(f"⏭️ File unchanged, skipping: {clean_name}")
             skipped_count += 1
             continue
+
+        if status == "UPDATED":
+            logger.info(f"♻️ Updated file detected, deleting old embeddings")
+            milvus_store.delete_by_file_name(clean_name)
+
 
         file_hash = db_store.calculate_hash(xml_path)
 
@@ -381,4 +406,4 @@ def run_pipeline(limit: int | None = None):
 # -------------------------------------------------
 
 if __name__ == "__main__":
-    run_pipeline(limit=None)
+    run_pipeline(limit=50)

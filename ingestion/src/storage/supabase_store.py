@@ -198,7 +198,66 @@ class SupabaseStore:
             return len(response.data) > 0
         except Exception:
             return False
+        
+    def zip_already_processed(self, zip_name: str) -> bool:
+        """
+        Check whether a ZIP archive has already been ingested.
+        """
+        self._ensure_connection()
 
+        try:
+            response = (
+                self.supabase
+                .table("lovdata_metadata")
+                .select("zip_name")
+                .eq("zip_name", zip_name)
+                .limit(1)
+                .execute()
+            )
+
+            return len(response.data) > 0
+
+        except Exception as e:
+            logger.error(f"❌ ZIP check failed: {e}")
+            return False
+        
+    def classify_file(self, file_name: str, file_hash: str) -> str:
+        """
+        Classify file as NEW, UPDATED, or UNCHANGED.
+
+        Rules:
+        - File name not found          -> NEW
+        - File name exists, hash same  -> UNCHANGED
+        - File name exists, hash diff  -> UPDATED
+        """
+        self._ensure_connection()
+
+        try:
+            response = (
+                self.supabase
+                .table("lovdata_metadata")
+                .select("file_hash")
+                .eq("file_name", file_name)
+                .limit(1)
+                .execute()
+            )
+
+            # No record → NEW FILE
+            if not response.data:
+                return "NEW"
+
+            existing_hash = response.data[0]["file_hash"]
+
+            # Same content
+            if existing_hash == file_hash:
+                return "UNCHANGED"
+
+            # Same name, different content
+            return "UPDATED"
+
+        except Exception as e:
+            logger.error(f"❌ Classification failed for {file_name}: {e}")
+            raise
     
     def get_all_file_hashes(self) -> set:
         """Retrieve all file hashes from database."""
@@ -208,6 +267,21 @@ class SupabaseStore:
             return {row['file_hash'] for row in response.data if row.get('file_hash')}
         except Exception as e:
             logger.error(f"❌ Error fetching file hashes: {e}")
+            return set()
+        
+    def get_all_file_names(self) -> set:
+        """Retrieve all file names from database."""
+        self._ensure_connection()
+        try:
+            response = (
+                self.supabase
+                .table("lovdata_metadata")
+                .select("file_name")
+                .execute()
+            )
+            return {row["file_name"] for row in response.data if row.get("file_name")}
+        except Exception as e:
+            logger.error(f"❌ Error fetching file names: {e}")
             return set()
     
     def cleanup_duplicate_xml_files(self):

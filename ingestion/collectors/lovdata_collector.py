@@ -105,7 +105,7 @@ def _download_archive(archive_name: str) -> Path:
 # --------------------------------------------------
 def _extract_xml_files(
     archive_path: Path,
-    limit: Optional[int] = None
+    limit: Optional[int] = 50
 ) -> List[Path]:
     """
     Extract XML files from archive.
@@ -119,6 +119,9 @@ def _extract_xml_files(
     
     RAW_XML_DIR.mkdir(parents=True, exist_ok=True)
     extracted: List[Path] = []
+    db = SupabaseStore()
+    existing_files = db.get_all_file_names()
+
     
     try:
         tar = tarfile.open(archive_path, "r:bz2")
@@ -143,8 +146,8 @@ def _extract_xml_files(
                 db = SupabaseStore()
 
                 # Check DB using name WITHOUT extension
-                if db.file_name_exists(clean_name):
-                    logger.info(f"⏭️  Already processed in DB, skipping: {clean_name}")
+                if existing_files and clean_name in existing_files:
+                    logger.info(f"⏭️ Already processed, skipping: {clean_name}")
                     continue
 
                 file_obj = tar.extractfile(member)

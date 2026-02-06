@@ -37,6 +37,13 @@ class MilvusTextStore:
             self.collection = self._get_or_create_collection()
             self._connected = True
 
+    def delete_by_file_name(self, file_name: str):
+        self._ensure_connection()
+        expr = f'file_name == "{file_name}"'
+        self.collection.delete(expr)
+        self.collection.flush()
+
+
 
     # --------------------------------------------------
     # IMPROVED EMBEDDING NORMALIZATION
@@ -178,10 +185,6 @@ class MilvusTextStore:
 
         file_hash = chunks[0]["file_hash"]
         supabase = SupabaseStore()
-
-        if supabase.file_exists(file_hash):
-            logger.info("⏭️ File already exists in Supabase metadata, skipping Milvus insert")
-            return {"skipped": True}
 
         # ✅ CONNECT HERE (THIS WAS MISSING)
         self._ensure_connection()

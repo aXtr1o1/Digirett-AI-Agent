@@ -57,7 +57,9 @@ def test_ingestion_job_success(mock_pipeline, mock_get, mock_load, mock_save):
     from ingestion.src.scheduler.cron_scheduler import ingestion_job
 
     # Existing state
-    mock_load.return_value = {"total_files_processed": 10}
+    initial_total = 10
+    mock_load.return_value = {"total_files_processed": initial_total}
+
 
     # API response
     r = Mock()
@@ -81,9 +83,10 @@ def test_ingestion_job_success(mock_pipeline, mock_get, mock_load, mock_save):
     assert saved["last_run_status"] == "success"
 
     # ✅ Scheduler no longer updates file count
-    assert saved["total_files_processed"] == 10
-
-
+    # ✅ Scheduler updates lifetime file count
+    assert saved["total_files_processed"] == (
+    initial_total + mock_pipeline.return_value["success"]
+    )
 
 @patch("ingestion.src.scheduler.cron_scheduler.save_state")
 @patch("ingestion.src.scheduler.cron_scheduler.load_state")
