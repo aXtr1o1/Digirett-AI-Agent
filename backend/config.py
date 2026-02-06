@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     FIREWORKS_API_KEY: str
     FIREWORKS_MODEL: str
 
+    # Azure
+
+    Model_Name: str
+    Target_URI: str
+    Key: str
+    API_Routes: str ="https://Llama-3-3-70B-Instruct-ejght.eastus2.models.ai.azure.com/v1/chat/completions"
+
     # ========================
     # Embedding
     # ========================

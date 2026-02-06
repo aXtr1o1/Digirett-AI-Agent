@@ -1,9 +1,8 @@
 """
-Lovdata RAG System - FastAPI Backend (UPDATED WITH SCORING)
-Intent detection handled by Fireworks service
-Sources shown only when score >= 0.5
+Lovdata RAG System - FastAPI Backend
+WITH LANGUAGE FIX - Fully Working Version
 """
-
+import uuid
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -29,11 +28,11 @@ from .services.milvus_service import MilvusService
 from .services.embedding_service import EmbeddingService
 from .services.fireworks_service import FireworksService
 from .services.cache_service import CacheService
-from .utils.logger import setup_logger
+from .utils.logger import setup_enhanced_logger
 from .utils.metrics import MetricsCollector
 
 # Setup logging
-logger = setup_logger(__name__)
+logger = setup_enhanced_logger(__name__)
 metrics = MetricsCollector()
 
 # Rate limiter
@@ -64,11 +63,13 @@ async def lifespan(app: FastAPI):
         logger.info("Initializing Embedding service...")
         embedding_service = EmbeddingService()
         
-        logger.info("Initializing Fireworks Qwen service...")
+        logger.info("Initializing Fireworks/Azure service...")
         llm_service = FireworksService(
-            api_key=settings.FIREWORKS_API_KEY,
-            model=settings.FIREWORKS_MODEL
+            api_key=settings.Key,
+            model=settings.Model_Name,
+            Target_url=settings.Target_URI
         )
+        logger.info("Azure model Initialized")
         
         logger.info("Initializing Cache service...")
         cache_service = CacheService()
@@ -92,8 +93,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Lovdata RAG API",
-    description="RAG system with Fireworks intent detection and scoring",
-    version="2.1.0",
+    description="RAG system with Language Fix and Intent Detection",
+    version="2.2.0",
     lifespan=lifespan
 )
 
@@ -150,7 +151,7 @@ async def health_check():
         
         return HealthResponse(
             status="healthy" if all([milvus_status, llm_status, cache_status]) else "degraded",
-            version="2.1.0",
+            version="2.2.0",
             milvus_connected=milvus_status,
             llm_connected=llm_status,
             cache_connected=cache_status,
@@ -170,20 +171,20 @@ async def health_check():
 @limiter.limit("250/minute")
 async def chat(request: Request, chat_request: ChatRequest):
     """
-    Ask a question - Fireworks handles intent detection and scoring
-    Sources are only shown when score >= 0.5
+    Ask a question with language-aware responses
+    Sources shown only when score >= 0.5
     """
     start_time = time.time()
     
     try:
         logger.info(f"Chat request: {chat_request.query[:100]}...")
         
-        # Step 1: Detect intent using Fireworks (BEFORE Milvus)
+        # Step 1: Detect intent using improved language detection
         intent_result = await llm_service.detect_intent(chat_request.query)
         intent = intent_result["intent"]
         language = intent_result["language"]
         
-        logger.info(f"Intent: {intent}, Language: {language}")
+        logger.info(f"[DETECTION] Intent: {intent}, Language: {language}")
         
         # Step 2: If CASUAL → Skip Milvus, generate free response
         if intent == "CASUAL":
@@ -196,7 +197,7 @@ async def chat(request: Request, chat_request: ChatRequest):
             
             return ChatResponse(
                 answer=answer,
-                sources=[],  # NO sources for casual
+                sources=[],
                 metadata={
                     "query_time": time.time() - start_time,
                     "chunks_retrieved": 0,
@@ -204,8 +205,8 @@ async def chat(request: Request, chat_request: ChatRequest):
                     "cached": False,
                     "language": language,
                     "intent": "CASUAL",
-                    "model": settings.FIREWORKS_MODEL,
-                    "score": 1.0,  # Casual always gets high score
+                    "model": settings.Model_Name,
+                    "score": 1.0,
                     "confidence": "Casual conversation"
                 }
             )
@@ -265,8 +266,8 @@ async def chat(request: Request, chat_request: ChatRequest):
         logger.info("Building context...")
         context = _build_context(search_results)
         
-        # Generate legal answer WITH SCORING
-        logger.info("Generating legal answer with scoring...")
+        # Generate legal answer WITH SCORING and LANGUAGE FIX
+        logger.info(f"Generating legal answer in {language}...")
         result = await llm_service.generate_legal_answer(
             query=chat_request.query,
             context=context,
@@ -279,12 +280,9 @@ async def chat(request: Request, chat_request: ChatRequest):
         confidence = result["confidence"]
         tokens_used = result["tokens_used"]
         
-        logger.info(f"[SUCCESS] Answer generated - Score: {score}, Confidence: {confidence}")
+        logger.info(f"[SUCCESS] Answer generated - Score: {score}, Confidence: {confidence}, Language: {language}")
         
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # 🔥 KEY LOGIC: Only show sources if score >= 0.5
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        
+        # Only show sources if score >= 0.5
         if score >= 0.5:
             logger.info(f"[INFO] Score {score} >= 0.5: Showing sources")
             sources = (
@@ -294,7 +292,7 @@ async def chat(request: Request, chat_request: ChatRequest):
             )
         else:
             logger.info(f"[WARNING] Score {score} < 0.5: Hiding sources")
-            sources = []  # NO sources shown
+            sources = []
         
         response_data = {
             "answer": answer,
@@ -306,7 +304,7 @@ async def chat(request: Request, chat_request: ChatRequest):
                 "cached": False,
                 "language": language,
                 "intent": "LEGAL",
-                "model": settings.FIREWORKS_MODEL,
+                "model": settings.Model_Name,
                 "score": score,
                 "confidence": confidence
             }
@@ -331,40 +329,36 @@ async def chat(request: Request, chat_request: ChatRequest):
 @limiter.limit("250/minute")
 async def chat_stream(request: Request, chat_request: ChatRequest):
     """
-    Stream answer with intent detection
-    Note: Scoring happens after streaming completes
+    Stream answer with language-aware responses
     """
     
     async def generate_stream():
         try:
             logger.info(f"Streaming chat request: {chat_request.query[:100]}...")
             
-            # Step 1: Detect intent FIRST
+            # Step 1: Detect intent with improved language detection
             intent_result = await llm_service.detect_intent(chat_request.query)
             intent = intent_result["intent"]
             language = intent_result["language"]
             
-            logger.info(f"Intent: {intent}, Language: {language}")
+            logger.info(f"[STREAM] Intent: {intent}, Language: {language}")
             
             # Step 2: If CASUAL → Stream without Milvus
             if intent == "CASUAL":
                 logger.info("CASUAL query - streaming without sources")
                 
-                # Send empty sources
                 yield f"data: {json.dumps({'type': 'sources', 'data': []})}\n\n"
                 
-                # Stream casual response
                 token_count = 0
                 async for token in llm_service.generate_answer_stream(
                     query=chat_request.query,
-                    context="",  # Empty context for casual
+                    context="",
                     language=language,
                     temperature=0.3
                 ):
                     token_count += 1
                     yield f"data: {json.dumps({'type': 'token', 'data': token})}\n\n"
                 
-                # Send completion metadata
                 yield f"data: {json.dumps({'type': 'complete', 'metadata': {'intent': 'CASUAL', 'language': language, 'tokens_generated': token_count, 'score': 1.0, 'confidence': 'Casual conversation'}})}\n\n"
                 return
             
@@ -378,42 +372,28 @@ async def chat_stream(request: Request, chat_request: ChatRequest):
                 top_k=chat_request.top_k
             )
             
-            # Check if no results
             if not search_results:
-                # Send empty sources first
                 yield f"data: {json.dumps({'type': 'sources', 'data': []})}\n\n"
-    
-                # Then send the "not found" message
+                
                 no_result_msg = (
                     "Jeg finner ingen relevante lovutdrag i den tilgjengelige Lovdata-databasen som direkte svarer på dette spørsmålet."
                     if language == "norwegian"
                     else "I cannot find any relevant legal excerpts in the available Lovdata database that directly answer this question."
                 )
-    
-                # Stream the message as tokens
+                
                 for char in no_result_msg:
                     yield f"data: {json.dumps({'type': 'token', 'data': char})}\n\n"
-    
-                # Send completion metadata
+                
                 yield f"data: {json.dumps({'type': 'complete', 'metadata': {'intent': 'LEGAL', 'language': language, 'chunks_retrieved': 0, 'score': 0.1, 'confidence': 'No sources found'}})}\n\n"
                 return
-
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            # For streaming, we need to:
-            # 1. Stream the answer first
-            # 2. Collect the full answer
-            # 3. Evaluate score
-            # 4. Send sources only if score >= 0.5
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             
             # Build context
             context = _build_context(search_results)
             
-            # Collect streamed answer
+            # Stream the answer in correct language
             full_answer = ""
             token_count = 0
             
-            # Stream the answer
             async for token in llm_service.generate_answer_stream(
                 query=chat_request.query,
                 context=context,
@@ -424,11 +404,7 @@ async def chat_stream(request: Request, chat_request: ChatRequest):
                 full_answer += token
                 yield f"data: {json.dumps({'type': 'token', 'data': token})}\n\n"
             
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            # Evaluate score based on the generated answer
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            
-            # Simple heuristic for scoring streamed answers
+            # Evaluate score
             if "cannot find" in full_answer.lower() or "ingen relevante" in full_answer.lower():
                 score = 0.1
                 confidence = "Not supported by sources"
@@ -439,12 +415,9 @@ async def chat_stream(request: Request, chat_request: ChatRequest):
                 score = 0.9
                 confidence = "Fully supported by sources"
             
-            logger.info(f"[SUCCESS] Streaming complete - Score: {score}, Confidence: {confidence}")
+            logger.info(f"[SUCCESS] Streaming complete - Score: {score}, Language: {language}")
             
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            # 🔥 KEY LOGIC: Only send sources if score >= 0.5
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            
+            # Only send sources if score >= 0.5
             if score >= 0.5:
                 logger.info(f"[INFO] Score {score} >= 0.5: Sending sources")
                 sources = _format_sources_from_milvus(search_results)
@@ -461,7 +434,7 @@ async def chat_stream(request: Request, chat_request: ChatRequest):
                     "chunks_retrieved": len(search_results),
                     "tokens_generated": token_count,
                     "language": language,
-                    "model": settings.FIREWORKS_MODEL,
+                    "model": settings.Model_Name,
                     "score": score,
                     "confidence": confidence
                 }
@@ -505,7 +478,6 @@ def _format_sources_from_milvus(search_results: list) -> list:
         file_name = result.get('file_name', '')
         parent_title = result.get('parent_title', 'Unknown')
         
-        # Get URL from Milvus
         file_url = result.get('url') or result.get('file_url')
         
         if not file_url:

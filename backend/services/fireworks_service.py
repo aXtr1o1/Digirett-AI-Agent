@@ -1,6 +1,6 @@
 """
 app/services/fireworks_service.py
-Fireworks.ai API service for Qwen model with Intent Detection - UPDATED WITH SCORING
+Fireworks.ai API service for Qwen model with Intent Detection - WITH LANGUAGE FIX
 """
 
 import logging
@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 
 
 class FireworksService:
-    """Service for Fireworks.ai API with Qwen model and Intent Detection"""
+    """Service for Fireworks.ai/Azure API with Intent Detection and Language Fix"""
     
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # SIMPLIFIED INTENT DETECTION PROMPT (Works better with Qwen)
+    # INTENT DETECTION PROMPT
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     INTENT_DETECTION_PROMPT = """You are a binary classifier. Classify the user's query as either CASUAL or LEGAL.
@@ -57,6 +57,7 @@ Examples:
 "What is company law?" → {"intent": "LEGAL", "language": "english"}
 "Hva er aksjeloven?" → {"intent": "LEGAL", "language": "norwegian"}
 "Employee rights in Norway" → {"intent": "LEGAL", "language": "english"}
+"forklare selskapets regelverk" → {"intent": "LEGAL", "language": "norwegian"}
 
 NOW CLASSIFY (output ONLY JSON):
 Query: """
@@ -65,7 +66,7 @@ Query: """
     # CASUAL CONVERSATION PROMPT
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    CASUAL_SYSTEM_PROMPT = """You are a friendly, helpful AI assistant.
+    CASUAL_SYSTEM_PROMPT = f"""You are a friendly, helpful AI assistant.
 
 Your personality:
 - Warm and conversational
@@ -170,13 +171,24 @@ You MUST evaluate how well the sources answer the query and assign a score:
   Example: "I cannot find any relevant legal excerpts in the available Lovdata database that directly answer this question."
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🌍 LANGUAGE HANDLING:
+🌍 LANGUAGE HANDLING (STRICT RULE - DO NOT VIOLATE)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-- Automatically detect user's language
-- Respond in the SAME language:
-  • Norwegian query → Norwegian response
-  • English query → English response
+1) ALWAYS respond in the SAME language as the USER, NO MATTER WHAT:
+   - If user writes in English → You MUST answer in English.
+   - If user writes in Norwegian → You MUST answer in Norwegian.
+   - This rule OVERRIDES the language of any retrieved documents.
+
+2) If the retrieved sources are in a different language than the user:
+   - FIRST translate the relevant meaning internally.
+   - THEN answer in the user's language.
+   - NEVER reply in the document's language unless the user asked in that language.
+
+When using retrieved documents in Norwegian for an English question,
+you MUST translate and summarize in English.
+
+When using retrieved documents in English for a Norwegian question,
+you MUST translate and summarize in Norwegian.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✍️ TONE & STYLE:
@@ -232,32 +244,34 @@ No answer (score 0.1):
 2. ONLY answer from the KILDER (sources) provided
 3. Score honestly based on source relevance
 4. ACCURACY and SOURCE-TRACEABILITY are paramount
-5. When in doubt, assign lower score and acknowledge limitations"""
+5. When in doubt, assign lower score and acknowledge limitations
+6. ALWAYS answer in the user's language"""
 
         
     def __init__(
         self,
         api_key: str,
-        model: str = "accounts/fireworks/models/qwen3-8b"
+        model: str,
+        Target_url: str
     ):
         self.api_key = api_key
         self.model = model
-        self.base_url = "https://api.fireworks.ai/inference/v1/chat/completions"
-        
-        logger.info(f"Fireworks service initialized with model: {model}")
+        self.Target_url = Target_url
+
+        logger.info(f"Azure service initialized with model: {model}")
+
     
     async def check_connection(self) -> bool:
-        """Check if Fireworks API is accessible"""
+        """Check if API is accessible"""
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    self.base_url,
+                    self.Target_url,
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json"
                     },
                     json={
-                        "model": self.model,
                         "messages": [{"role": "user", "content": "test"}],
                         "max_tokens": 5
                     },
@@ -265,7 +279,7 @@ No answer (score 0.1):
                 )
                 return response.status_code == 200
         except Exception as e:
-            logger.error(f"Fireworks connection check failed: {e}")
+            logger.error(f"API connection check failed: {e}")
             return False
     
     @retry(
@@ -275,22 +289,57 @@ No answer (score 0.1):
     async def detect_intent(self, query: str) -> Dict[str, str]:
         """
         Detect if query is CASUAL or LEGAL using LLM
-        IMPROVED: Better parsing and keyword fallback
+        IMPROVED: Better Norwegian detection with expanded keywords
         """
         try:
             logger.info(f"Detecting intent for: '{query[:50]}...'")
             
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            # KEYWORD-BASED FALLBACK (Fast classification for common cases)
+            # 🔧 FIX: EXPANDED Norwegian keyword detection
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             query_lower = query.lower().strip()
             
-            # Detect language first
-            norwegian_words = ['hei', 'hva', 'jeg', 'er', 'kan', 'du', 'og', 'det', 'en', 'å', 'på']
-            is_norwegian = any(word in query_lower.split() for word in norwegian_words)
-            language = "norwegian" if is_norwegian else "english"
+            # Comprehensive Norwegian words list
+            norwegian_words = [
+                # Common words
+                'hei', 'hva', 'jeg', 'er', 'kan', 'du', 'og', 'det', 'en', 'å', 'på',
+                'med', 'av', 'til', 'fra', 'om', 'for', 'ikke', 'blir', 'være',
+                
+                # Question words
+                'hvordan', 'hvorfor', 'når', 'hvor', 'hvem', 'hvilken',
+                
+                # Verbs in Norwegian
+                'forklare', 'diskutere', 'gi', 'svare', 'fortelle', 'si', 'vise',
+                'beskrive', 'hjelpe', 'finne', 'søke',
+                
+                # Legal/business terms in Norwegian
+                'selskap', 'selskapets', 'lov', 'loven', 'regel', 'regelverk',
+                'ansvar', 'ansvarsrett', 'rett', 'rettigheter', 'forpliktelser'
+            ]
             
-            # CASUAL keywords (high confidence)
+            # Count Norwegian indicators
+            norwegian_score = 0
+            for word in norwegian_words:
+                if word in query_lower:
+                    norwegian_score += 1
+            
+            # Bonus for Norwegian characters (strong indicator)
+            if any(char in query_lower for char in ['æ', 'ø', 'å']):
+                norwegian_score += 3
+            
+            # Determine language
+            if norwegian_score >= 2:  # At least 2 Norwegian indicators
+                language = "norwegian"
+                logger.info(f"[LANGUAGE] Detected NORWEGIAN (score: {norwegian_score})")
+            else:
+                language = "english"
+                logger.info(f"[LANGUAGE] Detected ENGLISH (score: {norwegian_score})")
+            
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # CASUAL vs LEGAL classification
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            
+            # CASUAL keywords
             casual_keywords = [
                 'hi', 'hello', 'hey', 'hei', 'good morning', 'good afternoon',
                 'how are you', 'hvordan har du det', 'hvordan går det',
@@ -300,20 +349,20 @@ No answer (score 0.1):
                 'thanks', 'thank you', 'takk'
             ]
             
-            # Check for exact casual matches
             for keyword in casual_keywords:
                 if keyword in query_lower:
                     logger.info(f"[CASUAL] detected (keyword: '{keyword}')")
                     return {"intent": "CASUAL", "language": language}
             
-            # LEGAL keywords (high confidence)
+            # LEGAL keywords (expanded)
             legal_keywords = [
                 'law', 'lov', 'loven', 'legal', 'juridisk', 'regulation', 'forskrift',
-                'aksjeloven', 'arbeidsmiljøloven', 'company', 'selskap', 'employee', 'ansatt',
-                'rights', 'rettigheter', 'contract', 'kontrakt', 'gdpr', 'personvern'
+                'aksjeloven', 'arbeidsmiljøloven', 'company', 'selskap', 'selskapets',
+                'employee', 'ansatt', 'rights', 'rettigheter', 'contract', 'kontrakt',
+                'ansvar', 'ansvarsrett', 'forpliktelser', 'regel', 'regelverk',
+                'gdpr', 'personvern'
             ]
             
-            # Check for exact legal matches
             for keyword in legal_keywords:
                 if keyword in query_lower:
                     logger.info(f"[LEGAL] detected (keyword: '{keyword}')")
@@ -323,28 +372,28 @@ No answer (score 0.1):
             # LLM-BASED CLASSIFICATION (For unclear cases)
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             
+            logger.info("No keyword match - using LLM classification")
+            
             messages = [
                 {"role": "user", "content": f"{self.INTENT_DETECTION_PROMPT}{query}"}
             ]
             
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(
-                    self.base_url,
+                    self.Target_url,
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json"
                     },
                     json={
-                        "model": self.model,
                         "messages": messages,
-                        "temperature": 0.01,  # Very low for strict classification
+                        "temperature": 0.01,
                         "max_tokens": 50
                     }
                 )
                 
                 if response.status_code != 200:
                     logger.warning(f"Intent detection API failed: {response.status_code}")
-                    # Default to CASUAL if API fails
                     return {"intent": "CASUAL", "language": language}
                 
                 data = response.json()
@@ -352,37 +401,27 @@ No answer (score 0.1):
                 
                 logger.info(f"Raw LLM response: {content}")
                 
-                # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                # ROBUST JSON PARSING
-                # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                
-                # Remove markdown code blocks
+                # Parse JSON
                 content = re.sub(r'```json\s*', '', content)
                 content = re.sub(r'```\s*', '', content)
                 content = content.strip()
                 
-                # Try to extract JSON from the response
                 json_match = re.search(r'\{[^}]+\}', content)
                 if json_match:
                     json_str = json_match.group(0)
                     try:
                         result = json.loads(json_str)
                         intent = result.get("intent", "CASUAL").upper()
-                        detected_lang = result.get("language", language).lower()
+                        # ✅ KEEP OUR DETECTED LANGUAGE (more reliable)
+                        detected_lang = language
                         
-                        logger.info(f"[SUCCESS] JSON parsed: {intent}, {detected_lang}")
+                        logger.info(f"[SUCCESS] Intent: {intent}, Language: {detected_lang} (keyword-based)")
                         
-                        return {
-                            "intent": intent,
-                            "language": detected_lang
-                        }
+                        return {"intent": intent, "language": detected_lang}
                     except json.JSONDecodeError:
                         pass
                 
-                # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                # TEXT-BASED FALLBACK
-                # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                
+                # Text-based fallback
                 content_upper = content.upper()
                 
                 if "CASUAL" in content_upper:
@@ -390,19 +429,14 @@ No answer (score 0.1):
                 elif "LEGAL" in content_upper:
                     intent = "LEGAL"
                 else:
-                    # Ultimate fallback: Default to CASUAL for friendly experience
                     intent = "CASUAL"
                 
-                logger.info(f"[WARNING] Fallback classification: {intent}, {language}")
+                logger.info(f"[FALLBACK] Intent: {intent}, Language: {language}")
                 
-                return {
-                    "intent": intent,
-                    "language": language
-                }
+                return {"intent": intent, "language": language}
             
         except Exception as e:
             logger.error(f"Intent detection error: {e}")
-            # Default to CASUAL to avoid forcing retrieval on errors
             return {"intent": "CASUAL", "language": "english"}
 
     async def generate_casual_response(
@@ -418,18 +452,17 @@ No answer (score 0.1):
             
             messages = [
                 {"role": "system", "content": self.CASUAL_SYSTEM_PROMPT},
-                {"role": "user", "content": query}
+                {"role": "user", "content": f"Language: {language}\n\n{query}"}
             ]
             
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
-                    self.base_url,
+                    self.Target_url,
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json"
                     },
                     json={
-                        "model": self.model,
                         "messages": messages,
                         "temperature": temperature,
                         "max_tokens": max_tokens,
@@ -470,12 +503,45 @@ No answer (score 0.1):
     ) -> Dict[str, any]:
         """
         Generate legal answer with strict RAG and return JSON with answer, score, confidence
+        IMPROVED: Much stronger language enforcement
         """
         try:
             logger.info("Generating legal answer (with retrieval)...")
             
-            # Build strict RAG prompt
-            user_prompt = f"""CRITICAL: Answer ONLY from sources. NO thinking process. NO <think> tags.
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # 🔧 FIX: MUCH STRONGER language instruction
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            
+            if language == "norwegian":
+                language_instruction = """
+🔴 KRITISK SPRÅKREGL - BRYT ALDRI DENNE:
+- Du MÅ svare på NORSK (ikke engelsk)
+- Selv om kildene er på engelsk, oversett til norsk
+- Brukeren spurte på norsk, du MÅ svare på norsk
+- ALDRI bruk engelske ord bortsett fra egennavn
+- Start svaret med "I følge..." eller "Ifølge..." på norsk
+- Eksempel: "I følge § 2-4 i selskapsloven, deltakerne svarer..."
+"""
+                example_start = "I følge kildene"
+                no_answer_msg = "Jeg finner ingen relevante lovutdrag i den tilgjengelige Lovdata-databasen som direkte svarer på dette spørsmålet."
+            else:
+                language_instruction = """
+🔴 CRITICAL LANGUAGE RULE - NEVER VIOLATE:
+- You MUST answer in ENGLISH (not Norwegian)
+- Even if sources are in Norwegian, translate to English
+- User asked in English, you MUST reply in English
+- Start answer with "According to..." in English
+- Example: "According to § 2-4 of the Companies Act, participants are liable..."
+"""
+                example_start = "According to the sources"
+                no_answer_msg = "I cannot find any relevant legal excerpts in the available Lovdata database that directly answer this question."
+            
+            # Build strict RAG prompt with triple language enforcement
+            user_prompt = f"""{language_instruction}
+
+CRITICAL: Answer ONLY from sources. NO thinking process. NO <think> tags.
+
+{language_instruction}
 
 KILDER (Sources):
 {context}
@@ -483,14 +549,19 @@ KILDER (Sources):
 SPØRSMÅL (Question):
 {query}
 
-RULES:
-- If sources don't have the answer, assign score 0.1 and say: "I cannot find relevant legal excerpts..."
-- If sources have the answer, provide it directly with score 0.5-1.0
-- NO <think> tags
-- Respond in SAME LANGUAGE as question
-- MUST output JSON format: {{"answer": "...", "score": 0.9, "confidence": "..."}}
+{language_instruction}
 
-SVAR (Answer in JSON):"""
+RULES:
+1. Answer in {language.upper()} - THIS IS MANDATORY
+2. If sources don't have the answer, assign score 0.1 and say:
+   "{no_answer_msg}"
+3. If sources have the answer, provide it directly with score 0.5-1.0 IN {language.upper()}
+4. NO <think> tags
+5. MUST output JSON format: {{"answer": "...", "score": 0.9, "confidence": "..."}}
+
+{language_instruction}
+
+SVAR (Answer in {language.upper()} as JSON, starting with "{example_start}"):"""
             
             messages = [
                 {"role": "system", "content": self.LEGAL_SYSTEM_PROMPT},
@@ -499,13 +570,12 @@ SVAR (Answer in JSON):"""
             
             async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
-                    self.base_url,
+                    self.Target_url,
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json"
                     },
                     json={
-                        "model": self.model,
                         "messages": messages,
                         "temperature": temperature,
                         "max_tokens": max_tokens,
@@ -519,7 +589,7 @@ SVAR (Answer in JSON):"""
                 data = response.json()
                 raw_content = data["choices"][0]["message"]["content"]
                 
-                # Strip <think> tags if present
+                # Strip <think> tags
                 raw_content = self._remove_thinking_tokens(raw_content)
                 
                 tokens_used = data["usage"]["total_tokens"]
@@ -528,12 +598,10 @@ SVAR (Answer in JSON):"""
                 
                 # Parse JSON response
                 try:
-                    # Remove markdown code blocks if present
                     cleaned_content = re.sub(r'```json\s*', '', raw_content)
                     cleaned_content = re.sub(r'```\s*', '', cleaned_content)
                     cleaned_content = cleaned_content.strip()
                     
-                    # Try to extract JSON
                     json_match = re.search(r'\{[^}]+\}', cleaned_content, re.DOTALL)
                     if json_match:
                         json_str = json_match.group(0)
@@ -543,7 +611,50 @@ SVAR (Answer in JSON):"""
                         score = float(result.get("score", 0.5))
                         confidence = result.get("confidence", "Unknown")
                         
-                        logger.info(f"[SUCCESS] JSON parsed - Score: {score}, Confidence: {confidence}")
+                        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                        # 🔧 FIX: Validate language after generation
+                        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                        
+                        if language == "norwegian":
+                            # Check if answer is in English (wrong)
+                            english_indicators = [
+                                "according to", "the company", "shall be", "must be",
+                                "in accordance with", "as mentioned", "the law states",
+                                "participants are", "it is stated"
+                            ]
+                            
+                            answer_lower = answer.lower()
+                            wrong_count = sum(1 for phrase in english_indicators if phrase in answer_lower)
+                            
+                            if wrong_count >= 2:
+                                logger.warning(f"⚠️  LANGUAGE ERROR: Answer is in English but should be Norwegian")
+                                return {
+                                    "answer": no_answer_msg,
+                                    "score": 0.1,
+                                    "confidence": "Language mismatch - regeneration needed",
+                                    "tokens_used": tokens_used
+                                }
+                        
+                        elif language == "english":
+                            # Check if answer is in Norwegian (wrong)
+                            norwegian_indicators = [
+                                "i følge", "ifølge", "skal være", "må være", "som nevnt",
+                                "loven sier", "deltakerne", "selskapet", "det er angitt"
+                            ]
+                            
+                            answer_lower = answer.lower()
+                            wrong_count = sum(1 for phrase in norwegian_indicators if phrase in answer_lower)
+                            
+                            if wrong_count >= 2:
+                                logger.warning(f"⚠️  LANGUAGE ERROR: Answer is in Norwegian but should be English")
+                                return {
+                                    "answer": no_answer_msg,
+                                    "score": 0.1,
+                                    "confidence": "Language mismatch - regeneration needed",
+                                    "tokens_used": tokens_used
+                                }
+                        
+                        logger.info(f"[SUCCESS] Answer generated - Score: {score}, Confidence: {confidence}, Language: {language}")
                         
                         return {
                             "answer": answer,
@@ -552,18 +663,16 @@ SVAR (Answer in JSON):"""
                             "tokens_used": tokens_used
                         }
                     else:
-                        # Fallback: No JSON found, use raw content
-                        logger.warning("[WARNING] No JSON found in response, using raw content")
+                        logger.warning("[WARNING] No JSON found in response")
                         return {
                             "answer": raw_content,
-                            "score": 0.5,  # Default medium score
+                            "score": 0.5,
                             "confidence": "Unknown",
                             "tokens_used": tokens_used
                         }
                         
                 except (json.JSONDecodeError, ValueError) as e:
                     logger.error(f"Failed to parse JSON: {e}")
-                    # Fallback: Return raw content with default score
                     return {
                         "answer": raw_content,
                         "score": 0.5,
@@ -578,11 +687,8 @@ SVAR (Answer in JSON):"""
     def _remove_thinking_tokens(self, text: str) -> str:
         """Remove <think> and </think> tags and their content"""
         import re
-        # Remove everything between <think> and </think>
         cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-        # Remove standalone tags if any
         cleaned = cleaned.replace('<think>', '').replace('</think>', '')
-        # Clean up extra whitespace
         cleaned = re.sub(r'\n\s*\n', '\n\n', cleaned)
         return cleaned.strip()
     
@@ -595,21 +701,23 @@ SVAR (Answer in JSON):"""
         max_tokens: int = 2000
     ) -> AsyncIterator[str]:
         """
-        Streaming version - streams tokens directly without JSON wrapping
-        Note: Scoring is done after streaming completes
+        Streaming version with proper language detection
         """
         try:
-            # Detect intent
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # 🔧 FIX: Re-detect language (don't trust parameter)
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             intent_result = await self.detect_intent(query)
             intent = intent_result["intent"]
             detected_language = intent_result["language"]
             
-            if not language or language == "auto":
-                language = detected_language
+            # Override passed language
+            language = detected_language
+            
+            logger.info(f"[STREAM] Using detected language: {language}")
             
             # Route based on intent
             if intent == "CASUAL":
-                # Stream casual response
                 logger.info("Streaming CASUAL response")
                 
                 messages = [
@@ -620,7 +728,6 @@ SVAR (Answer in JSON):"""
                 temp = 0.7
                 max_tok = 500
             else:
-                # Stream legal response
                 logger.info("Streaming LEGAL response")
                 
                 if not context or context.strip() == "":
@@ -630,8 +737,30 @@ SVAR (Answer in JSON):"""
                         yield "I cannot find any relevant legal excerpts in the available Lovdata database that directly answer this question."
                     return
                 
-                # For streaming, we don't use JSON format - just stream the answer
-                user_prompt = f"""CRITICAL: Answer ONLY from sources. NO <think> tags.
+                # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                # 🔧 FIX: Use same strong language instruction
+                # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                
+                if language == "norwegian":
+                    language_instruction = """
+🔴 DU MÅ SVARE PÅ NORSK - IKKE ENGELSK!
+Bruker spurte på norsk, du må svare på norsk.
+Selv om kildene er på engelsk, oversett til norsk.
+Start svaret med "I følge kildene..." eller lignende norsk formulering.
+"""
+                else:
+                    language_instruction = """
+🔴 YOU MUST ANSWER IN ENGLISH - NOT NORWEGIAN!
+User asked in English, you must reply in English.
+Even if sources are in Norwegian, translate to English.
+Start answer with "According to the sources..." or similar English phrasing.
+"""
+                
+                user_prompt = f"""{language_instruction}
+
+CRITICAL: Answer ONLY from sources. NO <think> tags.
+
+{language_instruction}
 
 KILDER (Sources):
 {context}
@@ -640,13 +769,15 @@ SPØRSMÅL (Question):
 {query}
 
 RULES:
-- If sources don't have answer: "I cannot find relevant legal excerpts..."
+- Answer in {language.upper()} - MANDATORY
+- If sources don't have answer: Say "I cannot find relevant excerpts..."
 - If sources have answer: Provide it directly
 - NO thinking process
-- Respond in SAME LANGUAGE
 - DO NOT output JSON format for streaming
 
-SVAR (Answer):"""
+{language_instruction}
+
+SVAR (Answer in {language.upper()}):"""
                 
                 messages = [
                     {"role": "system", "content": self.LEGAL_SYSTEM_PROMPT},
@@ -660,41 +791,45 @@ SVAR (Answer):"""
             async with httpx.AsyncClient(timeout=120.0) as client:
                 async with client.stream(
                     "POST",
-                    self.base_url,
+                    self.Target_url,
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json"
                     },
                     json={
-                        "model": self.model,
                         "messages": messages,
                         "temperature": temp,
                         "max_tokens": max_tok,
                         "stream": True
                     }
                 ) as response:
+
                     if response.status_code != 200:
-                        raise Exception(f"Streaming failed: {response.status_code}")
-                    
+                        error_text = await response.aread()
+                        raise Exception(f"Streaming failed: {response.status_code} - {error_text.decode()}")
+
                     async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            data_str = line[6:]
-                            
-                            if data_str.strip() == "[DONE]":
+                        line = line.strip()
+                        if not line or not line.startswith("data:"):
+                            continue
+
+                        try:
+                            json_str = line.replace("data: ", "", 1)
+                            data = json.loads(json_str)
+
+                            if data.get("choices"):
+                                delta = data["choices"][0].get("delta", {})
+                                content = delta.get("content")
+
+                                if content:
+                                    yield content
+
+                            if data.get("choices") and data["choices"][0].get("finish_reason") == "stop":
                                 break
-                            
-                            try:
-                                data = json.loads(data_str)
-                                
-                                if "choices" in data and len(data["choices"]) > 0:
-                                    delta = data["choices"][0].get("delta", {})
-                                    content = delta.get("content")
-                                    
-                                    if content:
-                                        yield content
-                            except json.JSONDecodeError:
-                                continue
-            
+
+                        except json.JSONDecodeError:
+                            continue
+
             logger.info("Streaming complete")
             
         except Exception as e:
