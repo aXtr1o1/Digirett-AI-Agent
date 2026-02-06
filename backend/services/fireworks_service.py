@@ -369,7 +369,7 @@ No answer (score 0.1):
                     return {"intent": "LEGAL", "language": language}
             
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            # LLM-BASED CLASSIFICATION (For unclear cases)
+            # LLM-BASED CLASSIFICATION
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             
             logger.info("No keyword match - using LLM classification")
@@ -536,12 +536,9 @@ No answer (score 0.1):
                 example_start = "According to the sources"
                 no_answer_msg = "I cannot find any relevant legal excerpts in the available Lovdata database that directly answer this question."
             
-            # Build strict RAG prompt with triple language enforcement
             user_prompt = f"""{language_instruction}
 
 CRITICAL: Answer ONLY from sources. NO thinking process. NO <think> tags.
-
-{language_instruction}
 
 KILDER (Sources):
 {context}
@@ -549,7 +546,6 @@ KILDER (Sources):
 SPØRSMÅL (Question):
 {query}
 
-{language_instruction}
 
 RULES:
 1. Answer in {language.upper()} - THIS IS MANDATORY
@@ -559,7 +555,6 @@ RULES:
 4. NO <think> tags
 5. MUST output JSON format: {{"answer": "...", "score": 0.9, "confidence": "..."}}
 
-{language_instruction}
 
 SVAR (Answer in {language.upper()} as JSON, starting with "{example_start}"):"""
             
@@ -697,22 +692,18 @@ SVAR (Answer in {language.upper()} as JSON, starting with "{example_start}"):"""
         query: str,
         context: str,
         language: str,
+        intent: str,
         temperature: float = 0.3,
         max_tokens: int = 2000
+        
     ) -> AsyncIterator[str]:
         """
         Streaming version with proper language detection
         """
         try:
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            # 🔧 FIX: Re-detect language (don't trust parameter)
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            intent_result = await self.detect_intent(query)
-            intent = intent_result["intent"]
-            detected_language = intent_result["language"]
+           
             
-            # Override passed language
-            language = detected_language
+            
             
             logger.info(f"[STREAM] Using detected language: {language}")
             
@@ -737,9 +728,7 @@ SVAR (Answer in {language.upper()} as JSON, starting with "{example_start}"):"""
                         yield "I cannot find any relevant legal excerpts in the available Lovdata database that directly answer this question."
                     return
                 
-                # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                # 🔧 FIX: Use same strong language instruction
-                # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+               
                 
                 if language == "norwegian":
                     language_instruction = """
@@ -760,7 +749,7 @@ Start answer with "According to the sources..." or similar English phrasing.
 
 CRITICAL: Answer ONLY from sources. NO <think> tags.
 
-{language_instruction}
+
 
 KILDER (Sources):
 {context}
@@ -775,7 +764,7 @@ RULES:
 - NO thinking process
 - DO NOT output JSON format for streaming
 
-{language_instruction}
+
 
 SVAR (Answer in {language.upper()}):"""
                 

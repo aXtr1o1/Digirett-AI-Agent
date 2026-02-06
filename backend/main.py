@@ -354,7 +354,8 @@ async def chat_stream(request: Request, chat_request: ChatRequest):
                     query=chat_request.query,
                     context="",
                     language=language,
-                    temperature=0.3
+                    temperature=0.3,
+                    intent=intent
                 ):
                     token_count += 1
                     yield f"data: {json.dumps({'type': 'token', 'data': token})}\n\n"
@@ -398,7 +399,8 @@ async def chat_stream(request: Request, chat_request: ChatRequest):
                 query=chat_request.query,
                 context=context,
                 language=language,
-                temperature=chat_request.temperature
+                temperature=chat_request.temperature,
+                intent=intent
             ):
                 token_count += 1
                 full_answer += token
