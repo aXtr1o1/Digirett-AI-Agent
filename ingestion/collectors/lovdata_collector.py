@@ -143,8 +143,6 @@ def _extract_xml_files(
 
                 target = RAW_XML_DIR / original_name              # ✅ keep .xml locally
 
-                db = SupabaseStore()
-
                 # Check DB using name WITHOUT extension
                 if existing_files and clean_name in existing_files:
                     logger.info(f"⏭️ Already processed, skipping: {clean_name}")

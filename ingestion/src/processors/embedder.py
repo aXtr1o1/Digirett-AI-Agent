@@ -178,6 +178,14 @@ class TokenAwareSageMakerEmbedder:
             if text and text.strip():
                 # Check token count if available
                 token_count = chunk.get("token_count", 0)
+                # ✅ ADD THIS BLOCK
+                if token_count > self.warn_token_threshold:
+                    logger.warning(
+                        f"⚠️  Chunk {i} exceeds token threshold: "
+                        f"{token_count} > {self.warn_token_threshold} tokens"
+                    )
+                    oversized_count += 1
+                # Handle oversized chunks
                 if token_count > 120:
                     words = text.split()
                     mini_chunks = [" ".join(words[i:i+120]) for i in range(0, len(words), 120)]

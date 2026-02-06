@@ -48,7 +48,7 @@ logger = logging.getLogger("lovdata-ingestion")
 # Pipeline WITH TOKEN-BASED CHUNKING (CORRECTED)
 # -------------------------------------------------
 
-def run_pipeline(limit: int = 50):
+def run_pipeline(limit: int | None = None):
     """
     Complete ingestion pipeline WITH TOKEN-BASED CHUNKING.
     
@@ -99,7 +99,7 @@ def run_pipeline(limit: int = 50):
     # Fetch and convert XML to text (UNCHANGED)
     # ============================================================
     
-    xml_files, archive_name = fetch_lovdata_files(limit=50)
+    xml_files, archive_name = fetch_lovdata_files(limit=None)
     latest_zip = archive_name[-1]
 
     if db_store.zip_already_processed(latest_zip):
@@ -406,4 +406,4 @@ def run_pipeline(limit: int = 50):
 # -------------------------------------------------
 
 if __name__ == "__main__":
-    run_pipeline(limit=50)
+    run_pipeline(limit=None)
