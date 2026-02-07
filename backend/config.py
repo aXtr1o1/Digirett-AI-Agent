@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Lovdata RAG API"
     VERSION: str = "1.0.0"
     DEBUG: bool = False
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000","https://digirett-ai-agent-zxen-9su00r056-a-xtr-labs.vercel.app/"]
 
     # ========================
     # Milvus Settings
