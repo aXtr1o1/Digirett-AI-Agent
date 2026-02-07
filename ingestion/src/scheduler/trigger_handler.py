@@ -129,7 +129,7 @@ def run_trigger(batch_size: int, force: bool, dry_run: bool):
     try:
         from ingestion.src.main import run_pipeline   # noqa: E402
 
-        stats = run_pipeline(limit=batch_size)
+        stats = run_pipeline(limit=None)
 
         # Success
         state["last_archive_name"]     = latest_archive

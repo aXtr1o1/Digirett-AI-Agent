@@ -180,13 +180,12 @@ def ingestion_job():
         
         # ✅ CRITICAL FIX: Was "latest_archive == latest_archive" (always True)
         if latest_archive == last_archive:
-            logger.info("⏭ No new archive detected — skipping ingestion")
-            state["last_run_status"] = "no_change"
-            save_state(state)
-            return
-        
-        # If we reach here, archive has changed
-        logger.info(f"🔄 Archive changed: {last_archive} → {latest_archive}")
+            logger.info(
+                "📄 Archive unchanged — running ingestion to check modified files"
+            )
+            state["last_run_status"] = "checking_modifications"
+        else:
+            logger.info(f"🔄 Archive changed: {last_archive} → {latest_archive}")
         
     except Exception as e:
         logger.error(f"❌ Failed to check Lovdata API: {e}", exc_info=True)
@@ -208,7 +207,7 @@ def ingestion_job():
         # (boto3, pymilvus, supabase) when just doing the API check.
         from ingestion.src.main import run_pipeline   # noqa: E402
 
-        stats = run_pipeline(limit=BATCH_SIZE)
+        stats = run_pipeline(limit=None)
 
         # ------------------------------------------------------------------
         # Step 3: Success → update state
@@ -253,7 +252,6 @@ def on_job_event(event):
         logger.error(f"🚨 Job crashed: {event.exception}")
     else:
         logger.info("✔️  Job finished without exception")
-
 
 # ===========================================================================
 # Entry point

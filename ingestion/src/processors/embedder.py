@@ -14,6 +14,7 @@ import logging
 import json
 import time
 from typing import List, Dict, Any
+from botocore.config import Config
 from ingestion.src.config import (
     EMBEDDING_CHUNK_DELAY,
     SAGEMAKER_ENDPOINT,
@@ -61,10 +62,18 @@ class TokenAwareSageMakerEmbedder:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
+        config = Config(
+        read_timeout=300,      # wait up to 5 minutes
+        connect_timeout=60,
+        retries={"max_attempts": 3}
+        )
+
+
 
         self.client = boto3.client(
             "sagemaker-runtime",
-            region_name=AWS_REGION
+            region_name=AWS_REGION,
+            config=config
         )
 
         

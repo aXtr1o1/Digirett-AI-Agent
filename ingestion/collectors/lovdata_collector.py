@@ -105,7 +105,7 @@ def _download_archive(archive_name: str) -> Path:
 # --------------------------------------------------
 def _extract_xml_files(
     archive_path: Path,
-    limit: Optional[int] = 50
+    limit: Optional[int] = None
 ) -> List[Path]:
     """
     Extract XML files from archive.

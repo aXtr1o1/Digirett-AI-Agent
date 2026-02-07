@@ -99,7 +99,7 @@ def run_pipeline(limit: int | None = None):
     # Fetch and convert XML to text (UNCHANGED)
     # ============================================================
     
-    xml_files, archive_name = fetch_lovdata_files(limit=None)
+    xml_files, archive_name = fetch_lovdata_files(limit=limit)
     latest_zip = archive_name[-1]
 
     if db_store.zip_already_processed(latest_zip):
@@ -199,10 +199,11 @@ def run_pipeline(limit: int | None = None):
             continue
         
         # Build public storage URI (without .xml extension)
-        storage_uri = (
-            f"https://xdnqfhqdbsjgfanfbvdp.supabase.co/storage/v1/object/"
-            f"public/lovdata-raw-xml/raw/{clean_name}"
-        )
+        # storage_uri = (
+        #     f"https://xdnqfhqdbsjgfanfbvdp.supabase.co/storage/v1/object/"
+        #     f"public/lovdata-raw-xml/raw/{clean_name}"
+        # )
+        storage_uri = f"{SUPABASE_URL}/{clean_name}"
 
         # ============================================================
         # STEP 2: Token-based chunking (✅ CHANGED)

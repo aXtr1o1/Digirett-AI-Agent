@@ -509,9 +509,13 @@ class NorwegianLovdataParser:
         try:
             line_stripped = line.strip()
             
-            # Must have at least 5 words
-            if len(line_stripped.split()) < 5:
-                return False
+            # Allow short legal or numeric lines (Lovdata often has quotas, coordinates, lists)
+            word_count = len(line_stripped.split())
+
+            if word_count < 3:
+                # allow lines containing numbers or legal symbols (§)
+                if not re.search(r'[0-9§]', line_stripped):
+                    return False
             
             # Not all uppercase (headers)
             if line_stripped.isupper() and len(line_stripped) > 30:
@@ -908,7 +912,32 @@ class NorwegianLovdataChunker:
                 logger.info(
                     f"✂️  Split {total_splits} oversized chunks in {file_name}"
                 )
-            
+            # ------------------------------------------------------------------
+            # FALLBACK: create one chunk if parsing produced no chunks
+            # ------------------------------------------------------------------
+            if not chunks and text.strip():
+                logger.warning(
+                    f"No structured chunks found in {file_name}, creating fallback chunk"
+                )
+
+                chunk_id = self.hasher.generate_chunk_id(file_hash, 0, 0, 0)
+
+                fallback_chunk = Chunk(
+                    chunk_id=chunk_id,
+                    file_name=file_name,
+                    file_hash=file_hash,
+                    parent_index=0,
+                    child_index=0,
+                    parent_type="fallback",
+                    parent_title="Full Document",
+                    text=text,
+                    token_count=self.token_counter.count_tokens(text),
+                    is_split=False,
+                    split_index=0,
+                    metadata=doc_metadata.to_dict()
+                )
+
+                chunks.append(fallback_chunk)
             return doc_metadata, chunks
         
         except Exception as e:
