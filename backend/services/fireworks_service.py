@@ -261,85 +261,90 @@ No answer (score 0.1):
         logger.info(f"Azure service initialized with model: {model}")
 
     
-    async def check_connection(self) -> bool:
-        """Check if API is accessible"""
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    self.Target_url,
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "messages": [{"role": "user", "content": "test"}],
-                        "max_tokens": 5
-                    },
-                    timeout=10.0
-                )
-                return response.status_code == 200
-        except Exception as e:
-            logger.error(f"API connection check failed: {e}")
-            return False
-    
     @retry(
         stop=stop_after_attempt(2),
         wait=wait_exponential(multiplier=1, min=1, max=3)
     )
     async def detect_intent(self, query: str) -> Dict[str, str]:
         """
-        Detect if query is CASUAL or LEGAL using LLM
-        IMPROVED: Better Norwegian detection with expanded keywords
+        Detect intent (CASUAL / LEGAL) and language
+        PRIMARY: LLM-based detection
+        FALLBACK: Keyword-based detection (language + intent)
         """
         try:
-            logger.info(f"Detecting intent for: '{query[:50]}...'")
-            
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            # 🔧 FIX: EXPANDED Norwegian keyword detection
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            logger.info(f"Detecting intent & language for: '{query[:50]}...'")
             query_lower = query.lower().strip()
-            
-            # Comprehensive Norwegian words list
-            norwegian_words = [
-                # Common words
-                'hei', 'hva', 'jeg', 'er', 'kan', 'du', 'og', 'det', 'en', 'å', 'på',
-                'med', 'av', 'til', 'fra', 'om', 'for', 'ikke', 'blir', 'være',
-                
-                # Question words
-                'hvordan', 'hvorfor', 'når', 'hvor', 'hvem', 'hvilken',
-                
-                # Verbs in Norwegian
-                'forklare', 'diskutere', 'gi', 'svare', 'fortelle', 'si', 'vise',
-                'beskrive', 'hjelpe', 'finne', 'søke',
-                
-                # Legal/business terms in Norwegian
-                'selskap', 'selskapets', 'lov', 'loven', 'regel', 'regelverk',
-                'ansvar', 'ansvarsrett', 'rett', 'rettigheter', 'forpliktelser'
-            ]
-            
-            # Count Norwegian indicators
-            norwegian_score = 0
-            for word in norwegian_words:
-                if word in query_lower:
-                    norwegian_score += 1
-            
-            # Bonus for Norwegian characters (strong indicator)
-            if any(char in query_lower for char in ['æ', 'ø', 'å']):
-                norwegian_score += 3
-            
-            # Determine language
-            if norwegian_score >= 2:  # At least 2 Norwegian indicators
-                language = "norwegian"
-                logger.info(f"[LANGUAGE] Detected NORWEGIAN (score: {norwegian_score})")
-            else:
-                language = "english"
-                logger.info(f"[LANGUAGE] Detected ENGLISH (score: {norwegian_score})")
-            
+
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            # CASUAL vs LEGAL classification
+            # 1️⃣ LLM-BASED INTENT + LANGUAGE (PRIMARY)
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            
-            # CASUAL keywords
+            try:
+                messages = [
+                    {"role": "user", "content": f"{self.INTENT_DETECTION_PROMPT}{query}"}
+                ]
+
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.post(
+                        self.Target_url,
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json"
+                        },
+                        json={
+                            "messages": messages,
+                            "temperature": 0.01,
+                            "max_tokens": 50
+                        }
+                    )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    content = data["choices"][0]["message"]["content"]
+
+                    content = re.sub(r'```json\s*', '', content)
+                    content = re.sub(r'```\s*', '', content)
+                    content = content.strip()
+
+                    result = json.loads(content)
+
+                    intent = result.get("intent", "CASUAL").upper()
+                    language = result.get("language", "english").lower()
+
+                    logger.info(f"[LLM] Intent={intent}, Language={language}")
+                else:
+                    raise Exception("LLM intent API failed")
+
+            except Exception as e:
+                logger.warning(f"[LLM FAILED] Falling back to keyword detection: {e}")
+                intent = "CASUAL"
+                language = None  # determined later
+
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # 2️⃣ KEYWORD-BASED LANGUAGE (FALLBACK ONLY)
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            if not language:
+                norwegian_words = [
+                    'hei', 'hva', 'jeg', 'er', 'kan', 'du', 'og', 'det', 'en', 'å', 'på',
+                    'med', 'av', 'til', 'fra', 'om', 'for', 'ikke', 'blir', 'være',
+                    'hvordan', 'hvorfor', 'når', 'hvor', 'hvem', 'hvilken',
+                    'forklare', 'diskutere', 'gi', 'svare', 'fortelle', 'si', 'vise',
+                    'beskrive', 'hjelpe', 'finne', 'søke',
+                    'selskap', 'selskapets', 'lov', 'loven', 'regel', 'regelverk',
+                    'ansvar', 'ansvarsrett', 'rett', 'rettigheter', 'forpliktelser'
+                ]
+
+                norwegian_score = sum(1 for word in norwegian_words if word in query_lower)
+
+                if any(char in query_lower for char in ['æ', 'ø', 'å']):
+                    norwegian_score += 3
+
+                language = "norwegian" if norwegian_score >= 2 else "english"
+
+                logger.info(f"[KEYWORD LANG] {language} (score={norwegian_score})")
+
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # 3️⃣ KEYWORD-BASED INTENT (OVERRIDE ONLY IF CLEAR)
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             casual_keywords = [
                 'hi', 'hello', 'hey', 'hei', 'good morning', 'good afternoon',
                 'how are you', 'hvordan har du det', 'hvordan går det',
@@ -348,13 +353,7 @@ No answer (score 0.1):
                 'tell me a joke', 'fortell en vits', 'i am sad', 'jeg er trist',
                 'thanks', 'thank you', 'takk'
             ]
-            
-            for keyword in casual_keywords:
-                if keyword in query_lower:
-                    logger.info(f"[CASUAL] detected (keyword: '{keyword}')")
-                    return {"intent": "CASUAL", "language": language}
-            
-            # LEGAL keywords (expanded)
+
             legal_keywords = [
                 'law', 'lov', 'loven', 'legal', 'juridisk', 'regulation', 'forskrift',
                 'aksjeloven', 'arbeidsmiljøloven', 'company', 'selskap', 'selskapets',
@@ -362,82 +361,28 @@ No answer (score 0.1):
                 'ansvar', 'ansvarsrett', 'forpliktelser', 'regel', 'regelverk',
                 'gdpr', 'personvern'
             ]
-            
+
+            for keyword in casual_keywords:
+                if keyword in query_lower:
+                    intent = "CASUAL"
+                    logger.info(f"[KEYWORD INTENT] CASUAL ({keyword})")
+                    break
+
             for keyword in legal_keywords:
                 if keyword in query_lower:
-                    logger.info(f"[LEGAL] detected (keyword: '{keyword}')")
-                    return {"intent": "LEGAL", "language": language}
-            
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            # LLM-BASED CLASSIFICATION
-            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            
-            logger.info("No keyword match - using LLM classification")
-            
-            messages = [
-                {"role": "user", "content": f"{self.INTENT_DETECTION_PROMPT}{query}"}
-            ]
-            
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
-                    self.Target_url,
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "messages": messages,
-                        "temperature": 0.01,
-                        "max_tokens": 50
-                    }
-                )
-                
-                if response.status_code != 200:
-                    logger.warning(f"Intent detection API failed: {response.status_code}")
-                    return {"intent": "CASUAL", "language": language}
-                
-                data = response.json()
-                content = data["choices"][0]["message"]["content"].strip()
-                
-                logger.info(f"Raw LLM response: {content}")
-                
-                # Parse JSON
-                content = re.sub(r'```json\s*', '', content)
-                content = re.sub(r'```\s*', '', content)
-                content = content.strip()
-                
-                json_match = re.search(r'\{[^}]+\}', content)
-                if json_match:
-                    json_str = json_match.group(0)
-                    try:
-                        result = json.loads(json_str)
-                        intent = result.get("intent", "CASUAL").upper()
-                        # ✅ KEEP OUR DETECTED LANGUAGE (more reliable)
-                        detected_lang = language
-                        
-                        logger.info(f"[SUCCESS] Intent: {intent}, Language: {detected_lang} (keyword-based)")
-                        
-                        return {"intent": intent, "language": detected_lang}
-                    except json.JSONDecodeError:
-                        pass
-                
-                # Text-based fallback
-                content_upper = content.upper()
-                
-                if "CASUAL" in content_upper:
-                    intent = "CASUAL"
-                elif "LEGAL" in content_upper:
                     intent = "LEGAL"
-                else:
-                    intent = "CASUAL"
-                
-                logger.info(f"[FALLBACK] Intent: {intent}, Language: {language}")
-                
-                return {"intent": intent, "language": language}
-            
+                    logger.info(f"[KEYWORD INTENT] LEGAL ({keyword})")
+                    break
+
+            return {
+                "intent": intent,
+                "language": language
+            }
+
         except Exception as e:
-            logger.error(f"Intent detection error: {e}")
+            logger.error(f"Intent detection error: {e}", exc_info=True)
             return {"intent": "CASUAL", "language": "english"}
+
 
     async def generate_casual_response(
         self,
