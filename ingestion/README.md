@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Ingestion Layer Documentation
 
 Lovdata RAG System – Ingestion Layer  
@@ -236,7 +235,3 @@ CHUNK_OVERLAP=200
 - **Embeddings**: (Pending) 
 - **Scheduling**: Cron / APScheduler
 
----
-
-**Last Updated**: January 2026
->>>>>>> origin/Frontend
