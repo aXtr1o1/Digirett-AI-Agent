@@ -7,7 +7,8 @@
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
-  background: #ffffff;
+  background: #f3f4f6;
+  font-size: 16.5px;
 }
 
 /* =======================
@@ -16,8 +17,9 @@ body {
 .chat-container {
   height: 100vh;
   display: flex;
+  background: #f3f4f6;
   flex-direction: column;
-  max-width: 900px;
+  max-width: 980px;
   margin: 0 auto;
   padding: 16px;
 }
@@ -29,6 +31,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  background: #f3f4f6;
+  scrollbar-gutter: stable;
+  border-radius: 14px;
 }
 
 /* =======================
@@ -47,11 +52,11 @@ body {
 ======================= */
 .message {
   width: 100%;
-  padding: 16px;
-  border-radius: 12px;
-  font-size: 14.5px;
-  line-height: 1.5;
-  animation: fadeIn 0.25s ease-out;
+  padding: 18px;
+  border-radius: 14px;
+  font-size: 16px;
+  line-height: 1.55;
+  animation: fadeIn 0.18s ease-out;
 }
 
 @keyframes fadeIn {
@@ -65,43 +70,54 @@ body {
   }
 }
 
-/* User Message */
 .message.user {
-  background: #f7f7f8;
+  background: #ffffff;
   color: #111827;
   align-self: flex-end;
-  max-width: 80%;
+  max-width: 82%;
   border: 1px solid #e5e7eb;
 }
 
-/* Assistant Message */
 .message.assistant {
   background: #ffffff;
   color: #111827;
   align-self: flex-start;
-  border: none;
+  border: 1px solid #e5e7eb;
 }
 
 /* =======================
    Markdown Content
 ======================= */
 .message-text {
-  white-space: pre-wrap;
+  white-space: normal;
   word-break: break-word;
-  color: #374151;
+  color: #111827;
+  font-size: 16px;
+  line-height: 1.55;
 }
 
-/* Paragraphs */
-.message-text p {
-  margin: 4px 0;
-  line-height: 1.45;
+/* ✅ unified spacing control (prevents huge gaps) */
+.message-text p,
+.message-text ul,
+.message-text ol,
+.message-text blockquote,
+.message-text pre {
+  margin: 6px 0;
 }
 
-.message-text p:first-child {
+.message-text p:first-child,
+.message-text ul:first-child,
+.message-text ol:first-child,
+.message-text blockquote:first-child,
+.message-text pre:first-child {
   margin-top: 0;
 }
 
-.message-text p:last-child {
+.message-text p:last-child,
+.message-text ul:last-child,
+.message-text ol:last-child,
+.message-text blockquote:last-child,
+.message-text pre:last-child {
   margin-bottom: 0;
 }
 
@@ -109,82 +125,122 @@ body {
 .message-text h1,
 .message-text h2,
 .message-text h3 {
-  font-weight: 600;
+  font-weight: 650;
   color: #111827;
-  line-height: 1.3;
+  line-height: 1.25;
   margin: 10px 0 6px;
 }
 
 .message-text h1 {
-  font-size: 18px;
+  font-size: 20px;
   border-bottom: 1px solid #e5e7eb;
-  padding-bottom: 4px;
+  padding-bottom: 6px;
 }
 
 .message-text h2 {
-  font-size: 15.5px;
+  font-size: 18px;
 }
 
 .message-text h3 {
-  font-size: 14.5px;
+  font-size: 16px;
 }
 
-/* Remove extra top gap */
-.message-text h1:first-child,
-.message-text h2:first-child,
-.message-text h3:first-child {
-  margin-top: 0;
-}
-
-/* Strong text */
-.message-text strong {
-  font-weight: 600;
-  color: #111827;
-}
-
-/* =======================
-   Lists (Compact)
-======================= */
+/* Lists */
 .message-text ul,
 .message-text ol {
-  margin: 6px 0;
-  padding-left: 20px;
+  padding-left: 22px;
 }
 
 .message-text li {
-  margin: 3px 0;
-  line-height: 1.4;
+  margin: 4px 0;
+  line-height: 1.45;
+}
+
+/* ✅ critical: stop <li><p> from creating big margins */
+.message-text li > p {
+  margin: 0 !important;
+  display: inline !important;
 }
 
 .message-text li::marker {
   color: #6b7280;
 }
 
-/* Nested lists */
+/* nested lists */
 .message-text ul ul,
-.message-text ol ul {
+.message-text ol ul,
+.message-text ul ol,
+.message-text ol ol {
   margin: 4px 0;
   padding-left: 18px;
 }
 
-/* =======================
-   Code & Quotes
-======================= */
+/* Code */
 .message-text code {
   background: #f3f4f6;
-  padding: 2px 5px;
-  border-radius: 4px;
-  font-family: monospace;
-  font-size: 13px;
-  color: #dc2626;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Courier New', monospace;
+  font-size: 14px;
+  color: #b42318;
 }
 
+.message-text pre code {
+  display: block;
+  padding: 12px;
+  overflow-x: auto;
+}
+
+/* Quotes */
 .message-text blockquote {
-  margin: 8px 0;
   padding-left: 12px;
   border-left: 3px solid #d1d5db;
   color: #6b7280;
   font-style: italic;
+}
+
+/* =======================
+   Tables (GFM)
+======================= */
+.message-text table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 15px;
+}
+
+.message-text thead {
+  background: #f9fafb;
+}
+
+.message-text th,
+.message-text td {
+  border: 1px solid #e5e7eb;
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.message-text th {
+  font-weight: 700;
+  color: #111827;
+}
+
+.message-text tr:nth-child(even) td {
+  background: #fcfcfd;
+}
+
+/* Prevent huge horizontal overflow on long tables */
+.message-text table {
+  display: block;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Kill markdown table wrapper spacing if any */
+.message-text table p {
+  margin: 0 !important;
 }
 
 /* =======================
@@ -197,7 +253,7 @@ body {
 }
 
 /* =======================
-   Sources Section (Tight)
+   Sources Section
 ======================= */
 .sources {
   margin-top: 12px;
@@ -206,7 +262,7 @@ body {
 }
 
 .sources-title {
-  font-weight: 600;
+  font-weight: 700;
   font-size: 12px;
   margin-bottom: 8px;
   color: #6b7280;
@@ -214,7 +270,6 @@ body {
   letter-spacing: 0.4px;
 }
 
-/* Source Item */
 .source-item {
   background: #f9fafb;
   padding: 10px 12px;
@@ -227,12 +282,11 @@ body {
   margin-bottom: 0;
 }
 
-/* Source Header */
 .source-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .source-number {
@@ -242,7 +296,7 @@ body {
   height: 20px;
   border-radius: 50%;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -251,7 +305,7 @@ body {
 .source-link {
   color: #2563eb;
   text-decoration: none;
-  font-weight: 500;
+  font-weight: 600;
   font-size: 13px;
 }
 
@@ -259,9 +313,8 @@ body {
   text-decoration: underline;
 }
 
-/* Source Text */
 .source-text {
-  font-size: 12.5px;
+  font-size: 13px;
   color: #4b5563;
   line-height: 1.45;
   margin-left: 28px;
@@ -280,14 +333,13 @@ body {
 .input-wrapper {
   display: flex;
   align-items: center;
-  background: #f9fafb;
+  background: #ffffff;
   border: 1.5px solid #e5e7eb;
-  border-radius: 22px;
-  padding: 8px 14px;
+  border-radius: 24px;
+  padding: 10px 14px;
 }
 
 .input-wrapper:focus-within {
-  background: #ffffff;
   border-color: #3b82f6;
 }
 
@@ -295,7 +347,7 @@ input {
   flex: 1;
   border: none;
   outline: none;
-  font-size: 14.5px;
+  font-size: 16px;
   background: transparent;
 }
 
@@ -303,10 +355,9 @@ input::placeholder {
   color: #9ca3af;
 }
 
-/* Send Button */
 .send-btn {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   background: #3b82f6;
   border: none;
   border-radius: 50%;
@@ -314,16 +365,16 @@ input::placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-left: 6px;
+  margin-left: 8px;
+  color: white;
+  font-weight: 700;
 }
 
 .send-btn:disabled {
   background: #d1d5db;
 }
 
-/* =======================
-   Spinner
-======================= */
+/* Spinner */
 .spinner {
   width: 16px;
   height: 16px;
@@ -339,9 +390,7 @@ input::placeholder {
   }
 }
 
-/* =======================
-   Scrollbar
-======================= */
+/* Scrollbar */
 .messages::-webkit-scrollbar {
   width: 6px;
 }
