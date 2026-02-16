@@ -96,6 +96,11 @@ def _download_archive(archive_name: str) -> Path:
         with open(archive_path, "wb") as f:
             for chunk in r.iter_content(8192):
                 f.write(chunk)
+                
+    if archive_path.stat().st_size < 1024:
+        logger.error("❌ Downloaded archive too small — likely corrupted")
+        archive_path.unlink(missing_ok=True)
+        raise RuntimeError("Downloaded archive too small")
 
     logger.info(f"✅ Downloaded: {archive_name}")
     return archive_path
@@ -168,6 +173,17 @@ def _extract_xml_files(
     
     except Exception as e:
         logger.error(f"❌ Extraction failed: {e}")
+        # ✅ delete corrupted archive so next run re-downloads it
+        try:
+            if archive_path.exists():
+                archive_path.unlink()
+                logger.warning(
+                    f"🗑️ Deleted corrupted archive: {archive_path.name}. "
+                    "Will re-download next run."
+                )
+        except Exception as cleanup_error:
+            logger.error(f"Failed to delete corrupted archive: {cleanup_error}")
+
         raise
 
 
@@ -175,7 +191,7 @@ def _extract_xml_files(
 # Public API - NEW VERSION (processes ALL archives)
 # --------------------------------------------------
 def fetch_lovdata_files(
-    limit: Optional[int] = 50
+    limit: Optional[int] = None
 ) -> Tuple[List[str], List[str]]:
     """
     Fetch XML files from ALL Lovdata archives.

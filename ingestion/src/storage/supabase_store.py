@@ -283,7 +283,7 @@ class SupabaseStore:
         except Exception as e:
             logger.error(f"❌ Error fetching file names: {e}")
             return set()
-    
+        
     def cleanup_duplicate_xml_files(self):
         """Remove .xml files from storage (cleanup utility)."""
         self._ensure_connection()

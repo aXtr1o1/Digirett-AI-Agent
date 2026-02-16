@@ -27,6 +27,7 @@ class MilvusTextStore:
         self.embedding_dim = MILVUS_DIMENSION
         self._connected = False
         self.collection = None
+        self.insert_counter = 0
     def _ensure_connection(self):
         if not self._connected:
             connections.connect(
@@ -259,7 +260,14 @@ class MilvusTextStore:
         logger.debug(f"Inserting {len(normalized)} chunks with {len(data)} field arrays")
 
         result = self.collection.insert(data)
-        self.collection.flush()
+
+        self.insert_counter += 1
+
+        # flush only every 500 inserts
+        if self.insert_counter % 500 == 0:
+            logger.info("🔄 Periodic Milvus flush...")
+            self.collection.flush()
+
 
         return {
             "inserted": len(normalized),
@@ -268,5 +276,14 @@ class MilvusTextStore:
 
     def close(self):
         if self._connected:
+            logger.info("🔄 Final Milvus flush before closing...")
+
+            # flush only if collection exists
+            if hasattr(self, "collection") and self.collection is not None:
+                try:
+                    self.collection.flush()
+                except Exception as e:
+                    logger.warning(f"Flush failed during close: {e}")
+
             connections.disconnect("default")
             self._connected = False

@@ -13,7 +13,7 @@ from datetime import datetime
 
 # ✅ CORRECT IMPORTS: Use token-based versions for chunking/embedding
 from ingestion.src.processors.chunker import NorwegianLovdataChunker, TokenCounter
-from ingestion.src.processors.embedder import SageMakerBGEEmbedder
+from ingestion.src.processors.embedder import TokenAwareAzureEmbedder
 
 # ✅ KEEP EXISTING IMPORTS: These remain the same
 from ingestion.collectors.lovdata_collector import fetch_lovdata_files
@@ -22,11 +22,7 @@ from ingestion.src.storage.supabase_store import SupabaseStore
 from ingestion.src.storage.milvus_store import MilvusTextStore
 from ingestion.src.config import SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_BUCKET
 from ingestion.src.config import MAX_TOKENS_PER_CHUNK, OVERLAP_TOKENS
-from ingestion.src.config import (
-    AWS_REGION,
-    SAGEMAKER_ENDPOINT,
-    LOG_FILE
-)
+from ingestion.src.config import LOG_FILE
 
 # -------------------------------------------------
 # Logging
@@ -54,7 +50,7 @@ def run_pipeline(limit: int | None = None):
     
     ✅ CHANGES FROM OLD VERSION:
     1. NorwegianLovdataChunker: Uses token-based splitting (no truncation)
-    2. SageMakerBGEEmbedder: Batch processing, no text truncation
+    2. TokenAwareAzureEmbedder: Batch processing, Azure OpenAI text-embedding-3-small
     3. Statistics: Tracks token counts and split chunks
     
     ✅ UNCHANGED:
@@ -94,17 +90,20 @@ def run_pipeline(limit: int | None = None):
     )
     
     # Token-aware embedder (no truncation, batch processing)
-    embedder = SageMakerBGEEmbedder()
+    embedder = TokenAwareAzureEmbedder()
     # ============================================================
     # Fetch and convert XML to text (UNCHANGED)
     # ============================================================
     
     xml_files, archive_name = fetch_lovdata_files(limit=limit)
+    if not archive_name:
+        logger.warning("⚠️ No archives fetched")
+        return {"total_files": 0, "success": 0, "skipped": 0, "failed": 0}
     latest_zip = archive_name[-1]
 
-    if db_store.zip_already_processed(latest_zip):
-        logger.info("⏭️ Latest ZIP already processed. Cron exiting.")
-        return
+    # if db_store.zip_already_processed(latest_zip):
+    #     logger.info("⏭️ Latest ZIP already processed. Cron exiting.")
+    #     return {"total_files": 0, "success": 0, "skipped": 0, "failed": 0}
 
 
     if not xml_files:
@@ -124,12 +123,13 @@ def run_pipeline(limit: int | None = None):
         logger.info(f"  {i}. {archive}")
     logger.info(f"Total XML files: {len(xml_files)}")
     logger.info(f"{'='*70}\n")
-
-    documents = process_xml_to_text(xml_files)
     
     # Attach archive name to documents
+    documents = process_xml_to_text(xml_files)
+
+    # ✅ attach archive name correctly
     for doc in documents:
-        doc["archive_name"] = archive_name[0]
+        doc["archive_name"] = latest_zip
 
     logger.info(f"📊 Processing {len(documents)} documents")
 
@@ -179,9 +179,11 @@ def run_pipeline(limit: int | None = None):
             logger.info(f"♻️ Updated file detected, deleting old embeddings")
             milvus_store.delete_by_file_name(clean_name)
 
-
-        file_hash = db_store.calculate_hash(xml_path)
-
+        # ✅ ADD THIS BLOCK HERE
+        if db_store.file_exists(file_hash):
+            logger.info(f"⏭️ Already embedded, skipping Milvus insert: {clean_name}")
+            skipped_count += 1
+            continue
 
         logger.info(f"\n{'='*70}")
         logger.info(f"[{idx}/{len(documents)}] Processing {clean_name}")
@@ -199,11 +201,12 @@ def run_pipeline(limit: int | None = None):
             continue
         
         # Build public storage URI (without .xml extension)
-        # storage_uri = (
-        #     f"https://xdnqfhqdbsjgfanfbvdp.supabase.co/storage/v1/object/"
-        #     f"public/lovdata-raw-xml/raw/{clean_name}"
-        # )
-        storage_uri = f"{SUPABASE_URL}/{clean_name}"
+        storage_uri = doc.get("document_url")
+
+        if not storage_uri:
+            logger.warning(f"No Lovdata URL found for {clean_name}")
+            storage_uri = ""
+
 
         # ============================================================
         # STEP 2: Token-based chunking (✅ CHANGED)

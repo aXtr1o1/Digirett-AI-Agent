@@ -5,44 +5,45 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 # --------------------------------
 
-from unittest.mock import MagicMock
-import sys
-
-# Prevent real AWS calls
-fake_boto3 = MagicMock()
-fake_client = MagicMock()
-fake_boto3.client.return_value = fake_client
-sys.modules["boto3"] = fake_boto3
-
+from unittest.mock import MagicMock, patch
 import pytest
-from ingestion.src.processors.embedder import SageMakerBGEEmbedder
 
+# Prevent real Azure OpenAI calls by patching AzureOpenAI at import time
+with patch("ingestion.src.processors.embedder.AzureOpenAI"):
+    from ingestion.src.processors.embedder import TokenAwareAzureEmbedder
+
+def make_embedder():
+    """Helper: create a TokenAwareAzureEmbedder with a mocked client."""
+    with patch("ingestion.src.processors.embedder.AzureOpenAI"):
+        e = TokenAwareAzureEmbedder()
+    e.client = MagicMock()
+    return e
 
 def test_embedder_init():
-    e = SageMakerBGEEmbedder()
-    assert e.endpoint_name is not None
-
+    e = make_embedder()
+    assert e.deployment is not None
+    assert e.batch_size is not None
 
 def test_embed_empty_chunks():
-    e = SageMakerBGEEmbedder("ep")
+    e = make_embedder()
     assert e.embed_chunks([]) == []
 
 
 def test_embed_invalid_text():
-    e = SageMakerBGEEmbedder("ep")
+    e = make_embedder()
     chunks = [{"text": "", "token_count": 0}]
     out = e.embed_chunks(chunks)
     assert out[0]["embedding"] is None
 
 
 def test_invoke_batch_failure():
-    e = SageMakerBGEEmbedder("ep")
-    e.client.invoke_endpoint.side_effect = Exception("fail")
+    e = make_embedder()
+    e.client.embeddings.create.side_effect = Exception("fail")
     assert e._invoke_batch(["x"]) == [None]
 
 
 def test_embed_assigns_embedding():
-    e = SageMakerBGEEmbedder("ep")
+    e = make_embedder()
     e._invoke_batch = MagicMock(return_value=[[0.1, 0.2]])
     chunks = [{"text": "hello", "token_count": 1}]
     out = e.embed_chunks(chunks)
@@ -50,6 +51,6 @@ def test_embed_assigns_embedding():
 
 
 def test_none_text():
-    e = SageMakerBGEEmbedder("ep")
+    e = make_embedder()
     out = e.embed_chunks([{}])
     assert out[0]["embedding"] is None

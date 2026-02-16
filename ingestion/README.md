@@ -9,7 +9,7 @@ For every Lovdata archive:
 1. Download XML files from Lovdata API
 2. Convert XML → structured legal text
 3. Perform hierarchical token-based chunking
-4. Generate embeddings using SageMaker BGE-M3
+4. Generate embeddings using Azure OpenAI (text-embedding-3-small, 1536 dimensions)
 5. Store vectors in Milvus
 6. Store XML + metadata in Supabase
 7. Skip already processed files using SHA256 hash
@@ -67,9 +67,10 @@ Create `.env` file:
 LOVDATA_BASE_URL=https://api.lovdata.no
 
 # Milvus
-MILVUS_HOST=...
+MILVUS_HOST=13.204.226.35
 MILVUS_PORT=19530
-MILVUS_COLLECTION=lovdata_chunks_v2
+MILVUS_COLLECTION=lovdata_hierarchical_chunks_v2
+MILVUS_DIMENSION=1536
 
 # Processing
 CHUNK_SIZE=1000
@@ -79,8 +80,20 @@ CHUNK_OVERLAP=200
 SUPABASE_SERVICE_KEY=...
 SUPABASE_BUCKET=...
 
-# AWS / SageMaker
-AWS_REGION=ap-south-1   # Region where your BGE-M3 SageMaker endpoint exists
+# Azure OpenAI Embeddings
+AZURE_OPENAI_ENDPOINT=https://<your-resource>.cognitiveservices.azure.com/
+AZURE_OPENAI_KEY=...
+AZURE_OPENAI_API_VERSION=2024-02-01
+AZURE_OPENAI_DEPLOYMENT=text-embedding-3-small
+
+# Embedding settings
+EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_BATCH_SIZE=1
+EMBEDDING_CHUNK_DELAY=1.5
+
+# Chunking
+MAX_TOKENS_PER_CHUNK=512
+OVERLAP_TOKENS=50
 
 ```
 ## ⏰ Scheduler 
@@ -98,9 +111,9 @@ pytest
 - **Language**: Python 3.11+
 - **API**: Lovdata API
 - **Vector DB**: Milvus
-- **Embeddings**: BGE-M3 SageMaker 
+- **Embeddings**: Azure OpenAI (text-embedding-3-small) 
 - **Scheduling**: Cron / APScheduler
 
 ---
 
-**Last Updated**: February 2026
+**Last Updated**: February 2026 (Azure OpenAI migration)

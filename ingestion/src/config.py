@@ -34,11 +34,36 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "")
 
 # ============================
+# Embedding Provider Configuration
+# ============================
+
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "azure_openai")
+
+EMBEDDING_MODEL = os.getenv(
+    "EMBEDDING_MODEL",
+    "text-embedding-3-small"
+)
+
+# IMPORTANT: text-embedding-3-small = 1536 dimension
+EMBEDDING_DIMENSION = int(
+    os.getenv("EMBEDDING_DIMENSION", "1536")
+)
+
+# Azure OpenAI
+AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
+AZURE_OPENAI_KEY = os.getenv("AZURE_OPENAI_KEY")
+AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION")
+AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+
+# ============================
 # Milvus Configuration
 # ============================
 MILVUS_HOST = os.getenv("MILVUS_HOST", "")
 MILVUS_PORT = int(os.getenv("MILVUS_PORT", "19530"))
-MILVUS_DIMENSION = int(os.getenv("MILVUS_DIMENSION", "1024"))
+MILVUS_DIMENSION = int(
+    os.getenv("MILVUS_DIMENSION", EMBEDDING_DIMENSION)
+)
+
 
 
 MILVUS_COLLECTION = os.getenv(
@@ -47,7 +72,7 @@ MILVUS_COLLECTION = os.getenv(
 
 MILVUS_INDEX_TYPE = os.getenv("MILVUS_INDEX_TYPE", "HNSW")
 MILVUS_METRIC_TYPE = os.getenv("MILVUS_METRIC_TYPE", "COSINE")
-MILVUS_NLIST = int(os.getenv("MILVUS_NLIST", "1024"))
+MILVUS_NLIST = int(os.getenv("MILVUS_NLIST", "1536"))
 
 # ============================
 # Chunking / Embedding
@@ -61,11 +86,7 @@ EMBEDDING_CHUNK_DELAY = float(os.getenv("EMBEDDING_CHUNK_DELAY", "0.5"))
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1000"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
 
-EMBED_MODEL = os.getenv("EMBED_MODEL")
-
-AWS_REGION = os.getenv("AWS_DEFAULT_REGION")
-SAGEMAKER_ENDPOINT = os.getenv("SAGEMAKER_ENDPOINT")
-EMBED_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", 1))
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 CHUNK_DELAY = float(os.getenv("EMBEDDING_CHUNK_DELAY", "1.0"))
 
 # ============================
