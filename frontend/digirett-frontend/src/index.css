@@ -1,13 +1,305 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply font-sans;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  code {
+    font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+  }
+
+  /* Custom scrollbar for dark theme */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #374151;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #4b5563;
+  }
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+@layer components {
+  .container {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+  
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #374151 transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #374151;
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: #4b5563;
+  }
+
+  /* ── DARK prose (existing) ── */
+  .prose-invert {
+    @apply text-gray-100;
+  }
+
+  .prose-invert h1,
+  .prose-invert h2,
+  .prose-invert h3,
+  .prose-invert h4,
+  .prose-invert h5,
+  .prose-invert h6 {
+    @apply text-white;
+  }
+
+  .prose-invert h1 {
+    @apply text-3xl font-bold mt-8 mb-4;
+  }
+
+  .prose-invert h2 {
+    @apply text-2xl font-semibold mt-8 mb-3;
+  }
+
+  .prose-invert h3 {
+    @apply text-xl font-semibold mt-6 mb-2;
+  }
+
+  .prose-invert p {
+    @apply mb-4;
+  }
+
+  .prose-invert a {
+    @apply text-blue-400 hover:text-blue-300;
+  }
+
+  .prose-invert code {
+    @apply text-gray-200 bg-gray-800 px-1 py-0.5 rounded;
+  }
+
+  .prose-invert pre {
+    @apply bg-gray-900 border border-gray-800;
+  }
+
+  .prose-invert blockquote {
+    @apply border-l-gray-700 text-gray-300;
+  }
+
+  /* ── LIGHT prose (new) ── */
+  .prose-light {
+    @apply text-gray-800;
+  }
+
+  .prose-light h1,
+  .prose-light h2,
+  .prose-light h3,
+  .prose-light h4,
+  .prose-light h5,
+  .prose-light h6 {
+    @apply text-gray-900;
+  }
+
+  .prose-light h1 {
+    @apply text-3xl font-bold mt-8 mb-4;
+  }
+
+  .prose-light h2 {
+    @apply text-2xl font-semibold mt-8 mb-3;
+  }
+
+  .prose-light h3 {
+    @apply text-xl font-semibold mt-6 mb-2;
+  }
+
+  .prose-light p {
+    @apply mb-4;
+  }
+
+  .prose-light a {
+    @apply text-blue-600 hover:text-blue-500;
+  }
+
+  .prose-light code {
+    @apply text-gray-800 bg-gray-100 px-1 py-0.5 rounded;
+  }
+
+  .prose-light pre {
+    @apply bg-gray-100 border border-gray-200;
+  }
+
+  .prose-light blockquote {
+    @apply border-l-gray-300 text-gray-600;
+  }
+}
+
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-in;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Clerk component customization */
+.cl-internal-b3fm6y {
+  background-color: #0a0a0a !important;
+}
+
+.cl-card {
+  background-color: #1a1a1a !important;
+  border-color: #374151 !important;
+}
+
+.cl-formButtonPrimary {
+  background-color: white !important;
+  color: black !important;
+}
+
+.cl-formButtonPrimary:hover {
+  background-color: #f3f4f6 !important;
+}
+
+/* Modern thin scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f0f0f;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
+
+.auth-container {
+  min-height: 100vh;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: #0f0f0f;
+  padding: 32px;
+  border-radius: 16px;
+}
+
+.auth-title {
+  color: #fff;
+  font-size: 28px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.name-row {
+  display: flex;
+  gap: 12px;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.auth-field label {
+  color: #9ca3af;
+  font-size: 14px;
+}
+
+.auth-field input {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 12px;
+  color: #fff;
+  font-size: 14px;
+}
+
+.auth-field input:focus {
+  outline: none;
+  border-color: #fff;
+}
+
+.auth-button {
+  margin-top: 8px;
+  background: #fff;
+  color: #000;
+  padding: 12px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+}
+
+.auth-button:hover {
+  background: #e5e7eb;
+}
+
+.auth-footer {
+  margin-top: 12px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 14px;
+}
+
+.auth-footer a {
+  color: #fff;
+  text-decoration: none;
+}
+
+.auth-footer a:hover {
+  text-decoration: underline;
 }
