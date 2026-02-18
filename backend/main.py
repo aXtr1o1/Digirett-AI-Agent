@@ -1,114 +1,213 @@
-import logging
-from pathlib import Path
+"""
+Main Application Entry Point
+Minimal FastAPI app with service initialization
+"""
 
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.middleware import SlowAPIMiddleware
 
-from langchain_openai import AzureChatOpenAI
+from .config import settings
+from .utils.logger import setup_logger
+from .api import endpoints
 
-from backend.config import settings
-from backend.api.endpoints import router, limiter
-from backend.db.milvus_client import MilvusClient
-from backend.db.redis import RedisCache
-from backend.services.chat_service import ChatService
-from backend.services.rag.retriever import MilvusRetriever
-from backend.services.rag.generator import EmbeddingGenerator
+# DB Clients
+from .db.milvus_client import get_milvus
+from .db.redis import get_redis
+from .db.supabase import get_supabase
+
+# Services
+from .services.llm_service import LLMService
+from .services.rag_service import RAGService
+from .services.embedding_service import EmbeddingService
+from .services.conversation_service import ConversationService
+from .services.message_service import MessageService
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s | %(asctime)s | %(name)s | %(message)s"
+)
+logger = setup_logger(__name__, level="INFO")
+
+# Rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 
-def setup_logging():
-    Path(settings.LOG_DIR).mkdir(parents=True, exist_ok=True)
-    log_path = str(Path(settings.LOG_DIR) / settings.LOG_FILE)
-
-    logging.basicConfig(
-        level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
-        format="[%(levelname)s] %(name)s - %(message)s",
-        handlers=[logging.FileHandler(log_path), logging.StreamHandler()],
-    )
-
-
-setup_logging()
-logger = logging.getLogger(__name__)
-
-
-def create_app() -> FastAPI:
-    app = FastAPI(title=settings.APP_NAME, version=settings.VERSION)
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.ALLOWED_ORIGINS,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
-    # SlowAPI must be middleware to enforce limits
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-    app.add_middleware(SlowAPIMiddleware)
-
-    # Milvus
-    milvus = MilvusClient(settings.MILVUS_HOST, settings.MILVUS_PORT, settings.MILVUS_COLLECTION)
-    milvus.connect()
-
-    # Redis
-    cache = RedisCache(settings.REDIS_URL)
-
-    # Azure OpenAI - Chat LLM
-    llm = AzureChatOpenAI(
-        azure_endpoint=settings.AZURE_OPENAI_CHAT_ENDPOINT,
-        api_key=settings.AZURE_OPENAI_CHAT_API_KEY,
-        api_version=settings.AZURE_OPENAI_CHAT_API_VERSION,
-        azure_deployment=settings.AZURE_OPENAI_CHAT_DEPLOYMENT,
-        temperature=0.5,
-    )
-
-    # Embeddings
-    embedder = EmbeddingGenerator()
-
-    # Retriever
-    retriever = MilvusRetriever(milvus.get_collection(), metric_type=settings.MILVUS_METRIC_TYPE)
-
-    # Chat Service
-    chat_service = ChatService(llm=llm, max_context_chars=settings.CONTEXT_MAX_LENGTH)
-
-    # attach
-    app.state.milvus = milvus
-    app.state.cache = cache
-    app.state.embedder = embedder
-    app.state.retriever = retriever
-    app.state.chat_service = chat_service
-
-    # routes
-    app.include_router(router)
-
-    @app.on_event("shutdown")
-    async def shutdown_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Startup and shutdown events
+    Initialize all services with proper error handling
+    """
+    logger.info("🚀 Starting Lovdata RAG System with LangChain Agent...")
+    
+    # Service instances
+    milvus_client = None
+    redis_client = None
+    supabase_client = None
+    llm_service = None
+    embedding_service = None
+    rag_service = None
+    conversation_service = None
+    message_service = None
+    
+    try:
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # STEP 1: Initialize Database Clients
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        
+        logger.info("🔌 Connecting to Milvus...")
+        milvus_client = get_milvus()
+        milvus_client.connect(
+            host=settings.MILVUS_HOST,
+            port=settings.MILVUS_PORT,
+            collection_name=settings.MILVUS_COLLECTION
+        )
+        
+        logger.info("🔌 Connecting to Redis...")
+        redis_client = get_redis()
+        redis_client.connect(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            db=settings.REDIS_DB,
+            password=settings.REDIS_PASSWORD if settings.REDIS_PASSWORD else None
+        )
+        
+        logger.info("🔌 Connecting to Supabase...")
+        supabase_client = get_supabase()
+        supabase_client.connect(
+            url=settings.SUPABASE_URL,
+            key=settings.SUPABASE_KEY
+        )
+        
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # STEP 2: Initialize Services
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        
+        logger.info("🤖 Initializing LLM service (OpenAI)...")
+        llm_service = LLMService(
+            temperature=settings.OPENAI_TEMPERATURE
+        )
+        
+        logger.info("🔢 Initializing Embedding service...")
+        embedding_service = EmbeddingService()
+        
+        logger.info("🧠 Initializing RAG service...")
+        rag_service = RAGService(
+            llm_service=llm_service,
+            milvus_client=milvus_client,
+            redis_client=redis_client,
+            supabase_client=supabase_client,
+            embedding_service=embedding_service
+        )
+        
+        logger.info("💬 Initializing Conversation service...")
+        conversation_service = ConversationService(
+            supabase_client=supabase_client,
+            redis_client=redis_client
+        )
+        
+        logger.info("📝 Initializing Message service...")
+        message_service = MessageService(
+            supabase_client=supabase_client,
+            redis_client=redis_client
+        )
+        
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # STEP 3: Inject services into endpoints
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        
+        logger.info("💉 Injecting services into endpoints...")
+        endpoints.set_services(
+            rag=rag_service,
+            conv=conversation_service,
+            msg=message_service,
+            milvus=milvus_client,
+            redis=redis_client,
+            supabase=supabase_client,
+            llm=llm_service,
+        )
+        
+        logger.info("✅ All services initialized successfully!")
+        
+        yield
+        
+    except Exception as e:
+        logger.error(
+            f"❌ Failed to initialize services | "
+            f"Error: {type(e).__name__}: {str(e)}",
+            exc_info=True
+        )
+        raise
+    
+    finally:
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # SHUTDOWN: Clean up resources
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        
+        logger.info("🛑 Shutting down services...")
+        
         try:
-            if hasattr(app.state, "embedder"):
-                await app.state.embedder.aclose()
-        except Exception:
-            pass
+            if milvus_client:
+                milvus_client.close()
+                logger.info("✅ Milvus connection closed")
+        except Exception as e:
+            logger.error(f"❌ Error closing Milvus: {e}")
+        
         try:
-            if hasattr(app.state, "milvus"):
-                app.state.milvus.close()
-        except Exception:
-            pass
-        try:
-            if hasattr(app.state, "cache"):
-                app.state.cache.close()
-        except Exception:
-            pass
-
-    logger.info("Backend started")
-    return app
+            if redis_client:
+                redis_client.close()
+                logger.info("✅ Redis connection closed")
+        except Exception as e:
+            logger.error(f"❌ Error closing Redis: {e}")
+        
+        logger.info("🛑 Shutdown complete")
 
 
-app = create_app()
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# CREATE FASTAPI APP
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+app = FastAPI(
+    title="Lovdata RAG API with LangChain Agent",
+    description="RAG system with multi-turn conversations, agent-based routing, Redis caching, and Supabase persistence",
+    version="2.0.0",
+    lifespan=lifespan
+)
+
+# Add rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(endpoints.router, prefix="/api/v1")
+
+logger.info("✅ FastAPI app created successfully")
+
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+    
+    logger.info("🚀 Starting Uvicorn server...")
+    
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info"
+    )
