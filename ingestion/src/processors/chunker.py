@@ -917,27 +917,39 @@ class NorwegianLovdataChunker:
             # ------------------------------------------------------------------
             if not chunks and text.strip():
                 logger.warning(
-                    f"No structured chunks found in {file_name}, creating fallback chunk"
+                    f"No structured chunks found in {file_name}, creating fallback chunks"
                 )
 
-                chunk_id = self.hasher.generate_chunk_id(file_hash, 0, 0, 0)
+                fallback_splits = self.text_splitter.split_text(text)
 
-                fallback_chunk = Chunk(
-                    chunk_id=chunk_id,
-                    file_name=file_name,
-                    file_hash=file_hash,
-                    parent_index=0,
-                    child_index=0,
-                    parent_type="fallback",
-                    parent_title="Full Document",
-                    text=text,
-                    token_count=self.token_counter.count_tokens(text),
-                    is_split=False,
-                    split_index=0,
-                    metadata=doc_metadata.to_dict()
+                logger.warning(
+                    f"Fallback splitting full document into {len(fallback_splits)} chunks"
                 )
 
-                chunks.append(fallback_chunk)
+                for split_idx, split_text in enumerate(fallback_splits):
+
+                    token_count = self.token_counter.count_tokens(split_text)
+
+                    chunk_id = self.hasher.generate_chunk_id(
+                        file_hash, 0, 0, split_idx
+                    )
+
+                    chunk = Chunk(
+                        chunk_id=chunk_id,
+                        file_name=file_name,
+                        file_hash=file_hash,
+                        parent_index=0,
+                        child_index=0,
+                        parent_type="fallback",
+                        parent_title="Full Document",
+                        text=split_text,
+                        token_count=token_count,
+                        is_split=True,
+                        split_index=split_idx,
+                        metadata=doc_metadata.to_dict()
+                    )
+
+                    chunks.append(chunk)
             return doc_metadata, chunks
         
         except Exception as e:

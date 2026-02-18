@@ -268,3 +268,17 @@ class TokenAwareAzureEmbedder:
             logger.warning(f"⚠️  {failed_count} chunks failed")
 
         return chunks
+    def _split_oversized_text(self, text: str, max_chars: int = 3000):
+        """
+        Split oversized text into smaller parts safely.
+        Approx 3000 chars ≈ 700-900 tokens.
+        """
+        parts = []
+        start = 0
+
+        while start < len(text):
+            end = start + max_chars
+            parts.append(text[start:end])
+            start = end
+
+        return parts

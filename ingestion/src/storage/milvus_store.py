@@ -1,4 +1,8 @@
 import logging
+import psutil
+import time
+import sys
+
 from ingestion.src.storage.supabase_store import SupabaseStore
 from ingestion.src.config import (
     MILVUS_HOST,
@@ -34,6 +38,7 @@ class MilvusTextStore:
                 alias="default",
                 host=MILVUS_HOST,
                 port=MILVUS_PORT,
+                timeout=60
             )
             self.collection = self._get_or_create_collection()
             self._connected = True
@@ -95,6 +100,21 @@ class MilvusTextStore:
             logger.warning(f"Embedding dimension mismatch: expected {self.embedding_dim}, got {len(result)}")
         
         return result
+    
+    # --------------------------------------------------
+    # SYSTEM STATE LOGGING (NEW)
+    # --------------------------------------------------
+    def _log_system_state(self, stage: str, rows: int, payload_mb: float):
+        cpu = psutil.cpu_percent()
+        mem = psutil.virtual_memory().percent
+
+        logger.info(
+            f"[Milvus {stage}] "
+            f"rows={rows} | "
+            f"payload={payload_mb:.2f}MB | "
+            f"cpu={cpu}% | mem={mem}%"
+        )
+
 
     # --------------------------------------------------
     # COLLECTION (✅ FIXED - Now creates collection)
@@ -189,6 +209,10 @@ class MilvusTextStore:
 
         # ✅ CONNECT HERE (THIS WAS MISSING)
         self._ensure_connection()
+        if self.collection is None:
+            raise RuntimeError("Milvus collection not initialized")
+
+
 
 
         """
@@ -259,7 +283,45 @@ class MilvusTextStore:
 
         logger.debug(f"Inserting {len(normalized)} chunks with {len(data)} field arrays")
 
-        result = self.collection.insert(data)
+        payload_size_mb = sys.getsizeof(data) / (1024 * 1024)
+
+        self._log_system_state(
+            stage="INSERT_START",
+            rows=len(normalized),
+            payload_mb=payload_size_mb
+        )
+
+        start = time.time()
+
+        try:
+            result = self.collection.insert(data)
+
+            elapsed = time.time() - start
+
+            logger.info(
+                f"[Milvus INSERT_SUCCESS] "
+                f"rows={len(normalized)} | "
+                f"time={elapsed:.2f}s"
+            )
+
+        except Exception as e:
+            elapsed = time.time() - start
+
+            logger.error(
+                f"[Milvus INSERT_FAILED] "
+                f"time={elapsed:.2f}s | "
+                f"type={type(e).__name__} | "
+                f"error={str(e)}"
+            )
+
+            self._log_system_state(
+                stage="INSERT_FAILED",
+                rows=len(normalized),
+                payload_mb=payload_size_mb
+            )
+
+            raise
+
 
         self.insert_counter += 1
 

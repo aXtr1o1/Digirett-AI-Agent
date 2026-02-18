@@ -3,6 +3,7 @@ import tarfile
 import requests
 import logging
 import xml.etree.ElementTree as ET
+import re
 from ingestion.src.storage.supabase_store import SupabaseStore
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional
@@ -27,6 +28,16 @@ def _is_valid_xml(data: bytes) -> bool:
     except ET.ParseError:
         return False
 
+def _extract_year_from_filename(filename: str) -> Optional[int]:
+    """
+    Extract year from filename.
+    Example:
+        nl-20230614-001.xml -> 2023
+    """
+    match = re.search(r'-(\d{4})\d{4}-', filename)
+    if match:
+        return int(match.group(1))
+    return None
 
 # --------------------------------------------------
 # NEW: Fetch ALL archives from API
@@ -146,6 +157,13 @@ def _extract_xml_files(
                 original_name = os.path.basename(member.name)      # nl-20010105-001.xml
                 clean_name = os.path.splitext(original_name)[0]    # nl-20010105-001
 
+                # -------- YEAR FILTER (2020–2026 ONLY) --------
+                year = _extract_year_from_filename(original_name)
+
+                if year is None or year < 2020 or year > 2026:
+                    continue
+
+
                 target = RAW_XML_DIR / original_name              # ✅ keep .xml locally
 
                 # Check DB using name WITHOUT extension
@@ -236,6 +254,12 @@ def fetch_lovdata_files(
     all_files: List[Path] = []
     processed_archives: List[str] = []
     remaining = limit
+
+    # -------- SIZE STATISTICS --------
+    total_size_bytes = 0
+    largest_file = 0
+    smallest_file = None
+
     
     # Process each archive
     for i, archive_info in enumerate(archive_list, 1):
@@ -262,13 +286,25 @@ def fetch_lovdata_files(
             if files:
                 all_files.extend(files)
                 processed_archives.append(archive_name)
-                
+
+                for f in files:
+                    size = Path(f).stat().st_size
+
+                    total_size_bytes += size
+
+                    if size > largest_file:
+                        largest_file = size
+
+                    if smallest_file is None or size < smallest_file:
+                        smallest_file = size
+
                 logger.info(f"   ✅ {len(files)} files | Total: {len(all_files)}")
-                
+
                 if remaining is not None:
                     remaining -= len(files)
             else:
                 logger.warning(f"   ⚠️  No files extracted")
+
         
         except Exception as e:
             logger.error(f"   ❌ Failed: {e}")
@@ -280,6 +316,25 @@ def fetch_lovdata_files(
     logger.info(f"{'='*70}")
     logger.info(f"Archives processed: {len(processed_archives)}/{len(archive_list)}")
     logger.info(f"Total files: {len(all_files)}")
+    avg_size = (
+    total_size_bytes / len(all_files)
+    if len(all_files) > 0 else 0
+    )
+
+    smallest_kb = (smallest_file / 1024) if smallest_file else 0
+    largest_mb = (largest_file / (1024**2)) if largest_file else 0
+
+    logger.info("\n" + "="*70)
+    logger.info("📊 FILE SIZE SUMMARY")
+    logger.info("="*70)
+    logger.info(f"TOTAL FILES: {len(all_files):,}")
+    logger.info(f"TOTAL SIZE: {total_size_bytes / (1024**3):.2f} GB")
+    logger.info(f"AVERAGE SIZE: {avg_size / 1024:.2f} KB")
+    logger.info(f"LARGEST FILE: {largest_mb:.2f} MB")
+    logger.info(f"SMALLEST FILE: {smallest_kb:.2f} KB")
+    logger.info("="*70)
+
+
     for archive_name in processed_archives:
         logger.info(f"   ✅ {archive_name}")
     logger.info(f"{'='*70}\n")

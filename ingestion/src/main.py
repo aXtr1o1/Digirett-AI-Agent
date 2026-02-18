@@ -321,9 +321,17 @@ def run_pipeline(limit: int | None = None):
 
             if result.get("inserted"):
                 logger.info(f"  ✅ Inserted {result['inserted']} vectors into Milvus")
-                
+
         except Exception as e:
             logger.error(f"❌ Milvus insertion failed for {clean_name}: {e}")
+
+            # ✅ IMPORTANT — ROLLBACK STORAGE FILE
+            try:
+                db_store.delete_xml_from_storage(clean_name)
+                logger.warning(f"🧹 Storage rollback completed for {clean_name}")
+            except Exception as rollback_error:
+                logger.error(f"❌ Storage rollback failed: {rollback_error}")
+
             failed_count += 1
             continue
 
@@ -352,8 +360,17 @@ def run_pipeline(limit: int | None = None):
             
         except Exception as e:
             logger.error(f"❌ Metadata insertion failed for {clean_name}: {e}")
+
+            # ✅ rollback storage also
+            try:
+                db_store.delete_xml_from_storage(clean_name)
+                logger.warning(f"🧹 Storage rollback after metadata failure: {clean_name}")
+            except Exception as rollback_error:
+                logger.error(f"❌ Storage rollback failed: {rollback_error}")
+
             failed_count += 1
             continue
+
 
         logger.info(f"✅ [{idx}/{len(documents)}] Completed {clean_name}")
 
@@ -410,4 +427,4 @@ def run_pipeline(limit: int | None = None):
 # -------------------------------------------------
 
 if __name__ == "__main__":
-    run_pipeline(limit=None)
+    run_pipeline(limit=20)

@@ -270,19 +270,58 @@ class SupabaseStore:
             return set()
         
     def get_all_file_names(self) -> set:
-        """Retrieve all file names from database."""
+        """Retrieve ALL file names from database using pagination."""
         self._ensure_connection()
+
         try:
-            response = (
-                self.supabase
-                .table("lovdata_metadata")
-                .select("file_name")
-                .execute()
-            )
-            return {row["file_name"] for row in response.data if row.get("file_name")}
+            all_files = set()
+            batch_size = 1000
+            offset = 0
+
+            while True:
+                response = (
+                    self.supabase
+                    .table("lovdata_metadata")
+                    .select("file_name")
+                    .range(offset, offset + batch_size - 1)
+                    .execute()
+                )
+
+                data = response.data
+
+                if not data:
+                    break
+
+                for row in data:
+                    if row.get("file_name"):
+                        all_files.add(row["file_name"])
+
+                offset += batch_size
+                logger.info(f"Fetched {len(all_files)} Supabase file names...")
+
+            return all_files
+
         except Exception as e:
             logger.error(f"❌ Error fetching file names: {e}")
             return set()
+
+    # ✅ ADD THIS METHOD HERE
+    def delete_xml_from_storage(self, file_name: str):
+        """
+        Delete XML file from Supabase storage (rollback use).
+        """
+        self._ensure_connection()
+
+        try:
+            clean_name = os.path.splitext(file_name)[0]
+            storage_path = f"raw/{clean_name}"
+
+            self.supabase.storage.from_(SUPABASE_BUCKET).remove([storage_path])
+
+            logger.warning(f"🧹 Rolled back storage file: {storage_path}")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to delete storage file {file_name}: {e}")
         
     def cleanup_duplicate_xml_files(self):
         """Remove .xml files from storage (cleanup utility)."""

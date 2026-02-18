@@ -75,6 +75,23 @@ MILVUS_METRIC_TYPE = os.getenv("MILVUS_METRIC_TYPE", "COSINE")
 MILVUS_NLIST = int(os.getenv("MILVUS_NLIST", "1536"))
 
 # ============================
+# Milvus Monitoring
+# ============================
+
+MILVUS_CPU_WARN_THRESHOLD = int(
+    os.getenv("MILVUS_CPU_WARN_THRESHOLD", "75")
+)
+
+MILVUS_MEM_WARN_THRESHOLD = int(
+    os.getenv("MILVUS_MEM_WARN_THRESHOLD", "80")
+)
+
+MILVUS_LOG_PAYLOAD = os.getenv(
+    "MILVUS_LOG_PAYLOAD", "true"
+).lower() == "true"
+
+
+# ============================
 # Chunking / Embedding
 # ============================
 
