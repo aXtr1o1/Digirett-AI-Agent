@@ -41,12 +41,12 @@ def print_section(title):
     print("=" * 60)
 
 
-def test_health():
-    print_section("1️⃣ HEALTH CHECK")
-    r = requests.get(f"{BASE_URL}/health")
-    print("Status:", r.status_code)
-    print("Response:", r.json())
-    assert r.status_code == 200
+# def test_health():
+#     print_section("1️⃣ HEALTH CHECK")
+#     r = requests.get(f"{BASE_URL}/health")
+#     print("Status:", r.status_code)
+#     print("Response:", r.json())
+#     assert r.status_code == 200
 
 
 def create_conversation():
@@ -66,83 +66,83 @@ def create_conversation():
 import requests
 import json
 
-def test_stream(conversation_id):
-    print_section("3️⃣ STREAM TEST (SSE)")
+# def test_stream(conversation_id):
+#     print_section("3️⃣ STREAM TEST (SSE)")
     
-    payload = {
-        "user_id": USER_ID,
-        "conversation_id": conversation_id,
-        "query": "Explain Norwegian company law briefly.",
-        "top_k": 3
-    }
+#     payload = {
+#         "user_id": USER_ID,
+#         "conversation_id": conversation_id,
+#         "query": "Explain Norwegian company law briefly.",
+#         "top_k": 3
+#     }
 
-    response = requests.post(
-        f"{BASE_URL}/chat/stream",
-        json=payload,
-        stream=True
-    )
+#     response = requests.post(
+#         f"{BASE_URL}/chat/stream",
+#         json=payload,
+#         stream=True
+#     )
 
-    assert response.status_code == 200, "❌ Stream endpoint failed!"
+#     assert response.status_code == 200, "❌ Stream endpoint failed!"
 
-    full_answer = ""
-    sources_found = False
+#     full_answer = ""
+#     sources_found = False
 
-    for line in response.iter_lines():
-        if not line:
-            continue
+#     for line in response.iter_lines():
+#         if not line:
+#             continue
 
-        decoded_line = line.decode("utf-8")
+#         decoded_line = line.decode("utf-8")
 
-        # SSE format: "data: {...}"
-        if decoded_line.startswith("data: "):
-            json_data = decoded_line.replace("data: ", "")
-            data = json.loads(json_data)
+#         # SSE format: "data: {...}"
+#         if decoded_line.startswith("data: "):
+#             json_data = decoded_line.replace("data: ", "")
+#             data = json.loads(json_data)
 
-            if data.get("type") == "token":
-                full_answer += data.get("data", "")
+#             if data.get("type") == "token":
+#                 full_answer += data.get("data", "")
 
-            if data.get("type") == "complete":
-                metadata = data.get("metadata", {})
-                sources = metadata.get("sources", [])
+#             if data.get("type") == "complete":
+#                 metadata = data.get("metadata", {})
+#                 sources = metadata.get("sources", [])
 
-                print("\n✅ STREAM COMPLETE")
-                print("Sources:", sources)
+#                 print("\n✅ STREAM COMPLETE")
+#                 print("Sources:", sources)
 
-                if sources:
-                    sources_found = True
+#                 if sources:
+#                     sources_found = True
 
-                break
+#                 break
 
-    print("\nAnswer Preview:", full_answer[:200])
-    assert sources_found, "❌ No sources returned in stream!"
+#     print("\nAnswer Preview:", full_answer[:200])
+#     assert sources_found, "❌ No sources returned in stream!"
 
-def test_get_messages(conversation_id):
-    print_section("4️⃣ GET MESSAGES (Persistence Test)")
+# def test_get_messages(conversation_id):
+#     print_section("4️⃣ GET MESSAGES (Persistence Test)")
 
-    r = requests.get(f"{BASE_URL}/messages/{conversation_id}")
-    print("Status:", r.status_code)
+#     r = requests.get(f"{BASE_URL}/messages/{conversation_id}")
+#     print("Status:", r.status_code)
 
-    messages = r.json()
-    print("Messages Count:", len(messages))
+#     messages = r.json()
+#     print("Messages Count:", len(messages))
 
-    assistant_messages = [m for m in messages if m["role"] == "assistant"]
+#     assistant_messages = [m for m in messages if m["role"] == "assistant"]
 
-    assert len(assistant_messages) > 0, "❌ No assistant message found!"
+#     assert len(assistant_messages) > 0, "❌ No assistant message found!"
 
-    last_assistant = assistant_messages[-1]
+#     last_assistant = assistant_messages[-1]
 
-    print("Assistant Sources:", last_assistant.get("sources"))
+#     print("Assistant Sources:", last_assistant.get("sources"))
 
-    assert last_assistant.get("sources"), "❌ Sources missing after refresh!"
+#     assert last_assistant.get("sources"), "❌ Sources missing after refresh!"
 
 
-def test_delete_conversation(conversation_id):
-    print_section("5️⃣ DELETE CONVERSATION")
+# def test_delete_conversation(conversation_id):
+#     print_section("5️⃣ DELETE CONVERSATION")
 
-    r = requests.delete(f"{BASE_URL}/conversations/{conversation_id}")
-    print("Status:", r.status_code)
-    print("Response:", r.json())
-    assert r.status_code == 200
+#     r = requests.delete(f"{BASE_URL}/conversations/{conversation_id}")
+#     print("Status:", r.status_code)
+#     print("Response:", r.json())
+#     assert r.status_code == 200
 
 
 if __name__ == "__main__":

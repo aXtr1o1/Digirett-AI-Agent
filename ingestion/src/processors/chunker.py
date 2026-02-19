@@ -183,7 +183,7 @@ class TokenBoundTextSplitter:
     
     def __init__(
         self,
-        max_tokens: int = 512,
+        max_tokens: int = 400,
         overlap_tokens: int = 50,
         token_counter: Optional[TokenCounter] = None
     ):
@@ -509,9 +509,13 @@ class NorwegianLovdataParser:
         try:
             line_stripped = line.strip()
             
-            # Must have at least 5 words
-            if len(line_stripped.split()) < 5:
-                return False
+            # Allow short legal or numeric lines (Lovdata often has quotas, coordinates, lists)
+            word_count = len(line_stripped.split())
+
+            if word_count < 3:
+                # allow lines containing numbers or legal symbols (§)
+                if not re.search(r'[0-9§]', line_stripped):
+                    return False
             
             # Not all uppercase (headers)
             if line_stripped.isupper() and len(line_stripped) > 30:
@@ -761,7 +765,7 @@ class NorwegianLovdataChunker:
     
     def __init__(
         self,
-        max_tokens: int = 512,
+        max_tokens: int = 400,
         overlap_tokens: int = 50
     ):
         """
@@ -851,33 +855,101 @@ class NorwegianLovdataChunker:
                         )
                         
                         for split_idx, split_text in enumerate(split_texts):
+                            # 🔥 FINAL HARD TOKEN SAFETY (THIS IS WHAT YOU ARE MISSING)
+                            token_ids = None
                             split_token_count = self.token_counter.count_tokens(split_text)
+
+                            if split_token_count > self.text_splitter.max_tokens:
+                                # Force token slicing (guaranteed safe)
+                                encoding = self.token_counter.encoding
+                                token_ids = encoding.encode(split_text)
+
+                                for force_idx, i in enumerate(range(0, len(token_ids), self.text_splitter.max_tokens)):
+                                    sub_ids = token_ids[i:i + self.text_splitter.max_tokens]
+                                    safe_text = encoding.decode(sub_ids)
+
+                                    chunk_id = self.hasher.generate_chunk_id(
+                                        file_hash, parent.parent_index, child_idx, force_idx
+                                    )
                             
-                            chunk_id = self.hasher.generate_chunk_id(
-                                file_hash, parent.parent_index, child_idx, split_idx
-                            )
+                                    chunk = Chunk(
+                                        chunk_id=chunk_id,
+                                        file_name=file_name,
+                                        file_hash=file_hash,
+                                        parent_index=parent.parent_index,
+                                        child_index=child_idx,
+                                        parent_type=parent.parent_type,
+                                        parent_title=parent.parent_title,
+                                        text=safe_text,
+                                        token_count=len(sub_ids),
+                                        is_split=True,
+                                        split_index=force_idx,
+                                        metadata=doc_metadata.to_dict()
+                                    )
+                                    chunks.append(chunk)
                             
-                            chunk = Chunk(
-                                chunk_id=chunk_id,
-                                file_name=file_name,
-                                file_hash=file_hash,
-                                parent_index=parent.parent_index,
-                                child_index=child_idx,
-                                parent_type=parent.parent_type,
-                                parent_title=parent.parent_title,
-                                text=split_text,
-                                token_count=split_token_count,
-                                is_split=True,
-                                split_index=split_idx,
-                                metadata=doc_metadata.to_dict()
-                            )
-                            chunks.append(chunk)
-            
+                            else:
+                                chunk_id = self.hasher.generate_chunk_id(
+                                    file_hash, parent.parent_index, child_idx, split_idx
+                                )
+                                chunk = Chunk(
+                                    chunk_id=chunk_id,
+                                    file_name=file_name,
+                                    file_hash=file_hash,
+                                    parent_index=parent.parent_index,
+                                    child_index=child_idx,
+                                    parent_type=parent.parent_type,
+                                    parent_title=parent.parent_title,
+                                    text=split_text,
+                                    token_count=split_token_count,
+                                    is_split=True,
+                                    split_index=split_idx,
+                                    metadata=doc_metadata.to_dict()
+                                )
+                                chunks.append(chunk)
+
             if total_splits > 0:
                 logger.info(
                     f"✂️  Split {total_splits} oversized chunks in {file_name}"
                 )
-            
+            # ------------------------------------------------------------------
+            # FALLBACK: create one chunk if parsing produced no chunks
+            # ------------------------------------------------------------------
+            if not chunks and text.strip():
+                logger.warning(
+                    f"No structured chunks found in {file_name}, creating fallback chunks"
+                )
+
+                fallback_splits = self.text_splitter.split_text(text)
+
+                logger.warning(
+                    f"Fallback splitting full document into {len(fallback_splits)} chunks"
+                )
+
+                for split_idx, split_text in enumerate(fallback_splits):
+
+                    token_count = self.token_counter.count_tokens(split_text)
+
+                    chunk_id = self.hasher.generate_chunk_id(
+                        file_hash, 0, 0, split_idx
+                    )
+
+                    chunk = Chunk(
+                        chunk_id=chunk_id,
+                        file_name=file_name,
+                        file_hash=file_hash,
+                        parent_index=0,
+                        child_index=0,
+                        parent_type="fallback",
+                        parent_title="Full Document",
+                        text=split_text,
+                        token_count=token_count,
+                        is_split=True,
+                        split_index=split_idx,
+                        metadata=doc_metadata.to_dict()
+                    )
+
+                    chunks.append(chunk)
             return doc_metadata, chunks
         
         except Exception as e:
@@ -1050,7 +1122,7 @@ if __name__ == "__main__":
     
     # Initialize with token-based chunking (512 tokens max)
     chunker = NorwegianLovdataChunker(
-        max_tokens=512,
+        max_tokens=400,
         overlap_tokens=50
     )
     

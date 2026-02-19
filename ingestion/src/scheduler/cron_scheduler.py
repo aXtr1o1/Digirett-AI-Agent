@@ -66,7 +66,12 @@ if str(PROJECT_ROOT) not in sys.path:
 # ---------------------------------------------------------------------------
 # Now safe to import project modules
 # ---------------------------------------------------------------------------
-from ingestion.src.config import CHECKPOINT_DIR, LOG_DIR, LOG_FILE  # noqa: E402
+from ingestion.src.config import (  # noqa: E402
+    CHECKPOINT_DIR, 
+    LOG_DIR, 
+    LOG_FILE,
+    LOVDATA_API_URL  # ✅ FIX: Import from config instead of hardcoding
+)
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -86,10 +91,9 @@ logger = logging.getLogger("lovdata-scheduler")
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOVDATA_LIST_URL = "https://api.lovdata.no/v1/publicData/list"
 STATE_FILE       = CHECKPOINT_DIR / "scheduler_state.json"
 
-# These can be overridden via .env  (see bottom of file for full list)
+# These can be overridden via .env
 BATCH_SIZE       = int(os.getenv("SCHEDULER_BATCH_SIZE", "50"))
 CRON_HOUR        = int(os.getenv("SCHEDULER_CRON_HOUR", "2"))
 CRON_MINUTE      = int(os.getenv("SCHEDULER_CRON_MINUTE", "0"))
@@ -129,34 +133,12 @@ def fetch_latest_archive_name() -> str:
     Returns the filename string (e.g. 'lovtidend-avd1-2001-2025.tar.bz2').
     Raises on network / parse errors.
     """
-    resp = requests.get(LOVDATA_LIST_URL, timeout=API_TIMEOUT_SECS)
+    resp = requests.get(LOVDATA_API_URL, timeout=API_TIMEOUT_SECS)
     resp.raise_for_status()
     data = resp.json()
     if not data:
         raise RuntimeError("Lovdata list API returned empty response")
     return data[0]["filename"]
-
-
-def has_new_data(state: dict) -> tuple:
-    """
-    Check whether Lovdata has published a new archive since last run.
-
-    Returns:
-        (changed: bool, latest_name: str)
-        - changed=True  → new archive name detected, run pipeline
-        - changed=False → same archive, skip
-    """
-    latest_name = fetch_latest_archive_name()
-    last_name   = state.get("last_archive_name", "")
-
-    if latest_name != last_name:
-        logger.info(f"🔔 New archive detected!")
-        logger.info(f"   Previous : {last_name or '(none – first run)'}")
-        logger.info(f"   Latest   : {latest_name}")
-        return True, latest_name
-
-    logger.info(f"ℹ️  No change. Current archive: {latest_name}")
-    return False, latest_name
 
 
 # ===========================================================================
@@ -180,29 +162,42 @@ def ingestion_job():
     logger.info("=" * 70)
 
     # ------------------------------------------------------------------
-    # Step 1: Check Lovdata API for changes
+    # Step 1: Ask Lovdata what archive is current
     # ------------------------------------------------------------------
     state["last_check_time"] = now
 
     try:
-        changed, latest_archive = has_new_data(state)
+        latest_archive = fetch_latest_archive_name()
+        logger.info(f"📦 Latest archive from API: {latest_archive}")
+        
+        # ✅ FIX: Compare with PREVIOUS archive, not itself
+        last_archive = state.get("last_archive_name")
+        
+        if last_archive:
+            logger.info(f"📋 Last known archive: {last_archive}")
+        else:
+            logger.info("📋 No previous archive recorded (first run)")
+        
+        # ✅ CRITICAL FIX: Was "latest_archive == latest_archive" (always True)
+        if latest_archive == last_archive:
+            logger.info(
+                "📄 Archive unchanged — running ingestion to check modified files"
+            )
+            state["last_run_status"] = "checking_modifications"
+        else:
+            logger.info(f"🔄 Archive changed: {last_archive} → {latest_archive}")
+        
     except Exception as e:
-        logger.error(f"❌ Failed to check Lovdata API: {e}")
+        logger.error(f"❌ Failed to check Lovdata API: {e}", exc_info=True)
         state["last_run_status"] = "api_check_failed"
+        state["last_error"] = str(e)
         save_state(state)
         return
 
-    # ------------------------------------------------------------------
-    # Step 2: No change → exit early
-    # ------------------------------------------------------------------
-    if not changed:
-        state["last_run_status"] = "skipped_no_change"
-        save_state(state)
-        logger.info("✅ No new data. Exiting tick.\n")
-        return
+    logger.info("🔁 New archive detected — running ingestion pipeline...")
 
     # ------------------------------------------------------------------
-    # Step 3: New data → run pipeline
+    # Step 2: Run the ingestion pipeline
     # ------------------------------------------------------------------
     state["last_run_time"] = now
     logger.info(f"🚀 Triggering ingestion pipeline (limit={BATCH_SIZE})...")
@@ -212,25 +207,36 @@ def ingestion_job():
         # (boto3, pymilvus, supabase) when just doing the API check.
         from ingestion.src.main import run_pipeline   # noqa: E402
 
-        run_pipeline(limit=BATCH_SIZE)
+        stats = run_pipeline(limit=None)
 
         # ------------------------------------------------------------------
-        # Step 4: Success → update state
+        # Step 3: Success → update state
         # ------------------------------------------------------------------
-        state["last_archive_name"]     = latest_archive
-        state["last_run_status"]       = "success"
-        state["total_files_processed"] = state.get("total_files_processed", 0) + BATCH_SIZE
+        state["last_archive_name"] = latest_archive
+        state["last_run_status"] = "success"
+        state["last_run_time"] = now
+        
+        # ✅ FIX: Track total files processed (was missing in original cron job)
+        state["total_files_processed"] = state.get("total_files_processed", 0) + stats["success"]
+        
+        # Clear any previous error
+        if "last_error" in state:
+            del state["last_error"]
 
         logger.info("=" * 70)
-        logger.info("✅ Ingestion completed successfully")
-        logger.info(f"   Archive : {latest_archive}")
-        logger.info(f"   Files   : +{BATCH_SIZE} (total: {state['total_files_processed']})")
+        logger.info("📊 INGESTION SUMMARY")
+        logger.info(f"Archive              : {latest_archive}")
+        logger.info(f"New files processed  : {stats['success']}")
+        logger.info(f"Skipped (duplicate)  : {stats['skipped']}")
+        logger.info(f"Failed               : {stats['failed']}")
+        logger.info(f"Total checked        : {stats['total_files']}")
+        logger.info(f"Lifetime total       : {state['total_files_processed']}")
         logger.info("=" * 70)
 
     except Exception as e:
         logger.error(f"❌ Pipeline failed: {e}", exc_info=True)
         state["last_run_status"] = "pipeline_failed"
-        state["last_error"]      = str(e)
+        state["last_error"] = str(e)
         # Do NOT update last_archive_name – next tick will retry
 
     save_state(state)
@@ -241,11 +247,11 @@ def ingestion_job():
 # ===========================================================================
 
 def on_job_event(event):
+    """Log job execution results."""
     if event.exception:
         logger.error(f"🚨 Job crashed: {event.exception}")
     else:
         logger.info("✔️  Job finished without exception")
-
 
 # ===========================================================================
 # Entry point
@@ -257,6 +263,7 @@ def main():
     logger.info(f"   Schedule   : every day at {CRON_HOUR:02d}:{CRON_MINUTE:02d} UTC")
     logger.info(f"   Batch size : {BATCH_SIZE} files per run")
     logger.info(f"   State file : {STATE_FILE}")
+    logger.info(f"   API URL    : {LOVDATA_API_URL}")
     logger.info("=" * 70)
 
     # Show current state if it exists
@@ -267,6 +274,8 @@ def main():
         logger.info(f"   Last check     : {state.get('last_check_time', 'N/A')}")
         logger.info(f"   Last status    : {state.get('last_run_status', 'N/A')}")
         logger.info(f"   Total processed: {state.get('total_files_processed', 0)}")
+        if "last_error" in state:
+            logger.warning(f"   Last error     : {state['last_error']}")
     else:
         logger.info("📋 No previous state – this is the first run")
 

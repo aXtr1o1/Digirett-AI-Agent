@@ -34,65 +34,46 @@ class RedisClient:
     
     def connect(
         self,
-        host: str = "localhost",
-        port: int = 6379,
-        db: int = 0,
-        password: Optional[str] = None,
+        host: str,
+        port: int,
+        db: int,
+        password: Optional[str],
+        ssl: bool = False,
         max_connections: int = 50
     ) -> None:
-        """
-        Connect to Redis server
-        
-        Args:
-            host: Redis server host
-            port: Redis server port
-            db: Database number
-            password: Optional password
-            max_connections: Max connection pool size
-            
-        Raises:
-            ConnectionError: If connection fails
-        """
         try:
             logger.info(f"🔌 Connecting to Redis at {host}:{port} (DB: {db})...")
-            
-            # Create connection pool
-            self._pool = ConnectionPool(
+
+            self._client = redis.Redis(
                 host=host,
                 port=port,
                 db=db,
                 password=password if password else None,
-                decode_responses=True,  # Auto-decode bytes to strings
-                max_connections=max_connections,
+                ssl=ssl,
+                decode_responses=True,
                 socket_timeout=5,
                 socket_connect_timeout=5,
-                retry_on_timeout=True
+                retry_on_timeout=True,
+                max_connections=max_connections,
             )
-            
-            # Create Redis client
-            self._client = redis.Redis(connection_pool=self._pool)
-            
-            # Test connection
+
             self._client.ping()
-            
+
             logger.info(
-                f"✅ Connected to Redis | "
-                f"Host: {host}:{port} | "
-                f"DB: {db} | "
-                f"Pool size: {max_connections}"
+                f"✅ Connected to Redis | Host: {host}:{port} | DB: {db}"
             )
-            
+
             self.initialized = True
-            
+
         except Exception as e:
             logger.error(
                 f"❌ Redis connection failed | "
-                f"Host: {host}:{port} | "
-                f"DB: {db} | "
+                f"Host: {host}:{port} | DB: {db} | "
                 f"Error: {type(e).__name__}: {str(e)}",
                 exc_info=True
             )
             raise ConnectionError(f"Failed to connect to Redis: {str(e)}") from e
+
     
     def get_client(self) -> redis.Redis:
         """

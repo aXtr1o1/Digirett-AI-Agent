@@ -8,7 +8,7 @@ AWS SageMaker BGE-M3 Embedding Service (PRODUCTION VERSION)
 import logging
 import json
 import time
-import boto3
+# import boto3
 from typing import List
 from tenacity import retry, stop_after_attempt, wait_exponential
 
