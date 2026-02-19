@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     REDIS_PORT: int
     REDIS_DB: int 
     REDIS_PASSWORD: str
+    REDIS_SSL: bool = False   # 🔥 ADD THIS
     CACHE_TTL: int = 3600
     ENABLE_CACHE: bool = True
     

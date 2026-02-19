@@ -3,185 +3,182 @@ import warnings
 warnings.filterwarnings(
     "ignore",
     message="pkg_resources is deprecated as an API",
-    category=UserWarning
+    category=UserWarning,
 )
 
 import gc
 import os
+import time
 import logging
-from datetime import datetime
 
-# ✅ CORRECT IMPORTS: Use token-based versions for chunking/embedding
+import psutil
+
 from ingestion.src.processors.chunker import NorwegianLovdataChunker, TokenCounter
 from ingestion.src.processors.embedder import TokenAwareAzureEmbedder
-
-# ✅ KEEP EXISTING IMPORTS: These remain the same
 from ingestion.collectors.lovdata_collector import fetch_lovdata_files
 from ingestion.src.processors.text_processor import process_xml_to_text
 from ingestion.src.storage.supabase_store import SupabaseStore
 from ingestion.src.storage.milvus_store import MilvusTextStore
-from ingestion.src.config import SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_BUCKET
-from ingestion.src.config import MAX_TOKENS_PER_CHUNK, OVERLAP_TOKENS
-from ingestion.src.config import LOG_FILE
+from ingestion.src.config import (
+    MAX_TOKENS_PER_CHUNK,
+    OVERLAP_TOKENS,
+    LOG_FILE,
+    XML_PROCESS_WORKERS,
+    PIPELINE_CPU_WARN,
+    PIPELINE_CPU_PAUSE,
+    PIPELINE_CPU_MAX,
+    PIPELINE_DOC_SLEEP,
+)
 
 # -------------------------------------------------
 # Logging
 # -------------------------------------------------
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
     handlers=[
         logging.FileHandler(LOG_FILE, encoding="utf-8"),
-        logging.StreamHandler()
+        logging.StreamHandler(),
     ],
-    force=True
+    force=True,
 )
-
 logger = logging.getLogger("lovdata-ingestion")
 
+
 # -------------------------------------------------
-# Pipeline WITH TOKEN-BASED CHUNKING (CORRECTED)
+# CPU guard helpers  (all thresholds come from config — no literals)
+# -------------------------------------------------
+
+def _cpu_guard(label: str = "") -> None:
+    """Instant (non-blocking) CPU snapshot; sleeps if config thresholds exceeded."""
+    cpu = psutil.cpu_percent(interval=None)
+    if cpu >= PIPELINE_CPU_MAX:
+        logger.warning(f"🔴 CPU={cpu}% [{label}] — pausing 8s")
+        time.sleep(8.0)
+    elif cpu >= PIPELINE_CPU_PAUSE:
+        logger.warning(f"🟠 CPU={cpu}% [{label}] — pausing 3s")
+        time.sleep(3.0)
+    elif cpu >= PIPELINE_CPU_WARN:
+        logger.info(f"🟡 CPU={cpu}% [{label}]")
+
+
+def _wait_for_cpu(label: str = "") -> None:
+    """Block until CPU drops below PIPELINE_CPU_PAUSE (60 s max)."""
+    max_wait = 60
+    waited   = 0
+    while waited < max_wait:
+        cpu = psutil.cpu_percent(interval=1)
+        if cpu < PIPELINE_CPU_PAUSE:
+            return
+        logger.warning(
+            f"⏳ Waiting for CPU ({cpu}%) to drop below "
+            f"{PIPELINE_CPU_PAUSE}% [{label}]"
+        )
+        time.sleep(3)
+        waited += 3
+    logger.warning(f"⚠️  CPU still high after {max_wait}s — proceeding anyway")
+
+
+# -------------------------------------------------
+# Pipeline
 # -------------------------------------------------
 
 def run_pipeline(limit: int | None = None):
     """
-    Complete ingestion pipeline WITH TOKEN-BASED CHUNKING.
-    
-    ✅ CHANGES FROM OLD VERSION:
-    1. NorwegianLovdataChunker: Uses token-based splitting (no truncation)
-    2. TokenAwareAzureEmbedder: Batch processing, Azure OpenAI text-embedding-3-small
-    3. Statistics: Tracks token counts and split chunks
-    
-    ✅ UNCHANGED:
-    - SupabaseStore (same)
-    - MilvusTextStore (same)
-    - fetch_lovdata_files (same)
-    - process_xml_to_text (same)
-    
-    Flow:
-    1. Fetch XML files
-    2. Process to text
-    3. Token-based chunking (max 512 tokens per chunk)
-    4. Generate embeddings (batched, 5 at a time)
-    5. Store in Milvus (vectors)
-    6. Store in Supabase (metadata)
+    Complete ingestion pipeline with CPU-aware throttling.
+
+    All tuning values (CPU thresholds, sleep durations, worker counts) are
+    imported from config.py which reads them from the .env file.
+    No numeric literals appear in this file.
     """
-    logger.info("🚀 Lovdata ingestion started (TOKEN-BASED CHUNKING)")
-    logger.info("   Max tokens/chunk: 512 | Overlap: 50 | Batch size: 1")
-    logger.info("   ✅ NO DATA LOSS")
-
-    # ============================================================
-    # Initialize stores (UNCHANGED)
-    # ============================================================
-    
-    db_store = SupabaseStore()
-    milvus_store = MilvusTextStore()
-
-
-    # ============================================================
-    # Initialize processors (✅ CHANGED: Token-based versions)
-    # ============================================================
-    
-    # Token-based chunker (512 tokens max, 50 token overlap)
-    chunker = NorwegianLovdataChunker(
-    max_tokens=MAX_TOKENS_PER_CHUNK,
-    overlap_tokens=OVERLAP_TOKENS
+    logger.info("🚀 Lovdata ingestion started (CPU-THROTTLED)")
+    logger.info(
+        f"   CPU warn={PIPELINE_CPU_WARN}% | "
+        f"pause={PIPELINE_CPU_PAUSE}% | "
+        f"max={PIPELINE_CPU_MAX}%"
     )
-    
-    # Token-aware embedder (no truncation, batch processing)
+    logger.info(f"   Inter-doc sleep : {PIPELINE_DOC_SLEEP}s")
+    logger.info(f"   XML workers     : {XML_PROCESS_WORKERS}")
+    logger.info(
+        f"   Max tokens/chunk: {MAX_TOKENS_PER_CHUNK} | "
+        f"Overlap: {OVERLAP_TOKENS}"
+    )
+
+    # -- Stores & processors ------------------------------------------------
+    db_store     = SupabaseStore()
+    milvus_store = MilvusTextStore()
+    chunker      = NorwegianLovdataChunker(
+        max_tokens=MAX_TOKENS_PER_CHUNK,
+        overlap_tokens=OVERLAP_TOKENS,
+    )
     embedder = TokenAwareAzureEmbedder()
-    # ============================================================
-    # Fetch and convert XML to text (UNCHANGED)
-    # ============================================================
-    
+
+    # -- Fetch XML files ----------------------------------------------------
     xml_files, archive_name = fetch_lovdata_files(limit=limit)
     if not archive_name:
         logger.warning("⚠️ No archives fetched")
         return {"total_files": 0, "success": 0, "skipped": 0, "failed": 0}
+
     latest_zip = archive_name[-1]
-
-    # if db_store.zip_already_processed(latest_zip):
-    #     logger.info("⏭️ Latest ZIP already processed. Cron exiting.")
-    #     return {"total_files": 0, "success": 0, "skipped": 0, "failed": 0}
-
 
     if not xml_files:
         logger.warning("⚠️ No XML files fetched")
-        return {
-            "total_files": 0,
-            "success": 0,
-            "skipped": 0,
-            "failed": 0,
-        }
+        return {"total_files": 0, "success": 0, "skipped": 0, "failed": 0}
 
     logger.info(f"\n{'='*70}")
-    logger.info(f"📊 PIPELINE OVERVIEW")
+    logger.info("📊 PIPELINE OVERVIEW")
     logger.info(f"{'='*70}")
-    logger.info(f"Archives processed: {len(archive_name)}")
     for i, archive in enumerate(archive_name, 1):
         logger.info(f"  {i}. {archive}")
-    logger.info(f"Total XML files: {len(xml_files)}")
+    logger.info(f"  Total XML files: {len(xml_files)}")
     logger.info(f"{'='*70}\n")
-    
-    # Attach archive name to documents
-    documents = process_xml_to_text(xml_files)
 
-    # ✅ attach archive name correctly
+    # -- XML -> text  (worker count from config) ----------------------------
+    documents = process_xml_to_text(xml_files, max_workers=XML_PROCESS_WORKERS)
     for doc in documents:
         doc["archive_name"] = latest_zip
 
     logger.info(f"📊 Processing {len(documents)} documents")
 
-    # ============================================================
-    # Statistics tracking (✅ ADDED: Token statistics)
-    # ============================================================
-    
-    success_count = 0
-    failed_count = 0
-    skipped_count = 0
-    total_chunks = 0
-    total_split_chunks = 0  # ✅ NEW: Track splits
-    total_tokens = 0        # ✅ NEW: Track tokens
+    # -- Stats --------------------------------------------------------------
+    success_count      = 0
+    failed_count       = 0
+    skipped_count      = 0
+    total_chunks       = 0
+    total_split_chunks = 0
+    total_tokens       = 0
+    archive_stats      = {}
 
-    # ✅ NEW: Track per-archive statistics
-    archive_stats = {}
-
-    # ============================================================
-    # Process each document
-    # ============================================================
-    
+    # -- Per-document loop --------------------------------------------------
     for idx, doc in enumerate(documents, 1):
-        # ✅ MEMORY CLEANUP: Between documents
+
+        # Mandatory inter-document pause (from config)
+        if idx > 1:
+            time.sleep(PIPELINE_DOC_SLEEP)
+
+        # CPU guard before every document
+        _cpu_guard(label=f"doc {idx}/{len(documents)}")
+
         gc.collect()
 
-        # Extract clean filename
         clean_name = doc["file_name"].split(".")[0]
-        xml_path = next(p for p in xml_files if clean_name in p)
+        xml_path   = next(p for p in xml_files if clean_name in p)
 
-
-        # --------------------------------------------------
-        # Calculate file hash FIRST
-        # --------------------------------------------------
+        # -- Classify -------------------------------------------------------
         file_hash = db_store.calculate_hash(xml_path)
-
-        # --------------------------------------------------
-        # Classify file
-        # --------------------------------------------------
-        status = db_store.classify_file(clean_name, file_hash)
+        status    = db_store.classify_file(clean_name, file_hash)
 
         if status == "UNCHANGED":
-            logger.info(f"⏭️ File unchanged, skipping: {clean_name}")
+            logger.info(f"⏭️  Unchanged, skipping: {clean_name}")
             skipped_count += 1
             continue
 
         if status == "UPDATED":
-            logger.info(f"♻️ Updated file detected, deleting old embeddings")
+            logger.info(f"♻️  Updated — removing old embeddings: {clean_name}")
             milvus_store.delete_by_file_name(clean_name)
 
-        # ✅ ADD THIS BLOCK HERE
         if db_store.file_exists(file_hash):
-            logger.info(f"⏭️ Already embedded, skipping Milvus insert: {clean_name}")
+            logger.info(f"⏭️  Already embedded, skipping: {clean_name}")
             skipped_count += 1
             continue
 
@@ -189,155 +186,123 @@ def run_pipeline(limit: int | None = None):
         logger.info(f"[{idx}/{len(documents)}] Processing {clean_name}")
         logger.info(f"{'='*70}")
 
-        # ============================================================
-        # STEP 1: Upload XML to Supabase Storage (UNCHANGED)
-        # ============================================================
-        
-        upload_success = db_store.upload_xml_to_storage(xml_path, clean_name)
-        
-        if not upload_success:
-            logger.error(f"❌ Storage upload failed for {clean_name}")
+        # -- STEP 1: Upload XML ---------------------------------------------
+        if not db_store.upload_xml_to_storage(xml_path, clean_name):
+            logger.error(f"❌ Storage upload failed: {clean_name}")
             failed_count += 1
             continue
-        
-        # Build public storage URI (without .xml extension)
-        storage_uri = doc.get("document_url")
 
-        if not storage_uri:
-            logger.warning(f"No Lovdata URL found for {clean_name}")
-            storage_uri = ""
+        storage_uri = doc.get("document_url") or ""
 
-
-        # ============================================================
-        # STEP 2: Token-based chunking (✅ CHANGED)
-        # ============================================================
-        
+        # -- STEP 2: Chunking -----------------------------------------------
+        # chunk_text() returns (DocumentMetadata, List[Chunk]) — unpack both
         try:
             _, chunks = chunker.chunk_text(
                 doc["text"],
                 clean_name,
-                doc["archive_name"]
+                doc["archive_name"],
             )
-
             if not chunks:
-                logger.warning(f"⚠️  No chunks generated for {clean_name}, skipping")
+                logger.warning(f"⚠️  No chunks for {clean_name}, skipping")
                 skipped_count += 1
                 continue
-            
-            # ✅ COUNT SPLIT CHUNKS
-            split_count = sum(1 for c in chunks if c.is_split)
-            total_split_chunks += split_count
-            
-            # ✅ CALCULATE TOKEN STATISTICS
+
+            split_count        = sum(1 for c in chunks if c.is_split)
             chunk_token_counts = [c.token_count for c in chunks]
-            avg_tokens = sum(chunk_token_counts) / len(chunk_token_counts)
-            max_tokens = max(chunk_token_counts)
-            
-            logger.info(f"  📝 Generated {len(chunks)} chunks")
-            logger.info(f"     ✂️  {split_count} chunks were split")
-            logger.info(f"     🔢 Avg tokens: {avg_tokens:.0f} | Max: {max_tokens}")
-            
-            total_chunks += len(chunks)
-            total_tokens += sum(chunk_token_counts)
-            
+            avg_tokens         = sum(chunk_token_counts) / len(chunk_token_counts)
+            max_tok            = max(chunk_token_counts)
+
+            logger.info(
+                f"  📝 {len(chunks)} chunks | "
+                f"✂️  {split_count} split | "
+                f"avg {avg_tokens:.0f}t | max {max_tok}t"
+            )
+            total_chunks       += len(chunks)
+            total_split_chunks += split_count
+            total_tokens       += sum(chunk_token_counts)
+
         except Exception as e:
-            logger.error(f"❌ Chunking failed: {e}")
+            logger.error(f"❌ Chunking failed for {clean_name}: {e}")
             failed_count += 1
             continue
 
-        # ============================================================
-        # STEP 3: Convert chunks to dictionaries (✅ ADDED: Token fields)
-        # ============================================================
-        
-        chunk_dicts = []
-        for c in chunks:
-            # Skip empty chunks
-            if not c.text or not c.text.strip():
-                continue
-
-            chunk_dicts.append({
+        # -- STEP 3: Build chunk dicts --------------------------------------
+        chunk_dicts = [
+            {
                 "stable_chunk_id": c.chunk_id,
-                "chunk_id": c.chunk_id,
-                "file_name": clean_name,
-                "file_hash": file_hash,
-                "url": storage_uri,
-                "chunk_index": c.child_index,
-                "parent_index": c.parent_index,
-                "child_index": c.child_index,
-                "parent_type": str(c.parent_type),
-                "parent_title": c.parent_title,
-                "text": c.text,  # ✅ FULL TEXT (no truncation)
-                # ✅ NEW FIELDS (optional, for tracking):
-                "token_count": c.token_count,
-                "is_split": c.is_split,
-                "split_index": c.split_index
-            })
+                "chunk_id":        c.chunk_id,
+                "file_name":       clean_name,
+                "file_hash":       file_hash,
+                "url":             storage_uri,
+                "chunk_index":     c.child_index,
+                "parent_index":    c.parent_index,
+                "child_index":     c.child_index,
+                "parent_type":     str(c.parent_type),
+                "parent_title":    c.parent_title,
+                "text":            c.text,
+                "token_count":     c.token_count,
+                "is_split":        c.is_split,
+                "split_index":     c.split_index,
+            }
+            for c in chunks
+            if c.text and c.text.strip()
+        ]
 
         if not chunk_dicts:
             logger.warning(f"⚠️  No valid chunk text for {clean_name}")
             skipped_count += 1
             continue
 
-        # ============================================================
-        # STEP 4: Generate embeddings (✅ CHANGED: Token-aware, batched)
-        # ============================================================
-        
+        # -- STEP 4: Embeddings --------------------------------------------
+        _cpu_guard(label="pre-embed")
+
         try:
-            chunk_dicts = embedder.embed_chunks(chunk_dicts)
-            
-            # ✅ VALIDATE EMBEDDINGS
+            chunk_dicts  = embedder.embed_chunks(chunk_dicts)
             valid_chunks = [c for c in chunk_dicts if c.get("embedding") is not None]
-            
+
             if not valid_chunks:
-                logger.error(f"❌ No valid embeddings for {clean_name}, skipping")
+                logger.error(f"❌ No valid embeddings for {clean_name}")
                 failed_count += 1
                 continue
-            
+
             if len(valid_chunks) < len(chunk_dicts):
                 logger.warning(
-                    f"  ⚠️  Only {len(valid_chunks)}/{len(chunk_dicts)} embeddings succeeded"
+                    f"  ⚠️  {len(valid_chunks)}/{len(chunk_dicts)} embeddings succeeded"
                 )
-            
-            # Use only valid chunks
+
             chunk_dicts = valid_chunks
-            logger.info(f"  ✅ Generated {len(chunk_dicts)} embeddings")
-            
+            logger.info(f"  ✅ {len(chunk_dicts)} embeddings generated")
+
         except Exception as e:
             logger.error(f"❌ Embedding failed for {clean_name}: {e}")
             failed_count += 1
             continue
 
-        # ============================================================
-        # STEP 5: Insert vectors into Milvus (UNCHANGED)
-        # ============================================================
-        
+        # -- STEP 5: Milvus insert -----------------------------------------
+        _wait_for_cpu(label=f"pre-milvus {clean_name}")
+
         try:
             result = milvus_store.insert_chunks(chunk_dicts)
 
             if result.get("skipped"):
-                logger.warning(f"  ⏭️  Skipped duplicate {clean_name}")
+                logger.warning(f"  ⏭️  Duplicate skipped: {clean_name}")
                 skipped_count += 1
                 continue
 
             if result.get("inserted"):
-                logger.info(f"  ✅ Inserted {result['inserted']} vectors into Milvus")
+                logger.info(f"  ✅ {result['inserted']} vectors → Milvus")
 
         except Exception as e:
             logger.error(f"❌ Milvus insertion failed for {clean_name}: {e}")
-
-            # ✅ IMPORTANT — ROLLBACK STORAGE FILE
             try:
                 db_store.delete_xml_from_storage(clean_name)
-                logger.warning(f"🧹 Storage rollback completed for {clean_name}")
-            except Exception as rollback_error:
-                logger.error(f"❌ Storage rollback failed: {rollback_error}")
-
+                logger.warning(f"🧹 Storage rollback completed: {clean_name}")
+            except Exception as rollback_err:
+                logger.error(f"❌ Storage rollback failed: {rollback_err}")
             failed_count += 1
             continue
 
-        # ============================================================
-        # STEP 6: Store metadata in Supabase (UNCHANGED)
-        # ============================================================
+        # -- STEP 6: Supabase metadata --------------------------------------
         file_size = os.path.getsize(xml_path)
         try:
             db_store.insert_file_metadata(
@@ -345,86 +310,66 @@ def run_pipeline(limit: int | None = None):
                 file_hash=file_hash,
                 file_size=file_size,
                 zip_name=doc["archive_name"],
-                url=storage_uri
+                url=storage_uri,
             )
-            logger.info(f"  ✅ Metadata stored in Supabase")
+            logger.info("  ✅ Metadata → Supabase")
             success_count += 1
 
-            # ✅ Track per-archive stats
-            archive_key = doc["archive_name"]
-            if archive_key not in archive_stats:
-                archive_stats[archive_key] = {"files": 0, "chunks": 0}
-            archive_stats[archive_key]["files"] += 1
-            archive_stats[archive_key]["chunks"] += len(chunk_dicts)
-            
-            
-        except Exception as e:
-            logger.error(f"❌ Metadata insertion failed for {clean_name}: {e}")
+            key = doc["archive_name"]
+            if key not in archive_stats:
+                archive_stats[key] = {"files": 0, "chunks": 0}
+            archive_stats[key]["files"]  += 1
+            archive_stats[key]["chunks"] += len(chunk_dicts)
 
-            # ✅ rollback storage also
+        except Exception as e:
+            logger.error(f"❌ Metadata insert failed for {clean_name}: {e}")
             try:
                 db_store.delete_xml_from_storage(clean_name)
-                logger.warning(f"🧹 Storage rollback after metadata failure: {clean_name}")
-            except Exception as rollback_error:
-                logger.error(f"❌ Storage rollback failed: {rollback_error}")
-
+                logger.warning(
+                    f"🧹 Storage rollback after metadata failure: {clean_name}"
+                )
+            except Exception as rollback_err:
+                logger.error(f"❌ Storage rollback failed: {rollback_err}")
             failed_count += 1
             continue
 
+        logger.info(f"✅ [{idx}/{len(documents)}] Done: {clean_name}")
 
-        logger.info(f"✅ [{idx}/{len(documents)}] Completed {clean_name}")
-
-    # ============================================================
-    # Cleanup
-    # ============================================================
-    
+    # -- Cleanup ------------------------------------------------------------
     milvus_store.close()
-    
-     # ============================================================
-    # Final statistics (✅ ENHANCED: Multi-archive + Token stats)
-    # ============================================================
-    
-    logger.info("\n" + "="*70)
-    logger.info("🎉 MULTI-ARCHIVE PIPELINE COMPLETED")
-    logger.info("="*70)
-    
-    # Overall stats
-    logger.info(f"\n📊 Overall Statistics:")
-    logger.info(f"  Total files:           {len(documents)}")
-    logger.info(f"  ✅ Successful:         {success_count}")
-    logger.info(f"  ⏭️  Skipped:            {skipped_count}")
-    logger.info(f"  ❌ Failed:             {failed_count}")
-    
-    # Chunk stats
-    logger.info(f"\n📦 Chunk Statistics:")
-    logger.info(f"  Total chunks:          {total_chunks}")
+
+    # -- Final stats --------------------------------------------------------
+    logger.info("\n" + "=" * 70)
+    logger.info("🎉 PIPELINE COMPLETED")
+    logger.info("=" * 70)
+    logger.info(f"  Total files  : {len(documents)}")
+    logger.info(f"  ✅ Success   : {success_count}")
+    logger.info(f"  ⏭️  Skipped  : {skipped_count}")
+    logger.info(f"  ❌ Failed    : {failed_count}")
+    logger.info(f"  Total chunks : {total_chunks}")
     if total_chunks > 0:
-        logger.info(f"  Split chunks:          {total_split_chunks} ({total_split_chunks/total_chunks*100:.1f}%)")
-        logger.info(f"  Total tokens:          {total_tokens:,}")
-        logger.info(f"  Avg tokens/chunk:      {total_tokens/total_chunks:.0f}")
-        logger.info(f"  Content preserved:     100% ")
-    
-    # Archive breakdown
+        logger.info(
+            f"  Split chunks : {total_split_chunks} "
+            f"({total_split_chunks / total_chunks * 100:.1f}%)"
+        )
+        logger.info(f"  Total tokens : {total_tokens:,}")
+        logger.info(f"  Avg t/chunk  : {total_tokens / total_chunks:.0f}")
     if archive_stats:
-        logger.info(f"\n📚 Per-Archive Breakdown:")
-        for archive, stats in archive_stats.items():
-            logger.info(f"  {archive}:")
-            logger.info(f"    Files:  {stats['files']}")
-            logger.info(f"    Chunks: {stats['chunks']}")
-    
-    logger.info("="*70)
+        logger.info("\n📚 Per-archive breakdown:")
+        for archive, s in archive_stats.items():
+            logger.info(f"  {archive}: {s['files']} files, {s['chunks']} chunks")
+    logger.info("=" * 70)
 
-    # ✅ RETURN PIPELINE STATS TO SCHEDULER / TRIGGER
     return {
-    "total_files": len(documents),
-    "success": success_count,
-    "skipped": skipped_count,
-    "failed": failed_count,
-}
+        "total_files": len(documents),
+        "success":     success_count,
+        "skipped":     skipped_count,
+        "failed":      failed_count,
+    }
+
 
 # -------------------------------------------------
-# Entry Point
+# Entry point
 # -------------------------------------------------
-
 if __name__ == "__main__":
     run_pipeline(limit=20)

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 # Prevent real clients from being created
 sys.modules["supabase"] = MagicMock()
 sys.modules["pymilvus"] = MagicMock()
-sys.modules["boto3"] = MagicMock()
+# sys.modules["boto3"] = MagicMock()
 
 # ---------- PATH FIX (MUST BE FIRST) ----------
 import sys, os

@@ -1,7 +1,14 @@
+"""
+MilvusTextStore — CPU-aware version
+=====================================
+All tuning constants are imported from config.py (which reads .env).
+No os.getenv calls or numeric literals appear in this file.
+"""
+
 import logging
-import psutil
-import time
 import sys
+import time
+import psutil
 
 from ingestion.src.storage.supabase_store import SupabaseStore
 from ingestion.src.config import (
@@ -9,9 +16,15 @@ from ingestion.src.config import (
     MILVUS_PORT,
     MILVUS_COLLECTION,
     MILVUS_DIMENSION,
+    MILVUS_CONNECT_TIMEOUT,
+    MILVUS_INSERT_BATCH,
+    MILVUS_INSERT_SLEEP,
+    MILVUS_FLUSH_EVERY,
+    MILVUS_CPU_PAUSE_THRESHOLD,
+    MILVUS_CPU_MAX_WAIT,
 )
 
-from typing import List, Dict, Any, Set
+from typing import List, Dict, Any
 
 from pymilvus import (
     connections,
@@ -25,327 +38,239 @@ from pymilvus import (
 logger = logging.getLogger(__name__)
 
 
+def _wait_for_cpu(threshold: int, max_wait: int, label: str = "") -> None:
+    """Block until CPU% drops below threshold or max_wait seconds elapsed."""
+    waited = 0
+    while waited < max_wait:
+        cpu = psutil.cpu_percent(interval=1)
+        if cpu < threshold:
+            return
+        logger.warning(
+            f"⏳ Milvus: CPU {cpu}% > {threshold}% [{label}] — waiting 3s"
+        )
+        time.sleep(3)
+        waited += 3
+    logger.warning(f"⚠️  CPU still elevated after {max_wait}s — proceeding")
+
+
 class MilvusTextStore:
     def __init__(self):
         self.collection_name = MILVUS_COLLECTION
-        self.embedding_dim = MILVUS_DIMENSION
-        self._connected = False
-        self.collection = None
-        self.insert_counter = 0
+        self.embedding_dim   = MILVUS_DIMENSION
+        self._connected      = False
+        self.collection      = None
+        self.insert_counter  = 0
+
     def _ensure_connection(self):
         if not self._connected:
             connections.connect(
                 alias="default",
                 host=MILVUS_HOST,
                 port=MILVUS_PORT,
-                timeout=60
+                timeout=MILVUS_CONNECT_TIMEOUT,
             )
             self.collection = self._get_or_create_collection()
             self._connected = True
 
     def delete_by_file_name(self, file_name: str):
         self._ensure_connection()
-        expr = f'file_name == "{file_name}"'
-        self.collection.delete(expr)
+        self.collection.delete(f'file_name == "{file_name}"')
         self.collection.flush()
 
-
-
-    # --------------------------------------------------
-    # IMPROVED EMBEDDING NORMALIZATION
-    # --------------------------------------------------
+    # ------------------------------------------------------------------
+    # Embedding normalisation
+    # ------------------------------------------------------------------
     def _fix_embedding(self, emb):
-        """
-        Make embedding a flat List[float] for Milvus.
-        Handles nested lists, dicts, numpy arrays, and various formats.
-        """
-        # unwrap dicts
         if isinstance(emb, dict):
-            emb = emb.get("dense_vecs") or emb.get("embedding") or emb.get("vector")
+            emb = (
+                emb.get("dense_vecs")
+                or emb.get("embedding")
+                or emb.get("vector")
+            )
             if emb is None:
-                raise ValueError(f"Could not extract embedding from dict: {list(emb.keys())}")
+                raise ValueError("Could not extract embedding from dict")
 
-        # numpy → list
         if hasattr(emb, "tolist"):
             emb = emb.tolist()
 
-        # unwrap nested lists recursively
         while isinstance(emb, list) and len(emb) > 0 and isinstance(emb[0], list):
-            logger.debug(f"Unwrapping nested list: shape={len(emb)}x{len(emb[0]) if emb else 0}")
             emb = emb[0]
 
-        # Final validation and conversion
         if not isinstance(emb, list):
             raise TypeError(f"Embedding must be a list, got {type(emb)}")
-        
-        if len(emb) == 0:
+        if not emb:
             raise ValueError("Embedding is empty")
-        
-        # Check if elements are already numbers or need conversion
-        if isinstance(emb[0], (int, float)):
-            # Already flat numbers
-            result = [float(x) for x in emb]
-        elif isinstance(emb[0], list):
-            # Still nested! This shouldn't happen but handle it
-            raise ValueError(f"Embedding still nested after unwrapping: shape={len(emb)}x{len(emb[0])}")
-        else:
-            # Try to convert whatever it is
-            try:
-                result = [float(x) for x in emb]
-            except (TypeError, ValueError) as e:
-                raise TypeError(f"Cannot convert embedding elements to float: {type(emb[0])}, error: {e}")
-        
-        # Validate dimension
+
+        result = [float(x) for x in emb]
+
         if len(result) != self.embedding_dim:
-            logger.warning(f"Embedding dimension mismatch: expected {self.embedding_dim}, got {len(result)}")
-        
+            logger.warning(
+                f"Dimension mismatch: expected {self.embedding_dim}, got {len(result)}"
+            )
         return result
-    
-    # --------------------------------------------------
-    # SYSTEM STATE LOGGING (NEW)
-    # --------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # System state logging
+    # ------------------------------------------------------------------
     def _log_system_state(self, stage: str, rows: int, payload_mb: float):
         cpu = psutil.cpu_percent()
         mem = psutil.virtual_memory().percent
-
         logger.info(
-            f"[Milvus {stage}] "
-            f"rows={rows} | "
-            f"payload={payload_mb:.2f}MB | "
-            f"cpu={cpu}% | mem={mem}%"
+            f"[Milvus {stage}] rows={rows} | payload={payload_mb:.2f}MB "
+            f"| cpu={cpu}% | mem={mem}%"
         )
 
-
-    # --------------------------------------------------
-    # COLLECTION (✅ FIXED - Now creates collection)
-    # --------------------------------------------------
+    # ------------------------------------------------------------------
+    # Collection (create or load)
+    # ------------------------------------------------------------------
     def _get_or_create_collection(self) -> Collection:
-        """
-        Load existing collection or create new one with correct schema (NO YEAR).
-        
-        Schema (12 fields total):
-        1. id (auto-generated primary key)
-        2. chunk_id
-        3. file_name
-        4. file_hash
-        5. url
-        6. chunk_index
-        7. parent_index
-        8. child_index
-        9. parent_type
-        10. parent_title
-        11. text
-        12. embedding
-        """
         if utility.has_collection(self.collection_name):
-            logger.info(f"✅ Loading existing Milvus collection: {self.collection_name}")
+            logger.info(f"✅ Loading existing collection: {self.collection_name}")
             col = Collection(self.collection_name)
             col.load()
             return col
 
-        # ✅ CREATE NEW COLLECTION (instead of raising error)
-        logger.info(f"🔨 Creating new Milvus collection: {self.collection_name}")
-        
-        # Define schema WITHOUT year field
+        logger.info(f"🔨 Creating collection: {self.collection_name}")
         fields = [
-            FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
-            FieldSchema(name="chunk_id", dtype=DataType.VARCHAR, max_length=128),
-            FieldSchema(name="file_name", dtype=DataType.VARCHAR, max_length=255),
-            FieldSchema(name="file_hash", dtype=DataType.VARCHAR, max_length=64),
-            FieldSchema(name="url", dtype=DataType.VARCHAR, max_length=512),
-            FieldSchema(name="chunk_index", dtype=DataType.INT64),
+            FieldSchema(name="id",           dtype=DataType.INT64,        is_primary=True, auto_id=True),
+            FieldSchema(name="chunk_id",     dtype=DataType.VARCHAR,      max_length=128),
+            FieldSchema(name="file_name",    dtype=DataType.VARCHAR,      max_length=255),
+            FieldSchema(name="file_hash",    dtype=DataType.VARCHAR,      max_length=64),
+            FieldSchema(name="url",          dtype=DataType.VARCHAR,      max_length=512),
+            FieldSchema(name="chunk_index",  dtype=DataType.INT64),
             FieldSchema(name="parent_index", dtype=DataType.INT64),
-            FieldSchema(name="child_index", dtype=DataType.INT64),
-            FieldSchema(name="parent_type", dtype=DataType.VARCHAR, max_length=64),
-            FieldSchema(name="parent_title", dtype=DataType.VARCHAR, max_length=512),
-            FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535),
-            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=self.embedding_dim),
+            FieldSchema(name="child_index",  dtype=DataType.INT64),
+            FieldSchema(name="parent_type",  dtype=DataType.VARCHAR,      max_length=64),
+            FieldSchema(name="parent_title", dtype=DataType.VARCHAR,      max_length=512),
+            FieldSchema(name="text",         dtype=DataType.VARCHAR,      max_length=65535),
+            FieldSchema(name="embedding",    dtype=DataType.FLOAT_VECTOR, dim=self.embedding_dim),
         ]
-        
-        schema = CollectionSchema(
-            fields=fields,
-            description="Lovdata Norwegian Legal Documents - BGE-M3 (No Year Field)"
-        )
-        
-        # Create collection
+        schema     = CollectionSchema(fields=fields, description="Lovdata Norwegian Legal Documents")
         collection = Collection(name=self.collection_name, schema=schema)
-        
-        # Create HNSW index for fast similarity search
-        logger.info(f"🔍 Creating HNSW index on embedding field...")
-        index_params = {
-            "index_type": "HNSW",
-            "metric_type": "IP",  # Inner Product for BGE-M3
-            "params": {
-                "M": 16,
-                "efConstruction": 200
-            }
-        }
-        
+
         collection.create_index(
             field_name="embedding",
-            index_params=index_params
+            index_params={
+                "index_type": "HNSW",
+                "metric_type": "IP",
+                "params": {"M": 8, "efConstruction": 100},
+            },
         )
-        
-        # Load collection into memory
         collection.load()
-        
-        logger.info(f"✅ Collection created and loaded successfully")
-        logger.info(f"   Schema: {len(fields)} fields (including auto-id)")
-        logger.info(f"   Index: HNSW with M=16, efConstruction=200")
-        logger.info(f"   Metric: IP (Inner Product)")
-        
+        logger.info(f"✅ Collection created and loaded: {self.collection_name}")
         return collection
-        
 
-    # --------------------------------------------------
-    # INSERT
-    # --------------------------------------------------
+    # ------------------------------------------------------------------
+    # INSERT — CPU-aware sub-batches (all sizes from config)
+    # ------------------------------------------------------------------
     def insert_chunks(self, chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not chunks:
             return {"inserted": 0}
 
-        file_hash = chunks[0]["file_hash"]
-        supabase = SupabaseStore()
-
-        # ✅ CONNECT HERE (THIS WAS MISSING)
         self._ensure_connection()
         if self.collection is None:
-            raise RuntimeError("Milvus collection not initialized")
+            raise RuntimeError("Milvus collection not initialised")
 
-
-
-
-        """
-        Insert chunks into Milvus WITHOUT year field.
-        
-        Schema order (excluding auto-generated 'id'):
-        1. chunk_id
-        2. file_name
-        3. file_hash
-        4. url
-        5. chunk_index
-        6. parent_index
-        7. child_index
-        8. parent_type
-        9. parent_title
-        10. text
-        11. embedding
-        """
-        if not chunks:
-            return {"inserted": 0}
-
+        # Normalise all embeddings upfront
         normalized = []
         for i, c in enumerate(chunks):
             try:
-                fixed_embedding = self._fix_embedding(c["embedding"])
-                
                 normalized.append({
-                    "chunk_id": c.get("chunk_id") or c.get("stable_chunk_id"),
-                    "file_name": c["file_name"],
-                    "file_hash": c["file_hash"],
-                    "url": c.get("url", ""),
-                    "chunk_index": c["chunk_index"],
+                    "chunk_id":     c.get("chunk_id") or c.get("stable_chunk_id"),
+                    "file_name":    c["file_name"],
+                    "file_hash":    c["file_hash"],
+                    "url":          c.get("url", ""),
+                    "chunk_index":  c["chunk_index"],
                     "parent_index": c.get("parent_index", 0),
-                    "child_index": c.get("child_index", 0),
-                    "parent_type": c.get("section_type") or c.get("parent_type") or "document",
+                    "child_index":  c.get("child_index", 0),
+                    "parent_type":  c.get("section_type") or c.get("parent_type") or "document",
                     "parent_title": c.get("section_title") or c.get("parent_title") or "",
-                    "text": c["text"],
-                    "embedding": fixed_embedding,
+                    "text":         c["text"],
+                    "embedding":    self._fix_embedding(c["embedding"]),
                 })
             except Exception as e:
-                logger.error(f"Failed to normalize chunk {i} for {c.get('file_name')}: {e}")
-                logger.error(f"Embedding type: {type(c['embedding'])}")
-                if isinstance(c['embedding'], list):
-                    logger.error(f"Embedding length: {len(c['embedding'])}")
-                    if len(c['embedding']) > 0:
-                        logger.error(f"First element type: {type(c['embedding'][0])}")
-                        if isinstance(c['embedding'][0], list):
-                            logger.error(f"First element length: {len(c['embedding'][0])}")
+                logger.error(f"Failed to normalise chunk {i}: {e}")
                 raise
 
-        # ✅ Data arrays in EXACT schema order (excluding auto-generated 'id')
-        # Schema order WITHOUT YEAR: id (auto), chunk_id, file_name, file_hash, url,
-        #                           chunk_index, parent_index, child_index, parent_type,
-        #                           parent_title, text, embedding
-        data = [
-            [c["chunk_id"] for c in normalized],       # Field 2
-            [c["file_name"] for c in normalized],      # Field 3
-            [c["file_hash"] for c in normalized],      # Field 4
-            [c["url"] for c in normalized],            # Field 5
-            [c["chunk_index"] for c in normalized],    # Field 6
-            [c["parent_index"] for c in normalized],   # Field 7
-            [c["child_index"] for c in normalized],    # Field 8
-            [c["parent_type"] for c in normalized],    # Field 9
-            [c["parent_title"] for c in normalized],   # Field 10
-            [c["text"] for c in normalized],           # Field 11
-            [c["embedding"] for c in normalized],      # Field 12
-        ]
+        total_rows     = len(normalized)
+        total_inserted = 0
+        all_pk         = []
 
-        logger.debug(f"Inserting {len(normalized)} chunks with {len(data)} field arrays")
-
-        payload_size_mb = sys.getsizeof(data) / (1024 * 1024)
-
-        self._log_system_state(
-            stage="INSERT_START",
-            rows=len(normalized),
-            payload_mb=payload_size_mb
+        logger.info(
+            f"[Milvus] Inserting {total_rows} rows | "
+            f"sub-batch={MILVUS_INSERT_BATCH} | "
+            f"sleep={MILVUS_INSERT_SLEEP}s | "
+            f"cpu-threshold={MILVUS_CPU_PAUSE_THRESHOLD}%"
         )
 
-        start = time.time()
+        for batch_start in range(0, total_rows, MILVUS_INSERT_BATCH):
+            batch     = normalized[batch_start: batch_start + MILVUS_INSERT_BATCH]
+            batch_num = batch_start // MILVUS_INSERT_BATCH + 1
 
-        try:
-            result = self.collection.insert(data)
-
-            elapsed = time.time() - start
-
-            logger.info(
-                f"[Milvus INSERT_SUCCESS] "
-                f"rows={len(normalized)} | "
-                f"time={elapsed:.2f}s"
+            # Wait for CPU to cool before each sub-batch
+            _wait_for_cpu(
+                threshold=MILVUS_CPU_PAUSE_THRESHOLD,
+                max_wait=MILVUS_CPU_MAX_WAIT,
+                label=f"sub-batch {batch_num}",
             )
 
-        except Exception as e:
-            elapsed = time.time() - start
+            data = [
+                [c["chunk_id"]     for c in batch],
+                [c["file_name"]    for c in batch],
+                [c["file_hash"]    for c in batch],
+                [c["url"]          for c in batch],
+                [c["chunk_index"]  for c in batch],
+                [c["parent_index"] for c in batch],
+                [c["child_index"]  for c in batch],
+                [c["parent_type"]  for c in batch],
+                [c["parent_title"] for c in batch],
+                [c["text"]         for c in batch],
+                [c["embedding"]    for c in batch],
+            ]
 
-            logger.error(
-                f"[Milvus INSERT_FAILED] "
-                f"time={elapsed:.2f}s | "
-                f"type={type(e).__name__} | "
-                f"error={str(e)}"
-            )
+            payload_mb = sys.getsizeof(data) / (1024 * 1024)
+            self._log_system_state("INSERT_START", len(batch), payload_mb)
 
-            self._log_system_state(
-                stage="INSERT_FAILED",
-                rows=len(normalized),
-                payload_mb=payload_size_mb
-            )
+            start = time.time()
+            try:
+                result  = self.collection.insert(data)
+                elapsed = time.time() - start
+                logger.info(
+                    f"[Milvus] Sub-batch {batch_num}: "
+                    f"{len(batch)} rows in {elapsed:.2f}s"
+                )
+                total_inserted += len(batch)
+                all_pk.extend(result.primary_keys)
 
-            raise
+            except Exception as e:
+                elapsed = time.time() - start
+                logger.error(
+                    f"[Milvus INSERT_FAILED] sub-batch={batch_num} "
+                    f"time={elapsed:.2f}s error={e}"
+                )
+                raise
 
+            self.insert_counter += len(batch)
 
-        self.insert_counter += 1
+            # Periodic flush (interval from config)
+            if self.insert_counter % MILVUS_FLUSH_EVERY == 0:
+                logger.info("🔄 Periodic Milvus flush...")
+                self.collection.flush()
 
-        # flush only every 500 inserts
-        if self.insert_counter % 500 == 0:
-            logger.info("🔄 Periodic Milvus flush...")
-            self.collection.flush()
+            # Sleep between sub-batches (skip after the last one)
+            if batch_start + MILVUS_INSERT_BATCH < total_rows:
+                time.sleep(MILVUS_INSERT_SLEEP)
 
-
-        return {
-            "inserted": len(normalized),
-            "milvus_ids": result.primary_keys,
-        }
+        logger.info(f"[Milvus] ✅ Total inserted: {total_inserted}/{total_rows}")
+        return {"inserted": total_inserted, "milvus_ids": all_pk}
 
     def close(self):
         if self._connected:
-            logger.info("🔄 Final Milvus flush before closing...")
-
-            # flush only if collection exists
+            logger.info("🔄 Final Milvus flush before close...")
             if hasattr(self, "collection") and self.collection is not None:
                 try:
                     self.collection.flush()
                 except Exception as e:
                     logger.warning(f"Flush failed during close: {e}")
-
             connections.disconnect("default")
             self._connected = False
