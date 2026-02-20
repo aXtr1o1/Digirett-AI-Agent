@@ -1,4 +1,5 @@
 import logging
+import json
 from typing import AsyncIterator, Dict, List, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -27,6 +28,7 @@ Response style:
 - For general help: Be friendly and offer assistance
 
 IMPORTANT RULES:
+- NEVER disclose internal model details or company behind the AI
 - NO formal legal language unless asked
 - Be natural and human
 - Match their energy and tone
@@ -42,9 +44,21 @@ CRITICAL RULES:
 5. If another country law, say clear and soft refusion .
 
 RESPONSE STRUCTURE:
-Respond with a JSON object on the very last line after your answer in this exact format:
+- Respond in **normal readable text**, not JSON.
+- Include the structured answer in plain text using ### subheadings it must bold (no JSON braces).
+- max 250 words.
 
-Your structured answer here using ### subheadings, brief sections, max 250 words.
+OUTPUT FORMAT:
+{
+  "answer": {
+    "Regnskap og bokføringsplikt": "...",
+    "Skattebetaling": "...",
+    "Arbeidstakeres rettigheter": "...",
+    "Konsekvenser av brudd": "...",
+    "Regulerende lover": "..."
+  },
+  "score": 0.0
+}
 
 Then on the very last line append EXACTLY:
 [SCORE:0.9]
@@ -109,8 +123,10 @@ LANGUAGE RULE:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
     ) -> AsyncIterator[str]:
-        
+        import json
         logger.info("  GeneratorAgent: legal stream starting")
+
+        buffer = ""  # <-- initialize buffer to store all streamed content
 
         if not rag_context or not rag_context.strip():
             error_msg = (
@@ -141,6 +157,7 @@ LANGUAGE RULE:
             f"SPØRSMÅL (Question):\n{query}\n\n"
             f"Respond in {language}. Be direct and cite sources.\n"
             f"Append [SCORE:x.x] on the very last line."
+            f"Respond in **normal readable text**, not JSON. Keep it human-readable for the frontend."
         )
         messages.append(HumanMessage(content=user_prompt))
 
@@ -148,6 +165,8 @@ LANGUAGE RULE:
 
         async for chunk in llm.astream(messages):
             if hasattr(chunk, "content") and chunk.content:
-                yield chunk.content
+                buffer += chunk.content  # <-- append each chunk
+                yield chunk.content     # <-- send chunk directly to frontend
 
+        # No json parsing needed since frontend expects normal text
         logger.info(" GeneratorAgent: legal stream complete")
