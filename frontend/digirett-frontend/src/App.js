@@ -112,14 +112,8 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import SignInPage from "./pages/SignInPage";
 import ChatPage from "./pages/ChatPage";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
-import { runSystemTest } from "./systemTest";
 
 function App() {
-
-  useEffect(() => {
-    runSystemTest();
-  }, []);
-
   return (
     <BrowserRouter>
       <Routes>
@@ -141,3 +135,4 @@ function App() {
 }
 
 export default App;
+
