@@ -1,190 +1,178 @@
-"""
-Main Application Entry Point
-Minimal FastAPI app with service initialization
-"""
 
 import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
-from .config import settings
-from .utils.logger import setup_logger
-from .api import endpoints
+from api.routes import chat, conversations, health, messages
+from config import settings
+from db.milvus_client import get_milvus
+from db.redis_client import get_redis
+from db.supabase_client import get_supabase
+from services.conversation_service import ConversationService
+from services.embedding_service import EmbeddingService
+from services.llm_service import LLMService
+from services.message_service import MessageService
+from services.rag_service import RAGService
+from telemetry.tracing import setup_tracing
+from utils.logger import setup_logger
 
-# DB Clients
-from .db.milvus_client import get_milvus
-from .db.redis import get_redis
-from .db.supabase import get_supabase
-
-# Services
-from .services.llm_service import LLMService
-from .services.rag_service import RAGService
-from .services.embedding_service import EmbeddingService
-from .services.conversation_service import ConversationService
-from .services.message_service import MessageService
-
-# Setup logging
+# Root logger
 logging.basicConfig(
     level=logging.INFO,
-    format="%(levelname)s | %(asctime)s | %(name)s | %(message)s"
+    format="%(levelname)s | %(asctime)s | %(name)s | %(message)s",
 )
-logger = setup_logger(__name__, level="INFO")
+logger = setup_logger(__name__, level=settings.LOG_LEVEL)
 
-# Rate limiter
+# Rate limiter (shared across all routers)
 limiter = Limiter(key_func=get_remote_address)
 
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# LIFESPAN — startup / shutdown
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Startup and shutdown events
-    Initialize all services with proper error handling
-    """
-    logger.info("🚀 Starting Lovdata RAG System with LangChain Agent...")
     
-    # Service instances
+    logger.info(" Starting Lovdata RAG API...")
+
     milvus_client = None
     redis_client = None
-    supabase_client = None
-    llm_service = None
-    embedding_service = None
-    rag_service = None
-    conversation_service = None
-    message_service = None
-    
+
     try:
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # STEP 1: Initialize Database Clients
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        
-        logger.info("🔌 Connecting to Milvus...")
+        # ── Step 1: Connect to data stores ────────────────────────────────
+        logger.info(" Connecting to Milvus...")
         milvus_client = get_milvus()
         milvus_client.connect(
             host=settings.MILVUS_HOST,
             port=settings.MILVUS_PORT,
-            collection_name=settings.MILVUS_COLLECTION
+            collection_name=settings.MILVUS_COLLECTION,
         )
-        
-        logger.info("🔌 Connecting to Redis...")
+
+        logger.info(" Connecting to Redis...")
         redis_client = get_redis()
         redis_client.connect(
             host=settings.REDIS_HOST,
             port=settings.REDIS_PORT,
             db=settings.REDIS_DB,
-            password=settings.REDIS_PASSWORD if settings.REDIS_PASSWORD else None
+            password=settings.REDIS_PASSWORD or None,
         )
-        
-        logger.info("🔌 Connecting to Supabase...")
+
+        logger.info(" Connecting to Supabase...")
         supabase_client = get_supabase()
         supabase_client.connect(
             url=settings.SUPABASE_URL,
-            key=settings.SUPABASE_KEY
+            key=settings.SUPABASE_KEY,
         )
-        
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # STEP 2: Initialize Services
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        
-        logger.info("🤖 Initializing LLM service (OpenAI)...")
-        llm_service = LLMService(
-            temperature=settings.OPENAI_TEMPERATURE
-        )
-        
-        logger.info("🔢 Initializing Embedding service...")
+
+        # ── Step 2: Initialize services ───────────────────────────────────
+        logger.info(" Initializing LLM service...")
+        llm_service = LLMService(temperature=settings.OPENAI_TEMPERATURE)
+
+        logger.info(" Initializing Embedding service...")
         embedding_service = EmbeddingService()
-        
-        logger.info("🧠 Initializing RAG service...")
+
+        logger.info(" Initializing RAG service...")
         rag_service = RAGService(
             llm_service=llm_service,
             milvus_client=milvus_client,
             redis_client=redis_client,
             supabase_client=supabase_client,
-            embedding_service=embedding_service
+            embedding_service=embedding_service,
         )
-        
-        logger.info("💬 Initializing Conversation service...")
+
+        logger.info(" Initializing Conversation service...")
         conversation_service = ConversationService(
             supabase_client=supabase_client,
-            redis_client=redis_client
+            redis_client=redis_client,
         )
-        
-        logger.info("📝 Initializing Message service...")
+
+        logger.info(" Initializing Message service...")
         message_service = MessageService(
             supabase_client=supabase_client,
-            redis_client=redis_client
+            redis_client=redis_client,
         )
-        
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # STEP 3: Inject services into endpoints
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        
-        logger.info("💉 Injecting services into endpoints...")
-        endpoints.set_services(
-            rag=rag_service,
-            conv=conversation_service,
-            msg=message_service,
+
+        # ── Step 3: Inject services into route modules ────────────────────
+        logger.info(" Injecting services into route modules...")
+
+        health.set_clients(
             milvus=milvus_client,
             redis=redis_client,
             supabase=supabase_client,
             llm=llm_service,
         )
-        
-        logger.info("✅ All services initialized successfully!")
-        
-        yield
-        
-    except Exception as e:
-        logger.error(
-            f"❌ Failed to initialize services | "
-            f"Error: {type(e).__name__}: {str(e)}",
-            exc_info=True
+        chat.set_services(
+            rag_service=rag_service,
+            conversation_service=conversation_service,
+            message_service=message_service,
+            llm_service=llm_service,
         )
+        conversations.set_services(
+            conversation_service=conversation_service,
+            message_service=message_service,
+        )
+        messages.set_services(
+            message_service=message_service,
+        )
+
+        logger.info("✅ All services ready — server is live")
+
+        yield   # Application runs here
+
+    except Exception as exc:
+        logger.error(f" Startup failed | {exc}", exc_info=True)
         raise
-    
+
     finally:
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # SHUTDOWN: Clean up resources
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        
-        logger.info("🛑 Shutting down services...")
-        
-        try:
-            if milvus_client:
+        # ── Shutdown: release connections ─────────────────────────────────
+        logger.info(" Shutting down...")
+
+        if milvus_client:
+            try:
                 milvus_client.close()
-                logger.info("✅ Milvus connection closed")
-        except Exception as e:
-            logger.error(f"❌ Error closing Milvus: {e}")
-        
-        try:
-            if redis_client:
+                logger.info(" Milvus connection closed")
+            except Exception as exc:
+                logger.error(f"Error closing Milvus: {exc}")
+
+        if redis_client:
+            try:
                 redis_client.close()
-                logger.info("✅ Redis connection closed")
-        except Exception as e:
-            logger.error(f"❌ Error closing Redis: {e}")
-        
-        logger.info("🛑 Shutdown complete")
+                logger.info(" Redis connection closed")
+            except Exception as exc:
+                logger.error(f"Error closing Redis: {exc}")
+
+        logger.info(" Shutdown complete")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# CREATE FASTAPI APP
+# APPLICATION
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# OpenTelemetry — measures API + LLM latency
+setup_tracing(service_name="lovdata-rag-api")
 
 app = FastAPI(
-    title="Lovdata RAG API with LangChain Agent",
-    description="RAG system with multi-turn conversations, agent-based routing, Redis caching, and Supabase persistence",
-    version="2.0.0",
-    lifespan=lifespan
+    title=settings.APP_NAME,
+    description=(
+        "RAG system for Norwegian law — "
+        "multi-turn conversations, agent-based routing, "
+        "Redis caching, Supabase persistence."
+    ),
+    version=settings.VERSION,
+    lifespan=lifespan,
 )
 
-# Add rate limiter
+# Rate limiter
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS middleware
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -193,21 +181,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(endpoints.router, prefix="/api/v1")
+# Routers
+app.include_router(health.router,        prefix="/api/v1")
+app.include_router(chat.router,          prefix="/api/v1")
+app.include_router(conversations.router, prefix="/api/v1")
+app.include_router(messages.router,      prefix="/api/v1")
 
-logger.info("✅ FastAPI app created successfully")
+logger.info("✅ FastAPI app created")
 
 
 if __name__ == "__main__":
     import uvicorn
-    
-    logger.info("🚀 Starting Uvicorn server...")
-    
+
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=8000,
         reload=True,
-        log_level="info"
+        log_level="info",
     )

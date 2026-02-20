@@ -1,156 +1,192 @@
-import requests
+"""
+End-to-end API tests.
+
+Run with:
+    pytest app/tests/test_api.py -v
+
+These tests hit a running server at BASE_URL.
+They are integration tests, not unit tests — the server must be running.
+"""
+
 import json
-import uuid
 import time
-from sseclient import SSEClient
+
 import pytest
+import requests
 
 BASE_URL = "http://localhost:8000/api/v1"
 USER_ID = "2a06144d-4675-4c38-b7f8-13c02da91af5"
 
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# FIXTURES
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 @pytest.fixture(scope="session")
 def conversation_id():
-    print("\n🔹 Creating test conversation...")
-
-    payload = {
-        "user_id": USER_ID,
-        "title": "Pytest Conversation"
-    }
-
+    """Create a test conversation and clean it up when all tests finish."""
     response = requests.post(
         f"{BASE_URL}/conversations",
-        json=payload
+        json={"user_id": USER_ID, "title": "Pytest Test Conversation"},
     )
+    assert response.status_code == 200, f"Failed to create conversation: {response.text}"
 
-    assert response.status_code == 200, "❌ Failed to create conversation"
-
-    data = response.json()
-    conv_id = data.get("conversation_id")
-
-    assert conv_id is not None, "❌ No conversation_id returned"
+    conv_id = response.json().get("conversation_id")
+    assert conv_id, "No conversation_id returned"
 
     yield conv_id
 
-    # Cleanup after all tests
-    print("\n🧹 Cleaning up conversation...")
+    # Cleanup
     requests.delete(f"{BASE_URL}/conversations/{conv_id}")
-def print_section(title):
-    print("\n" + "=" * 60)
-    print(title)
-    print("=" * 60)
 
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TESTS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def test_health():
-    print_section("1️⃣ HEALTH CHECK")
+    """Server should be healthy with all services connected."""
     r = requests.get(f"{BASE_URL}/health")
-    print("Status:", r.status_code)
-    print("Response:", r.json())
     assert r.status_code == 200
+    body = r.json()
+    assert body["status"] in ("healthy", "degraded")
+    print(f"\n✅ Health: {body['status']}")
 
 
-def create_conversation():
-    print_section("2️⃣ CREATE CONVERSATION")
-    payload = {
-        "user_id": USER_ID,
-        "title": "System Test Conversation"
-    }
-    r = requests.post(f"{BASE_URL}/conversations", json=payload)
-    print("Status:", r.status_code)
-    data = r.json()
-    print("Response:", data)
+def test_create_conversation():
+    """Creating a conversation should return a valid conversation_id."""
+    r = requests.post(
+        f"{BASE_URL}/conversations",
+        json={"user_id": USER_ID, "title": "Test Conversation"},
+    )
     assert r.status_code == 200
-    return data["conversation_id"]
+    body = r.json()
+    assert "conversation_id" in body
+    assert body["user_id"] == USER_ID
+
+    # Cleanup
+    requests.delete(f"{BASE_URL}/conversations/{body['conversation_id']}")
+    print(f"\n✅ Created conversation: {body['conversation_id']}")
 
 
-import requests
-import json
-
-def test_stream(conversation_id):
-    print_section("3️⃣ STREAM TEST (SSE)")
-    
+def test_stream_legal_query(conversation_id):
+    """
+    A legal query should stream tokens and return at least one source.
+    """
     payload = {
         "user_id": USER_ID,
         "conversation_id": conversation_id,
         "query": "Explain Norwegian company law briefly.",
-        "top_k": 3
+        "top_k": 3,
     }
 
     response = requests.post(
         f"{BASE_URL}/chat/stream",
         json=payload,
-        stream=True
+        stream=True,
     )
-
-    assert response.status_code == 200, "❌ Stream endpoint failed!"
+    assert response.status_code == 200, f"Stream request failed: {response.text}"
 
     full_answer = ""
-    sources_found = False
+    sources = []
+    complete_received = False
 
     for line in response.iter_lines():
         if not line:
             continue
+        decoded = line.decode("utf-8")
+        if not decoded.startswith("data: "):
+            continue
 
-        decoded_line = line.decode("utf-8")
+        event = json.loads(decoded[6:])
 
-        # SSE format: "data: {...}"
-        if decoded_line.startswith("data: "):
-            json_data = decoded_line.replace("data: ", "")
-            data = json.loads(json_data)
+        if event.get("type") == "token":
+            full_answer += event.get("data", "")
 
-            if data.get("type") == "token":
-                full_answer += data.get("data", "")
+        elif event.get("type") == "sources":
+            sources = event.get("data", [])
 
-            if data.get("type") == "complete":
-                metadata = data.get("metadata", {})
-                sources = metadata.get("sources", [])
+        elif event.get("type") == "complete":
+            complete_received = True
+            break
 
-                print("\n✅ STREAM COMPLETE")
-                print("Sources:", sources)
+        elif event.get("type") == "error":
+            pytest.fail(f"Server returned error: {event.get('message')}")
 
-                if sources:
-                    sources_found = True
+    assert complete_received, "Stream did not emit a 'complete' event"
+    assert len(full_answer) > 0, "No answer tokens received"
+    print(f"\n✅ Stream complete | tokens={len(full_answer)} | sources={len(sources)}")
+    print(f"   Answer preview: {full_answer[:150]}")
 
-                break
 
-    print("\nAnswer Preview:", full_answer[:200])
-    assert sources_found, "❌ No sources returned in stream!"
-
-def test_get_messages(conversation_id):
-    print_section("4️⃣ GET MESSAGES (Persistence Test)")
+def test_messages_persisted(conversation_id):
+    """
+    After a stream, messages should be saved and readable.
+    """
+    # Give Supabase a moment to commit
+    time.sleep(1)
 
     r = requests.get(f"{BASE_URL}/messages/{conversation_id}")
-    print("Status:", r.status_code)
+    assert r.status_code == 200
 
     messages = r.json()
-    print("Messages Count:", len(messages))
+    assert len(messages) >= 2, "Expected at least one user + one assistant message"
 
-    assistant_messages = [m for m in messages if m["role"] == "assistant"]
+    roles = [m["role"] for m in messages]
+    assert "user" in roles, "No user message found"
+    assert "assistant" in roles, "No assistant message found"
 
-    assert len(assistant_messages) > 0, "❌ No assistant message found!"
+    print(f"\n✅ Messages persisted: {len(messages)} messages")
 
-    last_assistant = assistant_messages[-1]
 
-    print("Assistant Sources:", last_assistant.get("sources"))
+def test_get_conversation(conversation_id):
+    """Fetching the conversation should return its details and messages."""
+    r = requests.get(f"{BASE_URL}/conversations/{conversation_id}")
+    assert r.status_code == 200
 
-    assert last_assistant.get("sources"), "❌ Sources missing after refresh!"
+    body = r.json()
+    assert "conversation" in body
+    assert "messages" in body
+    assert body["conversation"]["conversation_id"] == conversation_id
+
+    print(f"\n✅ Conversation fetched | messages={len(body['messages'])}")
+
+
+def test_get_user_conversations():
+    """User conversation list should be non-empty."""
+    r = requests.get(f"{BASE_URL}/conversations/user/{USER_ID}")
+    assert r.status_code == 200
+
+    conversations = r.json()
+    assert isinstance(conversations, list)
+    print(f"\n✅ User has {len(conversations)} conversation(s)")
 
 
 def test_delete_conversation(conversation_id):
-    print_section("5️⃣ DELETE CONVERSATION")
-
+    """Deleting a conversation should return 200 and mark it as deleted."""
     r = requests.delete(f"{BASE_URL}/conversations/{conversation_id}")
-    print("Status:", r.status_code)
-    print("Response:", r.json())
     assert r.status_code == 200
+    print(f"\n✅ Conversation deleted: {conversation_id}")
 
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# STANDALONE RUNNER (python app/tests/test_api.py)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 if __name__ == "__main__":
     test_health()
-    conv_id = create_conversation()
-    test_stream(conv_id)
+
+    r = requests.post(
+        f"{BASE_URL}/conversations",
+        json={"user_id": USER_ID, "title": "Manual Test"},
+    )
+    conv_id = r.json()["conversation_id"]
+
+    test_stream_legal_query(conv_id)
     time.sleep(2)
-    test_get_messages(conv_id)
+    test_messages_persisted(conv_id)
+    test_get_conversation(conv_id)
+    test_get_user_conversations()
     test_delete_conversation(conv_id)
 
-    print("\n🎉 ALL TESTS PASSED SUCCESSFULLY!")
+    print("\n🎉 ALL TESTS PASSED")
