@@ -45,7 +45,7 @@ CRITICAL RULES:
 
 RESPONSE STRUCTURE:
 - Respond in **normal readable text**, not JSON.
-- Include the structured answer in plain text using ### subheadings (no JSON braces).
+- Include the structured answer in plain text using ### subheadings it must bold (no JSON braces).
 - max 250 words.
 
 OUTPUT FORMAT:
