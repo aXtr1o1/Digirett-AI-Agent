@@ -1,224 +1,303 @@
-Digirett AI – Backend
-=====================
+# Lovdata RAG API
 
-This folder contains the FastAPI backend for the Digirett AI assistant.  
-It exposes a streaming chat endpoint that answers questions about Norwegian company law using:
+A backend API that answers questions about Norwegian law using AI.
+You ask a question, it finds the relevant law, and gives you a structured answer with sources.
 
-- Milvus as the vector database for legal document embeddings
-- Azure OpenAI for both embeddings and chat completion
-- Redis for caching responses
-- SlowAPI for IP-based rate limiting
+---
 
-The backend is designed to be stateless; all persistent data lives in Milvus and Redis.
+## What You Need Before Starting
 
+Make sure you have these installed on your computer:
 
-Project layout
---------------
+| Tool | How to check | Download link |
+|---|---|---|
+| Python 3.11+ | Run `python --version` in terminal | https://www.python.org/downloads/ |
+| pip | Run `pip --version` in terminal | Comes with Python |
+| Git (optional) | Run `git --version` in terminal | https://git-scm.com/ |
 
-From the repository root:
+---
 
-```text
-backend/
-  api/
-    endpoints.py        # HTTP routes (e.g. /chat/stream)
-  core/
-    auth.py             # (reserved for auth/permissions)
-  db/
-    milvus_client.py    # Milvus connection and collection handling
-    redis.py            # Redis-based cache client
-  services/
-    chat_service.py     # Orchestration of retrieval + LLM + streaming SSE
-    conversation_service.py
-    user_service.py
-    rag/
-      pipeline.py       # Build context from retrieved chunks
-      retriever.py      # Search in Milvus
-      generator.py      # Embedding generator (Azure OpenAI)
-  config.py             # Pydantic settings (loads env from backend/.env)
-  main.py               # FastAPI app factory and wiring
-  models.py             # Pydantic request/response models
-  requirements.txt      # Python dependencies for the backend
-  tests/                # Backend unit/integration tests
+## Step 1 — Get the Code
+
+If you have Git:
+```bash
+git clone <your-repo-url>
+cd backend
 ```
 
-
-Environment configuration
--------------------------
-
-Configuration is managed via `pydantic-settings` in `config.py`.  
-By default, settings are loaded from `backend/.env` (note: relative to the **repo root**):
-
-```python
-model_config = SettingsConfigDict(
-    env_file="backend/.env",
-    ...
-)
-```
-
-Create a file `backend/.env` with at least the following variables.
-
-### Application
-
-```env
-APP_NAME=Digirett AI Backend
-VERSION=0.1.0
-DEBUG=true
-ALLOWED_ORIGINS=["http://localhost:3000"]
-```
-
-### Logging
-
-```env
-LOG_DIR=logs
-LOG_FILE=backend.log
-LOG_LEVEL=INFO        # e.g. DEBUG, INFO, WARNING, ERROR
-```
-
-### Rate limiting
-
-```env
-RATE_LIMIT_PER_MINUTE=250
-```
-
-### Milvus (vector database)
-
-```env
-MILVUS_HOST=127.0.0.1
-MILVUS_PORT=19530
-MILVUS_COLLECTION=digirett_chunks   # name of an existing Milvus collection
-MILVUS_METRIC_TYPE=IP               # or COSINE, L2 etc., must match collection
-EMBEDDING_DIMENSION=1024            # must match how the collection was created
-```
-
-Make sure Milvus is running and the collection exists before starting the backend.
-
-### Redis (cache)
-
-```env
-REDIS_URL=redis://localhost:6379/0
-ENABLE_CACHE=true
-CACHE_TTL=3600
-```
-
-If you do not want caching, you can set `ENABLE_CACHE=false` or leave `REDIS_URL` empty.
-
-### RAG behaviour
-
-```env
-DEFAULT_TOP_K=3
-MAX_TOP_K=10
-MIN_SIMILARITY_SCORE=0.30
-CONTEXT_MAX_LENGTH=32000
-```
-
-These control how many documents are retrieved and how much context is passed to the LLM.
-
-### Azure OpenAI – chat and embeddings
-
-Two separate Azure OpenAI resources (or deployments) are used: one for chat and one for embeddings.
-
-```env
-# Chat model
-AZURE_OPENAI_CHAT_ENDPOINT=https://your-chat-resource.openai.azure.com/
-AZURE_OPENAI_CHAT_API_KEY=your-chat-api-key
-AZURE_OPENAI_CHAT_API_VERSION=2024-02-01
-AZURE_OPENAI_CHAT_DEPLOYMENT=gpt-4.1-mini   # or your chosen deployment name
-
-# Embedding model
-AZURE_OPENAI_EMBED_ENDPOINT=https://your-embed-resource.openai.azure.com/
-AZURE_OPENAI_EMBED_API_KEY=your-embed-api-key
-AZURE_OPENAI_EMBED_API_VERSION=api-version
-AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small
-```
-
-### Prompt versioning
-
-```env
-PROMPT_VERSION=v1
-```
-
-`PROMPT_VERSION` is baked into cache keys so you can safely change prompts and invalidate old cache entries by bumping this value.
-
-
-How to run the backend locally
-------------------------------
-
-Prerequisites:
-
-- Python 3.11+ installed
-- Milvus running and pre-populated with your legal document embeddings
-- Redis running (recommended, but can be disabled)
-- Valid Azure OpenAI deployments for chat and embeddings
-
-From the **repository root** (where `backend/` lives):
-
-1. **Create and activate a virtual environment**
-
-   ```bash
-   python -m venv .venv
-   # Windows PowerShell
-   .venv\Scripts\Activate.ps1
-   # macOS/Linux
-   # source .venv/bin/activate
-   ```
-
-2. **Install backend dependencies**
-
-   ```bash
-   pip install -r backend/requirements.txt
-   ```
-
-3. **Create and fill in `backend/.env`**
-
-   Use the example sections above and set all required secrets/URLs for Milvus, Redis and Azure OpenAI.
-
-4. **Run the API with Uvicorn (development)**
-
-   Run this **from the repo root** so that `backend/.env` is found:
-
-   ```bash
-   python -m uvicorn backend.main:app --reload --port 8000
-   ```
-
-   The app will start with CORS, rate limiting, Milvus, Redis and Azure OpenAI wired up.
-
-
-Key endpoints
--------------
-
-- **POST `/chat/stream`**  
-  Streaming Server-Sent Events (SSE) endpoint that:
-
-  - Takes a JSON body:
-
-    ```json
-    {
-      "query": "Hva er reglene for aksjeselskap?",
-      "top_k": 3,
-      "include_sources": true,
-      "temperature": 0.5
-    }
-    ```
-
-  - Returns an SSE stream with events of shape:
-
-    ```json
-    { "type": "sources", "data": [...] }   // emitted once when sources are ready
-    { "type": "token",   "data": "..." }   // incremental answer tokens
-    { "type": "complete","metadata": {...} } // final metadata (timing, intent, etc.)
-    ```
-
-  This is the main endpoint consumed by the frontend.
-
-
-Running tests
--------------
-
-With the virtual environment active and test dependencies installed (they are already listed in `requirements.txt`):
+If you downloaded a ZIP file:
+- Unzip it
+- Open your terminal and navigate into the `backend` folder
 
 ```bash
-pytest backend/tests
+cd path/to/backend
 ```
 
-Most tests focus on the behaviour of the `/chat/stream` endpoint and its SSE contract.
+---
 
+## Step 2 — Create a Virtual Environment
+
+A virtual environment keeps this project's packages separate from the rest of your computer.
+
+```bash
+# Create the virtual environment
+python -m venv venv
+
+# Activate it — choose the right command for your OS:
+
+# On Mac or Linux:
+source venv/bin/activate
+
+# On Windows (Command Prompt):
+venv\Scripts\activate.bat
+
+# On Windows (PowerShell):
+venv\Scripts\Activate.ps1
+```
+
+You will see `(venv)` appear at the start of your terminal line. That means it worked.
+
+---
+
+## Step 3 — Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+This installs all the Python packages the project needs. It may take 1–2 minutes.
+
+---
+
+## Step 4 — Create the .env File
+
+The project needs secret keys and connection details. These go in a file called `.env` inside the `backend/` folder.
+
+Create a new file called `.env` and paste this inside it, filling in your own values:
+
+```env
+# ── App ──────────────────────────────────────────────
+ALLOWED_ORIGINS=["http://localhost:3000","http://localhost:5173"]
+
+# ── Azure OpenAI (your AI model) ─────────────────────
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+AZURE_OPENAI_API_KEY=your-api-key-here
+AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
+AZURE_OPENAI_API_VERSION=2024-02-15-preview
+OPENAI_TEMPERATURE=0.7
+
+# ── Azure OpenAI Embeddings ───────────────────────────
+AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small
+AZURE_OPENAI_EMBEDDING_API_VERSION=2024-02-15-preview
+
+# ── Milvus (vector database) ─────────────────────────
+MILVUS_HOST=your-milvus-host
+MILVUS_PORT=19530
+MILVUS_COLLECTION=lovdata_hierarchical_aoai_v1
+DIMENSION=1536
+
+# ── Supabase (main database) ─────────────────────────
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-supabase-anon-key
+
+# ── Redis (caching) — already configured ─────────────
+REDIS_HOST=
+REDIS_DB=0
+REDIS_PORT=
+REDIS_PASSWORD=
+ENABLE_CACHE=true
+
+# ── RAG Settings ─────────────────────────────────────
+DEFAULT_TOP_K=3
+MAX_TOP_K=10
+MIN_SIMILARITY_SCORE=0.0
+CONTEXT_MAX_LENGTH=80000
+```
+
+> **Note:** Never share your `.env` file with anyone. Never commit it to Git.
+
+---
+
+## Step 5 — Run the Server
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+You should see output like this:
+
+```
+INFO  | Starting Lovdata RAG API...
+INFO  | Connected to Milvus
+INFO  | Redis connected
+INFO  | Supabase connected
+INFO  | All services ready — server is live
+INFO  | Uvicorn running on http://0.0.0.0:8000
+```
+
+Your API is now running at: **http://localhost:8000**
+
+---
+
+## Step 6 — Verify It Works
+
+Open your browser and go to:
+
+```
+http://localhost:8000/api/v1/health
+```
+
+You should see something like:
+
+```json
+{
+  "status": "healthy",
+  "version": "2.0.0",
+  "milvus_connected": true,
+  "llm_connected": true,
+  "cache_connected": true,
+  "supabase_connected": true
+}
+```
+
+If `status` is `"healthy"` — everything is working. ✅
+
+---
+
+## How to Use the API
+
+### Interactive API Docs (easiest way)
+
+Go to: **http://localhost:8000/docs**
+
+This opens a visual interface where you can test every endpoint by clicking and typing — no code needed.
+
+---
+
+### Main Endpoints
+
+#### Ask a Question (Streaming)
+```
+POST /api/v1/chat/stream
+```
+Send a question, get a streamed AI answer with sources.
+
+**Request body:**
+```json
+{
+  "query": "Hva er reglene for aksjeselskap i Norge?",
+  "conversation_id": "optional-existing-id",
+  "user_id": "your-user-id",
+  "top_k": 3
+}
+```
+
+#### Create a Conversation
+```
+POST /api/v1/conversations
+```
+```json
+{
+  "user_id": "your-user-id",
+  "title": "My first conversation"
+}
+```
+
+#### Get All Messages in a Conversation
+```
+GET /api/v1/messages/{conversation_id}
+```
+
+#### Get All Conversations for a User
+```
+GET /api/v1/conversations/user/{user_id}
+```
+
+#### Delete a Conversation
+```
+DELETE /api/v1/conversations/{conversation_id}
+```
+
+#### Health Check
+```
+GET /api/v1/health
+```
+
+---
+
+## Running the Tests
+
+Make sure the server is running first (Step 5), then open a second terminal:
+
+```bash
+# Activate the virtual environment first
+source venv/bin/activate   # Mac/Linux
+# or
+venv\Scripts\activate.bat  # Windows
+
+# Run tests
+pytest tests/test_api.py -v
+```
+
+Expected output:
+```
+PASSED tests/test_api.py::test_health
+PASSED tests/test_api.py::test_create_conversation
+PASSED tests/test_api.py::test_stream_legal_query
+PASSED tests/test_api.py::test_messages_persisted
+PASSED tests/test_api.py::test_get_conversation
+PASSED tests/test_api.py::test_get_user_conversations
+PASSED tests/test_api.py::test_delete_conversation
+```
+
+---
+
+## Project Structure (What Each Folder Does)
+
+```
+backend/
+│
+├── main.py               ← Start here. Starts the server, connects all services.
+├── config.py             ← Reads your .env file. All settings live here.
+├── requirements.txt      ← List of Python packages needed.
+│
+├── agents/               ← The AI "workers". Each agent does one specific job.
+│   ├── intent_agent.py       Decides: is this a legal question or casual chat?
+│   ├── memory_agent.py       Loads previous conversation messages.
+│   ├── retriever_agent.py    Searches the law database for relevant text.
+│   ├── generator_agent.py    Generates the actual AI response.
+│   └── orchestrator_agent.py Coordinates all the agents together.
+│
+├── api/routes/           ← HTTP endpoints. Each file = one group of URLs.
+│   ├── chat.py               POST /chat/stream  — the main Q&A endpoint
+│   ├── conversations.py      Conversation create/read/delete
+│   ├── messages.py           Fetch messages
+│   └── health.py             GET /health
+│
+├── services/             ← Business logic. Talks to agents and databases.
+│   ├── rag_service.py        Orchestrates the full question → answer flow.
+│   ├── llm_service.py        Wraps all LLM calls (generation, titles, scoring).
+│   ├── embedding_service.py  Converts text to vectors for search.
+│   ├── conversation_service.py  Manages conversations in the database.
+│   └── message_service.py    Saves and fetches messages.
+│
+├── db/                   ← Database clients. One file per database.
+│   ├── milvus_client.py      Connects to Milvus (vector search database).
+│   ├── redis_client.py       Connects to Redis (caching layer).
+│   └── supabase_client.py    Connects to Supabase (main database).
+│
+├── schemas/              ← Data shapes. Defines what requests/responses look like.
+│   ├── requests.py           What the API expects to receive.
+│   └── responses.py          What the API sends back.
+│
+├── telemetry/            ← Performance monitoring.
+│   └── tracing.py            Measures API and LLM response times.
+│
+├── utils/
+│   └── logger.py         ← Colored log output for easier debugging.
+│
+└── tests/
+    └── test_api.py       ← End-to-end tests for all endpoints.
+```
+
+---
