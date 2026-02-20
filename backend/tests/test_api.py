@@ -1,48 +1,48 @@
-"""
-End-to-end API tests.
+# """
+# End-to-end API tests.
 
-Run with:
-    pytest app/tests/test_api.py -v
+# Run with:
+#     pytest app/tests/test_api.py -v
 
-These tests hit a running server at BASE_URL.
-They are integration tests, not unit tests — the server must be running.
-"""
+# These tests hit a running server at BASE_URL.
+# They are integration tests, not unit tests — the server must be running.
+# """
 
-import json
-import time
+# import json
+# import time
 
-import pytest
-import requests
+# import pytest
+# import requests
 
-BASE_URL = "http://localhost:8000/api/v1"
-USER_ID = "2a06144d-4675-4c38-b7f8-13c02da91af5"
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# FIXTURES
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-@pytest.fixture(scope="session")
-def conversation_id():
-    """Create a test conversation and clean it up when all tests finish."""
-    response = requests.post(
-        f"{BASE_URL}/conversations",
-        json={"user_id": USER_ID, "title": "Pytest Test Conversation"},
-    )
-    assert response.status_code == 200, f"Failed to create conversation: {response.text}"
-
-    conv_id = response.json().get("conversation_id")
-    assert conv_id, "No conversation_id returned"
-
-    yield conv_id
-
-    # Cleanup
-    requests.delete(f"{BASE_URL}/conversations/{conv_id}")
+# BASE_URL = "http://localhost:8000/api/v1"
+# USER_ID = "2a06144d-4675-4c38-b7f8-13c02da91af5"
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# TESTS
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# # FIXTURES
+# # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# @pytest.fixture(scope="session")
+# def conversation_id():
+#     """Create a test conversation and clean it up when all tests finish."""
+#     response = requests.post(
+#         f"{BASE_URL}/conversations",
+#         json={"user_id": USER_ID, "title": "Pytest Test Conversation"},
+#     )
+#     assert response.status_code == 200, f"Failed to create conversation: {response.text}"
+
+#     conv_id = response.json().get("conversation_id")
+#     assert conv_id, "No conversation_id returned"
+
+#     yield conv_id
+
+#     # Cleanup
+#     requests.delete(f"{BASE_URL}/conversations/{conv_id}")
+
+
+# # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# # TESTS
+# # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 # def test_health():
 #     """Server should be healthy with all services connected."""
@@ -169,24 +169,24 @@ def conversation_id():
 #     print(f"\n✅ Conversation deleted: {conversation_id}")
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# STANDALONE RUNNER (python app/tests/test_api.py)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# # STANDALONE RUNNER (python app/tests/test_api.py)
+# # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-if __name__ == "__main__":
-    test_health()
+# if __name__ == "__main__":
+#     test_health()
 
-    r = requests.post(
-        f"{BASE_URL}/conversations",
-        json={"user_id": USER_ID, "title": "Manual Test"},
-    )
-    conv_id = r.json()["conversation_id"]
+#     r = requests.post(
+#         f"{BASE_URL}/conversations",
+#         json={"user_id": USER_ID, "title": "Manual Test"},
+#     )
+#     conv_id = r.json()["conversation_id"]
 
-    test_stream_legal_query(conv_id)
-    time.sleep(2)
-    test_messages_persisted(conv_id)
-    test_get_conversation(conv_id)
-    test_get_user_conversations()
-    test_delete_conversation(conv_id)
+#     test_stream_legal_query(conv_id)
+#     time.sleep(2)
+#     test_messages_persisted(conv_id)
+#     test_get_conversation(conv_id)
+#     test_get_user_conversations()
+#     test_delete_conversation(conv_id)
 
-    print("\n🎉 ALL TESTS PASSED")
+#     print("\n🎉 ALL TESTS PASSED")

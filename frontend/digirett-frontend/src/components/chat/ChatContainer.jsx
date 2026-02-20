@@ -1,11 +1,10 @@
-import React, { useEffect, useRef } from "react";
+import React, { useRef } from "react";
 import MessageList from "./MessageList";
 import MessageComposer from "./MessageComposer";
 import ErrorMessage from "../common/ErrorMessage";
 import useChat from "../../hooks/useChat";
 
 const ChatContainer = ({ conversationId, onConversationCreated, theme = "dark" }) => {
-  const prevIdRef = useRef(undefined);
   const isDark = theme === "dark";
 
   const {
@@ -20,40 +19,44 @@ const ChatContainer = ({ conversationId, onConversationCreated, theme = "dark" }
   } = useChat(conversationId, onConversationCreated);
 
   return (
-    <div className={`flex flex-col h-full ${isDark ? "bg-black" : "bg-gray-50"}`}>
+    <div className={`flex flex-col h-full w-full ${isDark ? "bg-[#212121]" : "bg-white"}`}>
+
       {error && (
-        <div className="p-4">
+        <div className="px-6 pt-4">
           <ErrorMessage message={error} onRetry={loadMessages} />
         </div>
       )}
 
-      <div className="flex-1 flex justify-center overflow-hidden">
-        <div className="w-full max-w-4xl flex flex-col h-full">
-
-          {/* ✅ SCROLLABLE MESSAGE AREA */}
-          <div className="flex-1 overflow-y-auto px-4">
-            <MessageList
-              messages={messages}
-              isLoading={isLoading}
-              streamingMessage={streamingMessage}
-              isStreaming={isStreaming}
-              theme={theme}
-            />
-          </div>
-
-          {/* ✅ FIXED INPUT AT BOTTOM */}
-          <div className={`border-t p-4 ${isDark ? "border-gray-800" : "border-gray-200"}`}>
-            <MessageComposer
-              onSend={sendMessage}
-              disabled={isLoading}
-              isStreaming={isStreaming}
-              onStop={stopStreaming}
-              theme={theme}
-            />
-          </div>
-
+      {/* SCROLLABLE MESSAGE AREA */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ overscrollBehavior: 'none' }}>
+        {/* ChatGPT-style: max-w-2xl centered, generous padding */}
+        <div className="max-w-2xl mx-auto w-full px-4 pt-6 pb-4">
+          <MessageList
+            messages={messages}
+            isLoading={isLoading}
+            streamingMessage={streamingMessage}
+            isStreaming={isStreaming}
+            theme={theme}
+          />
         </div>
       </div>
+
+      {/* INPUT BAR — fixed at bottom, ChatGPT style */}
+      <div className={`flex-shrink-0 ${isDark ? "bg-[#212121]" : "bg-white"}`}>
+        <div className="max-w-2xl mx-auto w-full px-4 py-4">
+          <MessageComposer
+            onSend={sendMessage}
+            disabled={isLoading}
+            isStreaming={isStreaming}
+            onStop={stopStreaming}
+            theme={theme}
+          />
+        </div>
+        <p className={`text-center text-xs pb-3 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+          DigiRett can make mistakes. Verify important legal information.
+        </p>
+      </div>
+
     </div>
   );
 };
