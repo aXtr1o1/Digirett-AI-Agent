@@ -11,21 +11,24 @@ const Sidebar = ({
   const isDark = theme === "dark";
 
   return (
-    <aside
-      className={`w-80 border-r flex flex-col px-4 transition-colors duration-300 ${
-        isDark
-          ? "bg-[#0f0f0f] border-gray-900 text-white"
+      <aside
+        className={`w-96 border-r flex flex-col px-4 transition-colors duration-300 ${
+          isDark
+          ? "bg-black border-gray-800 text-gray-100"
           : "bg-white border-gray-200 text-gray-900"
-      }`}
-    >
-      {/* ⭐ APP TITLE */}
-      <div
-        className={`px-4 pt-4 pb-2 text-lg font-semibold ${
-          isDark ? "text-white" : "text-gray-900"
+
         }`}
       >
-        DigiRett Legal Assistant
-      </div>
+
+      {/* ⭐ APP TITLE */}
+    <div
+      className={`px-4 pt-4 pb-3 text-2xl font-bold ${
+        isDark ? "text-white" : "text-gray-900"
+      }`}
+    >
+      DigiRett Legal Assistant
+    </div>
+
 
       {/* ⭐ New Chat button */}
       <div className="p-3">
@@ -36,7 +39,8 @@ const Sidebar = ({
             transition ${
               isDark
                 ? "bg-white text-black hover:bg-gray-200"
-                : "bg-gray-900 text-white hover:bg-gray-700"
+                : "bg-blue-600 text-white hover:bg-blue-700"
+
             }`}
         >
           <span className="text-xl font-bold">+</span>
@@ -46,18 +50,19 @@ const Sidebar = ({
 
       {/* ⭐ Conversation History Heading */}
       <p
-        className={`mt-6 mb-3 text-sm font-semibold tracking-wide ${
+        className={`text-2xl font-bold ${
           isDark ? "text-gray-400" : "text-gray-500"
         }`}
       >
         Conversation History
       </p>
 
+
       {/* ⭐ Conversation list */}
       <div className="flex-1 overflow-y-auto px-2 space-y-1">
         {conversations.length === 0 && (
           <p
-            className={`text-sm px-3 py-2 ${
+            className={`text-lg text-gray-400 ${
               isDark ? "text-gray-500" : "text-gray-400"
             }`}
           >
@@ -89,8 +94,8 @@ const Sidebar = ({
                 className={isDark ? "text-gray-500" : "text-gray-400"}
               />
               <span
-                className={`truncate text-sm ${
-                  isDark ? "text-gray-200" : "text-gray-700"
+                className={`truncate text-lg font-semibold leading-relaxed ${
+                  isDark ? "text-gray-100" : "text-gray-900"
                 }`}
               >
                 {c.title || "New Conversation"}
