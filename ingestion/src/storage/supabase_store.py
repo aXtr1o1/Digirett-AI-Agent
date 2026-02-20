@@ -108,44 +108,17 @@ class SupabaseStore:
     ):
         self._ensure_connection()
 
-        """
-        Insert file metadata WITHOUT year column.
-        
-        Args:
-            file_name: Clean filename without extension
-            file_hash: SHA256 hash of file
-            file_size: File size in bytes
-            zip_name: Source archive name
-            url: Public URL (alias for file_storage_uri)
-            file_storage_uri: Public storage URI
-            
-        Returns:
-            True if successful or already exists
-        """
         try:
-            # Check if already processed in this session
-            if file_hash in self._uploaded_hashes:
-                logger.info(f"⏭️  File already processed in this session: {file_name}")
-                return True
-            
-            # Check database for duplicates
-            existing = self.supabase.table("lovdata_metadata")\
-                .select("file_hash")\
-                .eq("file_hash", file_hash)\
-                .limit(1)\
-                .execute()
+            status = self.classify_file(file_name, file_hash)
 
-            if existing.data:
-                logger.info(f"⏭️  File already in database by name: {file_name}")
-                self._uploaded_hashes.add(file_hash)
-                return True
-            
-            # Build storage URI
+            if status == "UNCHANGED":
+                logger.info(f"⏭️  UNCHANGED file skipped: {file_name}")
+                return "UNCHANGED"
+
             storage_uri = url or file_storage_uri
             if not storage_uri:
                 raise ValueError("Either 'url' or 'file_storage_uri' must be provided")
-            
-            # Metadata WITHOUT year field
+
             metadata = {
                 "zip_name": zip_name,
                 "file_name": file_name,
@@ -155,14 +128,22 @@ class SupabaseStore:
                 "milvus_inserted_at": datetime.now(timezone.utc).isoformat()
             }
 
-            self.supabase.table("lovdata_metadata").insert(metadata).execute()
-            self._uploaded_hashes.add(file_hash)
-            
-            logger.info(f"✅ Metadata inserted for {file_name}")
-            return True
+            if status == "UPDATED":
+                logger.info(f"🔄 Updating metadata for {file_name}")
+                self.supabase.table("lovdata_metadata_2016_2026") \
+                    .delete() \
+                    .eq("file_name", file_name) \
+                    .execute()
+
+            self.supabase.table("lovdata_metadata_2016_2026") \
+                .insert(metadata) \
+                .execute()
+
+            logger.info(f"✅ Metadata stored for {file_name}")
+            return status
 
         except Exception as e:
-            logger.error(f"❌ Metadata insert failed for {file_name}: {e}")
+            logger.error(f"❌ Metadata operation failed for {file_name}: {e}")
             raise
 
     def file_name_exists(self, file_name: str) -> bool:
@@ -171,7 +152,7 @@ class SupabaseStore:
         try:
             response = (
                 self.supabase
-                .table("lovdata_metadata")
+                .table("lovdata_metadata_2016_2026")
                 .select("file_name")
                 .eq("file_name", file_name)
                 .limit(1)
@@ -189,7 +170,7 @@ class SupabaseStore:
         try:
             response = (
                 self.supabase
-                .table("lovdata_metadata")
+                .table("lovdata_metadata_2016_2026")
                 .select("file_hash")
                 .eq("file_hash", file_hash)
                 .limit(1)
@@ -208,7 +189,7 @@ class SupabaseStore:
         try:
             response = (
                 self.supabase
-                .table("lovdata_metadata")
+                .table("lovdata_metadata_2016_2026")
                 .select("zip_name")
                 .eq("zip_name", zip_name)
                 .limit(1)
@@ -235,7 +216,7 @@ class SupabaseStore:
         try:
             response = (
                 self.supabase
-                .table("lovdata_metadata")
+                .table("lovdata_metadata_2016_2026")
                 .select("file_hash")
                 .eq("file_name", file_name)
                 .limit(1)
@@ -263,7 +244,7 @@ class SupabaseStore:
         """Retrieve all file hashes from database."""
         self._ensure_connection()
         try:
-            response = self.supabase.table("lovdata_metadata").select("file_hash").execute()
+            response = self.supabase.table("lovdata_metadata_2016_2026").select("file_hash").execute()
             return {row['file_hash'] for row in response.data if row.get('file_hash')}
         except Exception as e:
             logger.error(f"❌ Error fetching file hashes: {e}")
@@ -281,7 +262,7 @@ class SupabaseStore:
             while True:
                 response = (
                     self.supabase
-                    .table("lovdata_metadata")
+                    .table("lovdata_metadata_2016_2026")
                     .select("file_name")
                     .range(offset, offset + batch_size - 1)
                     .execute()

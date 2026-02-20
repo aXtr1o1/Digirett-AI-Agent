@@ -177,10 +177,6 @@ def run_pipeline(limit: int | None = None):
             logger.info(f"♻️  Updated — removing old embeddings: {clean_name}")
             milvus_store.delete_by_file_name(clean_name)
 
-        if db_store.file_exists(file_hash):
-            logger.info(f"⏭️  Already embedded, skipping: {clean_name}")
-            skipped_count += 1
-            continue
 
         logger.info(f"\n{'='*70}")
         logger.info(f"[{idx}/{len(documents)}] Processing {clean_name}")

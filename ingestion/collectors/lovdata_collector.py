@@ -157,10 +157,10 @@ def _extract_xml_files(
                 original_name = os.path.basename(member.name)      # nl-20010105-001.xml
                 clean_name = os.path.splitext(original_name)[0]    # nl-20010105-001
 
-                # -------- YEAR FILTER (2020–2026 ONLY) --------
+                # -------- YEAR FILTER (2016–2026 ONLY) --------
                 year = _extract_year_from_filename(original_name)
 
-                if year is None or year < 2020 or year > 2026:
+                if year is None or year < 2016 or year > 2026:
                     continue
 
 

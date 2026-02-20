@@ -73,13 +73,13 @@ MILVUS_NLIST       = int(os.getenv("MILVUS_NLIST", "1536"))
 # Milvus Insert Throttling
 # ============================
 # Rows per gRPC sub-batch — smaller batches cause smaller CPU spikes per call
-MILVUS_INSERT_BATCH   = int(os.getenv("MILVUS_INSERT_BATCH", "50"))
+MILVUS_INSERT_BATCH   = int(os.getenv("MILVUS_INSERT_BATCH", "500"))
 # Sleep between Milvus sub-batches (seconds)
-MILVUS_INSERT_SLEEP   = float(os.getenv("MILVUS_INSERT_SLEEP", "0.5"))
+MILVUS_INSERT_SLEEP   = float(os.getenv("MILVUS_INSERT_SLEEP", "0"))
 # Connection timeout (seconds) — increased for flaky networks
 MILVUS_CONNECT_TIMEOUT = int(os.getenv("MILVUS_CONNECT_TIMEOUT", "90"))
 # How many total inserts between periodic flushes
-MILVUS_FLUSH_EVERY    = int(os.getenv("MILVUS_FLUSH_EVERY", "500"))
+MILVUS_FLUSH_EVERY    = int(os.getenv("MILVUS_FLUSH_EVERY", "5000"))
 
 # ============================
 # Milvus CPU Thresholds
