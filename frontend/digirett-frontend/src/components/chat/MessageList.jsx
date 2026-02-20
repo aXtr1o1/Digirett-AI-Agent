@@ -21,19 +21,33 @@ const MessageList = ({ messages, isLoading, streamingMessage, isStreaming, theme
     );
   }
 
-  if (messages.length === 0 && !streamingMessage) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center px-4">
-        <Bot className={`h-16 w-16 mb-4 ${isDark ? 'text-gray-300' : 'text-gray-400'}`} />
-        <h2 className={`text-2xl font-semibold mb-2 ${isDark ? 'text-gray-700' : 'text-gray-600'}`}>
-          Welcome to DigiRett
-        </h2>
-        <p className={isDark ? 'text-gray-500 max-w-md' : 'text-gray-400 max-w-md'}>
-          Your Norwegian Legal AI Assistant. Ask me anything about Norwegian law and regulations.
-        </p>
-      </div>
-    );
-  }
+if (messages.length === 0 && !streamingMessage) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-center px-4 space-y-6">
+      
+      <Bot
+        className={`h-16 w-16 mb-4 ${
+          isDark ? 'text-gray-300' : 'text-blue-600'
+        }`}
+      />
+
+
+      <h2 className={`text-4xl md:text-5xl font-bold tracking-tight ${
+        isDark ? 'text-gray-200' : 'text-gray-800'
+      }`}>
+        Welcome to DigiRett
+      </h2>
+
+      <p className={`text-lg md:text-xl max-w-2xl ${
+        isDark ? 'text-gray-400' : 'text-gray-600'
+      }`}>
+        Your Norwegian Legal AI Assistant. Ask me anything about Norwegian law and regulations.
+      </p>
+
+    </div>
+  );
+}
+
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-6">

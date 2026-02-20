@@ -10,6 +10,18 @@ const MessageComposer = ({
 }) => {
   const [message, setMessage] = useState("");
   const textareaRef = useRef(null);
+
+
+const handleChange = (e) => {
+  setMessage(e.target.value);
+
+  if (textareaRef.current) {
+    textareaRef.current.style.height = "auto";
+    textareaRef.current.style.height =
+      textareaRef.current.scrollHeight + "px";
+  }
+};
+
   const isDark = theme === "dark";
 
   /* =========================
@@ -29,25 +41,28 @@ const MessageComposer = ({
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
+/* =========================
+   Submit message
+========================= */
 
-  /* =========================
-     Submit message
-  ========================= */
-  const handleSubmit = (e) => {
+const sendMessage = () => {
+  if (message.trim() && !disabled) {
+    onSend(message);
+    setMessage("");
+  }
+};
+
+const handleSubmit = (e) => {
+  e.preventDefault();
+  sendMessage();
+};
+
+const handleKeyDown = (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
-    if (message.trim() && !disabled) {
-      onSend(message);
-      setMessage("");
-    }
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e);
-    }
-  };
-
+    sendMessage();
+  }
+};
   return (
     <div className={`px-4 py-4 ${isDark ? "bg-black" : "bg-gray-50"}`}>
       <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
@@ -59,27 +74,31 @@ const MessageComposer = ({
             : "bg-white border-gray-200 shadow-sm"
         }`}>
 
-          {/* TEXTAREA */}
-          <textarea
-            ref={textareaRef}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask anything..."
-            disabled={disabled}
-            rows={1}
-            className={`
-              flex-1
-              bg-transparent
-              resize-none
-              overflow-hidden
-              focus:outline-none
-              ${isDark
-                ? "text-white placeholder-gray-500 caret-white"
-                : "text-gray-900 placeholder-gray-400 caret-gray-900"
-              }
-            `}
-          />
+        <textarea
+          ref={textareaRef}
+          value={message}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          rows={1}
+          placeholder="Type your message..."
+          className={`
+            w-full
+            resize-none
+            overflow-y-auto
+            max-h-40
+            bg-transparent
+            text-xl
+            placeholder:text-xl
+            focus:outline-none
+            ${
+              isDark
+                ? "text-white placeholder-gray-400"
+                : "text-gray-900 placeholder-gray-500"
+            }
+          `}
+        />
+
+
 
           {/* BUTTON */}
           {isStreaming ? (
@@ -99,7 +118,7 @@ const MessageComposer = ({
                 disabled:opacity-50 disabled:cursor-not-allowed
                 ${isDark
                   ? "bg-white text-black hover:bg-gray-200"
-                  : "bg-gray-900 text-white hover:bg-gray-700"
+                  : "bg-blue-600 text-white hover:bg-blue-700"
                 }
               `}
             >

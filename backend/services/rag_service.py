@@ -1,80 +1,20 @@
 
-
 import logging
-from typing import Dict, Any, AsyncIterator, Optional, List
+from typing import Any, AsyncIterator, Dict, List, Optional
 
-from ..services.llm_service import (
-    LLMService,
-    IntentAgent,
-    MemoryAgent,
-    GeneratorAgent,
-    OrchestratorAgent,
-)
-from ..db.milvus_client import MilvusClient
-from ..db.redis import RedisClient
-from ..db.supabase import SupabaseClient
-from ..services.embedding_service import EmbeddingService
+from agents.memory_agent import MemoryAgent
+from agents.orchestrator_agent import OrchestratorAgent
+from agents.retriever_agent import RetrieverAgent
+from db.milvus_client import MilvusClient
+from db.redis_client import RedisClient
+from db.supabase_client import SupabaseClient
+from services.embedding_service import EmbeddingService
+from services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# RETRIEVER AGENT (defined here — needs milvus + embedding clients)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-class RetrieverAgent:
-
-    def __init__(
-        self,
-        embedding_service: EmbeddingService,
-        milvus_client: MilvusClient,
-    ):
-        self.embedding = embedding_service
-        self.milvus = milvus_client
-        logger.info("✅ RetrieverAgent initialized")
-
-    async def run(
-        self,
-        query: str,
-        top_k: int = 5,
-        min_score: float = 0.5,
-        history: Optional[List[Dict[str, str]]] = None,
-    ) -> List[Dict[str, Any]]:
-        
-        logger.info(f"🔎 RetrieverAgent.run: query='{query[:60]}...' top_k={top_k}")
-
-        contextual_query = query
-        if history:
-            last_user_messages = [
-                msg["content"]
-                for msg in history
-                if msg["role"] == "user"
-            ]
-            if last_user_messages:
-                contextual_query = last_user_messages[-1] + " " + query
-
-        # ── Generate embedding ─────────────────────────────────
-        query_embedding = await self.embedding.embed_query(contextual_query)
-        logger.debug(f"🔢 RetrieverAgent: {len(query_embedding)}-dim embedding")
-
-        # ── Search Milvus ──────────────────────────────────────
-        search_results = self.milvus.search(
-            embedding=query_embedding,
-            top_k=top_k,
-            min_score=min_score,
-        )
-
-        logger.info(f"✅ RetrieverAgent: {len(search_results)} results returned")
-        return search_results
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# RAG SERVICE
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 class RAGService:
-   
 
     def __init__(
         self,
@@ -83,15 +23,15 @@ class RAGService:
         redis_client: RedisClient,
         supabase_client: SupabaseClient,
         embedding_service: EmbeddingService,
-    ):
-        self.llm      = llm_service
-        self.milvus   = milvus_client
-        self.redis    = redis_client
-        self.supabase = supabase_client
-        self.embedding = embedding_service
+    ) -> None:
+        self._llm = llm_service
+        self._milvus = milvus_client
+        self._redis = redis_client
+        self._supabase = supabase_client
+        self._embedding = embedding_service
 
-        # ── Wire up agents ─────────────────────────────────────
-        self._memory_agent    = MemoryAgent(
+        # ── Wire up agents ─────────────────────────────────────────────
+        self._memory_agent = MemoryAgent(
             redis_client=redis_client,
             supabase_client=supabase_client,
         )
@@ -99,92 +39,71 @@ class RAGService:
             embedding_service=embedding_service,
             milvus_client=milvus_client,
         )
-        self._orchestrator    = OrchestratorAgent(
+        self._orchestrator = OrchestratorAgent(
             intent_agent=llm_service.get_intent_agent(),
             memory_agent=self._memory_agent,
             generator_agent=llm_service.get_generator_agent(),
         )
 
-        logger.info("✅ RAG service initialized with agent routing")
+        logger.info(" RAGService initialized with agent routing")
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # process_query  ── UNCHANGED public signature
-    # Internal routing now goes through OrchestratorAgent
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # PUBLIC INTERFACE
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def process_query(
         self,
         query: str,
         conversation_id: str,
-        min_score: float = 0.0,
-        top_k: int = 3,
+        top_k: int = 5,
+        min_score: float = 0.45,
     ) -> AsyncIterator[Dict[str, Any]]:
         
         try:
-            logger.info(f"🤖 Processing query with agent routing: '{query[:50]}...'")
+            logger.info(f"🤖 RAGService: processing query '{query[:60]}'")
 
-            # ── STEP 1: OrchestratorAgent loads history (MemoryAgent) ──
-            llm_history = self._orchestrator.load_history(
+            # Step 1 — Load conversation history
+            history = self._orchestrator.load_history(
                 conversation_id=conversation_id,
                 limit=10,
             )
-            logger.debug(f"📚 Loaded conversation history: {len(llm_history)} messages")
+            logger.debug(f"📚 Loaded {len(history)} history messages")
 
-            # ── STEP 2: OrchestratorAgent classifies intent (IntentAgent) ──
+            # Step 2 — Classify intent
             intent_result = await self._orchestrator.classify(
                 query=query,
                 conversation_id=conversation_id,
             )
-            intent   = intent_result["intent"]
+            intent = intent_result["intent"]
             language = intent_result["language"]
 
-            logger.info(f"🎯 Intent: {intent}, Language: {language}")
+            yield {"type": "intent", "data": {"intent": intent, "language": language}}
 
-            # Yield intent event (unchanged)
-            yield {
-                "type": "intent",
-                "data": {
-                    "intent": intent,
-                    "language": language,
-                },
-            }
-
-            # ── STEP 3: Route to appropriate handler (unchanged handlers) ──
-            if intent == "CASUAL":
-                async for event in self._handle_casual(query, llm_history, language):
-                    yield event
-
-            elif intent == "LEGAL":
+            # Step 3 — Route to the correct pipeline
+            if intent == "LEGAL":
                 async for event in self._handle_legal(
                     query=query,
                     language=language,
                     top_k=top_k,
                     min_score=min_score,
-                    history=llm_history,
+                    history=history,
                 ):
                     yield event
-
             else:
-                logger.warning(f"⚠️  Unknown intent: {intent}, defaulting to CASUAL")
-                async for event in self._handle_casual(query, llm_history, language):
+                # Default to CASUAL for unknown intents as well
+                async for event in self._handle_casual(query, history, language):
                     yield event
 
-        except Exception as e:
+        except Exception as exc:
             logger.error(
-                f"❌ Query processing failed | "
-                f"Query: {query[:50]} | "
-                f"Conversation: {conversation_id} | "
-                f"Error: {type(e).__name__}: {str(e)}",
+                f" RAGService.process_query failed | query='{query[:50]}' | {exc}",
                 exc_info=True,
             )
-            yield {
-                "type": "error",
-                "message": f"Failed to process query: {str(e)}",
-            }
+            yield {"type": "error", "message": str(exc)}
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # _handle_casual  ── 100% UNCHANGED
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # CASUAL PIPELINE
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _handle_casual(
         self,
@@ -192,226 +111,177 @@ class RAGService:
         history: List[Dict[str, str]],
         language: str,
     ) -> AsyncIterator[Dict[str, Any]]:
-        
-        try:
-            logger.info("💬 Handling CASUAL query (no RAG)")
+        logger.info("💬 CASUAL pipeline")
 
-            yield {"type": "sources", "data": []}
+        yield {"type": "sources", "data": []}
 
-            full_answer = ""
-            token_count = 0
+        full_answer = ""
+        token_count = 0
 
-            async for token in self.llm.generate_casual_stream(
-                query=query,
-                conversation_history=history,
-            ):
-                token_count += 1
-                full_answer += token
-                yield {"type": "token", "data": token}
+        async for token in self._llm.generate_casual_stream(
+            query=query,
+            conversation_history=history,
+        ):
+            token_count += 1
+            full_answer += token
+            yield {"type": "token", "data": token}
 
-            yield {
-                "type": "complete",
-                "metadata": {
-                    "intent": "CASUAL",
-                    "language": language,
-                    "tokens_generated": token_count,
-                    "score": 1.0,
-                    "confidence": "Casual conversation",
-                    "full_answer": full_answer,
-                },
-            }
+        yield {
+            "type": "complete",
+            "metadata": {
+                "intent": "CASUAL",
+                "language": language,
+                "tokens_generated": token_count,
+                "score": 1.0,
+                "confidence": "Casual conversation",
+                "full_answer": full_answer,
+                "rag_chunks": [],
+            },
+        }
+        logger.info(f" CASUAL pipeline complete | tokens={token_count}")
 
-            logger.info(f"✅ CASUAL response complete | Tokens: {token_count}")
-
-        except Exception as e:
-            logger.error(
-                f"❌ CASUAL handler failed | "
-                f"Query: {query[:50]} | "
-                f"Error: {type(e).__name__}: {str(e)}",
-                exc_info=True,
-            )
-            raise
-
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # LEGAL PIPELINE
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _handle_legal(
         self,
         query: str,
         language: str,
-        history: List[Dict[str, str]],
         top_k: int,
         min_score: float,
+        history: List[Dict[str, str]],
     ) -> AsyncIterator[Dict[str, Any]]:
-        """
-        Handle LEGAL queries (with RAG and scoring).
+        logger.info("⚖️  LEGAL pipeline")
 
-        Flow (identical to original, retrieval now via RetrieverAgent):
-        1. RetrieverAgent: embed + search Milvus
-        2. Build RAG context
-        3. generate_legal_answer: get score (streaming internally, [SCORE:x.x] parsed)
-        4. Yield sources only if score >= 0.5
-        5. generate_legal_stream: stream clean answer to frontend
-        """
-        try:
-            logger.info("⚖️  Handling LEGAL query (with RAG)")
+        # Step 1 — Retrieve
+        search_results = await self._retriever_agent.run(
+            query=query,
+            top_k=top_k,
+            min_score=min_score,
+            history=history,
+        )
 
-            # ── STEP 1: RetrieverAgent does embedding + Milvus search ──
-            search_results = await self._retriever_agent.run(
-                query=query,
-                top_k=top_k,
-                min_score=min_score,
-                history=history,
+        if not search_results:
+            logger.warning("⚠️  No Milvus results found")
+            yield {"type": "sources", "data": []}
+
+            no_result = (
+                "Jeg finner ingen relevante lovutdrag i den tilgjengelige Lovdata-databasen "
+                "som direkte svarer på dette spørsmålet. "
+                "Det kan være at spørsmålet er formulert for generelt eller gjelder et område "
+                "som ikke dekkes av tilgjengelige kilder. "
+                "Du kan prøve å omformulere spørsmålet eller gi mer spesifikke detaljer for et mer presist svar."
+                if language == "norwegian"
+                else
+                "I cannot find any relevant legal excerpts from my knowledge. "
+                "The question may be too general or relate to an area not covered in the available sources. "
+                "You may try rephrasing the question or providing more specific details for a more accurate response."
             )
 
-            if not search_results:
-                logger.warning("⚠️  No results from Milvus")
+            for char in no_result:
+                yield {"type": "token", "data": char}
 
-                yield {"type": "sources", "data": []}
-
-                no_result_msg = (
-                    "Jeg finner ingen relevante lovutdrag i den tilgjengelige "
-                    "Lovdata-databasen som direkte svarer på dette spørsmålet."
-                    if language == "norwegian"
-                    else "I cannot find any relevant legal excerpts in the available "
-                    "Lovdata database that directly answer this question."
-                )
-
-                for char in no_result_msg:
-                    yield {"type": "token", "data": char}
-
-                yield {
-                    "type": "complete",
-                    "metadata": {
-                        "intent": "LEGAL",
-                        "language": language,
-                        "chunks_retrieved": 0,
-                        "score": 0.1,
-                        "confidence": "No sources found",
-                        "full_answer": no_result_msg,
-                    },
-                }
-                return
-
-            # ── STEP 2: Build RAG context (unchanged) ──────────
-            rag_context = self._build_context(search_results)
-            logger.debug(f"📄 Built RAG context: {len(rag_context)} chars")
-
-            
-            logger.info("🎯 Generating legal answer with score...")
-            result = await self.llm.generate_legal_answer(
-                query=query,
-                rag_context=rag_context,
-                language=language,
-                conversation_history=history,
-            )
-
-            answer     = result["answer"]
-            score      = result["score"]
-            confidence = result["confidence"]
-            tokens_used = result["tokens_used"]
-
-            logger.info(f"📊 Score: {score}, Confidence: {confidence}")
-
-            # ── STEP 4: Yield sources (only if score >= 0.5) ────
-            # UNCHANGED logic — same rule as original
-            if score >= 0.5:
-                urls = list({
-                    r.get("url")
-                    for r in search_results
-                    if r.get("url")
-                })
-                yield {"type": "sources", "data": urls}
-                logger.info(f"✅ Showing {len(urls)} source URLs (score >= 0.5)")
-            else:
-                yield {"type": "sources", "data": []}
-                logger.info("⚠️  Hiding sources (score < 0.5)")
-
-            # ── STEP 5: Stream answer to frontend ──────────────
-            # generate_legal_stream strips [SCORE:x.x] — clean tokens only
-            full_answer = ""
-            token_count = 0
-
-            async for token in self.llm.generate_legal_stream(
-                query=query,
-                rag_context=rag_context,
-                language=language,
-                conversation_history=history,
-            ):
-                token_count += 1
-                full_answer += token
-                yield {"type": "token", "data": token}
-
-            # ── STEP 6: Yield completion (unchanged shape) ──────
             yield {
                 "type": "complete",
                 "metadata": {
                     "intent": "LEGAL",
                     "language": language,
-                    "chunks_retrieved": len(search_results),
-                    "tokens_generated": tokens_used,
-                    "score": score,
-                    "confidence": confidence,
-                    "full_answer": answer,      # from generate_legal_answer (score-parsed)
-                    "rag_chunks": search_results,
+                    "chunks_retrieved": 0,
+                    "score": 0.1,
+                    "confidence": "No sources found",
+                    "full_answer": no_result,
+                    "rag_chunks": [],
                 },
             }
+            return
 
-            logger.info(
-                "LEGAL_QUERY_COMPLETE",
-                extra={
-                    "event": "legal_query_complete",
-                    "query": query[:200],
-                    "language": language,
-                    "chunks_retrieved": len(search_results),
-                    "tokens_generated": tokens_used,
-                    "score": score,
-                    "confidence": confidence,
-                },
-            )
+        # Step 2 — Build context string for the LLM
+        rag_context = self._build_context(search_results)
 
-        except Exception as e:
-            logger.error(
-                f"❌ LEGAL handler failed | "
-                f"Query: {query[:50]} | "
-                f"Error: {type(e).__name__}: {str(e)}",
-                exc_info=True,
-            )
-            raise
+        # Step 3 — Score (internal non-streaming call; parses [SCORE:x.x])
+        score_result = await self._llm.generate_legal_answer(
+            query=query,
+            rag_context=rag_context,
+            language=language,
+            conversation_history=history,
+        )
+        score = score_result["score"]
+        confidence = score_result["confidence"]
+        scored_answer = score_result["answer"]
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # _build_context  ── 100% UNCHANGED
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        logger.info(f" Score={score} | Confidence={confidence}")
+
+        # Step 4 — Emit sources (only when score is high enough)
+        visible_sources = []
+        visible_chunks = []
+
+        if score >= 0.5:
+            visible_chunks = search_results
+            visible_sources = list({r.get("url") for r in search_results if r.get("url")})
+            yield {"type": "sources", "data": visible_sources}
+            logger.info(f" Emitting {len(visible_sources)} source URLs (score >= 0.5)")
+        else:
+            yield {"type": "sources", "data": []}
+            logger.info("  Hiding sources (score < 0.5)")
+
+
+        # Step 5 — Stream clean answer to user
+        full_answer = ""
+        token_count = 0
+
+        async for token in self._llm.generate_legal_stream(
+            query=query,
+            rag_context=rag_context,
+            language=language,
+            conversation_history=history,
+        ):
+            token_count += 1
+            full_answer += token
+            yield {"type": "token", "data": token}
+
+        yield {
+            "type": "complete",
+            "metadata": {
+                "intent": "LEGAL",
+                "language": language,
+                "chunks_retrieved": len(search_results),
+                "tokens_generated": token_count,
+                "score": score,
+                "confidence": confidence,
+                "full_answer": scored_answer,    # from the score call (authoritative)
+                "rag_chunks": visible_chunks,
+            },
+        }
+        logger.info(f" LEGAL pipeline complete | chunks={len(search_results)} | tokens={token_count}")
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # HELPERS
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     def _build_context(self, search_results: List[Dict[str, Any]]) -> str:
-        """Build context string from Milvus results"""
-        context_parts = []
-        for i, result in enumerate(search_results, 1):
-            parent_title = result.get("parent_title", "Unknown")
+        """Format Milvus results into a source-numbered context string for the LLM."""
+        parts = []
+        for i, result in enumerate(search_results, start=1):
+            title = result.get("parent_title", "Unknown")
             text = result.get("text", "")
-            context_parts.append(f"[Kilde {i}: {parent_title}]\n{text}\n")
-        return "\n---\n".join(context_parts)
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # _format_sources  ── 100% UNCHANGED
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            parts.append(f"[Kilde {i}: {title}]\n{text}\n")
+        return "\n---\n".join(parts)
 
     def _format_sources(self, search_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Format sources for frontend"""
+        """Format Milvus results into the source list shape expected by the frontend."""
         sources = []
         for result in search_results:
-            file_name    = result.get("file_name", "")
-            parent_title = result.get("parent_title", "Unknown")
-            file_url     = result.get("file_url") or result.get("url")
-
+            url = result.get("url") or result.get("file_url")
             sources.append({
-                "title": parent_title,
-                "url": file_url,
+                "title": result.get("parent_title", "Unknown"),
+                "url": url,
                 "chunk_text": result.get("text", "")[:200] + "...",
                 "relevance_score": round(result.get("score", 0.0), 4),
                 "metadata": {
-                    "file_name": file_name,
+                    "file_name": result.get("file_name", ""),
                     "chunk_index": result.get("chunk_index", 0),
                     "parent_type": result.get("parent_type", ""),
-                    "has_url": file_url is not None,
                 },
             })
         return sources
