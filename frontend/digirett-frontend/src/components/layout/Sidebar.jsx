@@ -11,62 +11,87 @@ const Sidebar = ({
   const isDark = theme === "dark";
 
   return (
-      <aside
-        className={`w-96 border-r flex flex-col px-4 transition-colors duration-300 ${
-          isDark
-          ? "bg-black border-gray-800 text-gray-100"
-          : "bg-white border-gray-200 text-gray-900"
-
-        }`}
-      >
-
-      {/* ⭐ APP TITLE */}
-    <div
-      className={`px-4 pt-4 pb-3 text-2xl font-bold ${
-        isDark ? "text-white" : "text-gray-900"
-      }`}
+    <aside
+      style={{
+        width: "260px",
+        minWidth: "260px",
+        maxWidth: "260px",
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        backgroundColor: isDark ? "#171717" : "#ececec",
+        borderRight: isDark ? "1px solid #2a2a2a" : "1px solid #d1d5db",
+        overflow: "hidden",
+      }}
     >
-      DigiRett Legal Assistant
-    </div>
+      {/* APP TITLE */}
+      <div style={{
+        padding: "20px 16px 12px",
+        fontSize: "15px",
+        fontWeight: "600",
+        color: isDark ? "#ffffff" : "#111827",
+        flexShrink: 0,
+      }}>
+        DigiRett AI Assistant
+      </div>
 
-
-      {/* ⭐ New Chat button */}
-      <div className="p-3">
+      {/* NEW CHAT BUTTON */}
+      <div style={{ padding: "0 12px 12px", flexShrink: 0 }}>
         <button
           onClick={onNewChat}
-          className={`w-full flex items-center justify-center gap-2
-            py-4 text-base rounded-2xl font-semibold shadow-md
-            transition ${
-              isDark
-                ? "bg-white text-black hover:bg-gray-200"
-                : "bg-blue-600 text-white hover:bg-blue-700"
-
-            }`}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            padding: "10px 14px",
+            borderRadius: "12px",
+            fontSize: "14px",
+            fontWeight: "500",
+            backgroundColor: "#2563eb",
+            color: "#ffffff",
+            border: "none",
+            cursor: "pointer",
+            transition: "background-color 0.2s",
+          }}
+          onMouseEnter={e => e.currentTarget.style.backgroundColor = "#1d4ed8"}
+          onMouseLeave={e => e.currentTarget.style.backgroundColor = "#2563eb"}
         >
-          <span className="text-xl font-bold">+</span>
+          <span style={{ fontSize: "18px", lineHeight: 1, fontWeight: "700" }}>+</span>
           New Chat
         </button>
       </div>
 
-      {/* ⭐ Conversation History Heading */}
-      <p
-        className={`text-2xl font-bold ${
-          isDark ? "text-gray-400" : "text-gray-500"
-        }`}
+      {/* HISTORY LABEL */}
+      <div style={{
+        padding: "0 16px 6px",
+        fontSize: "11px",
+        fontWeight: "600",
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        color: isDark ? "#6b7280" : "#9ca3af",
+        flexShrink: 0,
+      }}>
+        Chat History
+      </div>
+
+      {/* SCROLLABLE LIST — forced scrollbar always visible */}
+      <div
+        style={{
+          flex: 1,
+          overflowY: "scroll",      /* scroll (not auto) forces scrollbar always visible */
+          overflowX: "hidden",
+          padding: "4px 8px",
+          minHeight: 0,
+        }}
       >
-        Conversation History
-      </p>
-
-
-      {/* ⭐ Conversation list */}
-      <div className="flex-1 overflow-y-auto px-2 space-y-1">
         {conversations.length === 0 && (
-          <p
-            className={`text-lg text-gray-400 ${
-              isDark ? "text-gray-500" : "text-gray-400"
-            }`}
-          >
-            No chats yet
+          <p style={{
+            fontSize: "12px",
+            color: isDark ? "#4b5563" : "#9ca3af",
+            padding: "8px 12px",
+          }}>
+            No conversations yet
           </p>
         )}
 
@@ -74,45 +99,66 @@ const Sidebar = ({
           <div
             key={c.conversation_id}
             onClick={() => onSelectConversation(c.conversation_id)}
-            className={`
-              flex items-center justify-between gap-2
-              px-4 py-3 rounded-lg cursor-pointer transition
-              ${
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "8px",
+              padding: "10px 12px",
+              borderRadius: "10px",
+              cursor: "pointer",
+              marginBottom: "2px",
+              backgroundColor:
                 c.conversation_id === currentConversationId
-                  ? isDark
-                    ? "bg-[#1f1f1f]"
-                    : "bg-gray-100"
-                  : isDark
-                  ? "hover:bg-[#1a1a1a]"
-                  : "hover:bg-gray-50"
+                  ? isDark ? "#2f2f2f" : "#ffffff"
+                  : "transparent",
+              color: isDark ? "#d1d5db" : "#374151",
+              transition: "background-color 0.15s",
+            }}
+            onMouseEnter={e => {
+              if (c.conversation_id !== currentConversationId) {
+                e.currentTarget.style.backgroundColor = isDark ? "#252525" : "#ffffff";
               }
-            `}
+              const trash = e.currentTarget.querySelector(".trash-icon");
+              if (trash) trash.style.opacity = "1";
+            }}
+            onMouseLeave={e => {
+              if (c.conversation_id !== currentConversationId) {
+                e.currentTarget.style.backgroundColor = "transparent";
+              }
+              const trash = e.currentTarget.querySelector(".trash-icon");
+              if (trash) trash.style.opacity = "0";
+            }}
           >
-            <div className="flex items-center gap-2 truncate">
-              <MessageSquare
-                size={14}
-                className={isDark ? "text-gray-500" : "text-gray-400"}
-              />
-              <span
-                className={`truncate text-lg font-semibold leading-relaxed ${
-                  isDark ? "text-gray-100" : "text-gray-900"
-                }`}
-              >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+              <MessageSquare size={13} style={{ flexShrink: 0, color: isDark ? "#6b7280" : "#9ca3af" }} />
+              <span style={{
+                fontSize: "13px",
+                lineHeight: "1.4",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}>
                 {c.title || "New Conversation"}
               </span>
             </div>
 
             <Trash2
-              size={16}
+              size={13}
+              className="trash-icon"
               onClick={(e) => {
                 e.stopPropagation();
                 onDeleteConversation(c.conversation_id);
               }}
-              className={`${
-                isDark
-                  ? "text-gray-500 hover:text-red-500"
-                  : "text-gray-400 hover:text-red-500"
-              }`}
+              style={{
+                flexShrink: 0,
+                opacity: 0,
+                cursor: "pointer",
+                color: isDark ? "#6b7280" : "#9ca3af",
+                transition: "opacity 0.15s, color 0.15s",
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
+              onMouseLeave={e => e.currentTarget.style.color = isDark ? "#6b7280" : "#9ca3af"}
             />
           </div>
         ))}
