@@ -1,0 +1,39 @@
+# Web Framework
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+
+# Rate Limiting
+slowapi>=0.1.9
+
+# LangChain + Azure OpenAI
+langchain>=0.2.0
+langchain-openai>=0.1.0
+openai>=1.30.0
+
+# Vector Database (Milvus)
+pymilvus>=2.4.0
+
+# Redis Cache
+redis>=5.0.0
+
+# Supabase (PostgreSQL)
+supabase>=2.4.0
+
+# Retry Logic
+tenacity>=8.3.0
+
+# OpenTelemetry (API + LLM latency tracing)
+opentelemetry-api>=1.24.0
+opentelemetry-sdk>=1.24.0
+opentelemetry-instrumentation-fastapi>=0.45b0
+
+# Testing
+pytest>=8.2.0
+pytest-asyncio>=0.23.0
+requests>=2.31.0
+sseclient-py>=1.8.0
+
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
