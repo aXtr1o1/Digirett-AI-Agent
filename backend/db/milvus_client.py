@@ -10,8 +10,10 @@ from typing import Any, Dict, List, Optional
 
 from pymilvus import connections, Collection, utility
 from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
+
 
 
 class MilvusClient:

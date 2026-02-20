@@ -244,6 +244,21 @@ def xml_to_structured_text(xml_path, file_name):
         
         # Format metadata header
         header = format_metadata_header(metadata, year)
+
+        def extract_lovdata_url(root):
+            """
+            Extract Lovdata document URL from XML.
+            """
+            main_tag = root.find(".//main")
+
+            if main_tag is not None:
+                lovdata_path = main_tag.attrib.get("data-lovdata-URL")
+
+                if lovdata_path:
+                    return f"https://lovdata.no/dokument/{lovdata_path}"
+
+            return None
+
         
         # Extract document body
         main_body = root.find(".//main")
@@ -257,7 +272,13 @@ def xml_to_structured_text(xml_path, file_name):
         # Combine header + content
         full_text = header + "\n" + "\n".join(content_lines).strip()
         
-        return full_text
+        document_url = extract_lovdata_url(root)
+
+        return {
+            "text": full_text,
+            "document_url": document_url
+        }
+
         
     except Exception as e:
         logging.error(f"Content extraction error [{file_name}]: {e}")
@@ -277,7 +298,14 @@ def process_single_file(xml_path):
     base_name = os.path.basename(xml_path)
     txt_name = base_name.replace(".xml", ".txt")
 
-    text_content = xml_to_structured_text(xml_path, txt_name)
+    result = xml_to_structured_text(xml_path, txt_name)
+
+    if not result:
+        return {'status': 'failed', 'file': txt_name}
+
+    text_content = result["text"]
+    document_url = result.get("document_url")
+
 
     if not text_content:
         return {'status': 'failed', 'file': txt_name}
@@ -293,10 +321,12 @@ def process_single_file(xml_path):
     has_year = "YEAR:" in text_content
 
     return {
-        'status': 'success',
-        'file': txt_name,
-        'has_year': has_year
+    'status': 'success',
+    'file': txt_name,
+    'has_year': has_year,
+    'document_url': document_url
     }
+
 
 
 def process_xml_to_text(xml_files, max_workers=4):
@@ -343,8 +373,10 @@ def process_xml_to_text(xml_files, max_workers=4):
                         
                         documents.append({
                             'file_name': result['file'],
-                            'text': text_content
+                            'text': text_content,
+                            'document_url': result.get("document_url")
                         })
+
                     except Exception as e:
                         logging.error(f"Error reading saved file [{result['file']}]: {e}")
                     
