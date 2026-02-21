@@ -18,9 +18,7 @@ class IntentAgent:
 CASUAL: greetings, personal questions, off-topic chat, anything unrelated to law.
 LEGAL: any question about law, regulations, legal rights, contracts, or Norwegian legislation.
 
-If the query contains multiple languages:
-   - Determine the **dominant language by the user’s initial wording** or the language the user seems to prefer.
-   - The dominant language is the **primary language**, even if secondary content is longer.OUTPUT FORMAT — respond with valid JSON only, no extra text:
+
 {"intent": "CASUAL", "language": "english"}
 OR
 {"intent": "LEGAL", "language": "norwegian"}"""
