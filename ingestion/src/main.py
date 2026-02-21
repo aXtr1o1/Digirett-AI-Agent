@@ -368,4 +368,4 @@ def run_pipeline(limit: int | None = None):
 # Entry point
 # -------------------------------------------------
 if __name__ == "__main__":
-    run_pipeline(limit=20)
+    run_pipeline(limit=1)
