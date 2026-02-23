@@ -46,6 +46,7 @@ class RetrieverAgent:
             print("File:", chunk.get("file_name"))
             print("Parent Title:", chunk.get("parent_title"))
             print("Text Preview:", chunk.get("text")[:500])
+            print("article_title", chunk.get("article_title"))
         return results
 
     # ── Internal ─────────────────────────────────────────────────────────

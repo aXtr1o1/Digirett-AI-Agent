@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     DIMENSION: int = 1536
 
     # ── RAG ──────────────────────────────────────────────────────────────
-    DEFAULT_TOP_K: int = 3
+    DEFAULT_TOP_K: int = 5
     MAX_TOP_K: int = 10
     MIN_SIMILARITY_SCORE: float = 0.8
     # Max characters of context sent to LLM (covers ~20 000 tokens)
