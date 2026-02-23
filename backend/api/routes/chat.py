@@ -74,34 +74,13 @@ _rate_limiter = _RateLimiter()
 
 @router.websocket("/chat/ws")
 async def chat_websocket(websocket: WebSocket):
-    """
-    Persistent WebSocket — one connection handles multiple sequential queries.
 
-    FIX FOR 403: We MUST call websocket.accept() BEFORE any other logic.
-    FastAPI's CORSMiddleware is HTTP-only; it rejects WS connections before
-    they reach the handler when origins don't match. The correct fix is to
-    accept() immediately, then apply our own rate limiter inside.
 
-    Message flow per query:
-      Client → { query, conversation_id, user_id, top_k, temperature }
-      Server ← { type:'intent',   data:{ intent, language } }
-      Server ← { type:'sources',  data:[ url, ... ] }
-      Server ← { type:'token',    data:'chunk' }   (many, streamed)
-      Server ← { type:'complete', metadata:{ ... } }
-      Server ← { type:'error',    message:'...' }  (on failure)
-    """
-
-    # ── ACCEPT FIRST — this is what fixes the 403 ─────────────────────
-    # CORSMiddleware blocks WS before reaching the handler.
-    # Accepting unconditionally bypasses that; rate limiting happens below.
     await websocket.accept()
 
     client_ip = websocket.client.host if websocket.client else "unknown"
     logger.info(f"🔌 WS connected | ip={client_ip}")
 
-    # ── Rate limit check AFTER accept ─────────────────────────────────
-    # We send an error message and close instead of refusing the handshake,
-    # because the handshake is already complete at this point.
     if not _rate_limiter.is_allowed(client_ip):
         logger.warning(f"⛔ WS rate limit exceeded | ip={client_ip}")
         await websocket.send_json({"type": "error", "message": "Rate limit exceeded"})
@@ -143,13 +122,6 @@ async def chat_websocket(websocket: WebSocket):
         logger.info(f"🔌 WS session ended | ip={client_ip}")
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Per-query handler
-# Logic is 100% identical to the old SSE _generate().
-# Only the transport line changed:
-#   OLD: yield f"data: {json.dumps(event)}\n\n"
-#   NEW: await websocket.send_json(event)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async def _handle_query(websocket: WebSocket, chat_request: ChatRequest) -> None:
     start_time        = datetime.utcnow()
