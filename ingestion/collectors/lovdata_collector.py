@@ -2,18 +2,17 @@ import os
 import tarfile
 import requests
 import logging
+import xml.etree.ElementTree as ET
+import re
+from ingestion.src.storage.supabase_store import SupabaseStore
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional
 
 logger = logging.getLogger("lovdata-collector")
 
-BASE_URL = "https://api.lovdata.no"
-LIST_ENDPOINT = "/v1/publicData/list"
-GET_ENDPOINT = "/v1/publicData/get"
+from ingestion.src.config import LOVDATA_API_URL, RAW_XML_DIR, ARCHIVE_DIR
 
-from ingestion.src.config import RAW_XML_DIR
-ARCHIVE_DIR = Path(os.path.join(RAW_XML_DIR.parent, "archives"))
-
+BASE_URL = LOVDATA_API_URL
 
 # --------------------------------------------------
 # Small helpers
@@ -23,8 +22,22 @@ def _is_safe_path(name: str) -> bool:
 
 
 def _is_valid_xml(data: bytes) -> bool:
-    return isinstance(data, (bytes, bytearray)) and data.strip().startswith(b"<")
+    try:
+        ET.fromstring(data)
+        return True
+    except ET.ParseError:
+        return False
 
+def _extract_year_from_filename(filename: str) -> Optional[int]:
+    """
+    Extract year from filename.
+    Example:
+        nl-20230614-001.xml -> 2023
+    """
+    match = re.search(r'-(\d{4})\d{4}-', filename)
+    if match:
+        return int(match.group(1))
+    return None
 
 # --------------------------------------------------
 # NEW: Fetch ALL archives from API
@@ -44,7 +57,7 @@ def _fetch_all_archives() -> List[Dict]:
     try:
         logger.info("📡 Fetching ALL archives from Lovdata API...")
         
-        resp = requests.get(f"{BASE_URL}{LIST_ENDPOINT}", timeout=30)
+        resp = requests.get(f"{LOVDATA_API_URL}/list", timeout=30)
         resp.raise_for_status()
         
         archives = resp.json()
@@ -56,7 +69,7 @@ def _fetch_all_archives() -> List[Dict]:
         logger.info(f"✅ Found {len(archives)} archives:")
         for archive in archives:
             size_gb = archive.get('size', 0) / (1024**3)
-            logger.info(f"   📦 {archive['filename']} ({size_gb:.2f} GB)")
+            logger.info(f"   📦 {archive['filename']}")
         
         return archives
     
@@ -76,42 +89,32 @@ def _fetch_all_archives() -> List[Dict]:
 # --------------------------------------------------
 def _download_archive(archive_name: str) -> Path:
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    
-    archive_path = Path(os.path.join(ARCHIVE_DIR, archive_name))
-    
+
+    archive_path = ARCHIVE_DIR / archive_name
+
     if archive_path.exists():
         logger.info(f"✅ Using cached: {archive_name}")
         return archive_path
-    
-    logger.info(f"⬇️  Downloading: {archive_name}")
-    
-    url = f"{BASE_URL}{GET_ENDPOINT}/{archive_name}"
-    
-    try:
-        with requests.get(url, stream=True, timeout=120) as r:
-            r.raise_for_status()
-            
-            total_size = int(r.headers.get('content-length', 0))
-            downloaded = 0
-            
-            with open(archive_path, "wb") as f:
-                for chunk in r.iter_content(8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        
-                        # Progress every 100 MB
-                        if total_size > 0 and downloaded % (100 * 1024 * 1024) == 0:
-                            progress = (downloaded / total_size * 100)
-                            logger.info(f"   {downloaded / (1024**2):.0f} MB ({progress:.0f}%)")
-        
-        logger.info(f"✅ Downloaded: {archive_name}")
-        return archive_path
-    
-    except Exception as e:
-        logger.error(f"❌ Download failed: {e}")
-        raise
 
+    # ✅ Correct Lovdata download URL
+    url = f"{LOVDATA_API_URL}/get/{archive_name}"
+
+    logger.info(f"⬇️  Downloading: {archive_name}")
+    logger.info(f"   URL: {url}")
+
+    with requests.get(url, stream=True, timeout=120) as r:
+        r.raise_for_status()
+        with open(archive_path, "wb") as f:
+            for chunk in r.iter_content(8192):
+                f.write(chunk)
+                
+    if archive_path.stat().st_size < 1024:
+        logger.error("❌ Downloaded archive too small — likely corrupted")
+        archive_path.unlink(missing_ok=True)
+        raise RuntimeError("Downloaded archive too small")
+
+    logger.info(f"✅ Downloaded: {archive_name}")
+    return archive_path
 
 # --------------------------------------------------
 # Extract XML files
@@ -132,6 +135,9 @@ def _extract_xml_files(
     
     RAW_XML_DIR.mkdir(parents=True, exist_ok=True)
     extracted: List[Path] = []
+    db = SupabaseStore()
+    existing_files = db.get_all_file_names()
+
     
     try:
         tar = tarfile.open(archive_path, "r:bz2")
@@ -148,12 +154,23 @@ def _extract_xml_files(
                 if limit is not None and len(extracted) >= limit:
                     break
                 
-                target = RAW_XML_DIR / os.path.basename(member.name)
-                
-                if target.exists():
-                    extracted.append(target)
+                original_name = os.path.basename(member.name)      # nl-20010105-001.xml
+                clean_name = os.path.splitext(original_name)[0]    # nl-20010105-001
+
+                # -------- YEAR FILTER (2020–2026 ONLY) --------
+                year = _extract_year_from_filename(original_name)
+
+                if year is None or year < 2020 or year > 2026:
                     continue
-                
+
+
+                target = RAW_XML_DIR / original_name              # ✅ keep .xml locally
+
+                # Check DB using name WITHOUT extension
+                if existing_files and clean_name in existing_files:
+                    logger.info(f"⏭️ Already processed, skipping: {clean_name}")
+                    continue
+
                 file_obj = tar.extractfile(member)
                 if not file_obj:
                     continue
@@ -174,6 +191,17 @@ def _extract_xml_files(
     
     except Exception as e:
         logger.error(f"❌ Extraction failed: {e}")
+        # ✅ delete corrupted archive so next run re-downloads it
+        try:
+            if archive_path.exists():
+                archive_path.unlink()
+                logger.warning(
+                    f"🗑️ Deleted corrupted archive: {archive_path.name}. "
+                    "Will re-download next run."
+                )
+        except Exception as cleanup_error:
+            logger.error(f"Failed to delete corrupted archive: {cleanup_error}")
+
         raise
 
 
@@ -226,6 +254,12 @@ def fetch_lovdata_files(
     all_files: List[Path] = []
     processed_archives: List[str] = []
     remaining = limit
+
+    # -------- SIZE STATISTICS --------
+    total_size_bytes = 0
+    largest_file = 0
+    smallest_file = None
+
     
     # Process each archive
     for i, archive_info in enumerate(archive_list, 1):
@@ -252,13 +286,25 @@ def fetch_lovdata_files(
             if files:
                 all_files.extend(files)
                 processed_archives.append(archive_name)
-                
+
+                for f in files:
+                    size = Path(f).stat().st_size
+
+                    total_size_bytes += size
+
+                    if size > largest_file:
+                        largest_file = size
+
+                    if smallest_file is None or size < smallest_file:
+                        smallest_file = size
+
                 logger.info(f"   ✅ {len(files)} files | Total: {len(all_files)}")
-                
+
                 if remaining is not None:
                     remaining -= len(files)
             else:
                 logger.warning(f"   ⚠️  No files extracted")
+
         
         except Exception as e:
             logger.error(f"   ❌ Failed: {e}")
@@ -270,6 +316,25 @@ def fetch_lovdata_files(
     logger.info(f"{'='*70}")
     logger.info(f"Archives processed: {len(processed_archives)}/{len(archive_list)}")
     logger.info(f"Total files: {len(all_files)}")
+    avg_size = (
+    total_size_bytes / len(all_files)
+    if len(all_files) > 0 else 0
+    )
+
+    smallest_kb = (smallest_file / 1024) if smallest_file else 0
+    largest_mb = (largest_file / (1024**2)) if largest_file else 0
+
+    logger.info("\n" + "="*70)
+    logger.info("📊 FILE SIZE SUMMARY")
+    logger.info("="*70)
+    logger.info(f"TOTAL FILES: {len(all_files):,}")
+    logger.info(f"TOTAL SIZE: {total_size_bytes / (1024**3):.2f} GB")
+    logger.info(f"AVERAGE SIZE: {avg_size / 1024:.2f} KB")
+    logger.info(f"LARGEST FILE: {largest_mb:.2f} MB")
+    logger.info(f"SMALLEST FILE: {smallest_kb:.2f} KB")
+    logger.info("="*70)
+
+
     for archive_name in processed_archives:
         logger.info(f"   ✅ {archive_name}")
     logger.info(f"{'='*70}\n")

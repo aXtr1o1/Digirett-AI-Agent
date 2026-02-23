@@ -1,59 +1,82 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
+from typing import List, Optional
 from pydantic import Field
-from typing import List
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # App
-    APP_NAME: str
-    VERSION: str
-    DEBUG: bool
+
+    # ── API ──────────────────────────────────────────────────────────────
+    APP_NAME: str = "Lovdata RAG API"
+    VERSION: str = "2.0.0"
+    DEBUG: bool = False
     ALLOWED_ORIGINS: List[str]
 
-    # Logging
-    LOG_DIR: str
-    LOG_FILE: str
-    LOG_LEVEL: str
+    # ── Azure OpenAI ─────────────────────────────────────────────────────
+    AZURE_OPENAI_ENDPOINT: str
+    AZURE_OPENAI_API_KEY: str
+    AZURE_OPENAI_DEPLOYMENT: str
+    AZURE_OPENAI_API_VERSION: str
+    OPENAI_TEMPERATURE: float = 0.4
 
-    # Rate limit
-    RATE_LIMIT_PER_MINUTE: int = 250
+    # Embedding model (text-embedding-3-small)
+    AZURE_OPENAI_EMBEDDING_DEPLOYMENT: str
+    AZURE_OPENAI_EMBEDDING_API_VERSION: str
 
-    # Milvus
+    # ── Milvus ───────────────────────────────────────────────────────────
     MILVUS_HOST: str
     MILVUS_PORT: int
     MILVUS_COLLECTION: str
     MILVUS_METRIC_TYPE: str
+    MILVUS_INDEX_TYPE: str
+    DIMENSION: int = 1536
 
-    # Embedding dimension
-    EMBEDDING_DIMENSION: int
+    # ── RAG ──────────────────────────────────────────────────────────────
+    DEFAULT_TOP_K: int = 3
+    MAX_TOP_K: int = 10
+    MIN_SIMILARITY_SCORE: float = 0.8
+    # Max characters of context sent to LLM (covers ~20 000 tokens)
+    CONTEXT_MAX_LENGTH: int = 80000
 
-    # Redis
-    REDIS_URL: str
+    # ── Rate Limiting ────────────────────────────────────────────────────
+    RATE_LIMIT_PER_MINUTE: int = 250
+
+    # ── Redis (deployed, not Docker) ─────────────────────────────────────
+    REDIS_HOST: str
+    REDIS_PORT: int
+    REDIS_DB: int
+    REDIS_PASSWORD: str
+    # TTLs (seconds)
+    CACHE_TTL: int = 3600
     ENABLE_CACHE: bool = True
-    CACHE_TTL: int
+    CONVERSATION_CONTEXT_TTL: int = 1800 
+    USER_SESSION_TTL: int = 3600
+    STREAMING_BUFFER_TTL: int = 60
+    MAX_CONTEXT_MESSAGES: int = 20
+    CONVERSATION_META_TTL: int = 3600
+    USER_CONVERSATIONS_TTL: int = 1800
 
-    # RAG Settings
-    DEFAULT_TOP_K: int
-    MAX_TOP_K: int
-    MIN_SIMILARITY_SCORE: float
-    CONTEXT_MAX_LENGTH: int
+    # ── Supabase ─────────────────────────────────────────────────────────
+    SUPABASE_URL: str
+    SUPABASE_KEY: str
+    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
 
-    # Azure OpenAI - CHAT
-    AZURE_OPENAI_CHAT_ENDPOINT: str
-    AZURE_OPENAI_CHAT_API_KEY: str
-    AZURE_OPENAI_CHAT_API_VERSION: str
-    AZURE_OPENAI_CHAT_DEPLOYMENT: str
+    # ── Conversation ──────────────────────────────────────────────────────
+    AUTO_SUMMARY_THRESHOLD: int = 50
+    DEFAULT_USER_ID: str = "admin"
+    MAX_CONVERSATION_TITLE_LENGTH: int = 100
+    SOFT_DELETE: bool = True
 
-    # Azure OpenAI - EMBEDDINGS
-    AZURE_OPENAI_EMBED_ENDPOINT: str
-    AZURE_OPENAI_EMBED_API_KEY: str
-    AZURE_OPENAI_EMBED_API_VERSION: str
-    AZURE_OPENAI_EMBEDDING_DEPLOYMENT: str
+    # ── Logging ───────────────────────────────────────────────────────────
+    LOG_LEVEL: str = "INFO"
+    LOG_DIR: str = "./logs"
 
-    PROMPT_VERSION: str
+    # ── Retry ─────────────────────────────────────────────────────────────
+    MAX_RETRIES: int = 3
+    RETRY_DELAY: float = 1.0
 
     model_config = SettingsConfigDict(
-        env_file="backend/.env",
+        env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
