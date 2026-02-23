@@ -4,10 +4,14 @@ on:
   push:
     branches:
       - Testing
+      - staging
+      - Frontend
+      - Backend
+      - Ingestion
   pull_request:
     branches:
       - Testing
-  
+      - staging
 jobs:
   tests:
     runs-on: ubuntu-latest
@@ -21,7 +25,6 @@ jobs:
           python-version: "3.11"
       - name: Backend - Install Dependencies
         run: |
-          cd backend
           python -m pip install -r requirements.txt
           pip show pytest || pip install pytest
       - name: Backend - Unit Tests
@@ -31,7 +34,7 @@ jobs:
           
       - name: Ingestion - Install Dependecies
         run: |
-          cd ingestion
+           
           python -m pip install -r requirements.txt
       - name: Ingestion - Run unit Tests
         run: |
@@ -78,7 +81,7 @@ jobs:
           cd /var/www/app/Digirett-AI-Agent
     
           echo "Pulling latest code..."
-          git pull origin Production
+          git pull origin 
     
           echo "Installing dependencies..."
           pip3 install -r requirements.txt
