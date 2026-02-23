@@ -145,7 +145,7 @@ class MilvusClient:
             results = self._collection.search(
                 data=[embedding],
                 anns_field="embedding",
-                param={"metric_type": "IP", "params": {"ef": 64}},
+                param={"metric_type": "COSINE", "params": {"ef": 128}},
                 limit=top_k,
                 output_fields=output_fields,
             )

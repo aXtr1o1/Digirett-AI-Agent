@@ -93,21 +93,6 @@ VALIDATION RULES:
         chunks: List[Dict[str, Any]],
         attempt: int = 1,
     ) -> Dict[str, Any]:
-        """
-        Validate chunk relevance against the reasoning summary.
-
-        Args:
-            reasoning_summary: Enriched query string from QueryReasoningAgent.
-            chunks:            List of chunk dicts returned by Milvus search.
-            attempt:           1 for first attempt, 2 for retry attempt.
-
-        Returns:
-            {
-                "correlated": bool,
-                "explanation": str,
-                "retry": bool,   # True only when correlated=False AND attempt==1
-            }
-        """
         logger.info(
             f"🔍 SourceValidationAgent: validating {len(chunks)} chunks "
             f"(attempt {attempt})"

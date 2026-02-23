@@ -19,7 +19,7 @@ import { API_BASE_URL, DEFAULT_USER_ID } from "../utils/constants";
 // Example:
 //   API_BASE_URL = "http://localhost:8000"       → ws://localhost:8000/api/v1/chat/ws
 //   API_BASE_URL = "http://localhost:8000/api/v1" → ws://localhost:8000/api/v1/chat/ws
-const _httpBase = API_BASE_URL
+const _httpBase = API_BASE_URL || "http://localhost:8000"
   .replace(/\/+$/, "")          // remove trailing slashes
   .replace(/\/api\/v1$/, "");   // remove trailing /api/v1 if present
 
