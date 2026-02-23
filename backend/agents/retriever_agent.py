@@ -34,12 +34,18 @@ class RetrieverAgent:
         # Step 2: Search Milvus
         results = self._milvus.search(
             embedding=query_embedding,
-            metric_type="COSINE",
+            metric_type="IP",
             top_k=top_k,
             min_score=min_score,
         )
 
         logger.info(f" RetrieverAgent: {len(results)} chunks retrieved")
+        for i, chunk in enumerate(results):
+            print(f"\n--- CHUNK {i+1} ---")
+            print("Score:", chunk["score"])
+            print("File:", chunk.get("file_name"))
+            print("Parent Title:", chunk.get("parent_title"))
+            print("Text Preview:", chunk.get("text")[:500])
         return results
 
     # ── Internal ─────────────────────────────────────────────────────────

@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # ── RAG ──────────────────────────────────────────────────────────────
     DEFAULT_TOP_K: int = 3
     MAX_TOP_K: int = 10
-    MIN_SIMILARITY_SCORE: float = 0.45
+    MIN_SIMILARITY_SCORE: float = 0.8
     # Max characters of context sent to LLM (covers ~20 000 tokens)
     CONTEXT_MAX_LENGTH: int = 80000
 
