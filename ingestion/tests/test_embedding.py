@@ -54,4 +54,3 @@ def test_none_text():
     e = make_embedder()
     out = e.embed_chunks([{}])
     assert out[0]["embedding"] is None
-

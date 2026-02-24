@@ -8,7 +8,6 @@ No os.getenv calls or numeric literals appear in this file.
 import logging
 import time
 from typing import List, Dict, Any
-
 import psutil
 from openai import AzureOpenAI, APIStatusError, APIConnectionError, RateLimitError
 

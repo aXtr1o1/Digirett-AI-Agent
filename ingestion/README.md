@@ -63,27 +63,27 @@ python -m ingestion.src.main
 Create `.env` file:
 
 ```env
-# Lovdata API
+# .env.example
 LOVDATA_BASE_URL=https://api.lovdata.no
 
 # Milvus
-MILVUS_HOST=13.204.226.35
-MILVUS_PORT=19530
-MILVUS_COLLECTION=lovdata_hierarchical_chunks_v2
-MILVUS_DIMENSION=1536
+MILVUS_HOST=<your-milvus-host>
+MILVUS_PORT=<your-milvus-port>
+MILVUS_COLLECTION=your-milvus-collections
+MILVUS_DIMENSION=MILVUS_DIMENSION
 
 # Processing
 CHUNK_SIZE=1000
 CHUNK_OVERLAP=200
 
 # Supabase
-SUPABASE_SERVICE_KEY=...
-SUPABASE_BUCKET=...
+SUPABASE_SERVICE_KEY=<your-supabase-service-key>
+SUPABASE_BUCKET=<your-bucket-name>
 
-# Azure OpenAI Embeddings
+# Azure OpenAI
 AZURE_OPENAI_ENDPOINT=https://<your-resource>.cognitiveservices.azure.com/
-AZURE_OPENAI_KEY=...
-AZURE_OPENAI_API_VERSION=2024-02-01
+AZURE_OPENAI_KEY=<your-azure-openai-key>
+AZURE_OPENAI_API_VERSION=your-version
 AZURE_OPENAI_DEPLOYMENT=text-embedding-3-small
 
 # Embedding settings
@@ -94,7 +94,6 @@ EMBEDDING_CHUNK_DELAY=1.5
 # Chunking
 MAX_TOKENS_PER_CHUNK=512
 OVERLAP_TOKENS=50
-
 ```
 ## ⏰ Scheduler 
 
