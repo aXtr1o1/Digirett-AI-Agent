@@ -63,6 +63,5 @@ def test_fix_embedding_dimension_mismatch():
     s = MilvusTextStore.__new__(MilvusTextStore)
     s.embedding_dim = 5
     emb = [1, 2, 3]
-    result = s._fix_embedding(emb)
-    assert isinstance(result, list)
-    assert all(isinstance(x, float) for x in result)
+    with pytest.raises(ValueError):
+        s._fix_embedding(emb)
