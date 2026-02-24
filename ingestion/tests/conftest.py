@@ -12,4 +12,4 @@ os.environ.setdefault("MILVUS_HOST", "localhost")
 os.environ.setdefault("MILVUS_PORT", "19530")
 os.environ.setdefault("MILVUS_COLLECTION", "test-collection")
 os.environ.setdefault("EMBED_MODEL", "test-model")
-
+os.environ.setdefault("SUPABASE_TABLE", "test-table") 
