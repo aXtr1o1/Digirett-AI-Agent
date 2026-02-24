@@ -4,6 +4,7 @@ import requests
 import logging
 import xml.etree.ElementTree as ET
 import re
+import hashlib
 from ingestion.src.storage.supabase_store import SupabaseStore
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional
@@ -136,7 +137,7 @@ def _extract_xml_files(
     RAW_XML_DIR.mkdir(parents=True, exist_ok=True)
     extracted: List[Path] = []
     db = SupabaseStore()
-    existing_files = db.get_all_file_names()
+    existing_hashes = db.get_all_file_hashes()  # ✅ hash-based, not name-based
 
     
     try:
@@ -166,17 +167,20 @@ def _extract_xml_files(
 
                 target = RAW_XML_DIR / original_name              # ✅ keep .xml locally
 
-                # Check DB using name WITHOUT extension
-                if existing_files and clean_name in existing_files:
-                    logger.info(f"⏭️ Already processed, skipping: {clean_name}")
-                    continue
-
                 file_obj = tar.extractfile(member)
                 if not file_obj:
                     continue
                 
                 data = file_obj.read()
                 if not _is_valid_xml(data):
+                    continue
+
+                #   UNCHANGED = same hash in DB  → skip (already up to date)
+                #   UPDATED   = same name, new hash → extract (reprocess)
+                #   NEW       = never seen before  → extract
+                data_hash = hashlib.sha256(data).hexdigest()
+                if existing_hashes and data_hash in existing_hashes:
+                    logger.info(f"⏭️ Unchanged content, skipping: {clean_name}")
                     continue
                 
                 with open(target, "wb") as f:

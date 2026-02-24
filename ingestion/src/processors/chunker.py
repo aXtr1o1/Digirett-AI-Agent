@@ -120,6 +120,8 @@ class Chunk:
     lovdata_url: Optional[str] = None        # ✅ NEW
     is_amendment: bool = False               # ✅ NEW
     metadata: Optional[Dict] = None
+    article_title: Optional[str] = None
+
 
     def to_dict(self) -> Dict:
         result = {
@@ -140,6 +142,7 @@ class Chunk:
             "law_short_name": self.law_short_name,
             "lovdata_url": self.lovdata_url,
             "is_amendment": self.is_amendment,
+            "article_title": self.article_title,
         }
         if self.metadata:
             result["metadata"] = self.metadata
@@ -760,11 +763,15 @@ class NorwegianLovdataChunker:
             return [text]
         return parts
 
-    def chunk_text(self, text: str, file_name: str, zip_name: str = None) -> Tuple[DocumentMetadata, List[Chunk]]:
+    def chunk_text(self, text: str, file_name: str, article_title: str = None) -> Tuple[DocumentMetadata, List[Chunk]]:
         try:
             file_hash = self.hasher.hash_file(text)
             doc_metadata, parents = self.parser.parse_file(text, file_name)
             doc_metadata.file_hash = file_hash
+
+            # 🔥 Inject XML article title into metadata
+            if article_title:
+                doc_metadata.tittel = article_title
 
             # ✅ Resolve law name and URL
             law_short_name, lovdata_url, is_amendment = self.law_mapper.resolve(
@@ -823,7 +830,8 @@ class NorwegianLovdataChunker:
                                 law_short_name=law_short_name,
                                 lovdata_url=lovdata_url,
                                 is_amendment=is_amendment,
-                                metadata=doc_metadata.to_dict()
+                                metadata=doc_metadata.to_dict(),
+                                article_title=doc_metadata.tittel,
                             )
                             chunks.append(chunk)
 
@@ -864,7 +872,8 @@ class NorwegianLovdataChunker:
                                     law_short_name=law_short_name,
                                     lovdata_url=lovdata_url,
                                     is_amendment=is_amendment,
-                                    metadata=doc_metadata.to_dict()
+                                    metadata=doc_metadata.to_dict(),
+                                    article_title=doc_metadata.tittel,
                                 )
                                 chunks.append(chunk)
 
@@ -901,7 +910,8 @@ class NorwegianLovdataChunker:
                         law_short_name=law_short_name,
                         lovdata_url=lovdata_url,
                         is_amendment=is_amendment,
-                        metadata=doc_metadata.to_dict()
+                        metadata=doc_metadata.to_dict(),
+                        article_title=doc_metadata.tittel,
                     )
                     chunks.append(chunk)
 

@@ -30,6 +30,7 @@ LOVDATA_GET_ENDPOINT = "/get"
 SUPABASE_URL         = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 SUPABASE_BUCKET      = os.getenv("SUPABASE_BUCKET", "")
+SUPABASE_TABLE = os.getenv("SUPABASE_TABLE")
 
 # ============================
 # Azure OpenAI / Embedding
@@ -135,6 +136,8 @@ if not SUPABASE_SERVICE_KEY:
     raise RuntimeError("SUPABASE_SERVICE_KEY missing from environment")
 if not SUPABASE_BUCKET:
     raise RuntimeError("SUPABASE_BUCKET missing from environment")
+if not SUPABASE_TABLE:
+    raise ValueError("SUPABASE_TABLE not found in environment variables")
 if not MILVUS_COLLECTION or not MILVUS_COLLECTION.strip():
     raise RuntimeError("MILVUS_COLLECTION missing or invalid")
 

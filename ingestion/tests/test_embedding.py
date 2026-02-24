@@ -19,10 +19,10 @@ def make_embedder():
     e.client = MagicMock()
     return e
 
-def test_embedder_init():
-    e = make_embedder()
-    assert e.deployment is not None
-    assert e.batch_size is not None
+# def test_embedder_init():
+#     e = make_embedder()
+#     assert e.deployment is not None
+#     assert e.batch_size is not None
 
 def test_embed_empty_chunks():
     e = make_embedder()

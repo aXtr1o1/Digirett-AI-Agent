@@ -9,7 +9,8 @@ logger = logging.getLogger(__name__)
 from ingestion.src.config import (
     SUPABASE_URL,
     SUPABASE_SERVICE_KEY,
-    SUPABASE_BUCKET
+    SUPABASE_BUCKET,
+    SUPABASE_TABLE 
 )
 
 
@@ -130,12 +131,12 @@ class SupabaseStore:
 
             if status == "UPDATED":
                 logger.info(f"🔄 Updating metadata for {file_name}")
-                self.supabase.table("lovdata_metadata_2016_2026") \
+                self.supabase.table(SUPABASE_TABLE)\
                     .delete() \
                     .eq("file_name", file_name) \
                     .execute()
 
-            self.supabase.table("lovdata_metadata_2016_2026") \
+            self.supabase.table(SUPABASE_TABLE) \
                 .insert(metadata) \
                 .execute()
 
@@ -152,7 +153,7 @@ class SupabaseStore:
         try:
             response = (
                 self.supabase
-                .table("lovdata_metadata_2016_2026")
+                .table(SUPABASE_TABLE)
                 .select("file_name")
                 .eq("file_name", file_name)
                 .limit(1)
@@ -170,7 +171,7 @@ class SupabaseStore:
         try:
             response = (
                 self.supabase
-                .table("lovdata_metadata_2016_2026")
+                .table(SUPABASE_TABLE)
                 .select("file_hash")
                 .eq("file_hash", file_hash)
                 .limit(1)
@@ -189,7 +190,7 @@ class SupabaseStore:
         try:
             response = (
                 self.supabase
-                .table("lovdata_metadata_2016_2026")
+                .table(SUPABASE_TABLE)
                 .select("zip_name")
                 .eq("zip_name", zip_name)
                 .limit(1)
@@ -216,7 +217,7 @@ class SupabaseStore:
         try:
             response = (
                 self.supabase
-                .table("lovdata_metadata_2016_2026")
+                .table(SUPABASE_TABLE)
                 .select("file_hash")
                 .eq("file_name", file_name)
                 .limit(1)
@@ -244,7 +245,7 @@ class SupabaseStore:
         """Retrieve all file hashes from database."""
         self._ensure_connection()
         try:
-            response = self.supabase.table("lovdata_metadata_2016_2026").select("file_hash").execute()
+            response = self.supabase.table(SUPABASE_TABLE).select("file_hash").execute()
             return {row['file_hash'] for row in response.data if row.get('file_hash')}
         except Exception as e:
             logger.error(f"❌ Error fetching file hashes: {e}")
@@ -262,7 +263,7 @@ class SupabaseStore:
             while True:
                 response = (
                     self.supabase
-                    .table("lovdata_metadata_2016_2026")
+                    .table(SUPABASE_TABLE)
                     .select("file_name")
                     .range(offset, offset + batch_size - 1)
                     .execute()
