@@ -18,11 +18,6 @@ const useConversations = () => {
       const data = await conversationService.listConversations();
       const list = Array.isArray(data) ? data : [];
       setConversations(list);
-
-      // Auto-select most recent if none selected
-      if (!currentConversationId && list.length > 0) {
-        setCurrentConversationId(list[0].conversation_id);
-      }
     } catch (err) {
       setError(err.message || "Failed to load conversations");
       console.error("Error loading conversations:", err);
