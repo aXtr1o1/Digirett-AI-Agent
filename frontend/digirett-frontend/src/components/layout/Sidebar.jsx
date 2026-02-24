@@ -38,28 +38,34 @@ const Sidebar = ({
       {/* NEW CHAT BUTTON */}
       <div style={{ padding: "0 12px 12px", flexShrink: 0 }}>
         <button
-          onClick={onNewChat}
-          style={{
-            width: "100%",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            padding: "10px 14px",
-            borderRadius: "12px",
-            fontSize: "14px",
-            fontWeight: "500",
-            backgroundColor: "#2563eb",
-            color: "#ffffff",
-            border: "none",
-            cursor: "pointer",
-            transition: "background-color 0.2s",
-          }}
-          onMouseEnter={e => e.currentTarget.style.backgroundColor = "#1d4ed8"}
-          onMouseLeave={e => e.currentTarget.style.backgroundColor = "#2563eb"}
-        >
-          <span style={{ fontSize: "18px", lineHeight: 1, fontWeight: "700" }}>+</span>
-          New Chat
-        </button>
+        onClick={onNewChat}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          padding: "10px 14px",
+          borderRadius: "12px",
+          fontSize: "14px",
+          fontWeight: "500",
+          backgroundColor: isDark ? "#2f2f2f" : "#2563eb",   // ✅ FIXED
+          color: isDark ? "#f3f4f6" : "#ffffff",              // ✅ FIXED
+          border: isDark ? "1px solid #3f3f3f" : "none",      // ✅ Optional clean border
+          cursor: "pointer",
+          transition: "all 0.2s",
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.backgroundColor =
+            isDark ? "#3a3a3a" : "#1d4ed8";
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.backgroundColor =
+            isDark ? "#2f2f2f" : "#2563eb";
+        }}
+      >
+        <span style={{ fontSize: "18px", lineHeight: 1, fontWeight: "700" }}>+</span>
+        New Chat
+      </button>
       </div>
 
       {/* HISTORY LABEL */}

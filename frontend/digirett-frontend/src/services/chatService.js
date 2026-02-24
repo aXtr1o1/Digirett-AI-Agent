@@ -1,25 +1,60 @@
-import { API_BASE_URL, API_ENDPOINTS, DEFAULT_USER_ID } from "../utils/constants";
+import { API_BASE_URL, DEFAULT_USER_ID } from "../utils/constants";
 
 /**
- * Chat Service — SSE streaming via POST /chat/stream
+ * Chat Service — WebSocket streaming
  *
- * Backend event format:
- *   data: {"type": "intent",   "data": {"intent": "LEGAL", "language": "norwegian"}}
- *   data: {"type": "sources",  "data": ["url1", "url2"]}
- *   data: {"type": "token",    "data": "partial text"}
- *   data: {"type": "complete", "metadata": {conversation_id, message_id, full_answer, ...}}
- *   data: {"type": "error",    "message": "..."}
+ * Connects to ws://host/api/v1/chat/ws
+ * Streams tokens back exactly like ChatGPT (character by character via onChunk)
+ *
+ * Backend message format:
+ *   { type: "intent",   data: { intent: "LEGAL", language: "norwegian" } }
+ *   { type: "sources",  data: ["url1", "url2"] }
+ *   { type: "token",    data: "partial text" }          ← streamed word by word
+ *   { type: "complete", metadata: { conversation_id, message_id, ... } }
+ *   { type: "error",    message: "..." }
  */
+
+// ── Derive WebSocket URL from API_BASE_URL ────────────────────────────────
+// Strips any trailing /api/v1 or trailing slash so we can append the full path cleanly.
+// Example:
+//   API_BASE_URL = "http://localhost:8000"       → ws://localhost:8000/api/v1/chat/ws
+//   API_BASE_URL = "http://localhost:8000/api/v1" → ws://localhost:8000/api/v1/chat/ws
+const SAFE_API_BASE_URL =
+  typeof API_BASE_URL === "string" && API_BASE_URL.length > 0
+    ? API_BASE_URL
+    : "http://localhost:8000";
+
+const cleanBase = API_BASE_URL.replace(/\/+$/, "");
+
+const WS_URL =
+  cleanBase
+    .replace(/^https/, "wss")
+    .replace(/^http/, "ws") +
+  "/api/v1/chat/ws";
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const chatService = {
+  /**
+   * Send a message and stream the response.
+   *
+   * @param {string|null} conversationId  - existing conversation UUID, or null to auto-create
+   * @param {string}      message         - user query text
+   * @param {Function}    onChunk         - called with each streamed token string
+   * @param {Function}    onComplete      - called once with { message, sources, conversationId, messageId, metadata }
+   * @param {Function}    onError         - called with an Error object on failure
+   * @returns {Function}                  - cancel() function — same API as the old SSE version
+   */
   sendMessage: (conversationId, message, onChunk, onComplete, onError) => {
-    const controller = new AbortController();
+    let ws        = null;
+    let cancelled = false;
 
     (async () => {
       try {
         const requestBody = {
-          query: message,
-          user_id: DEFAULT_USER_ID,
-          top_k: 3,
+          query:       message,
+          user_id:     DEFAULT_USER_ID,
+          top_k:       3,
           temperature: 0.7,
         };
 
@@ -27,133 +62,146 @@ const chatService = {
           requestBody.conversation_id = conversationId;
         }
 
-        console.log("[chatService] POST /chat/stream body:", requestBody);
+        console.log("[chatService] Connecting to:", WS_URL);
+        console.log("[chatService] Payload:", requestBody);
 
-        // TODO: uncomment when backend auth is ready
-        // const clerkToken = await window.Clerk?.session?.getToken();
-
-        const response = await fetch(
-          `${API_BASE_URL}${API_ENDPOINTS.CHAT.STREAM}`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "text/event-stream",
-              // "Authorization": `Bearer ${clerkToken}`,
-            },
-            body: JSON.stringify(requestBody),
-            signal: controller.signal,
-          }
-        );
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error("[chatService] HTTP error:", response.status, errorText);
-          throw new Error(`Server error: ${response.status}`);
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let fullMessage = "";
-        let sources = [];
+        ws = new WebSocket(WS_URL);
+        
+        // Per-query state — same variables as the old SSE version
+        let fullMessage            = "";
+        let sources                = [];
         let resolvedConversationId = conversationId;
-        let finalMetadata = {};
-        let completeFired = false;
+        let finalMetadata          = {};
+        let completeFired          = false;
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            console.log("[chatService] stream done");
-            break;
+        // ── 1. Connection established → send the query ─────────────────
+        ws.onopen = () => {
+          if (cancelled) { ws.close(); return; }
+          console.log("[chatService] WS open — sending query");
+          ws.send(JSON.stringify(requestBody));
+        };
+
+        // ── 2. Receive streamed messages from backend ──────────────────
+        ws.onmessage = (e) => {
+          if (cancelled) return;
+
+          let event;
+          try {
+            event = JSON.parse(e.data);
+          } catch (err) {
+            console.warn("[chatService] WS parse error:", e.data, err);
+            return;
           }
 
-          buffer += decoder.decode(value, { stream: true });
-          console.log("[chatService] raw buffer chunk:", buffer.slice(-200));
+          console.log("[chatService] event:", event.type, event);
 
-          // Split on double newline (standard SSE separator)
-          const events = buffer.split("\n\n");
-          buffer = events.pop() || "";
+          switch (event.type) {
 
-          for (const eventBlock of events) {
-            // Each block may have multiple lines; find the data line
-            const lines = eventBlock.split("\n");
-            for (const line of lines) {
-              if (!line.startsWith("data:")) continue;
+            case "intent":
+              // Intent classified — informational only, no UI action needed
+              break;
 
-              const jsonStr = line.replace(/^data:\s*/, "");
-              if (!jsonStr || jsonStr === "[DONE]") continue;
+            case "sources":
+              sources = Array.isArray(event.data) ? event.data : [];
+              break;
 
-              try {
-                const event = JSON.parse(jsonStr);
-                console.log("[chatService] event:", event.type, event);
+            case "token":
+              // ← This is the ChatGPT-like streaming: each token fires onChunk
+              const token = typeof event.data === "string" ? event.data : "";
+              fullMessage += token;
+              if (onChunk) onChunk(token);
+              break;
 
-                if (event.type === "intent") {
-                  // Informational only
-                }
-                else if (event.type === "sources") {
-                  sources = Array.isArray(event.data) ? event.data : [];
-                }
-                else if (event.type === "token") {
-                  const token = typeof event.data === "string" ? event.data : "";
-                  fullMessage += token;
-                  if (onChunk) onChunk(token);
-                }
-                else if (event.type === "complete") {
-                  completeFired = true;
-                  finalMetadata = event.metadata || {};
-                  resolvedConversationId = finalMetadata.conversation_id || resolvedConversationId;
-                  const finalAnswer = finalMetadata.full_answer || fullMessage;
+            case "complete":
+              completeFired          = true;
+              finalMetadata          = event.metadata || {};
+              resolvedConversationId = finalMetadata.conversation_id || resolvedConversationId;
 
-                  if (onComplete) {
-                    onComplete({
-                      message: finalAnswer,
-                      sources: sources.map((url) =>
-                        typeof url === "string" ? { url, title: url } : url
-                      ),
-                      conversationId: resolvedConversationId,
-                      messageId: finalMetadata.message_id || null,
-                      metadata: finalMetadata,
-                    });
-                  }
-                }
-                else if (event.type === "error") {
-                  if (onError) onError(new Error(event.message || "Stream error"));
-                }
-              } catch (parseErr) {
-                console.warn("[chatService] parse error for line:", jsonStr, parseErr);
+              if (onComplete) {
+                onComplete({
+                  message:        finalMetadata.full_answer || fullMessage,
+                  sources:        sources.map((url) =>
+                    typeof url === "string" ? { url, title: url } : url
+                  ),
+                  conversationId: resolvedConversationId,
+                  messageId:      finalMetadata.message_id || null,
+                  metadata:       finalMetadata,
+                });
               }
+
+              ws.close(1000, "query complete");
+              break;
+
+            case "error":
+              console.error("[chatService] backend error:", event.message);
+              if (onError) onError(new Error(event.message || "Stream error"));
+              ws.close();
+              break;
+
+            default:
+              console.log("[chatService] unknown event type:", event.type);
+          }
+        };
+
+        // ── 3. Connection closed ───────────────────────────────────────
+        ws.onclose = (e) => {
+          console.log("[chatService] WS closed | code:", e.code, "reason:", e.reason);
+          if (cancelled) return;
+          if (!completeFired && !fullMessage) {
+
+            if (onError) {
+              onError({
+                message: "Connection lost. Please try again."
+              });
+            }
+
+            return;
+          }
+          // Closed before complete event arrived — fire onComplete with buffered text
+          if (!completeFired && fullMessage) {
+            if (onComplete) {
+              onComplete({
+                message:        fullMessage,
+                sources:        sources.map((url) =>
+                  typeof url === "string" ? { url, title: url } : url
+                ),
+                conversationId: resolvedConversationId,
+                messageId:      null,
+                metadata:       finalMetadata,
+              });
             }
           }
+        };
+
+        // ── 4. Network / protocol error ────────────────────────────────
+        ws.onerror = (e) => {
+
+        console.error("[chatService] WS error:", e);
+
+        if (!cancelled && onError) {
+
+          onError({
+            message: "Connection error. Please try again."
+          });
+
         }
 
-        // Stream ended without complete event
-        if (!completeFired && fullMessage) {
-          console.log("[chatService] stream ended without complete event, firing onComplete");
-          if (onComplete) {
-            onComplete({
-              message: fullMessage,
-              sources: sources.map((url) =>
-                typeof url === "string" ? { url, title: url } : url
-              ),
-              conversationId: resolvedConversationId,
-              messageId: null,
-              metadata: finalMetadata,
-            });
-          }
-        }
+        };
 
       } catch (err) {
-        if (err.name === "AbortError") {
-          console.log("[chatService] stream aborted");
-        } else {
-          console.error("[chatService] stream error:", err);
-          if (onError) onError(err);
-        }
+        console.error("[chatService] setup error:", err);
+        if (!cancelled && onError) onError(err);
       }
     })();
 
-    return () => controller.abort();
+    // Return cancel function — same API as the old SSE abort()
+    return () => {
+      cancelled = true;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close(1000, "cancelled by user");
+        console.log("[chatService] WS cancelled by user");
+      }
+    };
   },
 };
 

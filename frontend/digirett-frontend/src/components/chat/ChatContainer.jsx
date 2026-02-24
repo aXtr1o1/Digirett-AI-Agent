@@ -4,7 +4,12 @@ import MessageComposer from "./MessageComposer";
 import ErrorMessage from "../common/ErrorMessage";
 import useChat from "../../hooks/useChat";
 
-const ChatContainer = ({ conversationId, onConversationCreated, theme = "dark" }) => {
+const ChatContainer = ({
+  conversationId,
+  onConversationCreated,
+  moveConversationToTop,
+  theme = "dark"
+}) =>  {
   const isDark = theme === "dark";
 
   const {
@@ -16,7 +21,11 @@ const ChatContainer = ({ conversationId, onConversationCreated, theme = "dark" }
     sendMessage,
     loadMessages,
     stopStreaming,
-  } = useChat(conversationId, onConversationCreated);
+  }  = useChat(
+  conversationId,
+  onConversationCreated,
+  moveConversationToTop
+);
 
   return (
     <div className={`flex flex-col h-full w-full ${isDark ? "bg-[#212121]" : "bg-white"}`}>

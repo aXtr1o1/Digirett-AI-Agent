@@ -114,7 +114,7 @@ class MilvusClient:
         embedding: List[float],
         metric_type: str,
         top_k: int = 5,
-        min_score: float = 0.45,
+        min_score: float = 0.8,
         output_fields: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
        
@@ -145,7 +145,7 @@ class MilvusClient:
             results = self._collection.search(
                 data=[embedding],
                 anns_field="embedding",
-                param={"metric_type": metric_type, "params": {"ef": 64}},
+                param={"metric_type": "COSINE", "params": {"ef": 128}},
                 limit=top_k,
                 output_fields=output_fields,
             )

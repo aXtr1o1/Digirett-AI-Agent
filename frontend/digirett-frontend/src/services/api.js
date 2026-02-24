@@ -1,23 +1,18 @@
 import axios from "axios";
 import { API_BASE_URL } from "../utils/constants";
 
-// Create axios instance
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: `${API_BASE_URL}/api/v1`,
   headers: {
     "Content-Type": "application/json",
   },
 });
 
-// ─────────────────────────────────────────────────────────────
 // Request interceptor
-// Clerk auth is commented out — backend has no token validation yet.
-// Uncomment the Clerk block when backend auth middleware is added.
-// ─────────────────────────────────────────────────────────────
 api.interceptors.request.use(
   async (config) => {
     try {
-      // TODO: Uncomment when backend auth middleware is ready
+      // Enable when backend auth is ready
       // const clerkToken = await window.Clerk?.session?.getToken();
       // if (clerkToken) {
       //   config.headers.Authorization = `Bearer ${clerkToken}`;
@@ -27,14 +22,10 @@ api.interceptors.request.use(
     }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// ─────────────────────────────────────────────────────────────
-// Response interceptor — global error handling
-// ─────────────────────────────────────────────────────────────
+// Response interceptor
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -42,8 +33,6 @@ api.interceptors.response.use(
       const { status, data } = error.response;
 
       if (status === 401) {
-        // Unauthorized — redirect to sign in when auth is active
-        // window.location.href = '/sign-in';
         console.error("Unauthorized:", data);
       } else if (status === 403) {
         console.error("Access forbidden:", data);
@@ -56,7 +45,39 @@ api.interceptors.response.use(
       console.error("Error:", error.message);
     }
 
-    return Promise.reject(error);
+    let message = "Something went wrong";
+
+if (error.response) {
+
+  if (error.response.status === 500) {
+    message = "Server error. Please try again.";
+  }
+
+  else if (error.response.status === 404) {
+    message = "Data not found.";
+  }
+
+  else if (error.response.status === 401) {
+    message = "Please login again.";
+  }
+
+  else {
+    message =
+      error.response.data?.detail ||
+      "Something went wrong";
+  }
+
+}
+
+else if (error.request) {
+
+  message = "Server not reachable";
+
+}
+
+return Promise.reject(
+  new Error(message)
+);
   }
 );
 
