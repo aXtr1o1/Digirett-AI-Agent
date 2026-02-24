@@ -22,7 +22,7 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
   }, []);
 
   const sendMessage = () => {
-    if (message.trim() && !disabled) {
+    if (message.trim() && !disabled && !isStreaming) { 
       onSend(message);
       setMessage("");
       if (textareaRef.current) {
@@ -33,6 +33,8 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
   };
 
   const handleKeyDown = (e) => {
+    if (isStreaming) return;
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
@@ -57,6 +59,7 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         onKeyDown={handleKeyDown}
+        disabled={disabled || isStreaming}
         rows={1}
         placeholder="Type your message"
         style={{
@@ -106,20 +109,35 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
             height: "32px",
             width: "32px",
             borderRadius: "8px",
-            backgroundColor: (!disabled && message.trim()) ? "#2563eb" : "#93c5fd",
-            border: "none",
+
+            backgroundColor:
+              !disabled && message.trim()
+                ? (isDark ? "#3a3a3a" : "#2563eb")
+                : (isDark ? "#262626" : "#93c5fd"),
+
+            border: isDark ? "1px solid #3f3f3f" : "none",
+
             cursor: (!disabled && message.trim()) ? "pointer" : "not-allowed",
+
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: "#ffffff",
-            transition: "background-color 0.2s",
+
+            color: isDark ? "#f3f4f6" : "#ffffff",
+
+            transition: "all 0.2s",
           }}
           onMouseEnter={e => {
-            if (!disabled && message.trim()) e.currentTarget.style.backgroundColor = "#1d4ed8";
+            if (!disabled && message.trim()) {
+              e.currentTarget.style.backgroundColor =
+                isDark ? "#4a4a4a" : "#1d4ed8";
+            }
           }}
           onMouseLeave={e => {
-            if (!disabled && message.trim()) e.currentTarget.style.backgroundColor = "#2563eb";
+            if (!disabled && message.trim()) {
+              e.currentTarget.style.backgroundColor =
+                isDark ? "#3a3a3a" : "#2563eb";
+            }
           }}
         >
           <Send size={14} />

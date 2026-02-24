@@ -229,6 +229,8 @@ export default function SignInPage() {
 
     if (found) {
       localStorage.setItem("user", username);
+      // after successful login
+      localStorage.removeItem("conversationId");   // ⭐ clear previous chat
       navigate("/chat");
     } else {
       alert("Invalid credentials");
