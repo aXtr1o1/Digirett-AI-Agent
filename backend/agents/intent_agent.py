@@ -18,7 +18,6 @@ class IntentAgent:
 
 
 
-
 {"intent": "CASUAL", "language": "english"}
 OR
 {"intent": "LEGAL", "language": "norwegian"}"""
