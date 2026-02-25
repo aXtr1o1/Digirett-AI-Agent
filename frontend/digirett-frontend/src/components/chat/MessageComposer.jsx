@@ -5,7 +5,7 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
   const [message, setMessage] = useState("");
   const textareaRef = useRef(null);
   const isDark = theme === "dark";
-
+  const sendingRef = useRef(false);
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -22,23 +22,31 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
   }, []);
 
   const sendMessage = () => {
-    if (message.trim() && !disabled && !isStreaming) { 
-      onSend(message);
-      setMessage("");
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-        textareaRef.current.style.overflowY = "hidden";
-      }
+    if (sendingRef.current) return;     // ⭐ block double send
+    if (!message.trim() || disabled || isStreaming) return;
+
+    sendingRef.current = true;
+
+    onSend(message);
+    setMessage("");
+
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.overflowY = "hidden";
     }
+
+    setTimeout(() => {
+      sendingRef.current = false;
+    }, 300);
   };
 
   const handleKeyDown = (e) => {
+    if (e.key !== "Enter") return;
+    if (e.shiftKey) return;       // allow new line
     if (isStreaming) return;
 
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+    e.preventDefault();
+    sendMessage();
   };
 
   return (
@@ -84,7 +92,7 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         onKeyDown={handleKeyDown}
-        disabled={disabled || isStreaming}
+        disabled={disabled}
         rows={1}
         placeholder="Ask Anything..."
         style={{
@@ -134,7 +142,7 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
         <button
           type="button"
           onClick={sendMessage}
-          disabled={disabled || !message.trim()}
+          disabled={disabled || isStreaming || !message.trim()}
           style={{
             width: "40px",
             height: "40px",
