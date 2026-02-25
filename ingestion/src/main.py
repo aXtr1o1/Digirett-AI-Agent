@@ -177,10 +177,6 @@ def run_pipeline(limit: int | None = None):
             logger.info(f"♻️  Updated — removing old embeddings: {clean_name}")
             milvus_store.delete_by_file_name(clean_name)
 
-        if db_store.file_exists(file_hash):
-            logger.info(f"⏭️  Already embedded, skipping: {clean_name}")
-            skipped_count += 1
-            continue
 
         logger.info(f"\n{'='*70}")
         logger.info(f"[{idx}/{len(documents)}] Processing {clean_name}")
@@ -240,6 +236,7 @@ def run_pipeline(limit: int | None = None):
                 "parent_type":     str(c.parent_type),
                 "parent_title":    c.parent_title,
                 "text":            c.text,
+                "enriched_text":   c.enriched_text,
                 "token_count":     c.token_count,
                 "is_split":        c.is_split,
                 "split_index":     c.split_index,
@@ -257,7 +254,7 @@ def run_pipeline(limit: int | None = None):
         _cpu_guard(label="pre-embed")
 
         try:
-            chunk_dicts  = embedder.embed_chunks(chunk_dicts)
+            chunk_dicts  = embedder.embed_chunks(chunk_dicts, text_field="enriched_text")
             valid_chunks = [c for c in chunk_dicts if c.get("embedding") is not None]
 
             if not valid_chunks:
@@ -372,4 +369,4 @@ def run_pipeline(limit: int | None = None):
 # Entry point
 # -------------------------------------------------
 if __name__ == "__main__":
-    run_pipeline(limit=20)
+    run_pipeline(limit=None)

@@ -4,7 +4,12 @@ import MessageComposer from "./MessageComposer";
 import ErrorMessage from "../common/ErrorMessage";
 import useChat from "../../hooks/useChat";
 
-const ChatContainer = ({ conversationId, onConversationCreated, theme = "dark" }) => {
+const ChatContainer = ({
+  conversationId,
+  onConversationCreated,
+  moveConversationToTop,
+  theme = "dark"
+}) =>  {
   const isDark = theme === "dark";
 
   const {
@@ -16,10 +21,14 @@ const ChatContainer = ({ conversationId, onConversationCreated, theme = "dark" }
     sendMessage,
     loadMessages,
     stopStreaming,
-  } = useChat(conversationId, onConversationCreated);
+  }  = useChat(
+  conversationId,
+  onConversationCreated,
+  moveConversationToTop
+);
 
   return (
-    <div className={`flex flex-col h-full w-full ${isDark ? "bg-[#212121]" : "bg-white"}`}>
+    <div className={`flex flex-col h-full w-full bg-transparent`}>
 
       {error && (
         <div className="px-6 pt-4">
@@ -42,7 +51,7 @@ const ChatContainer = ({ conversationId, onConversationCreated, theme = "dark" }
       </div>
 
       {/* INPUT BAR — fixed at bottom, ChatGPT style */}
-      <div className={`flex-shrink-0 ${isDark ? "bg-[#212121]" : "bg-white"}`}>
+      <div className={`flex-shrink-0 bg-transparent`}>
         <div className="max-w-2xl mx-auto w-full px-4 py-4">
           <MessageComposer
             onSend={sendMessage}

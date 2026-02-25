@@ -16,13 +16,13 @@ describe("Chat Page Tests", () => {
 
   test("Textarea is present", () => {
     render(<ChatPage />);
-    const textarea = screen.getByPlaceholderText(/type your message/i);
+    const textarea = screen.getByPlaceholderText(/Ask Anything.../i);
     expect(textarea).toBeInTheDocument();
   });
 
   test("Typing in textarea works", () => {
     render(<ChatPage />);
-    const textarea = screen.getByPlaceholderText(/type your message/i);
+    const textarea = screen.getByPlaceholderText(/Ask Anything.../i);
 
     fireEvent.change(textarea, { target: { value: "Hello" } });
 
@@ -37,7 +37,7 @@ describe("Chat Page Tests", () => {
 
   test("Send button enables after typing", () => {
     render(<ChatPage />);
-    const textarea = screen.getByPlaceholderText(/type your message/i);
+    const textarea = screen.getByPlaceholderText(/Ask Anything.../i);
     const button = screen.getAllByRole("button")[0]; // first button
 
     fireEvent.change(textarea, { target: { value: "Hi" } });

@@ -45,8 +45,8 @@ CRITICAL RULES:
 
 RESPONSE STRUCTURE:
 - Respond in **plain readable text**, not JSON.
-- Include the structured answer in plain text using ### subheadings (bold, no JSON braces)
-- Use the following subheadings **in the order below**, **in the language of the user's query**:
+- If a RESPONSE STYLE INSTRUCTION is present in the user message, follow it EXACTLY and ignore the default structure below.
+- Otherwise, use the default structure with these ### subheadings in the language of the user's query:
   1. ### Legal Basis       (Norwegian: Hjemmel)
   2. ### Assessment        (Norwegian: Vurdering)
   3. ### Practical Steps   (Norwegian: Praktiske steg)
@@ -130,6 +130,7 @@ LANGUAGE RULE:
         language: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
+        response_style: str = "",
     ) -> AsyncIterator[str]:
         import json
         logger.info("  GeneratorAgent: legal stream starting")
@@ -159,7 +160,12 @@ LANGUAGE RULE:
                 elif msg["role"] == "assistant":
                     messages.append(AIMessage(content=msg["content"]))
 
+        # Prepend style instruction when the reasoning agent detected a user preference
+        # e.g. "Brief overview requested. Keep under 150 words."
+        style_block = f"RESPONSE STYLE INSTRUCTION:\n{response_style}\n\n" if response_style else ""
+
         user_prompt = (
+            f"{style_block}"
             f"CRITICAL: Answer ONLY from the sources below.\n\n"
             f"KILDER (Sources):\n{rag_context}\n\n"
             f"SPØRSMÅL (Question):\n{query}\n\n"

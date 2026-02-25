@@ -12,11 +12,26 @@ const Header = ({ theme, onToggleTheme }) => {
 
   return (
     <header
-      className={`relative h-14 border-b flex items-center ${
-        isDark
-          ? "border-gray-800 bg-black text-white"
-          : "border-gray-200 bg-white text-gray-900"
-      }`}
+      style={{
+        height: "56px",
+        borderBottom: isDark 
+          ? "1px solid rgba(42, 42, 42, 0.4)" 
+          : "1px solid rgba(229, 231, 235, 0.4)",
+        backgroundColor: isDark 
+          ? "rgba(17, 17, 17, 0.5)" 
+          : "rgba(250, 250, 250, 0.6)",
+        backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
+        display: "flex",
+        alignItems: "center",
+        color: isDark ? "#ffffff" : "#111827",
+        borderTopLeftRadius: "16px",
+        borderTopRightRadius: "16px",
+        borderBottomLeftRadius: "16px",
+        borderBottomRightRadius: "16px",
+        marginBottom: "8px",
+      }}
+      className="relative"
     >
       {/* RIGHT SIDE CONTROLS */}
       <div className="ml-auto pr-6 relative flex items-center gap-3">

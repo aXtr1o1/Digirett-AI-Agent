@@ -104,8 +104,9 @@ class MilvusTextStore:
         result = [float(x) for x in emb]
 
         if len(result) != self.embedding_dim:
-            logger.warning(
-                f"Dimension mismatch: expected {self.embedding_dim}, got {len(result)}"
+            raise ValueError(
+                f"Embedding dimension mismatch: "
+                f"expected {self.embedding_dim}, got {len(result)}"
             )
         return result
 
@@ -144,6 +145,7 @@ class MilvusTextStore:
             FieldSchema(name="parent_title", dtype=DataType.VARCHAR,      max_length=512),
             FieldSchema(name="text",         dtype=DataType.VARCHAR,      max_length=65535),
             FieldSchema(name="embedding",    dtype=DataType.FLOAT_VECTOR, dim=self.embedding_dim),
+            FieldSchema(name="article_title",   dtype=DataType.VARCHAR,      max_length=1024),
         ]
         schema     = CollectionSchema(fields=fields, description="Lovdata Norwegian Legal Documents")
         collection = Collection(name=self.collection_name, schema=schema)
@@ -152,8 +154,8 @@ class MilvusTextStore:
             field_name="embedding",
             index_params={
                 "index_type": "HNSW",
-                "metric_type": "IP",
-                "params": {"M": 8, "efConstruction": 100},
+                "metric_type": "COSINE",
+                "params": {"M": 8, "efConstruction": 200},
             },
         )
         collection.load()
@@ -185,6 +187,7 @@ class MilvusTextStore:
                     "child_index":  c.get("child_index", 0),
                     "parent_type":  c.get("section_type") or c.get("parent_type") or "document",
                     "parent_title": c.get("section_title") or c.get("parent_title") or "",
+                    "article_title": c.get("article_title") or c.get("section_title") or "",
                     "text":         c["text"],
                     "embedding":    self._fix_embedding(c["embedding"]),
                 })
@@ -226,6 +229,7 @@ class MilvusTextStore:
                 [c["parent_title"] for c in batch],
                 [c["text"]         for c in batch],
                 [c["embedding"]    for c in batch],
+                [c["article_title"] for c in batch],
             ]
 
             payload_mb = sys.getsizeof(data) / (1024 * 1024)
