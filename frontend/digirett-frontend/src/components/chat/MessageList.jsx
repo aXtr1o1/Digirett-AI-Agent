@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 import Message from "./Message";
 import TypingIndicator from "./TypingIndicator";
 import LoadingSpinner from "../common/LoadingSpinner";
-import { Bot } from "lucide-react";
+import GlowingOrb from "../common/GlowingOrb";
 
 const MessageList = ({
   messages,
@@ -31,23 +31,12 @@ const MessageList = ({
   if (messages.length === 0 && !isStreaming && !streamingMessage) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
-        <div
-          className={`h-16 w-16 rounded-full flex items-center justify-center mb-5 ${
-            isDark ? "bg-white" : "bg-gray-900"
-          }`}
-        >
-          <Bot
-            className={`h-10 w-10 ${
-              isDark ? "text-black" : "text-white"
-            }`}
-          />
-        </div>
-
-        <h2
-          className={`text-2xl font-semibold mb-2 ${
-            isDark ? "text-white" : "text-gray-900"
-          }`}
-        >
+        {/* Glowing Orb */}
+        {/* <div style={{ marginBottom: "32px" }}>
+          <GlowingOrb theme={theme} size={80} />
+        </div> */}
+        
+        <h2 className={`text-2xl font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
           Welcome to DigiRett AI
         </h2>
 

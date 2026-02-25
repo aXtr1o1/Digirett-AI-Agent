@@ -28,7 +28,7 @@ const ChatContainer = ({
 );
 
   return (
-    <div className={`flex flex-col h-full w-full ${isDark ? "bg-[#212121]" : "bg-white"}`}>
+    <div className={`flex flex-col h-full w-full bg-transparent`}>
 
       {error && (
         <div className="px-6 pt-4">
@@ -51,7 +51,7 @@ const ChatContainer = ({
       </div>
 
       {/* INPUT BAR — fixed at bottom, ChatGPT style */}
-      <div className={`flex-shrink-0 ${isDark ? "bg-[#212121]" : "bg-white"}`}>
+      <div className={`flex-shrink-0 bg-transparent`}>
         <div className="max-w-2xl mx-auto w-full px-4 py-4">
           <MessageComposer
             onSend={sendMessage}
