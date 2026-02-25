@@ -209,15 +209,14 @@
 // export default SignInForm;
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import BackgroundLayer from "../common/BackgroundLayer";
 
 const USERS = [
   { username: "admin1", password: "admin11" },
-  { username: "admin2", password: "admin22" },
-  { username: "admin3", password: "admin33" },
-  { username: "admin4", password: "admin44" },
+ 
 ];
 
-export default function SignInPage() {
+export default function SignInForm() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const navigate = useNavigate();
@@ -230,7 +229,7 @@ export default function SignInPage() {
     if (found) {
       localStorage.setItem("user", username);
       // after successful login
-      localStorage.removeItem("conversationId");   // ⭐ clear previous chat
+      localStorage.removeItem("conversationId"); // ⭐ clear previous chat
       navigate("/chat");
     } else {
       alert("Invalid credentials");
@@ -238,40 +237,70 @@ export default function SignInPage() {
   };
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          handleLogin();
-        }}
-        className="bg-[#111] p-10 rounded-2xl shadow-lg w-full max-w-md space-y-6"
-      >
-        <h2 className="text-3xl font-bold text-white text-center">
-          Login
-        </h2>
+    <div className="relative flex h-screen w-screen overflow-hidden">
+      {/* Chat-style background */}
+      <BackgroundLayer theme="dark" />
 
-        <input
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          className="w-full p-3 rounded-lg bg-[#1a1a1a] border border-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+      {/* Centered auth card */}
+      <div className="relative z-10 flex flex-1 items-center justify-center px-4">
+        <div className="w-full max-w-md">
+          {/* Header */}
+          <div className="mb-8 text-center">
+            <h1 className="mb-2 text-3xl font-bold text-white">
+              Welcome back to DigiRett
+            </h1>
+            <p className="mx-auto max-w-sm text-sm text-gray-400">
+              Sign in to continue your conversation with your AI legal assistant.
+            </p>
+          </div>
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full p-3 rounded-lg bg-[#1a1a1a] border border-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleLogin();
+            }}
+            className="space-y-6 rounded-2xl border border-gray-800/70 bg-black/60 px-8 py-8 shadow-2xl backdrop-blur-xl"
+          >
+            <div className="space-y-4">
+              <div className="text-left">
+                <label className="mb-2 block text-sm font-medium text-gray-200">
+                  Username
+                </label>
+                <input
+                  placeholder="Enter your admin username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full rounded-xl border border-gray-800 bg-[#111111] px-4 py-3 text-sm text-white placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40"
+                />
+              </div>
 
-        <button
-          type="submit"
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition"
-        >
-          Login
-        </button>
-      </form>
+              <div className="text-left">
+                <label className="mb-2 block text-sm font-medium text-gray-200">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full rounded-xl border border-gray-800 bg-[#111111] px-4 py-3 text-sm text-white placeholder-gray-500 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="mt-2 w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition hover:bg-blue-500"
+            >
+              Continue to chat
+            </button>
+          </form>
+
+          <p className="mt-6 text-center text-xs text-gray-500">
+            DigiRett can make mistakes. Please verify important legal information.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

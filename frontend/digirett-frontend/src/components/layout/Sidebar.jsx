@@ -650,9 +650,9 @@ const Sidebar = ({
       </div> */}
 
       {/* UPGRADE TO PREMIUM CARD */}
-      {/* <div style={{ flexShrink: 0, marginTop: "auto" }}>
+      <div style={{ flexShrink: 0, marginTop: "auto" }}>
         <UpgradeCard theme={theme} />
-      </div> */}
+      </div>
     </aside>
   );
 };
