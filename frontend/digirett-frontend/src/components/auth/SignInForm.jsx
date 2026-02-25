@@ -297,7 +297,7 @@ export default function SignInForm() {
           </form>
 
           <p className="mt-6 text-center text-xs text-gray-500">
-            DigiRett can make mistakes. Please verify important legal information.
+            Digirett AI Agent
           </p>
         </div>
       </div>
