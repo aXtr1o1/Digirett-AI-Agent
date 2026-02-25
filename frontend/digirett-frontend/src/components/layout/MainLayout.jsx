@@ -10,11 +10,19 @@ const MainLayout = ({
   onNewChat,
   onDeleteConversation,
 }) => {
-  const [theme, setTheme] = useState("dark"); // Default to dark theme
+  // ✅ FIX: Read saved theme from localStorage on first load, fallback to "dark"
+  const [theme, setTheme] = useState(
+    () => localStorage.getItem("theme") || "dark"
+  );
   const isDark = theme === "dark";
 
   const handleToggleTheme = () => {
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+    setTheme((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      // ✅ FIX: Save new theme to localStorage whenever it changes
+      localStorage.setItem("theme", next);
+      return next;
+    });
   };
 
   return (

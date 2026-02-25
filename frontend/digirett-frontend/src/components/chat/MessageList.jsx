@@ -36,7 +36,7 @@ const MessageList = ({
           <GlowingOrb theme={theme} size={80} />
         </div> */}
         
-        <h2 className={`text-2xl font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+        <h2 className={`text-4xl font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
           Welcome to DigiRett AI
         </h2>
 
