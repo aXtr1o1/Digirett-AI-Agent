@@ -1,29 +1,3 @@
-"""
-agents/source_validation_agent.py
-
-Source Validation Agent
-========================
-Called inside RAGService._handle_legal() AFTER the first Milvus search.
-
-Responsibilities:
-  - Validate that the retrieved Milvus chunks actually correlate with the
-    reasoning summary produced by QueryReasoningAgent.
-  - If correlated  → return result with explanation and allow pipeline to continue.
-  - If not correlated on first attempt → signal a retry.
-  - If not correlated after second attempt → signal terminal failure so the
-    pipeline can return "Cannot find relevant legal sources."
-
-The agent NEVER generates an answer.  It only validates chunk relevance
-and decides whether the pipeline may proceed.
-
-Return shape
-------------
-{
-    "correlated": True | False,
-    "explanation": "<why the chunks are / are not relevant>",
-    "retry":       True | False,   # only meaningful when correlated=False
-}
-"""
 
 import logging
 import json
@@ -39,12 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class SourceValidationAgent:
-    """
-    Validates that Milvus-retrieved chunks are relevant to the reasoning summary.
-
-    Used inside RAGService._handle_legal() to guard against wrong-law retrieval,
-    AS/ASA confusion, paragraph misattribution, and off-topic chunks.
-    """
+    
 
     _SYSTEM_PROMPT = """You are a strict legal relevance validator for Norwegian law.
 
@@ -56,23 +25,11 @@ You will receive:
 Your job: decide whether the retrieved chunks actually answer the reasoning summary.
 
 OUTPUT FORMAT — respond with ONLY valid JSON on a single line, no markdown fences:
-{"correlated": true, "explanation": "<one sentence why>"}
+{"correlated": true, "explanation": "< why>"}
 OR
-{"correlated": false, "explanation": "<one sentence why not>"}
+{"correlated": false, "explanation": "< why not>"}
 
-VALIDATION RULES:
-  1. correlated = true  ONLY when the chunks directly address the legal topic,
-     the correct law (AS vs ASA, correct § number), and the correct regulatory body
-     stated in the reasoning summary.
-  2. correlated = false when:
-     - Chunks are from a different law than what the query requires
-       (e.g. allmennaksjeloven retrieved instead of aksjeloven, or vice versa)
-     - Chunks reference a different paragraph number
-     - Chunks are thematically unrelated (procedural when substantive needed)
-     - Chunks are index pages, table-of-contents rows, or citation lists
-       with no substantive legal text
-  3. Be strict. A tangentially related chunk is NOT correlated.
-  4. Your explanation must be a single plain sentence — no bullet points."""
+."""
 
     def __init__(self) -> None:
         self._llm = AzureChatOpenAI(

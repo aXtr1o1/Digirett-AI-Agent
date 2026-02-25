@@ -1,4 +1,3 @@
-
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -19,6 +18,7 @@ class RetrieverAgent:
         top_k: int = 5,
         min_score: float = 0.45,
         history: Optional[List[Dict[str, str]]] = None,
+        statute_filter: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         logger.info(
             f" RetrieverAgent: query='{query[:60]}' | top_k={top_k} | min_score={min_score}"
@@ -37,6 +37,7 @@ class RetrieverAgent:
             metric_type="IP",
             top_k=top_k,
             min_score=min_score,
+            statute_filter=statute_filter,
         )
 
         logger.info(f" RetrieverAgent: {len(results)} chunks retrieved")
@@ -56,11 +57,5 @@ class RetrieverAgent:
         query: str,
         history: Optional[List[Dict[str, str]]],
     ) -> str:
-        if not history:
-            return query
-
-        last_user_msgs = [m["content"] for m in history if m["role"] == "user"]
-        if last_user_msgs:
-            return last_user_msgs[-1] + " " + query
-
+        
         return query

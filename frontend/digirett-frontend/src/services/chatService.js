@@ -19,14 +19,20 @@ import { API_BASE_URL, DEFAULT_USER_ID } from "../utils/constants";
 // Example:
 //   API_BASE_URL = "http://localhost:8000"       → ws://localhost:8000/api/v1/chat/ws
 //   API_BASE_URL = "http://localhost:8000/api/v1" → ws://localhost:8000/api/v1/chat/ws
-const _httpBase = API_BASE_URL || "http://localhost:8000"
-  .replace(/\/+$/, "")          // remove trailing slashes
-  .replace(/\/api\/v1$/, "");   // remove trailing /api/v1 if present
+const SAFE_API_BASE_URL =
+  typeof API_BASE_URL === "string" && API_BASE_URL.length > 0
+    ? API_BASE_URL
+    : "http://localhost:8000";
 
-const WS_URL = _httpBase
-  .replace(/^https:\/\//, "wss://")
-  .replace(/^http:\/\//, "ws://")
-  + "/api/v1/chat/ws";
+const cleanBase = SAFE_API_BASE_URL
+  .replace(/\/+$/, "")
+  .replace(/\/api\/v1$/, "");
+
+const WS_URL =
+  cleanBase
+    .replace(/^https:\/\//, "wss://")
+    .replace(/^http:\/\//, "ws://") +
+  "/api/v1/chat/ws";
 
 // ─────────────────────────────────────────────────────────────────────────────
 

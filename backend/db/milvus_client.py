@@ -116,6 +116,7 @@ class MilvusClient:
         top_k: int = 5,
         min_score: float = 0.8,
         output_fields: Optional[List[str]] = None,
+        statute_filter: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
        
         if not self._ready or self._collection is None:
@@ -141,6 +142,10 @@ class MilvusClient:
                 f" Milvus search | collection={self.collection_name} | "
                 f"top_k={top_k} | min_score={min_score}"
             )
+            expr = None
+
+            if statute_filter:
+                expr = f'file_name == "{statute_filter}"'
 
             results = self._collection.search(
                 data=[embedding],
@@ -148,6 +153,7 @@ class MilvusClient:
                 param={"metric_type": "COSINE", "params": {"ef": 128}},
                 limit=top_k,
                 output_fields=output_fields,
+                expr=expr,
             )
 
             hits = []
