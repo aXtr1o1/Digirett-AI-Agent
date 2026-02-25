@@ -1,18 +1,3 @@
-"""
-services/rag_service.py
-
-No existing logic was modified.
-Two new agents were inserted into the LEGAL pipeline only:
-
-  • QueryReasoningAgent — runs AFTER MemoryAgent, BEFORE IntentAgent
-    (technically: classified as LEGAL first, then reasoning runs before embedding)
-    Position: between history load and RetrieverAgent.run()
-
-  • SourceValidationAgent — runs AFTER RetrieverAgent.run(), with one retry allowed.
-
-CASUAL pipeline is completely unchanged.
-All saving logic, Redis logic, scoring threshold, and embedding model are unchanged.
-"""
 
 import logging
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -20,10 +5,8 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 from agents.memory_agent import MemoryAgent
 from agents.orchestrator_agent import OrchestratorAgent
 from agents.retriever_agent import RetrieverAgent
-# ── NEW AGENTS ────────────────────────────────────────────────────────────────
 from agents.query_reasoning_agent import QueryReasoningAgent
 from agents.source_validation_agent import SourceValidationAgent
-# ─────────────────────────────────────────────────────────────────────────────
 from db.milvus_client import MilvusClient
 from db.redis_client import RedisClient
 from db.supabase_client import SupabaseClient
@@ -31,6 +14,9 @@ from services.embedding_service import EmbeddingService
 from services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
+
+# Redis key template for storing reasoning context between turns
+_REASONING_META_KEY = "reasoning:statute:{conversation_id}"
 
 
 class RAGService:
@@ -49,7 +35,6 @@ class RAGService:
         self._supabase = supabase_client
         self._embedding = embedding_service
 
-        # ── Existing agents (unchanged) ────────────────────────────────────
         self._memory_agent = MemoryAgent(
             redis_client=redis_client,
             supabase_client=supabase_client,
@@ -63,15 +48,13 @@ class RAGService:
             memory_agent=self._memory_agent,
             generator_agent=llm_service.get_generator_agent(),
         )
-
-        # ── NEW: instantiate the two new agents ────────────────────────────
         self._reasoning_agent = QueryReasoningAgent()
         self._validation_agent = SourceValidationAgent()
 
         logger.info("✅ RAGService initialized with agent routing + reasoning + validation")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # PUBLIC INTERFACE  (unchanged signature)
+    # PUBLIC INTERFACE  — unchanged
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def process_query(
@@ -79,20 +62,18 @@ class RAGService:
         query: str,
         conversation_id: str,
         top_k: int = 5,
-        min_score: float = 0.45,
+        min_score: float = 0.0,
     ) -> AsyncIterator[Dict[str, Any]]:
 
         try:
             logger.info(f"🤖 RAGService: processing query '{query[:60]}'")
 
-            # Step 1 — Load conversation history  (UNCHANGED)
             history = self._orchestrator.load_history(
                 conversation_id=conversation_id,
                 limit=10,
             )
             logger.debug(f"📚 Loaded {len(history)} history messages")
 
-            # Step 2 — Classify intent  (UNCHANGED)
             intent_result = await self._orchestrator.classify(
                 query=query,
                 conversation_id=conversation_id,
@@ -102,7 +83,6 @@ class RAGService:
 
             yield {"type": "intent", "data": {"intent": intent, "language": language}}
 
-            # Step 3 — Route to the correct pipeline  (UNCHANGED)
             if intent == "LEGAL":
                 async for event in self._handle_legal(
                     query=query,
@@ -110,10 +90,10 @@ class RAGService:
                     top_k=top_k,
                     min_score=min_score,
                     history=history,
+                    conversation_id=conversation_id,
                 ):
                     yield event
             else:
-                # CASUAL path is completely unchanged
                 async for event in self._handle_casual(query, history, language):
                     yield event
 
@@ -164,7 +144,7 @@ class RAGService:
         logger.info(f"✅ CASUAL pipeline complete | tokens={token_count}")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # LEGAL PIPELINE  — two new steps inserted, everything else unchanged
+    # LEGAL PIPELINE  — only reasoning context read/write added
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _handle_legal(
@@ -174,22 +154,63 @@ class RAGService:
         top_k: int,
         min_score: float,
         history: List[Dict[str, str]],
+        conversation_id: str,
     ) -> AsyncIterator[Dict[str, Any]]:
         logger.info("⚖️  LEGAL pipeline")
 
-        # ── NEW STEP A: Query Reasoning Summary ───────────────────────────
-        # Inserted between MemoryAgent (already ran in process_query) and
-        # RetrieverAgent (embedding step).
-        # context_window = last 4 messages (short window for reasoning context)
         context_window = history[-4:] if history else []
-        enriched_query = await self._reasoning_agent.run(
-            query=query,
-            context_window=context_window,
-        )
-        logger.info(f"🧠 Enriched query: '{enriched_query}'")
+
+        
+        previous_statute_id = None
+        previous_enriched_query = None
+        try:
+            redis_key = _REASONING_META_KEY.format(conversation_id=conversation_id)
+            reasoning_meta = self._redis.get_conversation_meta(redis_key)
+            if reasoning_meta:
+                previous_statute_id    = reasoning_meta.get("statute_id")
+                previous_enriched_query = reasoning_meta.get("enriched_query")
+                logger.info(
+                    f"📖 Loaded reasoning context | "
+                    f"statute_id={previous_statute_id} | "
+                    f"prev_query='{str(previous_enriched_query)[:60]}'"
+                )
+        except Exception as exc:
+            logger.warning(f"⚠️  Could not read reasoning meta from Redis | {exc}")
         # ─────────────────────────────────────────────────────────────────
 
-        # ── NEW STEP B: Retrieve → Validate → (optional retry) ───────────
+        # Run QueryReasoningAgent with full follow-up context
+        reasoning_result = await self._reasoning_agent.run(
+            query=query,
+            context_window=context_window,
+            previous_statute_id=previous_statute_id,
+            previous_enriched_query=previous_enriched_query,
+        )
+        enriched_query     = reasoning_result["enriched_query"]
+        primary_statute_id = reasoning_result.get("primary_statute_id")
+        response_style     = reasoning_result.get("response_style", "")
+
+        logger.info(f"🧠 Enriched query: '{enriched_query}' | style='{response_style}'")
+
+        # ── WRITE new reasoning context back to Redis ──────────────────────
+        # Store for the NEXT turn in this conversation.
+        # set_conversation_meta() already exists on RedisClient.
+        try:
+            redis_key = _REASONING_META_KEY.format(conversation_id=conversation_id)
+            self._redis.set_conversation_meta(
+                redis_key,
+                {
+                    "statute_id":     primary_statute_id,
+                    "enriched_query": enriched_query,
+                },
+                ttl=1800,   # same TTL as conversation context
+            )
+            logger.info(
+                f"💾 Saved reasoning context | statute_id={primary_statute_id}"
+            )
+        except Exception as exc:
+            logger.warning(f"⚠️  Could not save reasoning meta to Redis | {exc}")
+        # ─────────────────────────────────────────────────────────────────
+
         search_results, validation_passed = await self._retrieve_and_validate(
             enriched_query=enriched_query,
             reasoning_summary=enriched_query,
@@ -199,7 +220,6 @@ class RAGService:
             language=language,
         )
 
-        # If both attempts failed validation, return terminal "not found" response
         if not validation_passed:
             logger.warning("⚠️  Source validation failed after 2 attempts — returning not-found")
             yield {"type": "sources", "data": []}
@@ -224,6 +244,7 @@ class RAGService:
                 "metadata": {
                     "intent": "LEGAL",
                     "language": language,
+                    "primary_statute_id": primary_statute_id,
                     "chunks_retrieved": 0,
                     "score": 0.1,
                     "confidence": "No correlated sources found after validation",
@@ -232,14 +253,8 @@ class RAGService:
                 },
             }
             return
-        # ─────────────────────────────────────────────────────────────────
-
-        # From here on — everything is UNCHANGED from the original _handle_legal
 
         if not search_results:
-            # This path handles the case where Milvus returned zero results
-            # even after retry (validation_passed is True but results empty
-            # because validation agent allowed fallback).
             logger.warning("⚠️  No Milvus results found")
             yield {"type": "sources", "data": []}
 
@@ -273,15 +288,14 @@ class RAGService:
             }
             return
 
-        # Step 2 — Build context string for the LLM  (UNCHANGED)
         rag_context = self._build_context(search_results)
 
-        # Step 3 — Score  (UNCHANGED)
         score_result = await self._llm.generate_legal_answer(
             query=query,
             rag_context=rag_context,
             language=language,
             conversation_history=history,
+            response_style=response_style,
         )
         score = score_result["score"]
         confidence = score_result["confidence"]
@@ -289,7 +303,6 @@ class RAGService:
 
         logger.info(f"📊 Score={score} | Confidence={confidence}")
 
-        # Step 4 — Emit sources  (UNCHANGED)
         visible_sources = []
         visible_chunks = []
 
@@ -302,7 +315,6 @@ class RAGService:
             yield {"type": "sources", "data": []}
             logger.info("⚠️  Hiding sources (score < 0.5)")
 
-        # Step 5 — Stream clean answer  (UNCHANGED)
         full_answer = ""
         token_count = 0
 
@@ -311,6 +323,7 @@ class RAGService:
             rag_context=rag_context,
             language=language,
             conversation_history=history,
+            response_style=response_style,
         ):
             token_count += 1
             full_answer += token
@@ -321,6 +334,7 @@ class RAGService:
             "metadata": {
                 "intent": "LEGAL",
                 "language": language,
+                "primary_statute_id": primary_statute_id,
                 "chunks_retrieved": len(search_results),
                 "tokens_generated": token_count,
                 "score": score,
@@ -334,7 +348,77 @@ class RAGService:
         )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # NEW: Retrieve + Validate with one retry
+    # Dynamic query reformulation — 
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    async def _reformulate_query_with_llm(
+        self,
+        reasoning_summary: str,
+        original_query: str,
+        chunks: List[Dict[str, Any]],
+    ) -> str:
+        try:
+            chunk_meta_lines = []
+            for i, chunk in enumerate(chunks[:5], start=1):
+                title     = chunk.get("parent_title")
+                file_name = chunk.get("file_name")
+                score     = round(float(chunk.get("score", 0.0)), 3)
+                chunk_meta_lines.append(
+                    f"  [{i}] title='{title}' | file='{file_name}' | score={score}"
+                )
+            chunk_meta_block = (
+                "\n".join(chunk_meta_lines) if chunk_meta_lines
+                else "  (no chunks retrieved — database returned empty results)"
+            )
+
+            system_prompt = (
+                "You are a legal retrieval query specialist. "
+                "Your only job is to rewrite a retrieval query so it targets the correct "
+                "legal document, Parent Title in a vector database. "
+                "Reason from the mismatch between what was requested and what was retrieved, "
+                "then produce one improved retrieval query based on that reason. "
+                "Output ONLY the reformulated query — no explanation, no quotes, no labels."
+            )
+
+            user_prompt = (
+                f"LEGAL REASONING SUMMARY:\n{reasoning_summary}\n\n"
+                f"ORIGINAL RETRIEVAL QUERY (attempt 1):\n{original_query}\n\n"
+                f"CHUNKS RETRIEVED BY ATTEMPT 1 (likely off-target):\n{chunk_meta_block}\n\n"
+                "The retrieved chunks did not satisfy validation. "
+                "Study the chunk metadata above to understand what the database returned. "
+                "Write a improved retrieval query that steers away from those documents "
+                "and toward the correct legal source implied by the reasoning summary. "
+                "Include specific law names, article numbers, parent_title or legal concepts "
+                "from that query and also mention not include law name from chunks.\n\n"
+                "Reformulated retrieval query:"
+            )
+
+            from langchain_core.messages import HumanMessage, SystemMessage
+
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt),
+            ]
+            response = await self._llm._llm.agenerate([messages])
+            reformulated = response.generations[0][0].text.strip()
+
+            if not reformulated or len(reformulated) > 500:
+                logger.warning(
+                    "⚠️  _reformulate_query_with_llm: output invalid, using original query"
+                )
+                return original_query
+
+            logger.info(f"🔄 Reformulated query (attempt 2): '{reformulated}'")
+            return reformulated
+
+        except Exception as exc:
+            logger.warning(
+                f"⚠️  _reformulate_query_with_llm failed ({exc}), using original query"
+            )
+            return original_query
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # Retrieve + Validate — 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _retrieve_and_validate(
@@ -345,38 +429,40 @@ class RAGService:
         min_score: float,
         history: List[Dict[str, str]],
         language: str,
+        statute_filter: Optional[str] = None,
     ):
-        """
-        Run Milvus retrieval → validation.
-        If validation fails on attempt 1, retry retrieval and validate again.
-        If validation fails on attempt 2, return ([], False).
+        retrieval_query = enriched_query
 
-        Returns:
-            (search_results: List[Dict], validation_passed: bool)
-        """
         for attempt in (1, 2):
-            logger.info(f"🔎 RetrieverAgent attempt {attempt} | query='{enriched_query[:60]}'")
+            logger.info(
+                f"🔎 RetrieverAgent attempt {attempt} | query='{retrieval_query}'"
+            )
 
-            # Use enriched_query (from QueryReasoningAgent) instead of raw query
             search_results = await self._retriever_agent.run(
-                query=enriched_query,
+                query=retrieval_query,
                 top_k=top_k,
                 min_score=min_score,
                 history=history,
+                statute_filter=statute_filter,
             )
 
             logger.info(f"📦 Retrieved {len(search_results)} chunks (attempt {attempt})")
 
             if not search_results:
-                # No results at all — skip validation, signal retry on attempt 1
                 if attempt == 1:
-                    logger.warning("⚠️  No results on attempt 1, retrying...")
+                    logger.warning(
+                        "⚠️  Zero results on attempt 1, reformulating from reasoning summary..."
+                    )
+                    retrieval_query = await self._reformulate_query_with_llm(
+                        reasoning_summary=reasoning_summary,
+                        original_query=enriched_query,
+                        chunks=[],
+                    )
                     continue
                 else:
-                    logger.warning("⚠️  No results on attempt 2 either")
+                    logger.warning("⚠️  Zero results on attempt 2 — terminal failure")
                     return [], False
 
-            # Validate the retrieved chunks
             validation = await self._validation_agent.validate(
                 reasoning_summary=reasoning_summary,
                 chunks=search_results,
@@ -385,33 +471,36 @@ class RAGService:
 
             if validation["correlated"]:
                 logger.info(
-                    f"✅ SourceValidationAgent: chunks correlated (attempt {attempt}) | "
-                    f"{validation['explanation']}"
+                    f"✅ Validation passed (attempt {attempt}) | "
+                    f"{validation.get('explanation', '')}"
                 )
                 return search_results, True
 
-            # Not correlated
             logger.warning(
-                f"⚠️  SourceValidationAgent: not correlated (attempt {attempt}) | "
-                f"{validation['explanation']}"
+                f"⚠️  Validation failed (attempt {attempt}) | "
+                f"{validation.get('explanation', '')}"
             )
 
-            if attempt == 1 and validation.get("retry"):
-                logger.info("🔄 Retrying retrieval...")
+            if attempt == 1 and validation.get("retry", True):
+                logger.info(
+                    "🔄 Reformulating retrieval query from failed chunk metadata..."
+                )
+                retrieval_query = await self._reformulate_query_with_llm(
+                    reasoning_summary=reasoning_summary,
+                    original_query=enriched_query,
+                    chunks=search_results,
+                )
                 continue
 
-            # Attempt 2 failed — terminal failure
             return [], False
 
-        # Should never reach here, but safety fallback
         return [], False
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # HELPERS  — completely unchanged
+    # HELPERS  — unchanged
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     def _build_context(self, search_results: List[Dict[str, Any]]) -> str:
-        """Format Milvus results into a source-numbered context string for the LLM."""
         parts = []
         for i, result in enumerate(search_results, start=1):
             title = result.get("parent_title", "Unknown")
@@ -420,7 +509,6 @@ class RAGService:
         return "\n---\n".join(parts)
 
     def _format_sources(self, search_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Format Milvus results into the source list shape expected by the frontend."""
         sources = []
         for result in search_results:
             url = result.get("url") or result.get("file_url")
