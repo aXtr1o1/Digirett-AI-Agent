@@ -105,7 +105,7 @@ class ConversationService:
                 self._supabase.table("conversations")
                 .select("*")
                 .eq("user_id", user_id)
-                .eq("is_deleted", False)
+                .or_("is_deleted.eq.false,is_deleted.is.null")
                 .order("updated_at", desc=True)
                 .range(offset, offset + limit - 1)
                 .execute()

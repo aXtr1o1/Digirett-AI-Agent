@@ -15,9 +15,6 @@ class IntentAgent:
 
     _SYSTEM_PROMPT = """You are a binary classifier. Classify the user's query as either CASUAL or LEGAL and detect the user's language.
 
-
-
-
 {"intent": "CASUAL", "language": "english"}
 OR
 {"intent": "LEGAL", "language": "norwegian"}"""
