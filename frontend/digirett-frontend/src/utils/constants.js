@@ -1,5 +1,6 @@
 // Base URL — backend runs with /api/v1 prefix (confirmed from server logs)
-export const API_BASE_URL = "https://auto.axtr.in";
+export const API_BASE_URL =
+  process.env.REACT_APP_API_BASE_URL;
 
 // Default user ID for MVP (single user — replace with auth later)
 export const DEFAULT_USER_ID = "2a06144d-4675-4c38-b7f8-13c02da91af5";

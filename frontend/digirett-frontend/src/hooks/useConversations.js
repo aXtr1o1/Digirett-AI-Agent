@@ -232,27 +232,39 @@ const handleAutoCreatedConversation = useCallback(
 
         return {
           ...c,
-          title: backendTitle || c.title,
-          updated_at: new Date().toISOString()
+
+          // ✅ Always update title if backend sends it
+          title:
+            backendTitle
+            ? backendTitle
+            : c.title || "New Chat",
+
+          updated_at:
+            new Date().toISOString()
         };
       }
 
       return c;
     });
 
-    // if conversation not found → add it
+    // If not found → create
     if (!found) {
+
       return [
         {
           conversation_id: newConversationId,
-          title: backendTitle || "New conversation",
-          updated_at: new Date().toISOString()
+
+          title:
+            backendTitle || "New Chat",
+
+          updated_at:
+            new Date().toISOString()
         },
+
         ...updated
       ];
     }
 
-    // IMPORTANT → return NEW array reference
     return [...updated];
 
   });

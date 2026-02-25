@@ -121,22 +121,26 @@ const useChat = (
         setIsStreaming(false);
 
         // ✅ Backend created conversation
-if (data.conversationId) {
+        // Conversation exists
+        if (data.conversationId) {
 
-  const backendTitle =
-    data.metadata?.conversation_title;
+          const backendTitle =
+            data.metadata?.conversation_title || null;
 
-  if (onConversationCreated) {
-    onConversationCreated(
-      data.conversationId,
-      backendTitle
-    );
-  }
+          // Update conversation + title
+          if (onConversationCreated) {
+            onConversationCreated(
+              data.conversationId,
+              backendTitle
+            );
+          }
 
-  if (moveConversationToTop) {
-    moveConversationToTop(data.conversationId);
-  }
-}
+          if (moveConversationToTop) {
+            moveConversationToTop(data.conversationId);
+          }
+          console.log("WS COMPLETE:", data);
+
+        }
       },
 
       // ERROR
