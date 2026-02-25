@@ -1,6 +1,6 @@
 import { API_BASE_URL, DEFAULT_USER_ID } from "../utils/constants";
 
-const base = (API_BASE_URL || "http://localhost:8000").replace(/\/+$/, "");
+const base = (API_BASE_URL || "auto.axtr.in").replace(/\/+$/, "");
 
 const WS_URL =
   base.replace(/^https/, "wss").replace(/^http/, "ws") +
