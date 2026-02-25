@@ -284,22 +284,7 @@ REASONING PATTERNS FROM GOLDEN DATASET:
         previous_statute_id: Optional[str] = None,
         previous_enriched_query: Optional[str] = None,
     ) -> Dict[str, str]:
-        """
-        Produce an enriched query string from the raw user query.
-
-        Args:
-            query:                   Raw user query (unchanged).
-            context_window:          Last 4 {role, content} dicts from MemoryAgent.
-            previous_statute_id:     Statute ID from last LEGAL turn (from Redis).
-                                     Enables the CONTEXT CONTINUITY RULE.
-            previous_enriched_query: Enriched query produced last turn (from Redis).
-                                     Helps the LLM understand what was asked before.
-
-        Returns:
-            Dict with keys:
-              "enriched_query"     — enriched query string for RetrieverAgent
-              "primary_statute_id" — statute ID string or None
-        """
+        
         logger.info(f"🧠 QueryReasoningAgent: reasoning on '{query[:70]}'")
 
         try:
