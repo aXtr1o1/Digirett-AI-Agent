@@ -1,5 +1,3 @@
-
-
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
@@ -62,8 +60,9 @@ class ChatRequest(BaseModel):
 class ConversationCreate(BaseModel):
     """Body for POST /conversations"""
 
+   
     user_id: str = Field(
-        default="2a06144d-4675-4c38-b7f8-13c02da91af5",
+        ...,
         description="UUID of the user creating the conversation.",
     )
     title: Optional[str] = Field(

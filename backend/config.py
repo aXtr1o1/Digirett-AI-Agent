@@ -63,7 +63,7 @@ class Settings(BaseSettings):
 
     # ── Conversation ──────────────────────────────────────────────────────
     AUTO_SUMMARY_THRESHOLD: int = 50
-    DEFAULT_USER_ID: str = "admin"
+    # DEFAULT_USER_ID: str = "admin"
     MAX_CONVERSATION_TITLE_LENGTH: int = 100
     SOFT_DELETE: bool = True
 

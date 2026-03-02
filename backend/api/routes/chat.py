@@ -137,7 +137,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest) -> None
     try:
         logger.info(f"💬 WS query: '{chat_request.query[:80]}'")
 
-        # ── Step 1: Get or create conversation (UNCHANGED) ────────────────
+        # ── Step 1: Get or create conversation ────────────────
         conversation_id = chat_request.conversation_id
         user_id         = chat_request.user_id
 
@@ -154,7 +154,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest) -> None
             )
             is_first_exchange = len(existing) == 0
 
-        # ── Step 2: Stream from RAGService (UNCHANGED logic) ─────────────
+    
         async for event in _rag_service.process_query(
             query=chat_request.query,
             conversation_id=conversation_id,
@@ -170,7 +170,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest) -> None
 
             elif event_type == "token":
                 full_answer += event["data"]
-                await websocket.send_json(event)          # ← ChatGPT-like streaming
+                await websocket.send_json(event)          
 
             elif event_type == "sources":
                 rag_chunks = event.get("data", [])
@@ -215,20 +215,66 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest) -> None
                         exc_info=True,
                     )
 
-                # Step 4: Auto-generate title on first exchange (UNCHANGED)
-                if is_first_exchange and full_answer and assistant_msg_id:
-                    try:
+                # Step 4: Auto-generate title after 2 user + 2 assistant messages
+                try:
+                    # Fetch first 10 messages in chronological order
+                    msg_response = (
+                        _message_service._supabase.table("messages")
+                        .select("role, content")
+                        .eq("conversation_id", conversation_id)
+                        .order("created_at", desc=False)
+                        .limit(10)
+                        .execute()
+                    )
+
+                    all_msgs = msg_response.data or []
+
+                    user_msgs = [m for m in all_msgs if m["role"] == "user"]
+                    assistant_msgs = [m for m in all_msgs if m["role"] == "assistant"]
+
+                    conversation = _conversation_service.get_conversation(conversation_id)
+
+                    if (
+                        len(user_msgs) >= 2
+                        and len(assistant_msgs) >= 2
+                        and conversation
+                        and conversation.get("title") == "New conversation"
+                    ):
+
+                        # Take first 2 user + first 2 assistant messages
+                        context = []
+                        u_count = 0
+                        a_count = 0
+
+                        for m in all_msgs:
+                            if m["role"] == "user" and u_count < 2:
+                                context.append(m["content"])
+                                u_count += 1
+                            elif m["role"] == "assistant" and a_count < 2:
+                                context.append(m["content"])
+                                a_count += 1
+
+                            if u_count == 2 and a_count == 2:
+                                break
+
                         title = await _llm_service.generate_conversation_title(
-                            first_user_message=chat_request.query,
-                            first_assistant_message=full_answer,
+                            first_user_message=context[0],
+                            first_assistant_message=context[1],
+                            second_user_message=context[2],
+                            second_assistant_message=context[3],
                         )
+
                         _conversation_service.update_title(
-                            conversation_id=conversation_id, title=title,
+                            conversation_id=conversation_id,
+                            title=title,
                         )
+
                         metadata["conversation_title"] = title
-                        logger.info(f"✅ Auto-title: '{title}'")
-                    except Exception as title_exc:
-                        logger.warning(f"⚠️  Title generation failed | {title_exc}")
+                        logger.info(f"✅ Auto-title (2+2): '{title}'")
+
+                except Exception as title_exc:
+                    logger.warning(f"⚠️ Title generation failed | {title_exc}")
+
 
                 # Step 5: Normalize sources (UNCHANGED)
                 normalized_sources = []

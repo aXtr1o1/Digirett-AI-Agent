@@ -1,5 +1,3 @@
-
-
 import logging
 import re
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -95,6 +93,7 @@ class LLMService:
         language: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
+        response_style: str = "",
     ) -> Dict[str, Any]:
        
         if not rag_context or not rag_context.strip():
@@ -118,6 +117,7 @@ class LLMService:
                 language=language,
                 conversation_history=conversation_history,
                 temperature=temperature,
+                response_style=response_style,
             ):
                 full_text += token
 
@@ -139,6 +139,7 @@ class LLMService:
         language: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
+        response_style: str = "",
     ) -> AsyncIterator[str]:
         
         if not rag_context or not rag_context.strip():
@@ -161,6 +162,7 @@ class LLMService:
                 language=language,
                 conversation_history=conversation_history,
                 temperature=temperature,
+                response_style=response_style,
             ):
                 buffer += token
 
@@ -189,15 +191,29 @@ class LLMService:
         self,
         first_user_message: str,
         first_assistant_message: str,
+        second_user_message: str,
+        second_assistant_message: str,
     ) -> str:
+
         
         prompt = (
-            f"Generate a very short, descriptive title (max 5 words, no quotes) "
-            f"for a conversation that starts with:\n\n"
+            "Generate a very short, descriptive title (max 5 words, no quotes) "
+            "based on the following conversation:\n\n"
+
             f"User: {first_user_message[:300]}\n"
             f"Assistant: {first_assistant_message[:300]}\n\n"
-            f"Reply with ONLY the title, nothing else."
+
+            f"User: {second_user_message[:300]}\n"
+            f"Assistant: {second_assistant_message[:300]}\n\n"
+
+            "Rules:\n"
+            "- Maximum 5 words\n"
+            "- No quotes\n"
+            "- No punctuation\n"
+            "- No explanations\n"
+            "- Return ONLY the title\n"
         )
+
         try:
             async with llm_span("title_generation"):
                 messages = [HumanMessage(content=prompt)]
