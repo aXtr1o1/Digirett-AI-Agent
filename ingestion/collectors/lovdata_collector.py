@@ -208,7 +208,6 @@ def _extract_xml_files(
 
         raise
 
-
 # --------------------------------------------------
 # Public API - NEW VERSION (processes ALL archives)
 # --------------------------------------------------
