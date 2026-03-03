@@ -39,6 +39,12 @@ Key design decisions:
       by the Supabase hash dedup, so only unprocessed files are retried.
 """
 
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # Windows fallback
+import gc
+import subprocess
 import json
 import logging
 import os
@@ -47,9 +53,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
-from apscheduler.schedulers.blocking import BlockingScheduler
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 
 # ---------------------------------------------------------------------------
 # Resolve project root so that "ingestion.src.*" imports work regardless of
@@ -91,7 +94,8 @@ logger = logging.getLogger("lovdata-scheduler")
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-STATE_FILE       = CHECKPOINT_DIR / "scheduler_state.json"
+STATE_FILE = CHECKPOINT_DIR / "scheduler_state.json"
+LOCK_FILE  = CHECKPOINT_DIR / "scheduler.lock"   # ✅ ADD THIS LINE
 
 # These can be overridden via .env
 BATCH_SIZE       = int(os.getenv("SCHEDULER_BATCH_SIZE", "50"))
@@ -99,6 +103,38 @@ CRON_HOUR        = int(os.getenv("SCHEDULER_CRON_HOUR", "2"))
 CRON_MINUTE      = int(os.getenv("SCHEDULER_CRON_MINUTE", "0"))
 API_TIMEOUT_SECS = int(os.getenv("SCHEDULER_API_TIMEOUT", "30"))
 
+# ===========================================================================
+# Lock — prevents two cron processes overlapping on the same instance
+# ===========================================================================
+
+def _acquire_lock():
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+
+    if fcntl is None:
+        # Windows fallback (no locking)
+        return open(os.devnull, "w")
+
+    lock_fh = open(LOCK_FILE, "w")
+    try:
+        fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lock_fh.write(str(os.getpid()))
+        lock_fh.flush()
+        return lock_fh
+    except BlockingIOError:
+        lock_fh.close()
+        return None
+
+def _release_lock(lock_fh):
+    if fcntl is None:
+        lock_fh.close()
+        return
+
+    try:
+        fcntl.flock(lock_fh, fcntl.LOCK_UN)
+        lock_fh.close()
+        LOCK_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 # ===========================================================================
 # State persistence
@@ -140,45 +176,115 @@ def fetch_latest_archive_name() -> str:
         raise RuntimeError("Lovdata list API returned empty response")
     return data[0]["filename"]
 
+# ===========================================================================
+# Crontab registration  —  write directly, no manual crontab -e needed
+# ===========================================================================
+
+def _register_cron() -> bool:
+    """
+    Write the crontab entry directly.
+    Cron entry format (matches image):
+        0 2 * * * /path/to/python /path/to/cron_scheduler.py
+
+    - Already registered → skip (idempotent)
+    - Stale entry exists → replace
+    - Not present       → append
+    """
+    script_path = Path(__file__).resolve()
+    python_path = sys.executable
+    new_line    = (
+        f"{CRON_MINUTE} {CRON_HOUR} * * * "
+        f"{python_path} {script_path} "
+        f">> {LOG_DIR}/cron_stdout.log 2>&1"
+    )
+
+    try:
+        result   = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+        existing = result.stdout if result.returncode == 0 else ""
+    except FileNotFoundError:
+        logger.error("❌ 'crontab' not found — is cron installed?")
+        return False
+
+    lines = existing.splitlines()
+
+    if new_line in lines:
+        logger.info("✅ Crontab already registered — no change needed")
+        return True
+
+    # Remove any stale entry for this script
+    lines = [ln for ln in lines if str(script_path) not in ln]
+    lines.append(new_line)
+
+    new_crontab = "\n".join(lines) + "\n"
+    try:
+        write = subprocess.run(
+            ["crontab", "-"],
+            input=new_crontab, text=True, capture_output=True
+        )
+        if write.returncode != 0:
+            logger.error(f"❌ crontab write failed: {write.stderr.strip()}")
+            return False
+    except Exception as exc:
+        logger.error(f"❌ crontab write error: {exc}")
+        return False
+
+    logger.info(f"✅ Crontab registered: {new_line}")
+    return True
 
 # ===========================================================================
 # Core job – called by APScheduler every tick
 # ===========================================================================
 
-def ingestion_job():
+def ingestion_job(force: bool = False) -> int:
     """
-    Single scheduled tick:
-        1. Check for new data
-        2. If changed → run the full ingestion pipeline
-        3. Update state
+    Single run:
+        1. Acquire lock  — prevents overlap on shared Milvus instance
+        2. Check Lovdata API for new archive
+        3. If changed (or forced) → run pipeline
+        4. Save state
+        5. Release lock
+        6. Process exits  ← OS reclaims ALL memory
+
+    Returns exit code: 0 = success/skip, 1 = error
     """
+    lock_fh = _acquire_lock()
+    if lock_fh is None:
+        return 1
+
     state = load_state()
     now   = datetime.now(timezone.utc).isoformat()
 
     logger.info("=" * 70)
     logger.info("🕐 Scheduler tick started")
+    logger.info(f"   PID        : {os.getpid()}")
     logger.info(f"   Time       : {now}")
     logger.info(f"   Batch size : {BATCH_SIZE}")
+    logger.info(f"   Force      : {force}")
     logger.info("=" * 70)
 
-    # ------------------------------------------------------------------
-    # Step 1: Ask Lovdata what archive is current
-    # ------------------------------------------------------------------
-    state["last_check_time"] = now
+    exit_code = 0
 
     try:
-        latest_archive = fetch_latest_archive_name()
-        logger.info(f"📦 Latest archive from API: {latest_archive}")
-        
-        # ✅ FIX: Compare with PREVIOUS archive, not itself
+        state["last_check_time"] = now
+
+        # Step 1: Check Lovdata API
+        try:
+            latest_archive = fetch_latest_archive_name()
+            logger.info(f"📦 Latest archive from API: {latest_archive}")
+        except Exception as e:
+            logger.error(f"❌ Failed to check Lovdata API: {e}", exc_info=True)
+            state["last_run_status"] = "api_check_failed"
+            state["last_error"]      = str(e)
+            save_state(state)
+            return 1
+
         last_archive = state.get("last_archive_name")
-        
+
         if last_archive:
             logger.info(f"📋 Last known archive: {last_archive}")
         else:
             logger.info("📋 No previous archive recorded (first run)")
-        
-        # ✅ CRITICAL FIX: Was "latest_archive == latest_archive" (always True)
+
         if latest_archive == last_archive:
             logger.info(
                 "📄 Archive unchanged — running ingestion to check modified files"
@@ -186,122 +292,154 @@ def ingestion_job():
             state["last_run_status"] = "checking_modifications"
         else:
             logger.info(f"🔄 Archive changed: {last_archive} → {latest_archive}")
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to check Lovdata API: {e}", exc_info=True)
-        state["last_run_status"] = "api_check_failed"
-        state["last_error"] = str(e)
-        save_state(state)
-        return
 
-    logger.info("🔁 New archive detected — running ingestion pipeline...")
+        if not force and latest_archive == last_archive:
+            logger.info("✅ No new archive — skipping pipeline. Use --force to override.")
+            state["last_run_status"] = "no_change"
+            save_state(state)
+            return 0
 
-    # ------------------------------------------------------------------
-    # Step 2: Run the ingestion pipeline
-    # ------------------------------------------------------------------
-    state["last_run_time"] = now
-    logger.info(f"🚀 Triggering ingestion pipeline (limit={BATCH_SIZE})...")
-
-    try:
-        # Import here (not at module top) to avoid heavy initialisation
-        # (boto3, pymilvus, supabase) when just doing the API check.
-        from ingestion.src.main import run_pipeline   # noqa: E402
-
-        stats = run_pipeline(limit=None)
-
-        # ------------------------------------------------------------------
-        # Step 3: Success → update state
-        # ------------------------------------------------------------------
-        state["last_archive_name"] = latest_archive
-        state["last_run_status"] = "success"
+        # Step 2: Run pipeline
+        # Import here — heavy libs (pymilvus, openai, supabase) only load NOW
+        # They will be freed when this process exits
+        logger.info("🔁 Running ingestion pipeline...")
         state["last_run_time"] = now
-        
-        # ✅ FIX: Track total files processed (was missing in original cron job)
-        state["total_files_processed"] = state.get("total_files_processed", 0) + stats["success"]
-        
-        # Clear any previous error
-        if "last_error" in state:
-            del state["last_error"]
+        logger.info(f"🚀 Triggering ingestion pipeline (limit={BATCH_SIZE})...")
 
-        logger.info("=" * 70)
-        logger.info("📊 INGESTION SUMMARY")
-        logger.info(f"Archive              : {latest_archive}")
-        logger.info(f"New files processed  : {stats['success']}")
-        logger.info(f"Skipped (duplicate)  : {stats['skipped']}")
-        logger.info(f"Failed               : {stats['failed']}")
-        logger.info(f"Total checked        : {stats['total_files']}")
-        logger.info(f"Lifetime total       : {state['total_files_processed']}")
-        logger.info("=" * 70)
+        try:
+            from ingestion.src.main import run_pipeline
+
+            stats = run_pipeline(limit=None)
+
+            # Step 3: Update state
+            state["last_archive_name"]     = latest_archive
+            state["last_run_status"]       = "success"
+            state["last_run_time"]         = now
+            state["total_files_processed"] = (
+                state.get("total_files_processed", 0) + stats["success"]
+            )
+
+            if "last_error" in state:
+                del state["last_error"]
+
+            logger.info("=" * 70)
+            logger.info("📊 INGESTION SUMMARY")
+            logger.info(f"Archive              : {latest_archive}")
+            logger.info(f"New files processed  : {stats['success']}")
+            logger.info(f"Skipped (duplicate)  : {stats['skipped']}")
+            logger.info(f"Failed               : {stats['failed']}")
+            logger.info(f"Total checked        : {stats['total_files']}")
+            logger.info(f"Lifetime total       : {state['total_files_processed']}")
+            logger.info("=" * 70)
+
+        except Exception as e:
+            logger.error(f"❌ Pipeline failed: {e}", exc_info=True)
+            state["last_run_status"] = "pipeline_failed"
+            state["last_error"]      = str(e)
+            exit_code = 1
+
+        finally:
+            # Force memory release before saving state and exiting
+            gc.collect()
+            gc.collect()
 
     except Exception as e:
-        logger.error(f"❌ Pipeline failed: {e}", exc_info=True)
-        state["last_run_status"] = "pipeline_failed"
-        state["last_error"] = str(e)
-        # Do NOT update last_archive_name – next tick will retry
+        logger.critical(f"💥 Unexpected error: {e}", exc_info=True)
+        state["last_run_status"] = "unexpected_error"
+        state["last_error"]      = str(e)
+        exit_code = 1
 
-    save_state(state)
+    finally:
+        save_state(state)
+        _release_lock(lock_fh)
+        logger.info("🔓 Lock released — process exiting, memory freed")
 
+    return exit_code
 
-# ===========================================================================
-# APScheduler event listener (optional console feedback)
-# ===========================================================================
-
-def on_job_event(event):
-    """Log job execution results."""
-    if event.exception:
-        logger.error(f"🚨 Job crashed: {event.exception}")
-    else:
-        logger.info("✔️  Job finished without exception")
 
 # ===========================================================================
-# Entry point
+# Entry point  —  run directly by OS cron or manually
 # ===========================================================================
 
 def main():
-    logger.info("=" * 70)
-    logger.info("🛡️  Lovdata Cron Scheduler starting up")
-    logger.info(f"   Schedule   : every day at {CRON_HOUR:02d}:{CRON_MINUTE:02d} UTC")
-    logger.info(f"   Batch size : {BATCH_SIZE} files per run")
-    logger.info(f"   State file : {STATE_FILE}")
-    logger.info(f"   API URL    : {LOVDATA_API_URL}")
-    logger.info("=" * 70)
+    import argparse
 
-    # Show current state if it exists
-    state = load_state()
-    if state:
-        logger.info("📋 Loaded previous state:")
-        logger.info(f"   Last archive   : {state.get('last_archive_name', 'N/A')}")
-        logger.info(f"   Last check     : {state.get('last_check_time', 'N/A')}")
-        logger.info(f"   Last status    : {state.get('last_run_status', 'N/A')}")
-        logger.info(f"   Total processed: {state.get('total_files_processed', 0)}")
-        if "last_error" in state:
-            logger.warning(f"   Last error     : {state['last_error']}")
-    else:
-        logger.info("📋 No previous state – this is the first run")
-
-    # Create the scheduler
-    scheduler = BlockingScheduler(timezone="UTC")
-
-    # Register the cron job
-    scheduler.add_job(
-        ingestion_job,
-        trigger=CronTrigger(hour=CRON_HOUR, minute=CRON_MINUTE),
-        id="lovdata_ingestion",
-        name="Lovdata Daily Ingestion",
-        replace_existing=True,
+    parser = argparse.ArgumentParser(
+        description=(
+            "Lovdata ingestion scheduler — OS Cron edition.\n"
+            "Run with no flags to register crontab and start immediately."
+        )
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Run pipeline even if archive has not changed.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Check API and print state only. No pipeline, no crontab change.",
+    )
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Print last persisted state and exit.",
     )
 
-    # Listen for job completion events
-    scheduler.add_listener(on_job_event, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
+    args = parser.parse_args()
 
-    logger.info("\n⏳ Waiting for next scheduled trigger...\n")
-    logger.info("   Press Ctrl+C to stop the scheduler.\n")
+    # --status
+    if args.status:
+        state = load_state()
+        print("\n" + "=" * 70)
+        print("SCHEDULER STATE")
+        print("=" * 70)
+        print(f"  State file     : {STATE_FILE}")
+        print(f"  Lock file      : {LOCK_FILE}")
+        print(f"  Lock active    : {LOCK_FILE.exists()}")
+        print(f"  Last archive   : {state.get('last_archive_name', 'N/A')}")
+        print(f"  Last check     : {state.get('last_check_time',   'N/A')}")
+        print(f"  Last run       : {state.get('last_run_time',     'N/A')}")
+        print(f"  Last status    : {state.get('last_run_status',   'N/A')}")
+        print(f"  Total processed: {state.get('total_files_processed', 0):,}")
+        if "last_error" in state:
+            print(f"  Last error     : {state['last_error']}")
+        print("=" * 70 + "\n")
+        sys.exit(0)
 
-    try:
-        scheduler.start()          # blocks forever
-    except KeyboardInterrupt:
-        logger.info("\n👋 Scheduler stopped by user.")
-        scheduler.shutdown()
+    # --dry-run
+    if args.dry_run:
+        logger.info("🔍 DRY-RUN — no pipeline, no crontab change")
+        state = load_state()
+        logger.info(f"   State file   : {STATE_FILE}")
+        logger.info(f"   Last archive : {state.get('last_archive_name', 'N/A')}")
+        logger.info(f"   Last status  : {state.get('last_run_status',   'N/A')}")
+        logger.info(f"   Total files  : {state.get('total_files_processed', 0)}")
+        try:
+            latest  = fetch_latest_archive_name()
+            changed = latest != state.get("last_archive_name")
+            logger.info(f"   Latest archive : {latest}")
+            logger.info(
+                f"   Would run?     : "
+                f"{'YES — archive changed' if changed else 'NO — unchanged (use --force)'}"
+            )
+        except Exception as e:
+            logger.error(f"   API check failed: {e}")
+        sys.exit(0)
+
+    # Default: register crontab + run now
+    logger.info("=" * 70)
+    logger.info("🚀 Lovdata Scheduler — OS Cron Mode")
+    logger.info(f"   Script : {Path(__file__).resolve()}")
+    logger.info(f"   Python : {sys.executable}")
+    logger.info(f"   Schedule: daily at {CRON_HOUR:02d}:{CRON_MINUTE:02d} UTC")
+    logger.info("=" * 70)
+
+    # Register crontab entry so OS cron fires this script automatically
+    _register_cron()
+
+    # Run pipeline right now (first run / manual trigger)
+    sys.exit(ingestion_job(force=args.force))
 
 
 if __name__ == "__main__":
