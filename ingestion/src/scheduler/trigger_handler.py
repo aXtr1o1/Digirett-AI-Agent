@@ -42,6 +42,8 @@ from ingestion.src.scheduler.cron_scheduler import (                 # noqa: E40
     BATCH_SIZE as DEFAULT_BATCH,
     STATE_FILE,
     fetch_latest_archive_name,
+    LOCK_FILE,
+    ingestion_job,
 )
 
 # ---------------------------------------------------------------------------
@@ -121,37 +123,15 @@ def run_trigger(batch_size: int, force: bool, dry_run: bool):
 
 
     # ------------------------------------------------------------------
-    # Run the pipeline
+    # Run pipeline via ingestion_job (handles lock + gc + state internally)
     # ------------------------------------------------------------------
-    state["last_run_time"] = now
     logger.info(f"\n🚀 Running ingestion pipeline (limit={batch_size})...\n")
+    exit_code = ingestion_job(force=force)
 
-    try:
-        from ingestion.src.main import run_pipeline   # noqa: E402
-
-        stats = run_pipeline(limit=None)
-
-        # Success
-        state["last_archive_name"]     = latest_archive
-        state["last_run_status"]       = "success"
-        state["total_files_processed"] = state.get("total_files_processed", 0) + stats["success"]
-
-        logger.info("=" * 70)
-        logger.info("📊 MANUAL TRIGGER SUMMARY")
-        logger.info(f"Archive              : {latest_archive}")
-        logger.info(f"New files processed  : {stats['success']}")
-        logger.info(f"Skipped (duplicate)  : {stats['skipped']}")
-        logger.info(f"Failed               : {stats['failed']}")
-        logger.info(f"Total checked        : {stats['total_files']}")
-        logger.info("=" * 70)
-
-
-    except Exception as e:
-        logger.error(f"❌ Pipeline failed: {e}", exc_info=True)
-        state["last_run_status"] = "pipeline_failed"
-        state["last_error"]      = str(e)
-
-    save_state(state)
+    if exit_code == 0:
+        logger.info("✅ Trigger completed successfully")
+    else:
+        logger.error(f"❌ Trigger finished with errors (exit code {exit_code})")
 
 
 # ===========================================================================
@@ -178,8 +158,32 @@ def main():
         action="store_true",
         help="Run the pipeline even if the archive name hasn't changed.",
     )
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Print last persisted state and exit.",
+    )
 
     args = parser.parse_args()
+
+    # --status
+    if args.status:
+        state = load_state()
+        print("\n" + "=" * 70)
+        print("SCHEDULER STATE")
+        print("=" * 70)
+        print(f"  State file     : {STATE_FILE}")
+        print(f"  Lock file      : {LOCK_FILE}")
+        print(f"  Lock active    : {LOCK_FILE.exists()}")
+        print(f"  Last archive   : {state.get('last_archive_name', 'N/A')}")
+        print(f"  Last check     : {state.get('last_check_time',   'N/A')}")
+        print(f"  Last run       : {state.get('last_run_time',     'N/A')}")
+        print(f"  Last status    : {state.get('last_run_status',   'N/A')}")
+        print(f"  Total processed: {state.get('total_files_processed', 0):,}")
+        if "last_error" in state:
+            print(f"  Last error     : {state['last_error']}")
+        print("=" * 70 + "\n")
+        sys.exit(0)
 
     run_trigger(
         batch_size=args.batch,
