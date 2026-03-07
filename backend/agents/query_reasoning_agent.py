@@ -1,4 +1,3 @@
-
 import logging
 from typing import Dict, List, Optional
 
@@ -31,9 +30,15 @@ the legal mechanism being regulated — not just keywords.
 
 Examples of domains (non-exhaustive, do not treat as fixed list):
 
-Company law (corporate governance, capital, board duties)
+Company law (corporate governance, capital, board duties, daglig leder, styret)
+
+Commercial agency law (prokura, fullmakt, representasjonsrett, signaturrett)
+
+Business registration law (Foretaksregisteret, registerplikt, meldeplikt)
 
 Insolvency law (bankruptcy, reconstruction, insolvency tests)
+
+Creditor protection law (omstøtelse, dekningsloven, avoidance)
 
 Security rights (pledge, collateral, mortgage, pant)
 
@@ -51,6 +56,8 @@ Property law
 
 Procedural law
 
+IMPORTANT: "Company law" does NOT cover prokura, signaturregistrering, or pant.
+These belong to "Commercial agency law", "Business registration law", and "Security rights".
 You must determine domain dynamically from the mechanism described.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -86,7 +93,33 @@ Validity conditions
 Form requirements
 
 Mechanism is more important than entity type.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MULTI-MECHANISM DETECTION RULE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+If the query:
+
+• compares two or more legal concepts
+• contains phrases like:
+  "forskjellen mellom"
+  "sammenlign"
+  "kontra"
+  "versus"
+  "hva er forskjellen på"
+• or clearly regulates more than one legal mechanism
+
+THEN:
+
+→ Treat the query as MULTI-MECHANISM.
+→ Identify each mechanism independently.
+→ Determine statute family for each mechanism.
+→ Select:
+
+   PRIMARY = statute governing the main comparative axis
+   SECONDARY = additional structurally relevant statute(s)
+
+Do NOT collapse multiple mechanisms into a single statute
+unless one statute clearly governs all mechanisms.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 3 — MAP MECHANISM TO STATUTE FAMILY
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -94,28 +127,94 @@ STEP 3 — MAP MECHANISM TO STATUTE FAMILY
 Based on the legal mechanism and domain,
 identify the primary Norwegian statute family that governs it.
 
-Rules:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRIORITY ROUTING TABLE — apply these BEFORE general rules.
+These override the general rules below when the mechanism matches.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-• If the mechanism concerns corporate internal governance
-→ Company law statute
+MECHANISM: prokura, prokurist, særfullmakt for driftshandlinger
+→ PRIMARY: prokuraloven
+→ NOT aksjeloven (even if the entity is an AS/ASA)
+→ SECONDARY: foretaksregisterloven (for registration duty)
+
+MECHANISM: registrering av rettigheter/opplysninger i Foretaksregisteret,
+           registreringsplikt, meldeplikt til Foretaksregisteret,
+           registrerbare opplysninger, firmaattest
+→ PRIMARY: foretaksregisterloven
+→ NOT aksjeloven unless the question is specifically about
+  internal capital changes (kapitalforhøyelse, fusjon, fisjon)
+
+MECHANISM: signaturrett (who signs on behalf of the company),
+           tegningsrett, hvem binder selskapet utad,
+           representasjonsrett utad, fullmakt til å tegne firma
+→ PRIMARY: foretaksregisterloven (registration of signature rights)
+→ SECONDARY: aksjeloven (internal rules on who may be given signature)
+→ If question is ONLY about internal limits (not registration) → aksjeloven primary
+
+MECHANISM: daglig leders kompetanse og myndighetsgrenser,
+           hva faller innenfor/utenfor daglig ledelse,
+           daglig leders representasjon utad
+→ PRIMARY: aksjeloven (for AS), allmennaksjeloven (for ASA)
+→ NOT selskapsloven, NOT helseforetaksloven, NOT IKS-loven
+
+MECHANISM: styrets kompetanse, styrevedtak, styrebehandling,
+           generalforsamlingens myndighet, aksjeeiernes rettigheter
+→ PRIMARY: aksjeloven (for AS), allmennaksjeloven (for ASA)
+→ NOT selskapsloven unless entity is explicitly ANS/KS/DA
+
+MECHANISM: pantsettelse, sikkerhetsstillelse, pant i løsøre/fast eiendom,
+           avtalepant, utleggspant, rettsvern for pant
+→ PRIMARY: panteloven
+→ SECONDARY: finansavtaleloven (for financial collateral)
+
+MECHANISM: konkurs, gjeldsforhandling, insolvens, betalingsudyktighet,
+           oppbud, bobehandling
+→ PRIMARY: konkursloven
+→ SECONDARY: dekningsloven (for omstøtelse/avoidance)
+
+MECHANISM: omstøtelse av transaksjoner, kreditorskadelige disposisjoner,
+           omstøtelsesregler
+→ PRIMARY: dekningsloven
+
+MECHANISM: arbeidsforhold, arbeidsavtale, oppsigelse, avskjed,
+           arbeidstakers rettigheter, arbeidsgivers plikter
+→ PRIMARY: arbeidsmiljøloven
+→ SECONDARY: ferieloven, tjenestemannsloven (for state employees)
+
+MECHANISM: skatt, skatteberegning, fradrag, skattesubjekt, skatteplikt
+→ PRIMARY: skatteloven
+
+MECHANISM: regnskap, bokføring, årsregnskap, revisjonsplikt
+→ PRIMARY: regnskapsloven, bokføringsloven
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GENERAL RULES — apply only when no PRIORITY ROUTING matches:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+• If the mechanism concerns corporate internal governance of an AS/ASA
+→ aksjeloven / allmennaksjeloven
 
 • If the mechanism concerns insolvency or bankruptcy procedure
-→ Insolvency statute
+→ konkursloven
 
 • If the mechanism concerns avoidance of pre-bankruptcy transactions
-→ Creditor protection statute
+→ dekningsloven
 
 • If the mechanism concerns security rights in assets
-→ Security rights statute
+→ panteloven
 
 • If the mechanism concerns registration and legal protection
-→ Registration statute
+→ foretaksregisterloven
 
 • If multiple mechanisms exist, identify all relevant statute families.
 
 You ARE allowed to infer statute names based on legal classification.
 
 If uncertainty exists, list primary and secondary statutes.
+
+CRITICAL: Never default to aksjeloven for questions about prokura,
+signaturregistrering, foretaksregistrering, or pant.
+These have their own dedicated primary statutes listed above.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 4 — DERIVE STATUTE-NATIVE TERMINOLOGY
@@ -154,8 +253,61 @@ Use only terms logically connected to the query.
 
 Do not invent unrelated concepts.
 
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 5 — OUTPUT STRUCTURE
+STEP 4 — DERIVE THE OFFICIAL LOVDATA FILE IDENTIFIER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Using your knowledge of Norwegian law and web search of Lovdata website, derive the official Lovdata
+statute identifier for the governing law.
+
+The Lovdata format is: LOV-YYYY-MM-DD-NNN
+  YYYY = year the law was enacted
+  MM   = month enacted
+  DD   = day enacted
+  NNN  = sequential number of the law that year
+
+Derivation process — reason through what you know:
+
+  From Steps you know the statute family name (e.g. "aksjeloven").
+  From your legal knowledge, recall the enactment date and number.
+  Construct the identifier from: enactment date + sequential number.
+
+  Widely used Norwegian statutes and their identifiers
+  (use as reference points for reasoning — do not treat as exhaustive):
+
+    avtaleloven           → LOV-1918-05-31-4
+    aksjeloven            → LOV-1997-06-13-44
+    allmennaksjeloven     → LOV-1997-06-13-45
+    foretaksregisterloven → LOV-1985-06-21-78
+    prokuraloven          → LOV-1985-06-21-80
+    selskapsloven         → LOV-1985-06-21-83
+    panteloven            → LOV-1980-02-08-2
+    konkursloven          → LOV-1984-06-08-58
+    dekningsloven         → LOV-1984-06-08-59
+    arbeidsmiljøloven     → LOV-2005-06-17-62
+    ferieloven            → LOV-1988-04-29-21
+    skatteloven           → LOV-1999-03-26-14
+    regnskapsloven        → LOV-1998-07-17-56
+    bokføringsloven       → LOV-2004-11-19-73
+    revisorloven          → LOV-2020-11-20-128
+    finansavtaleloven     → LOV-2020-11-26-129
+    verdipapirhandelloven → LOV-2007-06-29-75
+    tvisteloven           → LOV-2005-06-17-90
+    straffeloven          → LOV-2005-05-20-28
+    forvaltningsloven     → LOV-1967-02-10-0
+    plan- og bygningsloven → LOV-2008-06-27-71
+    kommuneloven          → LOV-2018-06-22-83
+    tinglysingsloven      → LOV-1935-03-07-2
+    husleieloven          → LOV-1999-03-26-17
+    kjøpsloven            → LOV-1988-05-13-27
+    forbrukerkjøpsloven   → LOV-2002-06-21-34
+
+  For SECONDARY statutes: apply the same derivation reasoning.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 6 — OUTPUT STRUCTURE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Output:
@@ -200,11 +352,13 @@ OUTPUT FORMAT (STRICT – NO EXTRA TEXT)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Legal Topic               : <short description>
-Legal Domain              : <broad legal field>
+Legal Domain              : <must be EXACTLY one of the 12 allowed domain values listed below>
+Jurisdiction              : <NO / EU-EEA / both>
+Source Type               : <lov / forskrift / both>
 Primary Statute Name      : <most likely governing Norwegian law>
-Primary Statute ID        : <official Lovdata statute id>
+Primary Statute ID        : <official Lovdata statute id OR full Lovdata URL if known>
 Secondary Statute Name    : <if relevant, else "none">
-Secondary Statute ID      : <official Lovdata statute id or "none">
+Secondary Statute ID      : <official Lovdata statute id or full Lovdata URL or "none">
 Key Mechanism             : <core legal mechanism being regulated>
 Key Concepts              : <comma-separated statute-native terms>
 Enriched Query            : <single dense statute-anchored sentence>
@@ -214,12 +368,54 @@ Do not output anything outside this structure.
 Do not explain your reasoning.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ALLOWED LEGAL DOMAIN VALUES (Legal Domain field)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You MUST set Legal Domain to EXACTLY one of these 12 values — no variations, no translations:
+
+  Arbeidsrett
+  Arsregnskap_og_selskapsrapportering_dataset
+  Avtalerett
+  Inkasso_og_tvangsfullbyrdelse_dataset
+  Konkursrett_og_insolvens_dataset
+  MandA_Fusjon_Fisjon
+  Obligasjonrett
+  Panterett_og_sikkerhetsrett_dataset
+  Pengekravsrett_fordringer_dataset
+  Personvern_GDPR_business_compliance_dataset
+  Selskapsrett
+  Tvistelosning_SMB_dataset
+
+Mapping guidance (use mechanism, not entity type):
+  - Employment contracts, dismissal, working conditions, worker rights → Arbeidsrett
+  - Annual accounts, bookkeeping, audit, financial reporting → Arsregnskap_og_selskapsrapportering_dataset
+  - Contract formation, validity, breach, general obligations → Avtalerett
+  - Debt collection, enforcement, attachment, forced sale → Inkasso_og_tvangsfullbyrdelse_dataset
+  - Bankruptcy, insolvency, reconstruction, creditor protection → Konkursrett_og_insolvens_dataset
+  - Mergers, demergers, acquisitions, M&A process → MandA_Fusjon_Fisjon
+  - Obligations, claims, creditor/debtor relationship → Obligasjonrett
+  - Pledge, mortgage, collateral, security interests → Panterett_og_sikkerhetsrett_dataset
+  - Receivables, claims assignment, negotiable instruments → Pengekravsrett_fordringer_dataset
+  - GDPR, data protection, processor agreements, privacy → Personvern_GDPR_business_compliance_dataset
+  - Company governance, board, shareholders, corporate structure → Selskapsrett
+  - Dispute resolution, arbitration, litigation, SMB conflicts → Tvistelosning_SMB_dataset
+
+JURISDICTION values: NO / EU-EEA / both
+SOURCE TYPE values: lov / forskrift / both
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STATUTE ROUTING PRINCIPLES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 • Mechanism overrides entity type.
 • Select the statute that structurally governs the legal power, obligation, restriction, or consequence described.
-• If multiple mechanisms exist, identify primary and secondary statutes.
+• If multiple mechanisms exist:
+    1. You MUST identify each mechanism explicitly in "Key Mechanism"
+       using semicolon separation.
+       Example: "representation authority; registration requirement"
+    2. You MUST populate Secondary Statute Name and Secondary Statute ID.
+    3. The Enriched Query MUST reference both statute families.
+    4. Do NOT collapse multiple mechanisms into a single abstract formulation.
 • If ambiguity exists, choose the most structurally governing statute.
 • Never invent statute IDs.
 • Always output Primary Statute ID.
@@ -230,12 +426,29 @@ CONTEXT CONTINUITY RULE
 
 If PREVIOUS_STATUTE_ID is provided in the conversation context:
 
-• Presume the same statute continues to govern
-  unless a clearly different legal mechanism is introduced.
+STEP A — ALWAYS determine the correct statute for the CURRENT query independently
+using the STATUTE ROUTING PRINCIPLES above. Do NOT default to the previous statute.
+
+STEP B — After determining the correct statute for the current query, apply these rules:
+
+• If the current query introduces a NEW legal mechanism or references a different
+  law/topic area → use the newly determined statute. Ignore PREVIOUS_STATUTE_ID.
+  Examples of domain switches that MUST produce a new statute:
+  - Previous: aksjeloven (company governance) → Current: prokura, prokuraloven
+  - Previous: aksjeloven → Current: foretaksregisterloven (registration rules)
+  - Previous: any statute → Current: a question that explicitly names a different law
+
+• If the current query is clearly a follow-up or rephrasing of the previous question
+  (e.g. "explain more briefly", "give an overview", "what about that", "forklar mer",
+  "kan du utdype", "summarise") AND the same legal mechanism still governs
+  → keep PREVIOUS_STATUTE_ID.
+
+• If uncertain whether it is a follow-up or a new topic → treat it as a NEW topic
+  and determine the statute independently. Do NOT default to the previous statute.
 
 • Distinguish between:
-  - Mechanism change (requires new statute), and
-  - Analytical dimension change (structure, scope, systematics, overview).
+  - Mechanism change → new statute required
+  - Analytical dimension change (structure, scope, overview of the SAME topic) → keep same statute
 
 • If only the analytical dimension changes (e.g. "explain more briefly",
   "give an overview", "summarise"):
@@ -243,6 +456,10 @@ If PREVIOUS_STATUTE_ID is provided in the conversation context:
   - Abstract to statute level if structural/systematic explanation is requested.
   - Do NOT carry forward previously extracted subtopics.
   - Reformulate the enriched query to reflect the new analytical focus only.
+• If the current query introduces additional legal mechanisms
+  beyond the previous query (even if partially overlapping),
+  re-run full statute classification.
+  Do NOT preserve statute continuity in multi-mechanism queries.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ENRICHED QUERY RULES
@@ -250,15 +467,16 @@ ENRICHED QUERY RULES
 
 The Enriched Query must:
 
-• Be 10–25 words.
-• Use statute-native terminology.
-• Align lexically with statutory phrasing.
-• Avoid introducing new legal elements.
-• Avoid factual assumptions.
+• Be 15–22 words.
+• Contain at least TWO statute-native legal terms.
+• Explicitly reference the identified statute family name.
+• Avoid repeating the user’s wording without legal enrichment.
+• Avoid generic phrases like "i henhold til loven".
+• Avoid listing concepts without syntactic integration.
+• If multi-mechanism: reference BOTH statute families naturally.
+• Be ONE dense statutory-style sentence.
 • Expand terminology, not legal interpretation.
-• Reflect statute-level abstraction if structural explanation is requested.
 
-Do not cite § numbers unless present in the query.
 Respond in the same language as the user query.
 REASONING PATTERNS FROM GOLDEN DATASET:
 {reasoning_patterns}
@@ -320,30 +538,42 @@ REASONING PATTERNS FROM GOLDEN DATASET:
             statute_id     = self._extract_statute_id(raw_output)
             statute_name   = QueryReasoningAgent._extract_statute_name(raw_output)
             response_style = QueryReasoningAgent._extract_response_style(raw_output)
+            domain         = QueryReasoningAgent._extract_domain(raw_output)
+            jurisdiction   = QueryReasoningAgent._extract_jurisdiction(raw_output)
+            source_type    = QueryReasoningAgent._extract_source_type(raw_output)
 
             # Pad short enriched queries using natural sentence (not keyword dump)
             if len(enriched_query.split()) < 15:
                 key_concepts = QueryReasoningAgent._extract_key_concepts(raw_output)
                 if key_concepts:
-                    concepts_clean = key_concepts.replace(",", " og").strip()
-                    enriched_query = f"{enriched_query} Relevante begreper: {concepts_clean}."
-                    logger.info("🧠 QueryReasoningAgent: padded short query naturally")
+                    concepts_clean = key_concepts.strip()
+                    enriched_query = f"{enriched_query} Dette gjelder særlig {concepts_clean}."
+                    logger.info("🧠 QueryReasoningAgent: padded short query structurally")
 
-            if statute_name and statute_id:
+            secondary_statute_id = QueryReasoningAgent._extract_secondary_statute_id(raw_output)
+
+            # Only anchor statute prefix if single-mechanism case
+            # (i.e., no secondary statute present)
+
+            if statute_id and not secondary_statute_id:
                 enriched_query = f"{statute_name} ({statute_id}): {enriched_query}"
-            elif statute_name:
-                enriched_query = f"{statute_name}: {enriched_query}"
-            elif statute_id:
-                enriched_query = f"{statute_id}: {enriched_query}"
+
+            elif statute_id and secondary_statute_id:
+                enriched_query = f"{statute_name} ({statute_id}) og sekundær lov: {secondary_statute_id}: {enriched_query}"
 
             logger.info(
                 f"🧠 QueryReasoningAgent: enriched='{enriched_query[:80]}' | "
-                f"statute_id={statute_id} | style='{response_style}'"
+                f"statute_id={statute_id} | domain={domain} | "
+                f"jurisdiction={jurisdiction} | source_type={source_type} | "
+                f"style='{response_style}'"
             )
             return {
                 "enriched_query": enriched_query,
                 "primary_statute_id": statute_id,
                 "response_style": response_style,
+                "domain": domain,
+                "jurisdiction": jurisdiction,
+                "source_type": source_type,
             }
 
         except Exception as exc:
@@ -353,7 +583,10 @@ REASONING PATTERNS FROM GOLDEN DATASET:
             return {
                 "enriched_query": query,
                 "primary_statute_id": None,
-                "response_style": "",   
+                "response_style": "",
+                "domain": None,
+                "jurisdiction": None,
+                "source_type": None,
             }
 
     # ── Internal helpers ──────────────────────────────────────────────────
@@ -444,7 +677,17 @@ REASONING PATTERNS FROM GOLDEN DATASET:
                     if value and value.lower() != "none":
                         return value
         return None
-
+    @staticmethod
+    def _extract_secondary_statute_id(raw_output: str) -> Optional[str]:
+        for line in raw_output.splitlines():
+            stripped = line.strip()
+            if stripped.lower().startswith("secondary statute id"):
+                colon_idx = stripped.find(":")
+                if colon_idx != -1:
+                    value = stripped[colon_idx + 1:].strip()
+                    if value and value.lower() != "none":
+                        return value
+        return None
     @staticmethod
     def _extract_response_style(raw_output: str) -> str:
         """
@@ -461,6 +704,71 @@ REASONING PATTERNS FROM GOLDEN DATASET:
                     if value:
                         return value
         return ""   # empty = standard response, no override
+
+    # ── Allowed domain values — must match Milvus metadata exactly ───────
+    _ALLOWED_DOMAINS = frozenset({
+        "Arbeidsrett",
+        "Arsregnskap_og_selskapsrapportering_dataset",
+        "Avtalerett",
+        "Inkasso_og_tvangsfullbyrdelse_dataset",
+        "Konkursrett_og_insolvens_dataset",
+        "MandA_Fusjon_Fisjon",
+        "Obligasjonrett",
+        "Panterett_og_sikkerhetsrett_dataset",
+        "Pengekravsrett_fordringer_dataset",
+        "Personvern_GDPR_business_compliance_dataset",
+        "Selskapsrett",
+        "Tvistelosning_SMB_dataset",
+    })
+
+    @staticmethod
+    def _extract_domain(raw_output: str) -> Optional[str]:
+        """
+        Extract the Legal Domain line and validate it against the 12 allowed values.
+        Returns None if the value is not in the allowed set — prevents bad Milvus filters.
+        """
+        for line in raw_output.splitlines():
+            stripped = line.strip()
+            if stripped.lower().startswith("legal domain"):
+                colon_idx = stripped.find(":")
+                if colon_idx != -1:
+                    value = stripped[colon_idx + 1:].strip()
+                    if value in QueryReasoningAgent._ALLOWED_DOMAINS:
+                        return value
+                    logger.warning(
+                        f"⚠️  QueryReasoningAgent: domain '{value}' not in allowed set — "
+                        "dropping domain filter"
+                    )
+                    return None
+        return None
+
+    @staticmethod
+    def _extract_jurisdiction(raw_output: str) -> Optional[str]:
+        """Extract Jurisdiction field. Returns 'NO', 'EU-EEA', 'both', or None."""
+        allowed = {"NO", "EU-EEA", "both"}
+        for line in raw_output.splitlines():
+            stripped = line.strip()
+            if stripped.lower().startswith("jurisdiction"):
+                colon_idx = stripped.find(":")
+                if colon_idx != -1:
+                    value = stripped[colon_idx + 1:].strip()
+                    if value in allowed:
+                        return value
+        return None
+
+    @staticmethod
+    def _extract_source_type(raw_output: str) -> Optional[str]:
+        """Extract Source Type field. Returns 'lov', 'forskrift', 'both', or None."""
+        allowed = {"lov", "forskrift", "both"}
+        for line in raw_output.splitlines():
+            stripped = line.strip()
+            if stripped.lower().startswith("source type"):
+                colon_idx = stripped.find(":")
+                if colon_idx != -1:
+                    value = stripped[colon_idx + 1:].strip().lower()
+                    if value in allowed:
+                        return value
+        return None
 
     @staticmethod
     def _extract_enriched_query(raw_output: str, fallback: str) -> str:

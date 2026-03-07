@@ -56,7 +56,7 @@ const BackgroundLayer = ({ theme = "dark" }) => {
           radial-gradient(ellipse at top right, rgba(56, 189, 248, 0.15) 0%, transparent 50%),
           radial-gradient(ellipse at bottom left, rgba(147, 197, 253, 0.12) 0%, transparent 50%),
           radial-gradient(ellipse at bottom right, rgba(125, 211, 252, 0.12) 0%, transparent 50%),
-          linear-gradient(135deg, #FAFAFA 0%, #F5F5F5 50%, #FFFFFF 100%)
+          linear-gradient(135deg, #ffffff 0%, #F5F5F5 50%, #FFFFFF 100%)
         `,
       }}
     >
