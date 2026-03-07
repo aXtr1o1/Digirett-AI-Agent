@@ -363,6 +363,17 @@ class ParagraphGrouper:
         self.token_counter = token_counter or TokenCounter()
 
     def group_children(self, children: List[Dict]) -> List[Dict]:
+        # 🔒 Remove identical child lines
+        seen_lines = set()
+        filtered_children = []
+
+        for child in children:
+            text = child["text"].strip()
+            if text and text not in seen_lines:
+                seen_lines.add(text)
+                filtered_children.append(child)
+
+        children = filtered_children
         """
         Merge children into grouped blocks.
         Each group is a single coherent text block under the parent.
@@ -766,6 +777,8 @@ class NorwegianLovdataChunker:
     def chunk_text(self, text: str, file_name: str, article_title: str = None) -> Tuple[DocumentMetadata, List[Chunk]]:
         try:
             file_hash = self.hasher.hash_file(text)
+            # 🔒 GLOBAL DEDUP PROTECTION
+            seen_chunk_hashes = set()
             doc_metadata, parents = self.parser.parse_file(text, file_name)
             doc_metadata.file_hash = file_hash
 
@@ -793,7 +806,9 @@ class NorwegianLovdataChunker:
                     child_text = child["text"]
                     child_idx = child["child_index"]
 
-                    semantic_blocks = self.semantic_split(child_text)
+                    semantic_blocks = list(dict.fromkeys(
+                    self.semantic_split(child_text)
+                    ))
 
                     for block_index, block_text in enumerate(semantic_blocks):
                         semantic_child_idx = child_idx * 10000 + block_index
@@ -833,6 +848,15 @@ class NorwegianLovdataChunker:
                                 metadata=doc_metadata.to_dict(),
                                 article_title=doc_metadata.tittel,
                             )
+                            # 🔒 Strong text-level fingerprint dedup (NON-SPLIT CASE)
+                            fingerprint = hashlib.sha256(
+                                (file_hash + block_text.strip()).encode("utf-8")
+                            ).hexdigest()
+
+                            if fingerprint in seen_chunk_hashes:
+                                continue
+
+                            seen_chunk_hashes.add(fingerprint)
                             chunks.append(chunk)
 
                         else:
@@ -875,6 +899,15 @@ class NorwegianLovdataChunker:
                                     metadata=doc_metadata.to_dict(),
                                     article_title=doc_metadata.tittel,
                                 )
+                                # 🔒 Strong text-level fingerprint dedup (SPLIT CASE)
+                                fingerprint = hashlib.sha256(
+                                    (file_hash + split_text.strip()).encode("utf-8")
+                                ).hexdigest()
+
+                                if fingerprint in seen_chunk_hashes:
+                                    continue
+
+                                seen_chunk_hashes.add(fingerprint)
                                 chunks.append(chunk)
 
             if total_splits > 0:
@@ -913,6 +946,14 @@ class NorwegianLovdataChunker:
                         metadata=doc_metadata.to_dict(),
                         article_title=doc_metadata.tittel,
                     )
+                    fingerprint = hashlib.sha256(
+                    (file_hash + split_text.strip()).encode("utf-8")
+                    ).hexdigest()
+
+                    if fingerprint in seen_chunk_hashes:
+                        continue
+
+                    seen_chunk_hashes.add(fingerprint)
                     chunks.append(chunk)
 
             return doc_metadata, chunks

@@ -53,48 +53,51 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
                 remarkPlugins={[remarkGfm]}
                 components={{
 
-                  /* ✅ TABLE SUPPORT ADDED */
-                  table: (props) => (
-                    <div className="overflow-x-auto my-4">
-                      <table
-                        className={`border-collapse w-full text-sm ${
-                          isDark ? "border-gray-700" : "border-gray-300"
-                        }`}
-                        {...props}
-                      />
-                    </div>
-                  ),
+              table: (props) => (
+                <div className="overflow-x-auto my-4">
+                  <table
+                    className={`border-collapse w-full text-sm rounded-lg overflow-hidden ${
+                      isDark
+                        ? "bg-gray-900 border border-gray-700"
+                        : "bg-white border border-gray-300 shadow-sm"
+                    }`}
+                    {...props}
+                  />
+                </div>
+              ),
 
-                  tr: (props) => (
-                    <tr
-                      className={
-                        isDark
-                          ? "border-b border-gray-700"
-                          : "border-b border-gray-200"
-                      }
-                      {...props}
-                    />
-                  ),
+              tr: (props) => (
+                <tr
+                  className={
+                    isDark
+                      ? "border-b border-gray-700"
+                      : "border-b border-gray-200"
+                  }
+                  {...props}
+                />
+              ),
 
-                  th: (props) => (
-                    <th
-                      className={`px-3 py-2 text-left font-semibold border ${
-                        isDark
-                          ? "border-gray-700 bg-gray-800"
-                          : "border-gray-300 bg-gray-100"
-                      }`}
-                      {...props}
-                    />
-                  ),
+              th: (props) => (
+                <th
+                  className={`px-3 py-2 text-left font-semibold ${
+                    isDark
+                      ? "bg-gray-800 border border-gray-700"
+                      : "bg-gray-100 border border-gray-300"
+                  }`}
+                  {...props}
+                />
+              ),
 
-                  td: (props) => (
-                    <td
-                      className={`px-3 py-2 border ${
-                        isDark ? "border-gray-700" : "border-gray-300"
-                      }`}
-                      {...props}
-                    />
-                  ),
+              td: (props) => (
+                <td
+                  className={`px-3 py-2 ${
+                    isDark
+                      ? "border border-gray-700 bg-gray-900"
+                      : "border border-gray-300 bg-white"
+                  }`}
+                  {...props}
+                />
+              ),
 
                   /* EXISTING MARKDOWN STYLES */
 

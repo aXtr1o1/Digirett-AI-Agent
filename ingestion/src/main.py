@@ -147,6 +147,7 @@ def run_pipeline(limit: int | None = None):
     total_chunks       = 0
     total_split_chunks = 0
     total_tokens       = 0
+    total_inserted_chunks = 0
     archive_stats      = {}
 
     # -- Per-document loop --------------------------------------------------
@@ -172,7 +173,7 @@ def run_pipeline(limit: int | None = None):
             logger.info(f"⏭️  Unchanged, skipping: {clean_name}")
             skipped_count += 1
             continue
-
+ 
         if status == "UPDATED":
             logger.info(f"♻️  Updated — removing old embeddings: {clean_name}")
             milvus_store.delete_by_file_name(clean_name)
@@ -275,19 +276,34 @@ def run_pipeline(limit: int | None = None):
             failed_count += 1
             continue
 
+        process = psutil.Process(os.getpid())
+        mem_before = process.memory_info().rss / (1024 * 1024)  # MB
+
         # -- STEP 5: Milvus insert -----------------------------------------
         _wait_for_cpu(label=f"pre-milvus {clean_name}")
 
         try:
             result = milvus_store.insert_chunks(chunk_dicts)
 
+            mem_after = process.memory_info().rss / (1024 * 1024)  # MB
+            mem_used = mem_after - mem_before
+
             if result.get("skipped"):
                 logger.warning(f"  ⏭️  Duplicate skipped: {clean_name}")
                 skipped_count += 1
                 continue
 
-            if result.get("inserted"):
-                logger.info(f"  ✅ {result['inserted']} vectors → Milvus")
+            inserted_count = result.get("inserted", 0)
+
+            if inserted_count > 0:
+                total_inserted_chunks += inserted_count
+                logger.info(f"  ✅ {inserted_count} vectors → Milvus")
+
+                logger.info(
+                    f"  🧠 RAM used during Milvus insert: "
+                    f"{mem_used:.2f} MB "
+                    f"(Before: {mem_before:.2f} MB | After: {mem_after:.2f} MB)"
+                )
 
         except Exception as e:
             logger.error(f"❌ Milvus insertion failed for {clean_name}: {e}")
@@ -311,6 +327,21 @@ def run_pipeline(limit: int | None = None):
             )
             logger.info("  ✅ Metadata → Supabase")
             success_count += 1
+
+            # 🔹 SINGLE FILE STATS
+            single_file_chunks = inserted_count  # from Milvus insert step
+
+            # 🔹 OVERALL RUNNING AVERAGE
+            if success_count > 0:
+                overall_avg_chunks = total_inserted_chunks / success_count
+
+                logger.info(
+                    f"  📊 File chunks: {single_file_chunks}"
+                )
+
+                logger.info(
+                    f"  📈 Overall avg chunks/doc: {overall_avg_chunks:.1f}"
+                )
 
             key = doc["archive_name"]
             if key not in archive_stats:
@@ -344,6 +375,10 @@ def run_pipeline(limit: int | None = None):
     logger.info(f"  ⏭️  Skipped  : {skipped_count}")
     logger.info(f"  ❌ Failed    : {failed_count}")
     logger.info(f"  Total chunks : {total_chunks}")
+    logger.info(f"  Stored chunks: {total_inserted_chunks}")
+    if success_count > 0:
+        avg_chunks_per_doc = total_inserted_chunks / success_count
+        logger.info(f"  Avg chunks/doc stored: {avg_chunks_per_doc:.1f}")
     if total_chunks > 0:
         logger.info(
             f"  Split chunks : {total_split_chunks} "

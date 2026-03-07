@@ -182,7 +182,12 @@
 // };
 
 // export default chatService;
+
 import { API_BASE_URL } from "../utils/constants";
+import { DEFAULT_USER_ID } from "../utils/constants";
+/* ────────────────────────────────────────────────────────────── */
+/* Safe Base URL Handling                                        */
+/* ────────────────────────────────────────────────────────────── */
 
 const rawBase = API_BASE_URL || "http://localhost:8000";
 
@@ -196,8 +201,7 @@ const WS_URL =
 
 console.log("WebSocket URL:", WS_URL);
 
-// Single default user for MVP — replace with auth session later
-const DEFAULT_USER_ID = "2a06144d-4675-4c38-b7f8-13c02da91af5";
+/* ────────────────────────────────────────────────────────────── */
 
 const chatService = {
   sendMessage: (conversationId, message, onChunk, onComplete, onError) => {
@@ -208,7 +212,7 @@ const chatService = {
       try {
         const requestBody = {
           query: message,
-          user_id: DEFAULT_USER_ID,  // FIX: was localStorage.getItem("user") which returned "admin1"
+          user_id: DEFAULT_USER_ID, // ✅ use logged-in user
           top_k: 3,
           temperature: 0.7,
         };
@@ -228,12 +232,18 @@ const chatService = {
         let finalMetadata = {};
         let completeFired = false;
 
+        /* ─────────────── 1. On Open ─────────────── */
         ws.onopen = () => {
-          if (cancelled) { ws.close(); return; }
+          if (cancelled) {
+            ws.close();
+            return;
+          }
+
           console.log("[chatService] WS open — sending query");
           ws.send(JSON.stringify(requestBody));
         };
 
+        /* ─────────────── 2. On Message ─────────────── */
         ws.onmessage = (e) => {
           if (cancelled) return;
 
@@ -256,7 +266,8 @@ const chatService = {
               break;
 
             case "token":
-              const token = typeof event.data === "string" ? event.data : "";
+              const token =
+                typeof event.data === "string" ? event.data : "";
               fullMessage += token;
               if (onChunk) onChunk(token);
               break;
@@ -264,20 +275,30 @@ const chatService = {
             case "complete":
               completeFired = true;
               finalMetadata = event.metadata || {};
-              resolvedConversationId = finalMetadata.conversation_id || resolvedConversationId;
 
+              resolvedConversationId =
+                finalMetadata.conversation_id || resolvedConversationId;
+
+              /* ✅ Save conversationId for history */
               if (resolvedConversationId) {
-                localStorage.setItem("conversationId", resolvedConversationId);
+                localStorage.setItem(
+                  "conversationId",
+                  resolvedConversationId
+                );
               }
 
               if (onComplete) {
                 onComplete({
-                  message: finalMetadata.full_answer || fullMessage,
+                  message:
+                    finalMetadata.full_answer || fullMessage,
                   sources: sources.map((url) =>
-                    typeof url === "string" ? { url, title: url } : url
+                    typeof url === "string"
+                      ? { url, title: url }
+                      : url
                   ),
                   conversationId: resolvedConversationId,
-                  messageId: finalMetadata.message_id || null,
+                  messageId:
+                    finalMetadata.message_id || null,
                   metadata: finalMetadata,
                 });
               }
@@ -286,22 +307,43 @@ const chatService = {
               break;
 
             case "error":
-              console.error("[chatService] backend error:", event.message);
-              if (onError) onError(new Error(event.message || "Stream error"));
+              console.error(
+                "[chatService] backend error:",
+                event.message
+              );
+              if (onError)
+                onError(
+                  new Error(event.message || "Stream error")
+                );
               ws.close();
               break;
 
             default:
-              console.log("[chatService] unknown event type:", event.type);
+              console.log(
+                "[chatService] unknown event type:",
+                event.type
+              );
           }
         };
 
+        /* ─────────────── 3. On Close ─────────────── */
         ws.onclose = (e) => {
-          console.log("[chatService] WS closed | code:", e.code, "reason:", e.reason);
+          console.log(
+            "[chatService] WS closed | code:",
+            e.code,
+            "reason:",
+            e.reason
+          );
+
           if (cancelled) return;
 
           if (!completeFired && !fullMessage) {
-            if (onError) onError({ message: "Connection lost. Please try again." });
+            if (onError) {
+              onError({
+                message:
+                  "Connection lost. Please try again.",
+              });
+            }
             return;
           }
 
@@ -310,7 +352,9 @@ const chatService = {
               onComplete({
                 message: fullMessage,
                 sources: sources.map((url) =>
-                  typeof url === "string" ? { url, title: url } : url
+                  typeof url === "string"
+                    ? { url, title: url }
+                    : url
                 ),
                 conversationId: resolvedConversationId,
                 messageId: null,
@@ -320,19 +364,24 @@ const chatService = {
           }
         };
 
+        /* ─────────────── 4. On Error ─────────────── */
         ws.onerror = (e) => {
           console.error("[chatService] WS error:", e);
+
           if (!cancelled && onError) {
-            onError({ message: "Connection error. Please try again." });
+            onError({
+              message:
+                "Connection error. Please try again.",
+            });
           }
         };
-
       } catch (err) {
         console.error("[chatService] setup error:", err);
         if (!cancelled && onError) onError(err);
       }
     })();
 
+    /* ─────────────── Cancel Function ─────────────── */
     return () => {
       cancelled = true;
       if (ws && ws.readyState === WebSocket.OPEN) {
