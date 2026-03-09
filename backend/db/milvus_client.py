@@ -12,7 +12,7 @@ from pymilvus import connections, Collection, utility
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
-
+loaded = utility.load_state(self.collection_name)
 
 class MilvusClient:
     """
@@ -130,7 +130,7 @@ class MilvusClient:
             raise RuntimeError(
                 "Milvus collection not initialized. Call connect() first."
             )
-        if self._collection and not self._collection.is_loaded:
+        if loaded != "Loaded":
             logger.warning("Milvus collection not loaded — loading now...")
             self._collection.load()
 
