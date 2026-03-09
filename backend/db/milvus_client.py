@@ -103,7 +103,21 @@ class MilvusClient:
             logger.info("🔌 Milvus disconnected")
         except Exception as exc:
             logger.error(f"Error closing Milvus: {exc}")
+    def _ensure_loaded(self) -> None:
+        """
+        Ensure the collection is loaded in memory.
+        Milvus may release collections if RAM is limited.
+        """
+        if self.collection_name is None or self._collection is None:
+            return
 
+        load_state = utility.load_state(self.collection_name)
+
+        if load_state.name != "Loaded":
+            logger.warning(
+                f"⚠️ Collection '{self.collection_name}' not in memory. Reloading..."
+            )
+            self._collection.load()
     # ── Search ───────────────────────────────────────────────────────────
 
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=1, max=2))
@@ -130,7 +144,7 @@ class MilvusClient:
             raise RuntimeError(
                 "Milvus collection not initialized. Call connect() first."
             )
-
+        self._ensure_loaded()
         if output_fields is None:
             output_fields = [
                 "chunk_id",
