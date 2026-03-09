@@ -130,6 +130,9 @@ class MilvusClient:
             raise RuntimeError(
                 "Milvus collection not initialized. Call connect() first."
             )
+        if self._collection and not self._collection.is_loaded:
+            logger.warning("Milvus collection not loaded — loading now...")
+            self._collection.load()
 
         if output_fields is None:
             output_fields = [
