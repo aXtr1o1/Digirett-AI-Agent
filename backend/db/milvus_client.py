@@ -128,10 +128,10 @@ class MilvusClient:
         top_k: int = 50,
         min_score: float = 0.0,       # kept in signature — NOT used for filtering
         output_fields: Optional[List[str]] = None,
-        statute_filter: Optional[str] = None,    # full Lovdata URL matched against statute_id
-        domain: Optional[str] = None,            # matched against domain_name
-        jurisdiction: Optional[str] = None,      # matched against jurisdiction field
-        source_type: Optional[str] = None,       # matched against source_type field
+        statute_filter: Optional[str] = None,    
+        domain: Optional[str] = None,            
+        jurisdiction: Optional[str] = None,      
+        source_type: Optional[str] = None,      
     ) -> List[Dict[str, Any]]:
         """
         Search Milvus for nearest neighbours.
@@ -158,7 +158,6 @@ class MilvusClient:
                 "chunk_index",
                 "parent_index",
                 "child_index",
-                # ── Text payload — required for LLM generation ─────────────
                 "text",
                 "parent_title",
                 "law_short_name",
