@@ -12,7 +12,6 @@ from pymilvus import connections, Collection, utility
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
-loaded = utility.load_state(self.collection_name)
 
 class MilvusClient:
     """
