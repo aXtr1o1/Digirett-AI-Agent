@@ -1,23 +1,105 @@
-
 import logging
+import re
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from agents.memory_agent import MemoryAgent
 from agents.orchestrator_agent import OrchestratorAgent
 from agents.retriever_agent import RetrieverAgent
 from agents.query_reasoning_agent import QueryReasoningAgent
-from agents.source_validation_agent import SourceValidationAgent
+from agents.reranker_agent import RerankerAgent
+# from agents.source_validation_agent import SourceValidationAgent  # TEMPORARILY DISABLED
 from db.milvus_client import MilvusClient
 from db.redis_client import RedisClient
 from db.supabase_client import SupabaseClient
 from services.embedding_service import EmbeddingService
 from services.llm_service import LLMService
+from config import settings
 
 logger = logging.getLogger(__name__)
 
 # Redis key template for storing reasoning context between turns
 _REASONING_META_KEY = "reasoning:statute:{conversation_id}"
 
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Statute ID → Lovdata URL resolver
+#
+# Milvus now stores full Lovdata URLs in the `statute_id` field, e.g.:
+#   https://lovdata.no/dokument/NL/lov/1997-06-13-45
+#   https://lovdata.no/dokument/SF/forskrift/2006-09-07-1062
+#
+# The reasoning agent may return:
+#   (a) A full Lovdata URL directly  → use as-is
+#   (b) LOV-YYYY-MM-DD-N format      → convert to URL (fallback)
+#   (c) YYYY-MM-DD-N  format         → convert to URL (fallback)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+_LOVDATA_BASE = "https://lovdata.no"
+
+# Prefix codes returned by the reasoning agent → short-form Lovdata path segment
+_TYPE_PREFIX_MAP = {
+    "LOV": "lov",
+    "FOR": "forskrift",
+    "RES": "forskrift",
+}
+
+
+def _resolve_statute_url(statute_id: Optional[str]) -> Optional[str]:
+    """
+    Resolve whatever the reasoning agent returned to a Lovdata SHORT-form URL
+    matching exactly what ingestion stores in Milvus `statute_id`.
+
+    Stored format : https://lovdata.no/lov/YYYY-MM-DD-N
+                    https://lovdata.no/forskrift/YYYY-MM-DD-N
+
+    Cases handled:
+      1. Already short URL  → returned as-is
+      2. Long dokument URL  → stripped to short form
+      3. LOV-YYYY-MM-DD-N   → https://lovdata.no/lov/YYYY-MM-DD-N
+      4. FOR-YYYY-MM-DD-N   → https://lovdata.no/forskrift/YYYY-MM-DD-N
+      5. YYYY-MM-DD-N       → defaults to /lov/
+      6. Anything else      → returns None (no filter applied)
+    """
+    if not statute_id:
+        return None
+
+    value = statute_id.strip()
+
+    # ── Case 1 & 2: already a full URL ────────────────────────────────
+    if value.startswith("https://lovdata.no"):
+        # Normalise long form → short form
+        value = value.replace("/dokument/NL/lov/", "/lov/")
+        value = value.replace("/dokument/SF/forskrift/", "/forskrift/")
+        value = value.replace("/dokument/lov/", "/lov/")
+        value = value.replace("/dokument/forskrift/", "/forskrift/")
+        return value
+
+    # ── Strip optional type prefix (LOV-, FOR-, RES-, etc.) ───────────
+    type_path = "lov"   # default
+    prefix_match = re.match(r"^([A-Z]+)-(.+)$", value, re.IGNORECASE)
+    if prefix_match:
+        prefix = prefix_match.group(1).upper()
+        type_path = _TYPE_PREFIX_MAP.get(prefix, "lov")
+        value = prefix_match.group(2)
+
+    # ── value should now be YYYY-MM-DD-N ─────────────────────────────
+    parts = value.split("-")
+    if len(parts) != 4:
+        logger.warning(
+            f"⚠️  _resolve_statute_url: cannot parse '{statute_id}' — skipping filter"
+        )
+        return None
+
+    year, month, day, number = parts
+    if not all(p.isdigit() for p in parts):
+        logger.warning(
+            f"⚠️  _resolve_statute_url: non-numeric parts in '{statute_id}' — skipping filter"
+        )
+        return None
+
+    url = f"{_LOVDATA_BASE}/{type_path}/{year}-{month}-{day}-{int(number)}"
+    logger.debug(f"🗂  statute_id '{statute_id}' → URL '{url}'")
+    return url
 
 class RAGService:
 
@@ -49,19 +131,20 @@ class RAGService:
             generator_agent=llm_service.get_generator_agent(),
         )
         self._reasoning_agent = QueryReasoningAgent()
-        self._validation_agent = SourceValidationAgent()
+        self._reranker_agent = RerankerAgent()
+        # self._validation_agent = SourceValidationAgent()  # TEMPORARILY DISABLED
 
-        logger.info("✅ RAGService initialized with agent routing + reasoning + validation")
+        logger.info("✅ RAGService initialized with agent routing + reasoning + reranker")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # PUBLIC INTERFACE  — unchanged
+    # PUBLIC INTERFACE
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def process_query(
         self,
         query: str,
         conversation_id: str,
-        top_k: int = 5,
+        top_k: int = 50,
         min_score: float = 0.0,
     ) -> AsyncIterator[Dict[str, Any]]:
 
@@ -105,7 +188,7 @@ class RAGService:
             yield {"type": "error", "message": str(exc)}
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # CASUAL PIPELINE  — completely unchanged
+    # CASUAL PIPELINE  — unchanged
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _handle_casual(
@@ -144,7 +227,7 @@ class RAGService:
         logger.info(f"✅ CASUAL pipeline complete | tokens={token_count}")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # LEGAL PIPELINE  — only reasoning context read/write added
+    # LEGAL PIPELINE
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _handle_legal(
@@ -160,7 +243,6 @@ class RAGService:
 
         context_window = history[-4:] if history else []
 
-        
         previous_statute_id = None
         previous_enriched_query = None
         try:
@@ -176,9 +258,7 @@ class RAGService:
                 )
         except Exception as exc:
             logger.warning(f"⚠️  Could not read reasoning meta from Redis | {exc}")
-        # ─────────────────────────────────────────────────────────────────
 
-        # Run QueryReasoningAgent with full follow-up context
         reasoning_result = await self._reasoning_agent.run(
             query=query,
             context_window=context_window,
@@ -188,12 +268,15 @@ class RAGService:
         enriched_query     = reasoning_result["enriched_query"]
         primary_statute_id = reasoning_result.get("primary_statute_id")
         response_style     = reasoning_result.get("response_style", "")
+        domain             = reasoning_result.get("domain")
+        jurisdiction       = reasoning_result.get("jurisdiction")
 
-        logger.info(f"🧠 Enriched query: '{enriched_query}' | style='{response_style}'")
+        logger.info(
+            f"🧠 Enriched query: '{enriched_query}' | style='{response_style}' | "
+            f"domain={domain} | jurisdiction={jurisdiction}"
+        )
 
         # ── WRITE new reasoning context back to Redis ──────────────────────
-        # Store for the NEXT turn in this conversation.
-        # set_conversation_meta() already exists on RedisClient.
         try:
             redis_key = _REASONING_META_KEY.format(conversation_id=conversation_id)
             self._redis.set_conversation_meta(
@@ -202,14 +285,19 @@ class RAGService:
                     "statute_id":     primary_statute_id,
                     "enriched_query": enriched_query,
                 },
-                ttl=1800,   # same TTL as conversation context
+                ttl=1800,
             )
             logger.info(
                 f"💾 Saved reasoning context | statute_id={primary_statute_id}"
             )
         except Exception as exc:
             logger.warning(f"⚠️  Could not save reasoning meta to Redis | {exc}")
-        # ─────────────────────────────────────────────────────────────────
+
+      
+        statute_filter = _resolve_statute_url(primary_statute_id)
+        logger.info(
+            f"🗂  statute_filter resolved: '{primary_statute_id}' → '{statute_filter}'"
+        )
 
         search_results, validation_passed = await self._retrieve_and_validate(
             enriched_query=enriched_query,
@@ -218,10 +306,21 @@ class RAGService:
             min_score=min_score,
             history=history,
             language=language,
+            statute_filter=statute_filter,
+            domain=domain,
+            jurisdiction=jurisdiction,
+            original_query=query,
         )
 
         if not validation_passed:
             logger.warning("⚠️  Source validation failed after 2 attempts — returning not-found")
+            # ── Missing coverage log ───────────────────────────────────────
+            logger.warning(
+                "📋 MISSING_COVERAGE | reason=validation_failed | "
+                f"query='{query}' | enriched_query='{enriched_query}' | "
+                f"statute_id='{primary_statute_id}' | domain={domain} | "
+                f"jurisdiction={jurisdiction} | language={language}"
+            )
             yield {"type": "sources", "data": []}
 
             no_result = (
@@ -256,6 +355,13 @@ class RAGService:
 
         if not search_results:
             logger.warning("⚠️  No Milvus results found")
+            # ── Missing coverage log ───────────────────────────────────────
+            logger.warning(
+                "📋 MISSING_COVERAGE | reason=no_milvus_results | "
+                f"query='{query}' | enriched_query='{enriched_query}' | "
+                f"statute_id='{primary_statute_id}' | domain={domain} | "
+                f"jurisdiction={jurisdiction} | language={language}"
+            )
             yield {"type": "sources", "data": []}
 
             no_result = (
@@ -348,7 +454,7 @@ class RAGService:
         )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # Dynamic query reformulation — 
+    # Dynamic query reformulation
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _reformulate_query_with_llm(
@@ -418,7 +524,7 @@ class RAGService:
             return original_query
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # Retrieve + Validate — 
+    # Retrieve + Rerank + (Validate DISABLED temporarily)
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _retrieve_and_validate(
@@ -430,29 +536,49 @@ class RAGService:
         history: List[Dict[str, str]],
         language: str,
         statute_filter: Optional[str] = None,
+        domain: Optional[str] = None,
+        jurisdiction: Optional[str] = None,
+        original_query: Optional[str] = None,
     ):
-        retrieval_query = enriched_query
+        retrieval_query    = enriched_query
+        active_filter      = statute_filter
+        active_domain      = domain
+        active_jurisdiction = jurisdiction
 
         for attempt in (1, 2):
             logger.info(
-                f"🔎 RetrieverAgent attempt {attempt} | query='{retrieval_query}'"
+                f"🔎 RetrieverAgent attempt {attempt} | "
+                f"query='{retrieval_query[:80]}' | statute_filter='{active_filter}' | "
+                f"domain='{active_domain}' | jurisdiction='{active_jurisdiction}'"
             )
 
-            search_results = await self._retriever_agent.run(
+            # ── Recall stage: fetch RERANKER_RECALL_TOP_K from Milvus ──────
+            raw_results = await self._retriever_agent.run(
                 query=retrieval_query,
-                top_k=top_k,
-                min_score=min_score,
+                top_k=settings.RERANKER_RECALL_TOP_K,
+                min_score=0.0,
                 history=history,
-                statute_filter=statute_filter,
+                statute_filter=active_filter,
+                domain=active_domain,
+                jurisdiction=active_jurisdiction,
             )
 
-            logger.info(f"📦 Retrieved {len(search_results)} chunks (attempt {attempt})")
+            logger.info(
+                f"📦 Retrieved {len(raw_results)} raw chunks (attempt {attempt}) | "
+                f"file_filter='{active_filter}'"
+            )
 
-            if not search_results:
+            if not raw_results:
                 if attempt == 1:
                     logger.warning(
-                        "⚠️  Zero results on attempt 1, reformulating from reasoning summary..."
+                        f"⚠️  Zero results on attempt 1 | filter='{active_filter}' | "
+                        f"domain='{active_domain}'. "
+                        "Dropping all filters and reformulating for attempt 2..."
                     )
+                    # Drop ALL filters — attempt 2 is pure semantic search, no expr
+                    active_filter       = None
+                    active_domain       = None
+                    active_jurisdiction = None
                     retrieval_query = await self._reformulate_query_with_llm(
                         reasoning_summary=reasoning_summary,
                         original_query=enriched_query,
@@ -463,36 +589,103 @@ class RAGService:
                     logger.warning("⚠️  Zero results on attempt 2 — terminal failure")
                     return [], False
 
-            validation = await self._validation_agent.validate(
-                reasoning_summary=reasoning_summary,
-                chunks=search_results,
-                attempt=attempt,
+            # ── Rerank stage: CrossEncoder → top RERANKER_FINAL_TOP_K ──────
+            reranked = self._reranker_agent.rerank(
+                query=retrieval_query,
+                chunks=raw_results,
+                top_k=settings.RERANKER_FINAL_TOP_K,
             )
 
-            if validation["correlated"]:
-                logger.info(
-                    f"✅ Validation passed (attempt {attempt}) | "
-                    f"{validation.get('explanation', '')}"
-                )
-                return search_results, True
+            if not reranked:
+                logger.warning(f"⚠️  Reranker returned empty list (attempt {attempt})")
+                return [], False
 
-            logger.warning(
-                f"⚠️  Validation failed (attempt {attempt}) | "
-                f"{validation.get('explanation', '')}"
+            best_score = reranked[0].get("rerank_score", 0.0)
+
+            # ── FIX 3: Rerank quality gate ─────────────────────────────────
+            # CrossEncoder returns raw logits — NOT probabilities.
+            # Negative scores near -5 or below mean the model found the chunks
+            # completely irrelevant to the query.
+            # If the top-ranked chunk is still below the threshold, the retrieval
+            # set itself is wrong; attempt 2 drops the statute filter and retries.
+            if best_score < settings.RERANKER_MIN_SCORE:
+                logger.warning(
+                    f"⚠️  Reranker quality gate failed (attempt {attempt}) | "
+                    f"best={best_score:.4f} < threshold={settings.RERANKER_MIN_SCORE} | "
+                    f"filter='{active_filter}'"
+                )
+                if attempt == 1:
+                    logger.info(
+                        "🔄 Dropping statute_filter + domain and reformulating for attempt 2..."
+                    )
+                    active_filter       = None
+                    active_domain       = None
+                    active_jurisdiction = None
+                    retrieval_query = await self._reformulate_query_with_llm(
+                        reasoning_summary=reasoning_summary,
+                        original_query=enriched_query,
+                        chunks=raw_results,
+                    )
+                    continue
+                else:
+                    logger.warning(
+                        "⚠️  Reranker quality gate failed on attempt 2 — returning empty"
+                    )
+                    return [], False
+
+            search_results = reranked
+
+            logger.info(
+                f"🔃 After reranking: {len(search_results)} chunks passed to generation | "
+                f"top rerank_score={best_score:.4f}"
             )
-
-            if attempt == 1 and validation.get("retry", True):
+            # 🔎 DEBUG: print top 5 reranked chunks
+            for i, chunk in enumerate(search_results[:5], start=1):
                 logger.info(
-                    "🔄 Reformulating retrieval query from failed chunk metadata..."
+                    f"""
+                    🧾 RERANKED #{i}
+                    Title: {chunk.get('parent_title')}
+                    File: {chunk.get('file_name')}
+                    Rerank Score: {chunk.get('rerank_score')}
+                    Preview: {chunk.get('text', '')[:300]}
+                    """
                 )
-                retrieval_query = await self._reformulate_query_with_llm(
-                    reasoning_summary=reasoning_summary,
-                    original_query=enriched_query,
-                    chunks=search_results,
-                )
-                continue
 
-            return [], False
+            # ── Validation stage: TEMPORARILY DISABLED ─────────────────────
+            # To re-enable source validation:
+            #   1. Uncomment the SourceValidationAgent import at the top of this file
+            #   2. Uncomment self._validation_agent = SourceValidationAgent() in __init__
+            #   3. Replace the block below with the original validation block:
+            #
+            #   validation = await self._validation_agent.validate(
+            #       reasoning_summary=reasoning_summary,
+            #       chunks=search_results,
+            #       attempt=attempt,
+            #   )
+            #   if validation["correlated"]:
+            #       logger.info(
+            #           f"✅ Validation passed (attempt {attempt}) | "
+            #           f"{validation.get('explanation', '')}"
+            #       )
+            #       return search_results, True
+            #   logger.warning(
+            #       f"⚠️  Validation failed (attempt {attempt}) | "
+            #       f"{validation.get('explanation', '')}"
+            #   )
+            #   if attempt == 1 and validation.get("retry", True):
+            #       active_filter   = None   # drop filter on retry
+            #       logger.info("🔄 Reformulating retrieval query from failed chunk metadata...")
+            #       retrieval_query = await self._reformulate_query_with_llm(
+            #           reasoning_summary=reasoning_summary,
+            #           original_query=enriched_query,
+            #           chunks=search_results,
+            #       )
+            #       continue
+            #   return [], False
+            # ── END validation block ────────────────────────────────────────
+
+            # Validation bypassed — return reranked results directly
+            return search_results, True
 
         return [], False
 
