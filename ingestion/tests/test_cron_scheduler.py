@@ -8,7 +8,7 @@ if ROOT_DIR not in sys.path:
 from unittest.mock import patch, Mock
 
 
-# 1️⃣ load_state empty
+
 @patch("ingestion.src.scheduler.cron_scheduler.STATE_FILE")
 def test_load_state_empty(mock_state):
     from ingestion.src.scheduler.cron_scheduler import load_state
@@ -16,7 +16,7 @@ def test_load_state_empty(mock_state):
     assert load_state() == {}
 
 
-# 2️⃣ save_state
+
 @patch("ingestion.src.scheduler.cron_scheduler.CHECKPOINT_DIR")
 @patch("builtins.open")
 @patch("json.dump")
@@ -27,7 +27,6 @@ def test_save_state(mock_dump, mock_open, mock_dir):
     mock_dir.mkdir.assert_called_once()
 
 
-# 3️⃣ fetch archive
 @patch("requests.get")
 def test_fetch_archive(mock_get):
     from ingestion.src.scheduler.cron_scheduler import fetch_latest_archive_name
@@ -38,7 +37,6 @@ def test_fetch_archive(mock_get):
     assert fetch_latest_archive_name() == "a.tar.bz2"
 
 
-# 4️⃣ ingestion success
 @patch("ingestion.src.scheduler.cron_scheduler._release_lock")
 @patch("ingestion.src.scheduler.cron_scheduler._acquire_lock")
 @patch("ingestion.src.scheduler.cron_scheduler.save_state")
@@ -75,7 +73,7 @@ def test_ingestion_job_success(
     assert saved_state["last_run_status"] == "success"
 
 
-# 5️⃣ API failure
+
 @patch("ingestion.src.scheduler.cron_scheduler._release_lock")
 @patch("ingestion.src.scheduler.cron_scheduler._acquire_lock")
 @patch("ingestion.src.scheduler.cron_scheduler.save_state")
@@ -101,7 +99,7 @@ def test_ingestion_job_api_failure(
     assert saved_state["last_run_status"] == "api_check_failed"
 
 
-# 6️⃣ pipeline failure
+
 @patch("ingestion.src.scheduler.cron_scheduler._release_lock")
 @patch("ingestion.src.scheduler.cron_scheduler._acquire_lock")
 @patch("ingestion.src.scheduler.cron_scheduler.save_state")

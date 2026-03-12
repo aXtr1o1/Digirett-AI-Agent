@@ -28,6 +28,7 @@ redis==7.2.0
 # INGESTION / DATA PROCESSING
 # =====================================================
 lxml==6.0.2
+beautifulsoup4==4.12.3
 numpy==2.4.2
 tqdm==4.67.3
 APScheduler==3.11.2

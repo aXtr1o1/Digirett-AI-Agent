@@ -1,4 +1,10 @@
+import warnings
 
+warnings.filterwarnings(
+    "ignore",
+    message="The 'strip_cdata' option",
+    category=DeprecationWarning,
+)
 import os
 import pytest
 

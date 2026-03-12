@@ -7,19 +7,36 @@ import logging
 # -------------------------------------------------
 load_dotenv()
 
-# 🔒 FIXED BASE DIR
-BASE_DIR = Path(__file__).resolve().parents[1]
-RAW_XML_DIR = BASE_DIR / "data" / "raw_xml"
+# ---------------------------------------------------------------------------
+# Base directories
+# ---------------------------------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parent.parent
+RAW_XML_DIR    = BASE_DIR / "data" / "raw_xml"
 CLEAN_TEXT_DIR = BASE_DIR / "data" / "cleaned_text"
 CHECKPOINT_DIR = BASE_DIR / "data" / "checkpoints"
-ARCHIVE_DIR = BASE_DIR / "data" / "archives"
-LOG_DIR = BASE_DIR / "logs"
+ARCHIVE_DIR    = BASE_DIR / "data" / "archives"
+LOG_DIR        = BASE_DIR / "logs"
 
-for d in [RAW_XML_DIR, CLEAN_TEXT_DIR, CHECKPOINT_DIR, LOG_DIR]:
-    d.mkdir(parents=True, exist_ok=True)
+ 
+for _d in [RAW_XML_DIR, CLEAN_TEXT_DIR, CHECKPOINT_DIR, LOG_DIR]:
+    _d.mkdir(parents=True, exist_ok=True)
 
 # Ensure log directory exists BEFORE logging
 LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+# ============================
+# Excel Dataset Folder
+# ============================
+
+XL_DATASET_FOLDER = os.getenv("XL_DATASET_FOLDER")
+
+if not XL_DATASET_FOLDER:
+    raise RuntimeError("XL_DATASET_FOLDER missing in .env")
+
+XL_DATASET_FOLDER = Path(XL_DATASET_FOLDER)
+
+if not XL_DATASET_FOLDER.exists():
+    raise RuntimeError(f"XL_DATASET_FOLDER path does not exist → {XL_DATASET_FOLDER}")
 
 # ============================
 # External Services
