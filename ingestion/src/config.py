@@ -28,15 +28,7 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 # Excel Dataset Folder
 # ============================
 
-XL_DATASET_FOLDER = os.getenv("XL_DATASET_FOLDER")
-
-if not XL_DATASET_FOLDER:
-    raise RuntimeError("XL_DATASET_FOLDER missing in .env")
-
-XL_DATASET_FOLDER = Path(XL_DATASET_FOLDER)
-
-if not XL_DATASET_FOLDER.exists():
-    raise RuntimeError(f"XL_DATASET_FOLDER path does not exist → {XL_DATASET_FOLDER}")
+XL_DATASET_FOLDER = Path(os.getenv("XL_DATASET_FOLDER", ""))
 
 # ============================
 # External Services
@@ -145,19 +137,29 @@ SCHEDULER_API_TIMEOUT = int(os.getenv("SCHEDULER_API_TIMEOUT", "30"))
 # ============================
 # Validation
 # ============================
-if not LOVDATA_API_URL:
-    raise RuntimeError("LOVDATA_API_URL missing from environment")
-if not SUPABASE_URL:
-    raise RuntimeError("SUPABASE_URL missing from environment")
-if not SUPABASE_SERVICE_KEY:
-    raise RuntimeError("SUPABASE_SERVICE_KEY missing from environment")
-if not SUPABASE_BUCKET:
-    raise RuntimeError("SUPABASE_BUCKET missing from environment")
-if not SUPABASE_TABLE:
-    raise ValueError("SUPABASE_TABLE not found in environment variables")
-if not MILVUS_COLLECTION or not MILVUS_COLLECTION.strip():
-    raise RuntimeError("MILVUS_COLLECTION missing or invalid")
+def validate_runtime_config():
+    if not LOVDATA_API_URL:
+        raise RuntimeError("LOVDATA_API_URL missing")
 
+    if not SUPABASE_URL:
+        raise RuntimeError("SUPABASE_URL missing")
+
+    if not SUPABASE_SERVICE_KEY:
+        raise RuntimeError("SUPABASE_SERVICE_KEY missing")
+
+    if not SUPABASE_BUCKET:
+        raise RuntimeError("SUPABASE_BUCKET missing")
+
+    if not SUPABASE_TABLE:
+        raise RuntimeError("SUPABASE_TABLE missing")
+
+    if not MILVUS_COLLECTION:
+        raise RuntimeError("MILVUS_COLLECTION missing")
+
+    if not XL_DATASET_FOLDER.exists():
+        raise RuntimeError(
+            f"XL_DATASET_FOLDER path does not exist → {XL_DATASET_FOLDER}"
+        )
 # ============================
 # Logging
 # ============================

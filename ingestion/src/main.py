@@ -434,6 +434,7 @@ from typing import Optional
 
 import psutil
 from ingestion.src.config import CLEAN_TEXT_DIR
+from ingestion.src.config import validate_runtime_config
 from ingestion.src.config import RAW_XML_DIR
 from ingestion.src.processors.chunker import NorwegianLovdataChunker
 from ingestion.src.processors.embedder import TokenAwareAzureEmbedder
@@ -452,7 +453,7 @@ from ingestion.src.config import (
     XL_DATASET_FOLDER,
     RAW_XML_DIR,
 )
-
+validate_runtime_config()
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------

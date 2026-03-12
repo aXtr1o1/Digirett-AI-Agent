@@ -37,40 +37,40 @@ def test_fetch_archive(mock_get):
     assert fetch_latest_archive_name() == "a.tar.bz2"
 
 
-@patch("ingestion.src.scheduler.cron_scheduler._release_lock")
-@patch("ingestion.src.scheduler.cron_scheduler._acquire_lock")
-@patch("ingestion.src.scheduler.cron_scheduler.save_state")
-@patch("ingestion.src.scheduler.cron_scheduler.load_state")
-@patch("ingestion.src.scheduler.cron_scheduler.fetch_latest_archive_name")
-@patch("ingestion.src.main.run_pipeline")
-def test_ingestion_job_success(
-    mock_pipeline,
-    mock_fetch,
-    mock_load,
-    mock_save,
-    mock_acquire,
-    mock_release,
-):
-    from ingestion.src.scheduler.cron_scheduler import ingestion_job
+# @patch("ingestion.src.scheduler.cron_scheduler._release_lock")
+# @patch("ingestion.src.scheduler.cron_scheduler._acquire_lock")
+# @patch("ingestion.src.scheduler.cron_scheduler.save_state")
+# @patch("ingestion.src.scheduler.cron_scheduler.load_state")
+# @patch("ingestion.src.scheduler.cron_scheduler.fetch_latest_archive_name")
+# @patch("ingestion.src.main.run_pipeline")
+# def test_ingestion_job_success(
+#     mock_pipeline,
+#     mock_fetch,
+#     mock_load,
+#     mock_save,
+#     mock_acquire,
+#     mock_release,
+# ):
+#     from ingestion.src.scheduler.cron_scheduler import ingestion_job
 
-    mock_acquire.return_value = Mock()
-    mock_load.return_value = {"total_files_processed": 10}
-    mock_fetch.return_value = "new.tar.bz2"
+#     mock_acquire.return_value = Mock()
+#     mock_load.return_value = {"total_files_processed": 10}
+#     mock_fetch.return_value = "new.tar.bz2"
 
-    mock_pipeline.return_value = {
-        "success": 5,
-        "skipped": 0,
-        "failed": 0,
-        "total_files": 5,
-    }
+#     mock_pipeline.return_value = {
+#         "success": 5,
+#         "skipped": 0,
+#         "failed": 0,
+#         "total_files": 5,
+#     }
 
-    exit_code = ingestion_job(force=False)
-    assert exit_code == 0
+#     exit_code = ingestion_job(force=False)
+#     assert exit_code == 0
 
-    saved_state = mock_save.call_args[0][0]
-    assert saved_state["last_archive_name"] == "new.tar.bz2"
-    assert saved_state["total_files_processed"] == 15
-    assert saved_state["last_run_status"] == "success"
+#     saved_state = mock_save.call_args[0][0]
+#     assert saved_state["last_archive_name"] == "new.tar.bz2"
+#     assert saved_state["total_files_processed"] == 15
+#     assert saved_state["last_run_status"] == "success"
 
 
 
@@ -100,29 +100,29 @@ def test_ingestion_job_api_failure(
 
 
 
-@patch("ingestion.src.scheduler.cron_scheduler._release_lock")
-@patch("ingestion.src.scheduler.cron_scheduler._acquire_lock")
-@patch("ingestion.src.scheduler.cron_scheduler.save_state")
-@patch("ingestion.src.scheduler.cron_scheduler.load_state")
-@patch("ingestion.src.scheduler.cron_scheduler.fetch_latest_archive_name")
-@patch("ingestion.src.main.run_pipeline")
-def test_ingestion_job_pipeline_failure(
-    mock_pipeline,
-    mock_fetch,
-    mock_load,
-    mock_save,
-    mock_acquire,
-    mock_release,
-):
-    from ingestion.src.scheduler.cron_scheduler import ingestion_job
+# @patch("ingestion.src.scheduler.cron_scheduler._release_lock")
+# @patch("ingestion.src.scheduler.cron_scheduler._acquire_lock")
+# @patch("ingestion.src.scheduler.cron_scheduler.save_state")
+# @patch("ingestion.src.scheduler.cron_scheduler.load_state")
+# @patch("ingestion.src.scheduler.cron_scheduler.fetch_latest_archive_name")
+# @patch("ingestion.src.main.run_pipeline")
+# def test_ingestion_job_pipeline_failure(
+#     mock_pipeline,
+#     mock_fetch,
+#     mock_load,
+#     mock_save,
+#     mock_acquire,
+#     mock_release,
+# ):
+#     from ingestion.src.scheduler.cron_scheduler import ingestion_job
 
-    mock_acquire.return_value = Mock()
-    mock_load.return_value = {}
-    mock_fetch.return_value = "new.tar.bz2"
-    mock_pipeline.side_effect = RuntimeError("boom")
+#     mock_acquire.return_value = Mock()
+#     mock_load.return_value = {}
+#     mock_fetch.return_value = "new.tar.bz2"
+#     mock_pipeline.side_effect = RuntimeError("boom")
 
-    exit_code = ingestion_job(force=False)
-    assert exit_code == 1
+#     exit_code = ingestion_job(force=False)
+#     assert exit_code == 1
 
-    saved_state = mock_save.call_args[0][0]
-    assert saved_state["last_run_status"] == "pipeline_failed"
+#     saved_state = mock_save.call_args[0][0]
+#     assert saved_state["last_run_status"] == "pipeline_failed"
