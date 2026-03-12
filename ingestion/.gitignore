@@ -59,4 +59,4 @@ Thumbs.db
 
 
 deployment/*.csv
-ingestion/data/checkpoints/
+data/checkpoints/
