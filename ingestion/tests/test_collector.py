@@ -132,7 +132,7 @@ from unittest.mock import MagicMock, patch
 from bs4 import BeautifulSoup
 import pytest
 
-from ingestion.collectors.lovdata_collector import (
+from collectors.lovdata_collector import (
     _url_to_stem,
     _is_lovdata_url,
     _extract_title,
@@ -221,7 +221,7 @@ class TestXmlBuilder:
 
 class TestFetchXml:
 
-    @patch("ingestion.collectors.lovdata_collector.requests.get")
+    @patch("collectors.lovdata_collector.requests.get")
     def test_fetch_xml_success(self, mock_get, sample_html):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -232,7 +232,7 @@ class TestFetchXml:
         assert result is not None
         assert b"<?xml" in result
 
-    @patch("ingestion.collectors.lovdata_collector.requests.get")
+    @patch("collectors.lovdata_collector.requests.get")
     def test_fetch_xml_404(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.status_code = 404
@@ -247,8 +247,8 @@ class TestFetchXml:
 
 class TestScrapeUrls:
 
-    @patch("ingestion.collectors.lovdata_collector.requests.get")
-    @patch("ingestion.collectors.lovdata_collector.load_xl_single_file")
+    @patch("collectors.lovdata_collector.requests.get")
+    @patch("collectors.lovdata_collector.load_xl_single_file")
     def test_scrape_urls(self, mock_load, mock_get, tmp_path, sample_html):
         meta = MagicMock()
         meta.sub_domain_name = "test"
