@@ -41,7 +41,7 @@ pip install -r requirements.txt
 # Create .env file (see below)
 
 # Run ingestion pipeline
-python src/main.py
+python src/main.py or  python -m ingestion.src.main
 ```
 
 ## 🔧 Environment Variables
