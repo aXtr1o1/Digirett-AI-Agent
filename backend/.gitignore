@@ -30,6 +30,11 @@ ENV/
 .env
 .env.local
 .env.*.local
+.env.*
+
+# Allow these specific files
+!.env.example
+!.env.test
 
 # IDE
 .vscode/

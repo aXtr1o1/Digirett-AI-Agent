@@ -4,14 +4,7 @@
 
 @layer base {
   body {
-    @apply bg-black text-white font-sans;
-    margin: 0;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-  
-  body {
-    @apply bg-black text-white font-sans;
+    @apply font-sans;
     margin: 0;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -32,12 +25,12 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #374151;
+    background: #888;
     border-radius: 4px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #4b5563;
+    background: #555;
   }
 }
 
@@ -48,7 +41,7 @@
   
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: #374151 transparent;
+    scrollbar-color: #888 transparent;
   }
   
   .scrollbar-thin::-webkit-scrollbar {
@@ -60,15 +53,15 @@
   }
   
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: #374151;
+    background: #888;
     border-radius: 3px;
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background: #4b5563;
+    background: #555;
   }
 
-  /* Prose styling for dark theme */
+  /* ── DARK prose (existing) ── */
   .prose-invert {
     @apply text-gray-100;
   }
@@ -80,6 +73,22 @@
   .prose-invert h5,
   .prose-invert h6 {
     @apply text-white;
+  }
+
+  .prose-invert h1 {
+    @apply text-3xl font-bold mt-8 mb-4;
+  }
+
+  .prose-invert h2 {
+    @apply text-2xl font-semibold mt-8 mb-3;
+  }
+
+  .prose-invert h3 {
+    @apply text-xl font-semibold mt-6 mb-2;
+  }
+
+  .prose-invert p {
+    @apply mb-4;
   }
 
   .prose-invert a {
@@ -96,6 +105,52 @@
 
   .prose-invert blockquote {
     @apply border-l-gray-700 text-gray-300;
+  }
+
+  /* ── LIGHT prose (new) ── */
+  .prose-light {
+    @apply text-gray-800;
+  }
+
+  .prose-light h1,
+  .prose-light h2,
+  .prose-light h3,
+  .prose-light h4,
+  .prose-light h5,
+  .prose-light h6 {
+    @apply text-gray-900;
+  }
+
+  .prose-light h1 {
+    @apply text-3xl font-bold mt-8 mb-4;
+  }
+
+  .prose-light h2 {
+    @apply text-2xl font-semibold mt-8 mb-3;
+  }
+
+  .prose-light h3 {
+    @apply text-xl font-semibold mt-6 mb-2;
+  }
+
+  .prose-light p {
+    @apply mb-4;
+  }
+
+  .prose-light a {
+    @apply text-blue-600 hover:text-blue-500;
+  }
+
+  .prose-light code {
+    @apply text-gray-800 bg-gray-100 px-1 py-0.5 rounded;
+  }
+
+  .prose-light pre {
+    @apply bg-gray-100 border border-gray-200;
+  }
+
+  .prose-light blockquote {
+    @apply border-l-gray-300 text-gray-600;
   }
 }
 
@@ -118,6 +173,36 @@
   .text-balance {
     text-wrap: balance;
   }
+
+  /* Background blur effects */
+  .backdrop-blur-glass {
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    background: rgba(30, 30, 30, 0.6);
+  }
+
+  .backdrop-blur-card {
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    background: rgba(26, 26, 26, 0.8);
+  }
+
+  /* Blue glow effects */
+  .glow-blue {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.5), 0 0 40px rgba(59, 130, 246, 0.3);
+  }
+
+  .glow-blue-hover:hover {
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.7), 0 0 60px rgba(59, 130, 246, 0.5);
+  }
+
+  /* Gradient text */
+  .text-gradient-blue {
+    background: linear-gradient(135deg, #3B82F6 0%, #0EA5E9 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
 }
 
 /* Clerk component customization */
@@ -138,20 +223,128 @@
 .cl-formButtonPrimary:hover {
   background-color: #f3f4f6 !important;
 }
-/* Modern thin scrollbar */
+
+/* Scrollbar — visible in both light and dark mode */
 ::-webkit-scrollbar {
   width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f0f0f;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2a2a2a;
+  background: #888;
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #444;
+  background: #555;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #888 transparent;
+}
+
+.auth-container {
+  min-height: 100vh;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: #0f0f0f;
+  padding: 32px;
+  border-radius: 16px;
+}
+
+.auth-title {
+  color: #fff;
+  font-size: 28px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.name-row {
+  display: flex;
+  gap: 12px;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.auth-field label {
+  color: #9ca3af;
+  font-size: 14px;
+}
+
+.auth-field input {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 12px;
+  color: #fff;
+  font-size: 14px;
+}
+
+.auth-field input:focus {
+  outline: none;
+  border-color: #fff;
+}
+
+.auth-button {
+  margin-top: 8px;
+  background: #fff;
+  color: #000;
+  padding: 12px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+}
+
+.auth-button:hover {
+  background: #e5e7eb;
+}
+
+.auth-footer {
+  margin-top: 12px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 14px;
+}
+
+.auth-footer a {
+  color: #fff;
+  text-decoration: none;
+}
+
+.auth-footer a:hover {
+  text-decoration: underline;
+}
+
+/* Hide scrollbar in sidebar */
+.sidebar-scrollbar-hidden {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.sidebar-scrollbar-hidden::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
 }

@@ -24,6 +24,8 @@ from ingestion.src.processors.embedder_sagemaker import SageMakerBGEEmbedder
 from ingestion.src.processors.text_processor import process_xml_to_text
 from ingestion.src.storage.milvus_store import MilvusLovdataStore
 from ingestion.src.config import (
+    MAX_TOKENS_PER_CHUNK,
+    OVERLAP_TOKENS,
     LOG_FILE,
     MILVUS_HOST,
     MILVUS_PORT,
@@ -39,9 +41,9 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
     handlers=[
         logging.FileHandler(LOG_FILE, encoding="utf-8"),
-        logging.StreamHandler()
+        logging.StreamHandler(),
     ],
-    force=True
+    force=True,
 )
 
 logger = logging.getLogger("lovdata-production")

@@ -1,110 +1,181 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Send, StopCircle } from "lucide-react";
+import { Send, StopCircle, Paperclip, Settings, Grid3x3, Mic, ArrowUp, Star } from "lucide-react";
 
-const MessageComposer = ({
-  onSend,
-  disabled,
-  isStreaming,
-  onStop,
-  theme = "dark",
-}) => {
+const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark" }) => {
   const [message, setMessage] = useState("");
   const textareaRef = useRef(null);
-
-  /* =========================
-     Auto resize textarea
-  ========================= */
+  const isDark = theme === "dark";
+  const sendingRef = useRef(false);
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height =
-        Math.min(textareaRef.current.scrollHeight, 180) + "px";
+      const newHeight = Math.min(textareaRef.current.scrollHeight, 200);
+      textareaRef.current.style.height = newHeight + "px";
+      // Show scrollbar only when content exceeds max height
+      textareaRef.current.style.overflowY =
+        textareaRef.current.scrollHeight > 200 ? "scroll" : "hidden";
     }
   }, [message]);
 
-  /* =========================
-     Auto focus cursor
-  ========================= */
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
 
-  /* =========================
-     Submit message
-  ========================= */
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (message.trim() && !disabled) {
-      onSend(message);
-      setMessage("");
+  const sendMessage = () => {
+    if (sendingRef.current) return;     // ⭐ block double send
+    if (!message.trim() || disabled || isStreaming) return;
+
+    sendingRef.current = true;
+
+    onSend(message);
+    setMessage("");
+
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.overflowY = "hidden";
     }
+
+    setTimeout(() => {
+      sendingRef.current = false;
+    }, 300);
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e);
-    }
+    if (e.key !== "Enter") return;
+    if (e.shiftKey) return;       // allow new line
+    if (isStreaming) return;
+
+    e.preventDefault();
+    sendMessage();
   };
 
   return (
-    <div className="px-4 py-4 bg-black">
-      <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
-        
-        {/* 🔹 INPUT CONTAINER */}
-        <div className="flex items-end gap-3 bg-[#1a1a1a] rounded-2xl px-4 py-3">
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "12px",
+        borderRadius: "12px",
+        padding: "14px 16px",
+        border: isDark 
+          ? "1px solid rgba(59, 130, 246, 0.2)" 
+          : "1px solid rgba(59, 130, 246, 0.15)",
+        backgroundColor: isDark 
+          ? "rgba(30, 30, 30, 0.3)" 
+          : "rgba(255, 255, 255, 0.5)",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        boxShadow: isDark
+          ? "0 0 10px rgba(59, 130, 246, 0.1), 0 0 20px rgba(37, 99, 235, 0.05)"
+          : "0 0 10px rgba(96, 165, 250, 0.08), 0 0 20px rgba(147, 197, 253, 0.05)",
+        transition: "all 0.2s",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = isDark 
+          ? "rgba(59, 130, 246, 0.3)" 
+          : "rgba(59, 130, 246, 0.2)";
+        e.currentTarget.style.boxShadow = isDark
+          ? "0 0 15px rgba(59, 130, 246, 0.15), 0 0 30px rgba(37, 99, 235, 0.08)"
+          : "0 0 15px rgba(96, 165, 250, 0.12), 0 0 30px rgba(147, 197, 253, 0.08)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = isDark 
+          ? "rgba(59, 130, 246, 0.2)" 
+          : "rgba(59, 130, 246, 0.15)";
+        e.currentTarget.style.boxShadow = isDark
+          ? "0 0 10px rgba(59, 130, 246, 0.1), 0 0 20px rgba(37, 99, 235, 0.05)"
+          : "0 0 10px rgba(96, 165, 250, 0.08), 0 0 20px rgba(147, 197, 253, 0.05)";
+      }}
+    >
+      <textarea
+        ref={textareaRef}
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        onKeyDown={handleKeyDown}
+        disabled={disabled}
+        rows={1}
+        placeholder="Ask Anything..."
+        style={{
+          flex: 1,
+          resize: "none",
+          background: "transparent",
+          border: "none",
+          outline: "none",
+          fontSize: "16px",
+          lineHeight: "24px",
+          color: isDark ? "#f3f4f6" : "#111827",
+          maxHeight: "200px",
+          overflowY: "hidden",
+          fontFamily: "inherit",
+          padding: 0,
+          minHeight: "24px",
+          verticalAlign: "middle",
+        }}
+        className={isDark ? "placeholder-dark" : "placeholder-light"}
+      />
 
-          {/* TEXTAREA */}
-          <textarea
-            ref={textareaRef}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask anything..."
-            disabled={disabled}
-            rows={1}
-            className="
-              flex-1
-              bg-transparent
-              resize-none
-              overflow-hidden
-              text-white
-              placeholder-gray-500
-              caret-white
-              focus:outline-none
-            "
-          />
+      {/* Send Button */}
+      {isStreaming ? (
+        <button
+          type="button"
+          onClick={onStop}
+          style={{
+            width: "40px",
+            height: "40px",
+            borderRadius: "50%",
+            backgroundColor: "#ef4444",
+            border: "none",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#ffffff",
+            transition: "all 0.2s",
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#dc2626"}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#ef4444"}
+        >
+          <StopCircle size={18} />
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={sendMessage}
+          disabled={disabled || isStreaming || !message.trim()}
+          style={{
+            width: "40px",
+            height: "40px",
+            borderRadius: "50%",
+            backgroundColor: (!disabled && message.trim()) 
+              ? (isDark ? "#3B82F6" : "#2563EB")
+              : (isDark ? "rgba(59, 130, 246, 0.4)" : "rgba(37, 99, 235, 0.4)"),
+            border: "none",
+            cursor: (!disabled && message.trim()) ? "pointer" : "not-allowed",
 
-          {/* BUTTON */}
-          {isStreaming ? (
-            <button
-              type="button"
-              onClick={onStop}
-              className="h-10 w-10 rounded-xl bg-red-600 hover:bg-red-700 flex items-center justify-center text-white"
-            >
-              <StopCircle size={18} />
-            </button>
-          ) : (
-            <button
-              type="submit"
-              disabled={disabled || !message.trim()}
-              className="
-                h-10 w-10
-                rounded-xl
-                bg-white
-                text-black
-                flex items-center justify-center
-                hover:bg-gray-200
-                transition
-                disabled:opacity-50
-                disabled:cursor-not-allowed
-              "
-            >
-              <Send size={18} />
-            </button>
-          )}
-        </div>
-      </form>
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#ffffff",
+            transition: "all 0.2s",
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => {
+            if (!disabled && message.trim()) {
+              e.currentTarget.style.backgroundColor = isDark ? "#2563EB" : "#1D4ED8";
+              e.currentTarget.style.transform = "scale(1.05)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!disabled && message.trim()) {
+              e.currentTarget.style.backgroundColor = isDark ? "#3B82F6" : "#2563EB";
+              e.currentTarget.style.transform = "scale(1)";
+            }
+          }}
+        >
+          <ArrowUp size={18} />
+        </button>
+      )}
     </div>
   );
 };

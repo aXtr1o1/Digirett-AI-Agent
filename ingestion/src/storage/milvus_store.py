@@ -4,14 +4,33 @@ Stores Norwegian legal document chunks with embeddings
 """
 
 import logging
-from typing import List, Dict, Any, Set
+import sys
+import time
+import psutil
+
+from ingestion.src.storage.supabase_store import SupabaseStore
+from ingestion.src.config import (
+    MILVUS_HOST,
+    MILVUS_PORT,
+    MILVUS_COLLECTION,
+    MILVUS_DIMENSION,
+    MILVUS_CONNECT_TIMEOUT,
+    MILVUS_INSERT_BATCH,
+    MILVUS_INSERT_SLEEP,
+    MILVUS_FLUSH_EVERY,
+    MILVUS_CPU_PAUSE_THRESHOLD,
+    MILVUS_CPU_MAX_WAIT,
+)
+
+from typing import List, Dict, Any
+
 from pymilvus import (
     connections,
     Collection,
     CollectionSchema,
     FieldSchema,
     DataType,
-    utility
+    utility,
 )
 
 logger = logging.getLogger(__name__)

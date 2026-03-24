@@ -1,43 +1,34 @@
-export const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000/api/v1';
+// Base URL — backend runs with /api/v1 prefix (confirmed from server logs)
+export const API_BASE_URL =
+  process.env.REACT_APP_API_BASE_URL;
+
+console.log(API_BASE_URL)
+// Default user ID for MVP (single user — replace with auth later)
+export const DEFAULT_USER_ID = "2a06144d-4675-4c38-b7f8-13c02da91af5";
 
 export const API_ENDPOINTS = {
-  // Auth endpoints
-  AUTH: {
-    LOGIN: '/auth/login',
-    LOGOUT: '/auth/logout',
-    USER_DETAILS: '/auth/userDetails',
-  },
-  
-  // User endpoints
-  USER: {
-    PROFILE: '/users/profile',
-  },
-  
-  // Conversation endpoints
   CONVERSATIONS: {
-    CREATE: '/conversations',
-    LIST: '/conversations',
-    GET_MESSAGES: (conversationId) => `/conversations/${conversationId}/messages`,
+    CREATE: "/conversations",
+    LIST: (userId) => `/conversations/user/${userId}`,
+    GET: (conversationId) => `/conversations/${conversationId}`,
+    DELETE: (conversationId) => `/conversations/${conversationId}`,
   },
-  
-  // Chat endpoints
+  MESSAGES: {
+    LIST: (conversationId) => `/messages/${conversationId}`,
+  },
   CHAT: {
-    MESSAGE: '/chat/message',
+    STREAM: "/chat/stream",
   },
-  
-  // Source endpoints
-  SOURCES: {
-    GET: '/sources',
-  },
+  HEALTH: "/health",
 };
 
 export const MESSAGE_ROLES = {
-  USER: 'user',
-  ASSISTANT: 'assistant',
+  USER: "user",
+  ASSISTANT: "assistant",
 };
 
 export const ERROR_MESSAGES = {
-  NETWORK_ERROR: 'Network error. Please check your connection.',
-  AUTH_ERROR: 'Authentication failed. Please sign in again.',
-  GENERIC_ERROR: 'Something went wrong. Please try again.',
+  NETWORK_ERROR: "Network error. Please check your connection.",
+  AUTH_ERROR: "Authentication failed. Please sign in again.",
+  GENERIC_ERROR: "Something went wrong. Please try again.",
 };

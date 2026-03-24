@@ -1,116 +1,205 @@
-import { useState, useCallback, useRef } from 'react';
-import chatService from '../services/chatService';
-import conversationService from '../services/conversationService';
-import { MESSAGE_ROLES } from '../utils/constants';
+import { useState, useCallback, useRef, useEffect } from "react";
+import chatService from "../services/chatService";
+import conversationService from "../services/conversationService";
+import { MESSAGE_ROLES } from "../utils/constants";
 
-/**
- * Custom hook for managing chat functionality
- */
-const useChat = (conversationId) => {
+const useChat = (
+  conversationId,
+  onConversationCreated,
+  moveConversationToTop
+) => {
+
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [streamingMessage, setStreamingMessage] = useState('');
+  const [streamingMessage, setStreamingMessage] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const abortControllerRef = useRef(null);
 
-  /**
-   * Load messages for a conversation
-   */
+  const abortRef = useRef(null);
+
+  // ✅ Load messages when selecting conversation
   const loadMessages = useCallback(async () => {
-    if (!conversationId) return;
+
+    if (!conversationId) {
+      setMessages([]);   // important for welcome page
+      return;
+    }
 
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await conversationService.getConversationMessages(conversationId);
-      setMessages(response.messages || response || []);
+
+      const data =
+        await conversationService.getConversationWithMessages(conversationId);
+
+      const msgs =
+        Array.isArray(data.messages)
+          ? data.messages
+          : [];
+
+      const normalized = msgs.map(m => ({
+        id: m.message_id,
+        role: m.role,
+        content: m.content || "",
+        sources: m.sources || [],
+        timestamp: m.created_at || new Date().toISOString(),
+      }));
+
+      setMessages(normalized);
+
     } catch (err) {
-      setError(err.message || 'Failed to load messages');
-      console.error('Error loading messages:', err);
+
+      console.error("[useChat] loadMessages error:", err);
+      setError("Failed to load messages");
+
     } finally {
+
       setIsLoading(false);
+
     }
+
   }, [conversationId]);
 
-  /**
-   * Send a message with streaming response
-   */
+  // ✅ Send message (creates conversation if needed)
   const sendMessage = useCallback(async (messageText) => {
-    if (!conversationId || !messageText.trim()) return;
 
-    // Add user message immediately
+    if (!messageText.trim()) {
+      setError("Please enter a message");
+      return;
+    }
+
     const userMessage = {
+      id: crypto.randomUUID(),
       role: MESSAGE_ROLES.USER,
       content: messageText,
+      sources: [],
       timestamp: new Date().toISOString(),
     };
 
     setMessages(prev => [...prev, userMessage]);
+
     setIsStreaming(true);
-    setStreamingMessage('');
+    setStreamingMessage("");
     setError(null);
 
-    // Placeholder for assistant message
-    const assistantMessageIndex = messages.length + 1;
+    let firstTokenReceived = false;
 
-    try {
-      // Start streaming
-      abortControllerRef.current = chatService.sendMessage(
-        conversationId,
-        messageText,
-        // onChunk - called for each text chunk
-        (chunk) => {
-          setStreamingMessage(prev => prev + chunk);
-        },
-        // onComplete - called when streaming is done
-        (data) => {
-          const assistantMessage = {
-            role: MESSAGE_ROLES.ASSISTANT,
-            content: data.message,
-            sources: data.sources || [],
-            timestamp: new Date().toISOString(),
-          };
+    // If no conversation selected → backend will create one
+    const activeConversationId = conversationId || null;
 
-          setMessages(prev => [...prev, assistantMessage]);
-          setStreamingMessage('');
-          setIsStreaming(false);
-        },
-        // onError
-        (err) => {
-          setError(err.message || 'Failed to get response');
-          setIsStreaming(false);
-          setStreamingMessage('');
+    abortRef.current = chatService.sendMessage(
+
+      activeConversationId,
+      messageText,
+
+      // STREAM TOKEN
+      (token) => {
+
+        if (!firstTokenReceived) {
+          firstTokenReceived = true;
+          setStreamingMessage("");
         }
-      );
-    } catch (err) {
-      setError(err.message || 'Failed to send message');
-      setIsStreaming(false);
-      setStreamingMessage('');
-      console.error('Error sending message:', err);
-    }
-  }, [conversationId, messages.length]);
 
-  /**
-   * Stop the current streaming
-   */
+        setStreamingMessage(prev => prev + token);
+
+      },
+
+      // COMPLETE
+      (data) => {
+
+        const assistantMessage = {
+          id: data.messageId || crypto.randomUUID(),
+          role: MESSAGE_ROLES.ASSISTANT,
+          content: data.message,
+          sources: data.sources || [],
+          timestamp: new Date().toISOString(),
+        };
+
+        setMessages(prev => [...prev, assistantMessage]);
+        setStreamingMessage("");
+        setIsStreaming(false);
+
+        // ✅ Backend created conversation
+if (data.conversationId) {
+
+  const backendTitle =
+    data.metadata?.conversation_title;
+
+  if (onConversationCreated) {
+    onConversationCreated(
+      data.conversationId,
+      backendTitle
+    );
+  }
+
+  if (moveConversationToTop) {
+    moveConversationToTop(data.conversationId);
+  }
+}
+      },
+
+      // ERROR
+      (err) => {
+
+        console.error("Chat Error:", err);
+
+        setError(
+          err?.message ||
+          "Failed to generate response"
+        );
+
+        setIsStreaming(false);
+        setStreamingMessage("");
+      }
+
+    );
+
+  }, [
+    conversationId,
+    onConversationCreated,
+    moveConversationToTop
+  ]);
+
+  // ✅ Stop streaming
   const stopStreaming = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current();
-      setIsStreaming(false);
-      setStreamingMessage('');
-    }
-  }, []);
 
-  /**
-   * Clear all messages
-   */
+    if (abortRef.current) {
+
+      abortRef.current();
+      abortRef.current = null;
+
+      if (streamingMessage) {
+
+        setMessages(prev => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: MESSAGE_ROLES.ASSISTANT,
+            content: streamingMessage,
+            sources: [],
+            timestamp: new Date().toISOString(),
+          }
+        ]);
+      }
+
+      setIsStreaming(false);
+      setStreamingMessage("");
+    }
+
+  }, [streamingMessage]);
+
+  // ✅ Clear messages (used for new chat welcome)
   const clearMessages = useCallback(() => {
     setMessages([]);
-    setStreamingMessage('');
+    setStreamingMessage("");
     setError(null);
   }, []);
+
+  // ✅ Load when conversation changes
+  useEffect(() => {
+    loadMessages();
+  }, [loadMessages]);
 
   return {
     messages,

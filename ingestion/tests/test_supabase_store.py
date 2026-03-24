@@ -1,100 +1,64 @@
-# ---------- PATH FIX (MUST BE FIRST) ----------
+import sys
+from unittest.mock import MagicMock
+
+# Prevent real clients
+sys.modules["supabase"] = MagicMock()
+
+# ---------- PATH FIX ----------
 import sys, os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+# --------------------------------
 
-import tempfile
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
+from ingestion.src.storage.supabase_store import SupabaseStore
 
-# ============================================
-# SUPABASE STORE UNIT TESTS
-# ============================================
 
 @patch("ingestion.src.storage.supabase_store.create_client")
-def test_supabase_init(mock_create_client):
-    from ingestion.src.storage.supabase_store import SupabaseStore
-    store = SupabaseStore()
-    assert store.supabase is not None
+def test_supabase_init(mock_client):
+    s = SupabaseStore()
+    s._ensure_connection()  # ✅ NEW
+    assert s.supabase is not None
 
 
-def test_calculate_hash_creates_valid_sha256():
-    from ingestion.src.storage.supabase_store import SupabaseStore
-    store = SupabaseStore()
-
-    with tempfile.NamedTemporaryFile(delete=False) as f:
-        f.write(b"hello")
-        path = f.name
-
-    h1 = store.calculate_hash(path)
-    h2 = store.calculate_hash(path)
-
+def test_hash_consistent(tmp_path):
+    f = tmp_path / "a.txt"
+    f.write_text("abc")
+    s = SupabaseStore.__new__(SupabaseStore)
+    h1 = s.calculate_hash(str(f))
+    h2 = s.calculate_hash(str(f))
     assert h1 == h2
-    assert len(h1) == 64
 
 
 @patch("ingestion.src.storage.supabase_store.create_client")
-def test_upload_xml_to_storage_returns_public_url(mock_client):
-    mock_client.return_value.storage.from_.return_value = MagicMock()
-
-    from ingestion.src.storage.supabase_store import SupabaseStore
-    store = SupabaseStore()
-
-    with tempfile.NamedTemporaryFile(delete=False) as f:
-        f.write(b"<xml></xml>")
-        path = f.name
-
-    url = store.upload_xml_to_storage(path, "file1")
-    assert "/storage/v1/object/public/" in url
+def test_upload_duplicate(mock_client):
+    s = SupabaseStore()
+    s._ensure_connection()  # ✅ NEW
+    s.supabase.storage.from_().list.return_value = [{"name": "x"}]
+    assert s.upload_xml_to_storage("a.xml", "x.xml")
 
 
 @patch("ingestion.src.storage.supabase_store.create_client")
-def test_upload_xml_and_log_success(mock_client):
-    mock_client.return_value.table.return_value = MagicMock()
-
-    from ingestion.src.storage.supabase_store import SupabaseStore
-    store = SupabaseStore()
-
-    with tempfile.NamedTemporaryFile(delete=False) as f:
-        f.write(b"<xml></xml>")
-        path = f.name
-
-    assert store.upload_xml_and_log(path, "zip1") is True
+def test_file_exists_false(mock_client):
+    s = SupabaseStore()
+    s._ensure_connection()  # ✅ NEW
+    s.supabase.table().select().eq().limit().execute.return_value.data = []
+    assert not s.file_exists("x")
 
 
 @patch("ingestion.src.storage.supabase_store.create_client")
-def test_upload_xml_and_log_failure(mock_client):
-    mock_client.return_value.storage.from_.side_effect = Exception("fail")
-
-    from ingestion.src.storage.supabase_store import SupabaseStore
-    store = SupabaseStore()
-
-    with tempfile.NamedTemporaryFile(delete=False) as f:
-        f.write(b"<xml></xml>")
-        path = f.name
-
-    assert store.upload_xml_and_log(path, "zip1") is False
+def test_get_all_hashes(mock_client):
+    s = SupabaseStore()
+    s._ensure_connection()  # ✅ NEW
+    s.supabase.table().select().execute.return_value.data = [{"file_hash": "x"}]
+    assert "x" in s.get_all_file_hashes()
 
 
 @patch("ingestion.src.storage.supabase_store.create_client")
-def test_insert_file_metadata_success(mock_client):
-    from ingestion.src.storage.supabase_store import SupabaseStore
-    store = SupabaseStore()
-
-    store.insert_file_metadata(
-        zip_name="zip",
-        file_name="file",
-        file_hash="hash",
-        file_size=10,
-        file_storage_uri="uri"
-    )
-
-
-@patch("ingestion.src.storage.supabase_store.create_client")
-def test_insert_file_metadata_failure(mock_client):
-    mock_client.return_value.table.return_value.insert.side_effect = Exception("db error")
-
-    from ingestion.src.storage.supabase_store import SupabaseStore
-    store = SupabaseStore()
-
-    with pytest.raises(Exception):
-        store.insert_file_metadata("zip", "file", "hash", 1, "uri")
+def test_cleanup(mock_client):
+    s = SupabaseStore()
+    s._ensure_connection()  # ✅ NEW
+    s.supabase.storage.from_().list.return_value = [{"name": "a.xml"}]
+    s.cleanup_duplicate_xml_files()

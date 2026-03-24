@@ -1,42 +1,41 @@
-import React, { useEffect } from 'react';
-import MainLayout from '../components/layout/MainLayout';
-import ChatContainer from '../components/chat/ChatContainer';
-import useConversations from '../hooks/useConversations';
+import React from "react";
+import MainLayout from "../components/layout/MainLayout";
+import ChatContainer from "../components/chat/ChatContainer";
+import useConversations from "../hooks/useConversations";
 
 const ChatPage = () => {
+
   const {
     conversations,
     isLoading,
     currentConversationId,
-    createConversation,
     selectConversation,
     deleteConversation,
+    handleAutoCreatedConversation,
+    moveConversationToTop,
+    setCurrentConversationId
   } = useConversations();
-
-  useEffect(() => {
-    if (!currentConversationId && conversations.length > 0) {
-      selectConversation(conversations[0].id);
-    }
-  }, [currentConversationId, conversations, selectConversation]);
-
-  const handleNewChat = async () => {
-    await createConversation();
-  };
-
-  const handleDeleteChat = async (conversationId) => {
-    await deleteConversation(conversationId);
-  };
 
   return (
     <MainLayout
       conversations={conversations}
       currentConversationId={currentConversationId}
+
+      // ✅ Clicking New Chat only opens empty welcome page
+      onNewChat={() => {
+        localStorage.removeItem("conversationId");
+        setCurrentConversationId(null);
+      }}
+
       onSelectConversation={selectConversation}
-      onNewChat={handleNewChat}
-      onDeleteConversation={handleDeleteChat}
+      onDeleteConversation={deleteConversation}
       isLoadingConversations={isLoading}
     >
-    <ChatContainer conversationId={currentConversationId} />
+      <ChatContainer
+        conversationId={currentConversationId}
+        onConversationCreated={handleAutoCreatedConversation}
+        moveConversationToTop={moveConversationToTop}
+      />
     </MainLayout>
   );
 };

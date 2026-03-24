@@ -1,60 +1,49 @@
-import axios from 'axios';
-import { API_BASE_URL } from '../utils/constants';
+import axios from "axios";
+import { API_BASE_URL } from "../utils/constants";
 
-// Create axios instance
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: `${API_BASE_URL}/api/v1`,
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
-// Request interceptor to add Clerk token
+// Request interceptor
 api.interceptors.request.use(
   async (config) => {
     try {
-      // Get Clerk session token
-      const clerkToken = await window.Clerk?.session?.getToken();
-      
-      if (clerkToken) {
-        config.headers.Authorization = `Bearer ${clerkToken}`;
-      }
-      
-      return config;
+      // Enable when backend auth is ready
+      // const clerkToken = await window.Clerk?.session?.getToken();
+      // if (clerkToken) {
+      //   config.headers.Authorization = `Bearer ${clerkToken}`;
+      // }
     } catch (error) {
-      console.error('Error adding auth token:', error);
-      return config;
+      console.error("Error adding auth token:", error);
     }
+    return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
-
-// Response interceptor for error handling
+// Response interceptor
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    let message = "Something went wrong";
+
     if (error.response) {
-      // Server responded with error
-      const { status, data } = error.response;
-      
-      if (status === 401) {
-        // Unauthorized - redirect to sign in
-        window.location.href = '/sign-in';
-      } else if (status === 403) {
-        console.error('Access forbidden:', data);
-      } else if (status === 500) {
-        console.error('Server error:', data);
-      }
-    } else if (error.request) {
-      // Request made but no response
-      console.error('Network error:', error.message);
-    } else {
-      // Something else happened
-      console.error('Error:', error.message);
+      message =
+        error.response.data?.message ||   // ✅ backend global handler
+        error.response.data?.detail ||    // fallback
+        "Something went wrong";
+    } 
+    else if (error.request) {
+      message = "Server not reachable";
     }
-    
+
+    // 🔥 POPUP HERE
+    alert(message);
+
+    // ❗ IMPORTANT: return original error (not new Error)
     return Promise.reject(error);
   }
 );

@@ -106,7 +106,6 @@
 // }
 
 // export default App;
-import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import SignInPage from "./pages/SignInPage";
@@ -135,3 +134,4 @@ function App() {
 }
 
 export default App;
+

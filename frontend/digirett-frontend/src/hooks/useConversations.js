@@ -1,122 +1,294 @@
-import { useState, useCallback, useEffect } from 'react';
-import conversationService from '../services/conversationService';
+import { useState, useCallback, useEffect } from "react";
+import conversationService from "../services/conversationService";
 
-/**
- * Custom hook for managing conversations
- */
 const useConversations = () => {
   const [conversations, setConversations] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentConversationId, setCurrentConversationId] = useState(null);
+    useEffect(() => {
 
-  /**
-   * Load all conversations
-   */
-  const loadConversations = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+    const savedId = localStorage.getItem("conversationId");
 
-    try {
-      const response = await conversationService.listConversations();
-      const conversationList = response.conversations || response || [];
-      setConversations(conversationList);
-
-      // Set current conversation if none selected
-      if (!currentConversationId && conversationList.length > 0) {
-        setCurrentConversationId(conversationList[0].id || conversationList[0].conversation_id);
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to load conversations');
-      console.error('Error loading conversations:', err);
-    } finally {
-      setIsLoading(false);
+    if (savedId) {
+      setCurrentConversationId(savedId);
     }
-  }, [currentConversationId]);
+
+  }, []);
+  /**
+   * Load all conversations for the default user
+   * GET /conversations/user/{user_id}
+   */
+const loadConversations = useCallback(async () => {
+
+  setIsLoading(true);
+  setError(null);
+
+  try {
+
+    const data =
+      await conversationService.listConversations();
+
+    const list =
+      Array.isArray(data) ? data : [];
+
+    // Sort latest first
+    const sorted =
+      list.sort(
+        (a,b)=>
+          new Date(b.updated_at) -
+          new Date(a.updated_at)
+      );
+
+    setConversations(sorted);
+
+  } catch(err){
+
+    setError(
+      err.message ||
+      "Failed to load conversations"
+    );
+
+    console.error(
+      "Error loading conversations:",
+      err
+    );
+
+  } finally {
+
+    setIsLoading(false);
+
+  }
+
+}, []);
 
   /**
    * Create a new conversation
+   * POST /conversations
    */
-  const createConversation = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+const createConversation = useCallback(async () => {
 
-    try {
-      const response = await conversationService.createNewConversation();
-      const newConversation = response.conversation || response;
-      
-      setConversations(prev => [newConversation, ...prev]);
-      setCurrentConversationId(newConversation.id || newConversation.conversation_id);
-      
-      return newConversation;
-    } catch (err) {
-      setError(err.message || 'Failed to create conversation');
-      console.error('Error creating conversation:', err);
-      throw err;
-    } finally {
-      setIsLoading(false);
+  // 🛑 If already in newest conversation AND it has no messages yet,
+  // don't create another one
+  if (currentConversationId && conversations.length > 0) {
+
+    const newest = conversations[0];
+
+    if (newest.conversation_id === currentConversationId) {
+      return newest;
     }
-  }, []);
+  }
 
+  setIsLoading(true);
+  setError(null);
+
+  try {
+
+    const newConversation =
+      await conversationService.createNewConversation();
+
+    setConversations(prev => [
+      newConversation,
+      ...prev
+    ]);
+
+    setCurrentConversationId(
+      newConversation.conversation_id
+    );
+
+    return newConversation;
+
+  } catch (err) {
+
+    setError(err.message || "Failed to create conversation");
+    console.error("Error creating conversation:", err);
+    throw err;
+
+  } finally {
+
+    setIsLoading(false);
+
+  }
+
+}, [currentConversationId, conversations]);
   /**
-   * Select a conversation
+   * Select a conversation by ID (sidebar click)
    */
-  const selectConversation = useCallback((conversationId) => {
-    setCurrentConversationId(conversationId);
-  }, []);
+const selectConversation = useCallback((conversationId) => {
 
+  setCurrentConversationId(conversationId);
+
+  if (conversationId) {
+    localStorage.setItem("conversationId", conversationId);
+  }
+
+}, []);
   /**
    * Delete a conversation
+   * DELETE /conversations/{conversation_id}
+   * Removes from sidebar immediately (optimistic) — never blocks user
    */
-  const deleteConversation = useCallback(async (conversationId) => {
-    try {
-      await conversationService.deleteConversation(conversationId);
-      setConversations(prev => prev.filter(conv => 
-        (conv.id || conv.conversation_id) !== conversationId
-      ));
+  const deleteConversation = useCallback(
+    async (conversationId) => {
+      // ── Optimistic remove from UI first ──
+      setConversations((prev) =>
+        prev.filter((conv) => conv.conversation_id !== conversationId)
+      );
 
-      // If deleted conversation was selected, select another one
-      if (currentConversationId === conversationId) {
-        const remaining = conversations.filter(conv => 
-          (conv.id || conv.conversation_id) !== conversationId
-        );
-        if (remaining.length > 0) {
-          setCurrentConversationId(remaining[0].id || remaining[0].conversation_id);
-        } else {
-          setCurrentConversationId(null);
-        }
+if (currentConversationId === conversationId) {
+
+  const remaining = conversations.filter(
+    conv => conv.conversation_id !== conversationId
+  );
+
+  // ✅ If chats exist → open latest
+  if (remaining.length > 0) {
+    setCurrentConversationId(remaining[0].conversation_id);
+  }
+  // ✅ If no chats → go to welcome page
+  else {
+    setCurrentConversationId(null);
+    localStorage.removeItem("conversationId");
+  }
+}
+
+      // ── Then call backend (errors are swallowed — UI already updated) ──
+      try {
+        await conversationService.deleteConversation(conversationId);
+      } catch (err) {
+        // Don't re-add to UI or show error — just log
+        console.error("Backend delete failed but UI already updated:", err);
       }
-    } catch (err) {
-      console.error('Error deleting conversation:', err);
-      throw err;
-    }
-  }, [conversations, currentConversationId]);
+    },
+    [conversations, currentConversationId]
+  );
 
   /**
-   * Get current conversation object
+   * Get the current conversation object
    */
   const getCurrentConversation = useCallback(() => {
-    return conversations.find(conv => 
-      (conv.id || conv.conversation_id) === currentConversationId
+    return conversations.find(
+      (conv) => conv.conversation_id === currentConversationId
     );
   }, [conversations, currentConversationId]);
+  /**
+   * Move conversation to top after message
+   */
+  const moveConversationToTop = useCallback((conversationId) => {
 
-  // Load conversations on mount
+    setConversations(prev => {
+
+      const selected =
+        prev.find(
+          c =>
+          c.conversation_id ===
+          conversationId
+        );
+
+      if(!selected) return prev;
+
+      const updated = {
+        ...selected,
+        updated_at:
+          new Date().toISOString()
+      };
+
+      const others =
+        prev.filter(
+          c =>
+          c.conversation_id !==
+          conversationId
+        );
+
+      return [
+        updated,
+        ...others
+      ];
+
+    });
+
+  }, []);
+
+  /**
+   * Called by ChatPage when backend auto-creates a conversation
+   * during /chat/stream (conversation_id was null)
+   */
+const handleAutoCreatedConversation = useCallback(
+(newConversationId, backendTitle) => {
+
+  if (!newConversationId) return;
+
+  setCurrentConversationId(newConversationId);
+
+  setConversations(prev => {
+
+    let found = false;
+
+    const updated = prev.map(c => {
+
+      if (c.conversation_id === newConversationId) {
+
+        found = true;
+
+        return {
+          ...c,
+
+          // ✅ Always update title if backend sends it
+          title:
+            backendTitle
+            ? backendTitle
+            : c.title || "New Chat",
+
+          updated_at:
+            new Date().toISOString()
+        };
+      }
+
+      return c;
+    });
+
+    // If not found → create
+    if (!found) {
+
+      return [
+        {
+          conversation_id: newConversationId,
+
+          title:
+            backendTitle || "New Chat",
+
+          updated_at:
+            new Date().toISOString()
+        },
+
+        ...updated
+      ];
+    }
+
+    return [...updated];
+
+  });
+
+}, []);
+  // Load on mount
   useEffect(() => {
     loadConversations();
   }, []);
 
   return {
-    conversations,
-    isLoading,
-    error,
-    currentConversationId,
-    loadConversations,
-    createConversation,
-    selectConversation,
-    deleteConversation,
-    getCurrentConversation,
-  };
+  conversations,
+  isLoading,
+  error,
+  currentConversationId,
+  setCurrentConversationId,
+  loadConversations,
+  createConversation,
+  selectConversation,
+  deleteConversation,
+  getCurrentConversation,
+  handleAutoCreatedConversation,
+  moveConversationToTop
+};
 };
 
 export default useConversations;

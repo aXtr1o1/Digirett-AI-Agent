@@ -20,21 +20,54 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+# TOKEN COUNTER (unchanged)
+# ============================================================================
+
+class TokenCounter:
+    def __init__(self, encoding_name: str = "cl100k_base"):
+        if TIKTOKEN_AVAILABLE:
+            try:
+                self.encoding = tiktoken.get_encoding(encoding_name)
+                self.method = "tiktoken"
+                logger.info(f"✅ Token counter initialized with {encoding_name}")
+            except Exception as e:
+                logger.warning(f"Failed to load tiktoken encoding: {e}")
+                self.encoding = None
+                self.method = "estimate"
+        else:
+            self.encoding = None
+            self.method = "estimate"
+
+    def count_tokens(self, text: str) -> int:
+        if not text:
+            return 0
+        if self.method == "tiktoken" and self.encoding:
+            try:
+                return len(self.encoding.encode(text))
+            except Exception:
+                return self._estimate_tokens(text)
+        return self._estimate_tokens(text)
+
+    def _estimate_tokens(self, text: str) -> int:
+        return len(text) // 4
+
+
+# ============================================================================
 # DATA MODELS
 # ============================================================================
 
 @dataclass
 class ParentNode:
-    """Parent heading (§, Kapittel, Artikkel, or dynamic heading)"""
     parent_index: int
     parent_title: str
     parent_type: str
+    paragraph_number: Optional[str] = None   # ✅ NEW: "§ 3-4", "Kapittel 2" etc.
+    kapittel: Optional[str] = None           # ✅ NEW: current chapter heading
     children: List[Dict] = field(default_factory=list)
 
 
 @dataclass
 class DocumentMetadata:
-    """Norwegian document-level metadata"""
     file_name: str
     file_hash: str
     datokode: Optional[str] = None
@@ -47,15 +80,16 @@ class DocumentMetadata:
     rettsomrade: Optional[str] = None
     publisert_i: Optional[str] = None
     kunngjort: Optional[str] = None
-    
+    lovdata_url: Optional[str] = None        # ✅ NEW: canonical URL
+    law_short_name: Optional[str] = None     # ✅ NEW: "aksjeloven", "merverdiavgiftsloven"
+    is_amendment: bool = False               # ✅ NEW: True for LTI/amendment laws
+
     def to_dict(self) -> Dict:
-        """Convert to dictionary"""
         return {k: v for k, v in self.__dict__.items() if v is not None}
 
 
 @dataclass
 class Chunk:
-    """Individual chunk with all metadata"""
     chunk_id: str
     file_name: str
     file_hash: str
@@ -64,10 +98,20 @@ class Chunk:
     parent_type: str
     parent_title: str
     text: str
+    enriched_text: str = ""          # ✅ NEW: text with context prefix for embedding
+    token_count: int = 0
+    is_split: bool = False
+    split_index: int = 0
+    paragraph_number: Optional[str] = None   # ✅ NEW
+    kapittel: Optional[str] = None           # ✅ NEW
+    law_short_name: Optional[str] = None     # ✅ NEW
+    lovdata_url: Optional[str] = None        # ✅ NEW
+    is_amendment: bool = False               # ✅ NEW
     metadata: Optional[Dict] = None
-    
+    article_title: Optional[str] = None
+
+
     def to_dict(self) -> Dict:
-        """Convert to dictionary for storage"""
         result = {
             "chunk_id": self.chunk_id,
             "file_name": self.file_name,
@@ -213,8 +257,7 @@ class NorwegianLovdataParser:
         'kunngjort': r'^\s*[-•]?\s*Kunngjort\s*[:\-]\s*(.+)$',
         'year': r'^\s*YEAR:\s*(\d{4})\s*$'
     }
-    
-    # Separator pattern
+
     SEPARATOR_PATTERN = re.compile(r'^-{3,}$')
     
     # Norwegian legal structure patterns
@@ -230,18 +273,25 @@ class NorwegianLovdataParser:
         'roman': re.compile(r'^([IVXLCDM]+)\.?\s+(.+)$'),
         'numbered_dot': re.compile(r'^(\d+)\.?\s+([A-ZÆØÅ].+)$'),
     }
-    
+
+    # ✅ NEW: Patterns that are NOT real parents (amendment markers, table of contents)
+    AMENDMENT_LINE_PATTERNS = [
+        re.compile(r'skal lyde\s*:', re.IGNORECASE),
+        re.compile(r'ny\s+§', re.IGNORECASE),
+        re.compile(r'oppheves', re.IGNORECASE),
+        re.compile(r'endres til', re.IGNORECASE),
+        re.compile(r'tilføyes', re.IGNORECASE),
+    ]
+
     @staticmethod
     def is_separator(line: str) -> bool:
-        """Check if line is separator marking end of metadata"""
         try:
             return NorwegianLovdataParser.SEPARATOR_PATTERN.match(line.strip()) is not None
         except:
             return False
-    
+
     @staticmethod
     def is_metadata_line(line: str) -> bool:
-        """Check if line is metadata (skip these lines)"""
         try:
             if not line or len(line) > 300:
                 return False
@@ -256,12 +306,11 @@ class NorwegianLovdataParser:
             
             if re.match(r'^\s*[-•]?\s*Innhold\s*$', line, re.IGNORECASE):
                 return True
-                
             return False
         except Exception as e:
             logger.debug(f"Error in is_metadata_line: {e}")
             return False
-    
+
     @staticmethod
     def classify_norwegian_parent(line: str) -> Optional[Tuple[str, str]]:
         """
@@ -271,32 +320,27 @@ class NorwegianLovdataParser:
         try:
             if len(line) > 300:
                 return None
-            
             line_stripped = line.strip()
             
             for pattern_name, pattern in NorwegianLovdataParser.NORWEGIAN_PATTERNS.items():
                 match = pattern.match(line_stripped)
                 if match:
                     return (pattern_name, line_stripped)
-            
             return None
-        
         except Exception as e:
             logger.debug(f"Error in classify_norwegian_parent: {e}")
             return None
-    
+
     @staticmethod
     def is_dynamic_parent(line: str) -> bool:
         """Check if line looks like a heading (fallback logic)"""
         try:
             if not line or len(line) < 3:
                 return False
-            
             line_stripped = line.strip()
             
             if NorwegianLovdataParser.is_metadata_line(line_stripped):
                 return False
-            
             word_count = len(line_stripped.split())
             
             if word_count > 20 or len(line_stripped) > 200:
@@ -312,10 +356,8 @@ class NorwegianLovdataParser:
             
             if ends_with_colon:
                 return True
-            
             if is_all_caps and word_count <= 10:
                 return True
-            
             if ends_with_period and 2 <= word_count <= 12 and is_capitalized:
                 common_verbs = ['er', 'skal', 'kan', 'må', 'blir', 'har', 'vil']
                 if not any(verb in line_stripped.lower().split() for verb in common_verbs):
@@ -323,16 +365,13 @@ class NorwegianLovdataParser:
             
             if re.match(r'^([A-ZÆØÅ]|\d+)\.?\s+[A-ZÆØÅ]', line_stripped):
                 return True
-            
             return False
-        
         except Exception as e:
             logger.debug(f"Error in is_dynamic_parent: {e}")
             return False
-    
+
     @staticmethod
     def is_child_content(line: str) -> bool:
-        """Check if line is actual content (children)"""
         try:
             line_stripped = line.strip()
             
@@ -344,18 +383,14 @@ class NorwegianLovdataParser:
             
             if NorwegianLovdataParser.is_metadata_line(line_stripped):
                 return False
-            
             return True
-        
         except Exception as e:
             logger.debug(f"Error in is_child_content: {e}")
             return False
-    
+
     @staticmethod
     def parse_metadata(lines: List[str]) -> DocumentMetadata:
-        """Extract Norwegian document metadata from header"""
         metadata = {}
-        
         try:
             separator_idx = None
             for i, line in enumerate(lines[:100]):
@@ -382,10 +417,9 @@ class NorwegianLovdataParser:
                 year_match = re.search(r'(\d{4})', metadata['datokode'])
                 if year_match:
                     year = int(year_match.group(1))
-        
         except Exception as e:
             logger.warning(f"Error parsing metadata: {e}")
-        
+
         return DocumentMetadata(
             file_name="",
             file_hash="",
@@ -398,9 +432,9 @@ class NorwegianLovdataParser:
             i_kraft_fra=metadata.get('i_kraft_fra'),
             rettsomrade=metadata.get('rettsomrade'),
             publisert_i=metadata.get('publisert_i'),
-            kunngjort=metadata.get('kunngjort')
+            kunngjort=metadata.get('kunngjort'),
         )
-    
+
     @classmethod
     def parse_file(cls, text: str, file_name: str) -> Tuple[DocumentMetadata, List[ParentNode]]:
         """
@@ -421,8 +455,10 @@ class NorwegianLovdataParser:
             parents = []
             current_parent = None
             parent_index = 0
+            parent_index = 0
             in_innhold = False
-            
+            current_kapittel = None   # ✅ Track current chapter
+
             for line in lines[content_start:]:
                 try:
                     if len(line) < 3:
@@ -439,7 +475,7 @@ class NorwegianLovdataParser:
                     
                     # Check for Norwegian legal patterns
                     norwegian_parent = cls.classify_norwegian_parent(line)
-                    
+
                     if norwegian_parent is not None:
                         current_parent = ParentNode(
                             parent_index=parent_index,
@@ -454,7 +490,10 @@ class NorwegianLovdataParser:
                         current_parent = ParentNode(
                             parent_index=parent_index,
                             parent_title=line.strip(),
+                            parent_title=line.strip(),
                             parent_type="dynamic_heading",
+                            paragraph_number=None,
+                            kapittel=current_kapittel,
                             children=[]
                         )
                         parents.append(current_parent)
@@ -472,20 +511,18 @@ class NorwegianLovdataParser:
                             })
                 
                 except Exception as e:
-                    logger.warning(f"Error processing line '{line[:50]}...': {e}")
+                    logger.warning(f"Error processing line '{line[:50]}': {e}")
                     continue
             
             # Create default parent if needed
             if not parents and lines[content_start:]:
                 logger.warning(f"No parents found in {file_name}, creating default parent")
-                
                 default_parent = ParentNode(
                     parent_index=0,
                     parent_title="Dokumentinnhold",
                     parent_type="default",
                     children=[]
                 )
-                
                 for idx, line in enumerate(lines[content_start:]):
                     if cls.is_child_content(line):
                         # Split long content
@@ -499,36 +536,33 @@ class NorwegianLovdataParser:
                 
                 if default_parent.children:
                     parents.append(default_parent)
-            
+
             return doc_metadata, parents
-        
+
         except Exception as e:
             logger.error(f"Error parsing file {file_name}: {e}")
             return DocumentMetadata(file_name=file_name, file_hash=""), []
 
 
 # ============================================================================
-# FILE HASH & CHUNK ID GENERATION
+# FILE HASH & CHUNK ID GENERATION (unchanged)
 # ============================================================================
 
 class FileHasher:
-    """Calculate file hashes and generate chunk IDs"""
-    
     @staticmethod
     def hash_file(content: str) -> str:
-        """Calculate SHA-256 hash of file content"""
         try:
             return hashlib.sha256(content.encode('utf-8')).hexdigest()
         except Exception as e:
             logger.error(f"Error hashing file: {e}")
             return hashlib.sha256(b"error").hexdigest()
-    
+
     @staticmethod
     def generate_chunk_id(file_hash: str, parent_idx: int, child_idx: int) -> str:
         """Generate stable, unique chunk ID using UUID"""
         try:
             namespace = uuid.NAMESPACE_DNS
-            seed = f"{file_hash}_{parent_idx:04d}_{child_idx:04d}"
+            seed = f"{file_hash}_{parent_idx:04d}_{child_idx:04d}_{split_idx:04d}"
             return str(uuid.uuid5(namespace, seed))
         except Exception as e:
             logger.error(f"Error generating chunk ID: {e}")
@@ -536,13 +570,36 @@ class FileHasher:
 
 
 # ============================================================================
-# MAIN CHUNKER
+# MAIN CHUNKER (TOKEN-BASED v2 with enrichment)
 # ============================================================================
 
 class NorwegianLovdataChunker:
-    def __init__(self):
+    """
+    ✅ v2: Token-based + Contextual Enrichment + Paragraph Grouping
+
+    Accuracy improvements:
+    - enriched_text carries law name + paragraph title → embed this, not raw text
+    - Paragraph grouper merges fragmented child lines → coherent semantic units
+    - Amendment detection → flag LTI files for deprioritization at retrieval time
+    - Kapittel tracking → chunk knows which chapter it's in
+    - Richer chunk metadata → allows post-retrieval filtering by law name/URL
+    """
+
+    def __init__(self, max_tokens: int = 400, overlap_tokens: int = 50):
         self.parser = NorwegianLovdataParser()
         self.hasher = FileHasher()
+        self.token_counter = TokenCounter()
+        self.text_splitter = TokenBoundTextSplitter(
+            max_tokens=max_tokens,
+            overlap_tokens=overlap_tokens,
+            token_counter=self.token_counter
+        )
+        self.paragraph_grouper = ParagraphGrouper(        # ✅ NEW
+            max_tokens=max_tokens,
+            token_counter=self.token_counter
+        )
+        self.enricher = ChunkEnricher()                   # ✅ NEW
+        self.law_mapper = LawNameMapper()                 # ✅ NEW
         self.error_files = []
         self.success_files = []
     
@@ -553,8 +610,23 @@ class NorwegianLovdataChunker:
             
             doc_metadata, parents = self.parser.parse_file(text, file_name)
             doc_metadata.file_hash = file_hash
-            
+
+            # 🔥 Inject XML article title into metadata
+            if article_title:
+                doc_metadata.tittel = article_title
+
+            # ✅ Resolve law name and URL
+            law_short_name, lovdata_url, is_amendment = self.law_mapper.resolve(
+                file_name,
+                korttittel=doc_metadata.korttittel
+            )
+            doc_metadata.law_short_name = law_short_name
+            doc_metadata.lovdata_url = lovdata_url
+            doc_metadata.is_amendment = is_amendment
+
             chunks = []
+            total_splits = 0
+
             for parent in parents:
                 for child in parent.children:
                     chunk_id = self.hasher.generate_chunk_id(
@@ -580,32 +652,26 @@ class NorwegianLovdataChunker:
                         continue
                     
                     chunks.append(chunk)
-            
+
             return doc_metadata, chunks
-        
+
         except Exception as e:
             logger.error(f"Error chunking {file_name}: {e}")
             return DocumentMetadata(file_name=file_name, file_hash=""), []
     
     def chunk_file(self, file_path: str) -> Tuple[DocumentMetadata, List[Chunk]]:
-        """Chunk a file from disk"""
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 text = f.read()
-            
-            file_name = os.path.basename(file_path)
-            return self.chunk_text(text, file_name)
-        
+            return self.chunk_text(text, os.path.basename(file_path))
         except UnicodeDecodeError:
             try:
                 with open(file_path, 'r', encoding='latin-1') as f:
                     text = f.read()
-                file_name = os.path.basename(file_path)
-                return self.chunk_text(text, file_name)
+                return self.chunk_text(text, os.path.basename(file_path))
             except Exception as e:
                 logger.error(f"Error reading {file_path} with latin-1: {e}")
                 return DocumentMetadata(file_name=os.path.basename(file_path), file_hash=""), []
-        
         except Exception as e:
             logger.error(f"Error reading {file_path}: {e}")
             return DocumentMetadata(file_name=os.path.basename(file_path), file_hash=""), []
@@ -1443,8 +1509,8 @@ class NorwegianLovdataChunker:
             parent_types = {}
             for chunk in chunks:
                 parent_types[chunk.parent_type] = parent_types.get(chunk.parent_type, 0) + 1
-            
             chunk_lengths = [len(chunk.text) for chunk in chunks]
+            token_counts = [chunk.token_count for chunk in chunks]
             token_counts = [chunk.token_count for chunk in chunks]
             unique_parents = len(set(chunk.parent_index for chunk in chunks))
             split_chunks = sum(1 for chunk in chunks if chunk.is_split)
@@ -1454,14 +1520,18 @@ class NorwegianLovdataChunker:
                 "parent_types": parent_types,
                 "avg_chunk_length": sum(chunk_lengths) / len(chunks),
                 "avg_token_count": sum(token_counts) / len(chunks),
+                "avg_token_count": sum(token_counts) / len(chunks),
                 "total_parents": unique_parents,
                 "min_chunk_length": min(chunk_lengths),
                 "max_chunk_length": max(chunk_lengths),
                 "min_token_count": min(token_counts),
                 "max_token_count": max(token_counts),
                 "split_chunks": split_chunks
+                "max_chunk_length": max(chunk_lengths),
+                "min_token_count": min(token_counts),
+                "max_token_count": max(token_counts),
+                "split_chunks": split_chunks
             }
-        
         except Exception as e:
             logger.error(f"Error calculating statistics: {e}")
             return {"error": str(e)}

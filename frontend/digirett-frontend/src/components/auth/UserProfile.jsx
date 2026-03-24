@@ -87,8 +87,9 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 
-export default function UserProfile() {
+export default function UserProfile({ theme = "dark" }) {
   const navigate = useNavigate();
+  const isDark = theme === "dark";
 
   const logout = () => {
     localStorage.removeItem("user");
@@ -98,11 +99,11 @@ export default function UserProfile() {
   const user = localStorage.getItem("user");
 
   return (
-    <div className="flex items-center gap-3 text-white">
+    <div className={`flex items-center gap-3 ${isDark ? "text-white" : "text-gray-900"}`}>
       <span>{user}</span>
       <button
         onClick={logout}
-        className="bg-red-500 px-3 py-1 rounded"
+        className="bg-red-500 px-3 py-1 rounded text-white"
       >
         Logout
       </button>
