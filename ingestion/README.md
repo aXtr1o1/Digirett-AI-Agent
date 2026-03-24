@@ -58,13 +58,61 @@ python src/main.py
 python -m ingestion.src.main
 ```
 
-## 🔧 Environment Variables
+---
 
-Create `.env` file:
+## ⚙️ Ingestion Modes
 
-```env
-# .env.example
+### ✅ Mode 1 — Lovdata API Ingestion (Recommended)
+
+Pipeline automatically fetches legal XML from Lovdata.
+
+Requires:
+
+```
 LOVDATA_BASE_URL=https://api.lovdata.no
+```
+
+---
+
+### ✅ Mode 2 — Client Excel Dataset Ingestion (Offline Mode)
+
+If Lovdata API is not used, the pipeline can ingest legal data from **client-provided Excel datasets**.
+
+This mode is useful for:
+
+- Client-specific legal datasets
+- Offline deployments
+- Testing environments
+- Data migration workflows
+
+---
+
+## 📄 Configure Client Dataset Folder
+
+Update `.env` file:
+
+```
+# ============================
+# XL Client Dataset
+# ============================
+XL_DATASET_FOLDER=PATH_TO_CLIENT_DATASET
+```
+
+Example:
+
+```
+XL_DATASET_FOLDER=D:\aXtr Labs\Digirett-AI-Agent\ingestion\data\Client_dataset
+```
+
+Dataset folder structure:
+
+```
+Client_dataset/
+    domain_name1.xlsx
+    domain_name2.xlsx
+```
+
+Each Excel file represents one legal ingestion domain.
 
 # Milvus
 MILVUS_HOST=<your-milvus-host>

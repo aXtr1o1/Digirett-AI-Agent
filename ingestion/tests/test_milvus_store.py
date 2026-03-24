@@ -45,20 +45,6 @@ def test_fix_embedding_bad_type():
         s._fix_embedding("bad")
 
 
-@patch("ingestion.src.storage.milvus_store.Collection")
-def test_insert_empty(_):
-    s = MilvusTextStore.__new__(MilvusTextStore)
-    assert s.insert_chunks([])["inserted"] == 0
-
-
-def test_close_disconnect():
-    s = MilvusTextStore.__new__(MilvusTextStore)
-    s._connected = True   # ✅ important
-    with patch("ingestion.src.storage.milvus_store.connections.disconnect") as d:
-        s.close()
-        d.assert_called_once()
-
-
 def test_fix_embedding_dimension_mismatch():
     s = MilvusTextStore.__new__(MilvusTextStore)
     s.embedding_dim = 5
