@@ -1,857 +1,817 @@
-"""
-Production Lovdata Ingestion Pipeline - 53 Files
-WITHOUT Supabase - Only Milvus storage with URL field
+from __future__ import annotations
 
-Flow:
-1. Fetch XML files from Lovdata (53 files)
-2. Convert XML → clean text
-3. Chunk text (SAFE: max 1800 chars per chunk)
-4. Generate embeddings (SAFE: one at a time, 512 tokens)
-5. Store in Milvus (vectors + metadata + URL)
-"""
-'''
 import gc
-import os
 import logging
-import hashlib
-from datetime import datetime
+import re
+import sys
+import time
+import warnings
+from collections import defaultdict
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any, Dict, List
 
-import torch
+import psutil
 
-from ingestion.src.processors.chunker import NorwegianLovdataChunker
-from ingestion.src.processors.embedder_sagemaker import SageMakerBGEEmbedder
-from ingestion.src.processors.text_processor import process_xml_to_text
-from ingestion.src.storage.milvus_store import MilvusLovdataStore
 from ingestion.src.config import (
-    MAX_TOKENS_PER_CHUNK,
-    OVERLAP_TOKENS,
     LOG_FILE,
-    MILVUS_HOST,
-    MILVUS_PORT,
-    MILVUS_COLLECTION
+    PIPELINE_CPU_MAX,
+    PIPELINE_CPU_PAUSE,
+    PIPELINE_CPU_WARN,
+    PIPELINE_DOC_SLEEP,
+    validate_runtime_config,
+)
+from ingestion.src.loaders.excel_loader import ExcelLoader
+from ingestion.src.processors.chunk_validator import validate_chunk_content
+from ingestion.src.processors.chunker import DigiRettChunker, validate_chunk
+from ingestion.src.processors.embedder import TokenAwareAzureEmbedder
+from ingestion.src.processors.text_processor import parse_lovdata_xml
+from ingestion.src.processors.validation_gate import ValidationGate
+from ingestion.src.storage.milvus_store import MilvusTextStore
+from ingestion.src.storage.supabase_store import SupabaseStore
+
+
+warnings.filterwarnings(
+    "ignore",
+    message="pkg_resources is deprecated as an API",
+    category=UserWarning,
 )
 
-# -------------------------------------------------
-# Logging
-# -------------------------------------------------
+validate_runtime_config()
+
+LOG_PATH = Path(LOG_FILE)
+LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+CHUNK_LOG_DIR = LOG_PATH.parent / "chunking"
+CHUNK_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
     handlers=[
-        logging.FileHandler(LOG_FILE, encoding="utf-8"),
-        logging.StreamHandler(),
+        logging.FileHandler(LOG_PATH, encoding="utf-8"),
+        logging.StreamHandler(sys.stdout),
     ],
     force=True,
 )
 
-logger = logging.getLogger("lovdata-production")
+logger = logging.getLogger("digirett-validated-ingestion")
 
-# -------------------------------------------------
-# Local XML configuration
-# -------------------------------------------------
 
-RAW_XML_DIR = Path("data/raw_xml")
-ARCHIVE_NAME = "local_raw_xml"
-# -------------------------------------------------
-# Helper Functions
-# -------------------------------------------------
+def _get_chunk_logger(file_name: str) -> logging.Logger:
+    stem = Path(file_name).stem
+    chunk_logger = logging.getLogger(f"chunking.{stem}")
+    chunk_logger.setLevel(logging.INFO)
+    chunk_logger.propagate = False
 
-def calculate_file_hash(content: str) -> str:
-    """Calculate SHA-256 hash of file content"""
-    try:
-        return hashlib.sha256(content.encode('utf-8')).hexdigest()
-    except Exception as e:
-        logger.error(f"Error hashing content: {e}")
-        return hashlib.sha256(b"error").hexdigest()
+    target_path = CHUNK_LOG_DIR / f"{stem}.log"
 
-# -------------------------------------------------
-# Main Pipeline
-# -------------------------------------------------
+    if not any(
+        isinstance(h, logging.FileHandler)
+        and Path(h.baseFilename) == target_path
+        for h in chunk_logger.handlers
+    ):
+        for handler in list(chunk_logger.handlers):
+            chunk_logger.removeHandler(handler)
 
-def run_pipeline(limit: int = 53):
-    """
-    Complete ingestion pipeline for 53 files.
-    
-    Args:
-        limit: Number of files to process (default: 53)
-    """
-    
-    start_time = datetime.now()
-    
-    logger.info("=" * 70)
-    logger.info("🚀 LOVDATA PRODUCTION PIPELINE - 53 FILES")
-    logger.info("=" * 70)
-    logger.info(f"   Target: {limit} files")
-    logger.info(f"   Started: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-    logger.info("=" * 70)
-    
-    # Statistics
-    stats = {
-        "total_files": 0,
-        "successful": 0,
-        "failed": 0,
-        "total_chunks": 0,
-        "skipped_duplicates": 0
-    }
-    
-    failed_files = []
-    
-    try:
-        # ============================================================
-        # STEP 1: Initialize Components
-        # ============================================================
-        
-        logger.info("\n📦 Initializing components...")
-        
-        # Milvus store (vectors + metadata)
-        milvus_store = MilvusLovdataStore(
-            milvus_host=MILVUS_HOST,
-            milvus_port=MILVUS_PORT,
-            collection_name=MILVUS_COLLECTION
+        file_handler = logging.FileHandler(
+            target_path,
+            encoding="utf-8",
         )
-        logger.info("   ✅ Milvus store initialized")
-        
-        # Chunker with SAFE splitting
-        chunker = NorwegianLovdataChunker()
-        logger.info("   ✅ Chunker initialized (SAFE mode)")
-        
-        # Embedder with ULTRA SAFE settings
-        embedder = SageMakerBGEEmbedder(
-            endpoint_name="embedding-bge-m3-endpoint",
-            region_name="ap-south-1",
-            max_text_length=512,        # ✔ valid
-            max_chunks_per_batch=1,     # ✔ valid
-            chunk_delay=1.0             # ✔ valid
+        file_handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s | %(levelname)s | %(message)s"
             )
-        logger.info("   ✅ Embedder initialized (ULTRA SAFE mode)")
-        
-        # ============================================================
-        # STEP 2: Fetch XML Files
-        # ============================================================
-        
-        logger.info("\n📥 Loading XML files from local folder...")
+        )
+        chunk_logger.addHandler(file_handler)
 
-        xml_files = sorted(RAW_XML_DIR.glob("*.xml"))
-
-        if not xml_files:
-            raise RuntimeError(f"No XML files found in {RAW_XML_DIR}")
-
-        if limit:
-            xml_files = xml_files[:limit]
-
-        archive_name = ARCHIVE_NAME
-
-        logger.info(f"   ✅ Found {len(xml_files)} XML files")
-
-        
-        # ============================================================
-        # STEP 3: Convert XML to Clean Text
-        # ============================================================
-        
-        logger.info("\n🔄 Converting XML to clean text...")
-        documents = process_xml_to_text(xml_files, max_workers=4)
-        logger.info(f"   ✅ Converted {len(documents)} documents")
-        
-        stats["total_files"] = len(documents)
-        
-        # ============================================================
-        # STEP 4: Process Each Document
-        # ============================================================
-        
-        logger.info("\n" + "=" * 70)
-        logger.info("📊 PROCESSING DOCUMENTS")
-        logger.info("=" * 70)
-        
-        for idx, doc in enumerate(documents, 1):
-            try:
-                # Memory cleanup
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                
-                # Extract metadata
-                file_name = doc["file_name"]
-                clean_name = file_name.replace(".xml", "").replace(".txt", "")
-                text = doc["text"]
-
-                # ✅ URL COMES FROM XML METADATA
-                url = doc.get("metadata", {}).get("url", "")
-                
-                logger.info(f"\n[{idx}/{len(documents)}] 📄 {clean_name}")
-                logger.info("-" * 70)
-                
-                # Calculate file hash
-                file_hash = calculate_file_hash(text)
-                
-                # ========================================================
-                # Chunking (SAFE: max 1800 chars per chunk)
-                # ========================================================
-                
-                logger.info("   ✂️  Chunking...")
-                metadata, chunks = chunker.chunk_text(
-                    text=text,
-                    file_name=clean_name,
-                    zip_name=archive_name
-                )
-                
-                # Filter out empty chunks
-                valid_chunks = [c for c in chunks if c.text and c.text.strip()]
-                
-                if not valid_chunks:
-                    logger.warning(f"   ⚠️  No valid chunks, skipping")
-                    failed_files.append((clean_name, "No valid chunks"))
-                    stats["failed"] += 1
-                    continue
-                
-                logger.info(f"   ✅ Created {len(valid_chunks)} chunks")
-                
-                # Verify chunk sizes
-                max_chunk_size = max(len(c.text) for c in valid_chunks)
-                if max_chunk_size > 2000:
-                    logger.warning(f"   ⚠️  Max chunk size: {max_chunk_size} chars (might cause issues)")
-                
-                # ========================================================
-                # Prepare Payload
-                # ========================================================
-                
-                chunk_dicts = []
-                for i, chunk in enumerate(valid_chunks):
-                    chunk_dicts.append({
-                        "stable_chunk_id": chunk.chunk_id,
-                        "file_name": clean_name,
-                        "file_hash": file_hash,
-                        "chunk_index": i,
-                        "parent_index": chunk.parent_index,
-                        "child_index": chunk.child_index,
-                        "parent_type": chunk.parent_type,
-                        "parent_title": chunk.parent_title,
-                        "text": chunk.text,
-                        "url": url
-                    })
-                
-                # ========================================================
-                # Embedding (SAFE: one at a time, 512 tokens)
-                # ========================================================
-                logger.info("   🧠 Generating embeddings...")
-
-                chunk_dicts = embedder.embed_chunks(chunk_dicts)
-
-                valid_chunks = [c for c in chunk_dicts if c.get("embedding")]
-
-                if not valid_chunks:
-                    logger.error("   ❌ No valid embeddings returned")
-                    failed_files.append((clean_name, "No embeddings"))
-                    stats["failed"] += 1
-                    continue
-
-                chunk_dicts = valid_chunks
-                logger.info(f"   ✅ Generated {len(chunk_dicts)} embeddings")
-                
-                # ========================================================
-                # Insert into Milvus
-                # ========================================================
-                
-                logger.info("   💾 Storing in Milvus...")
-                
-                try:
-                    result = milvus_store.insert_chunks(chunk_dicts)
-                    
-                    if result.get("skipped"):
-                        logger.warning(f"   ⏭️  Already processed (skipped)")
-                        stats["skipped_duplicates"] += 1
-                    else:
-                        inserted = result.get("inserted", 0)
-                        logger.info(f"   ✅ Inserted {inserted} chunks")
-                        stats["total_chunks"] += inserted
-                        stats["successful"] += 1
-                
-                except Exception as e:
-                    logger.error(f"   ❌ Milvus insertion failed: {e}")
-                    failed_files.append((clean_name, f"Milvus error: {str(e)[:50]}"))
-                    stats["failed"] += 1
-                    continue
-                
-                logger.info(f"   ✅ Completed {clean_name}")
-            
-            except Exception as e:
-                logger.error(f"   ❌ Unexpected error processing {clean_name}: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-                failed_files.append((clean_name, f"Unexpected: {str(e)[:50]}"))
-                stats["failed"] += 1
-                continue
-        
-        # ============================================================
-        # STEP 5: Final Statistics
-        # ============================================================
-        
-        end_time = datetime.now()
-        duration = end_time - start_time
-        
-        logger.info("\n" + "=" * 70)
-        logger.info("📊 FINAL STATISTICS")
-        logger.info("=" * 70)
-        logger.info(f"   Total files:       {stats['total_files']}")
-        logger.info(f"   ✅ Successful:      {stats['successful']}")
-        logger.info(f"   ❌ Failed:          {stats['failed']}")
-        logger.info(f"   ⏭️  Skipped (dup):   {stats['skipped_duplicates']}")
-        logger.info(f"   📝 Total chunks:    {stats['total_chunks']}")
-        logger.info(f"   ⏱️  Duration:        {duration}")
-        logger.info(f"   📅 Completed:       {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        # Failed files
-        if failed_files:
-            logger.info("\n" + "=" * 70)
-            logger.info("❌ FAILED FILES")
-            logger.info("=" * 70)
-            for fname, reason in failed_files:
-                logger.info(f"   • {fname}: {reason}")
-        
-        # Milvus stats
-        logger.info("\n" + "=" * 70)
-        logger.info("💾 MILVUS COLLECTION STATS")
-        logger.info("=" * 70)
-        milvus_stats = milvus_store.get_stats()
-        for key, value in milvus_stats.items():
-            logger.info(f"   {key}: {value}")
-        
-        # Cleanup
-        milvus_store.close()
-        
-        logger.info("\n" + "=" * 70)
-        logger.info("🎉 PIPELINE COMPLETED SUCCESSFULLY")
-        logger.info("=" * 70)
-    
-    except Exception as e:
-        logger.error(f"\n❌ PIPELINE FAILED: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        raise
+    return chunk_logger
 
 
-# -------------------------------------------------
-# Entry Point
-# -------------------------------------------------
+def _cpu_guard(label: str = "") -> None:
+    cpu = psutil.cpu_percent(interval=None)
 
-if __name__ == "__main__":
-    import sys
-    
-    # Get limit from command line or use default
-    limit = int(sys.argv[1]) if len(sys.argv) > 1 else 53
-    
-    logger.info(f"\nProcessing {limit} files...")
-    run_pipeline(limit=limit)'''
-"""
-Production Lovdata Ingestion Pipeline - TOKEN-AWARE VERSION
-Complete integration with Milvus storage and XML processing
+    if cpu >= PIPELINE_CPU_MAX:
+        logger.warning("CPU=%s%% [%s] — pausing 8s", cpu, label)
+        time.sleep(8.0)
 
-Flow:
-1. Load XML files from local folder
-2. Convert XML → clean text (with metadata extraction)
-3. Token-aware chunking (max 512 tokens, sentence boundaries, overlap)
-4. Batch embedding generation (configurable batch size)
-5. Store in Milvus (vectors + metadata + URL)
+    elif cpu >= PIPELINE_CPU_PAUSE:
+        logger.warning("CPU=%s%% [%s] — pausing 3s", cpu, label)
+        time.sleep(3.0)
 
-Key Features:
-✅ Token-based chunking (no truncation, no data loss)
-✅ Smart sentence-boundary splitting
-✅ Context preservation with overlap
-✅ Batch processing for efficiency
-✅ Automatic retry on failures
-✅ VRAM-safe configuration
-"""
-
-import gc
-import os
-import sys
-import logging
-import hashlib
-from datetime import datetime
-from pathlib import Path
-
-import torch
-from ingestion.src.processors.chunker import NorwegianLovdataChunker, TokenCounter
-from ingestion.src.processors.embedder_sagemaker import SageMakerBGEEmbedder
-
-# Import your existing components
-from ingestion.src.processors.text_processor import process_xml_to_text
-from ingestion.src.storage.milvus_store import MilvusLovdataStore
-
-# -------------------------------------------------
-# Configuration
-# -------------------------------------------------
-
-# Paths
-RAW_XML_DIR = Path("data/raw_xml")
-ARCHIVE_NAME = "local_raw_xml"
-LOG_DIR = Path("logs")
-LOG_FILE = LOG_DIR / "pipeline_token_aware.log"
-# Milvus configuration
-MILVUS_HOST = "13.204.226.35"
-MILVUS_PORT = 19530
-MILVUS_COLLECTION = "lovdata_hierarchical_chunks"
-
-# Token-aware chunking configuration
-MAX_TOKENS_PER_CHUNK = 480      # Safe for BGE-M3 embedder
-OVERLAP_TOKENS = 50             # Context preservation between chunks
-
-# Batch processing configuration
-BATCH_SIZE = 1                  # Process 5 chunks at once
-CHUNK_DELAY = 1.0               # Delay between batches (seconds)
-MAX_RETRIES = 3                 # Retry attempts on failure
-RETRY_DELAY = 15                # Initial retry delay (seconds)
-
-# SageMaker configuration
-SAGEMAKER_ENDPOINT = os.getenv("SAGEMAKER_ENDPOINT", "embedding-bge-m3-endpoint")
-AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
-
-# -------------------------------------------------
-# Logging Setup
-# -------------------------------------------------
-
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding="utf-8"),
-        logging.StreamHandler()
-    ],
-    force=True
-)
-
-logger = logging.getLogger("lovdata-token-aware")
+    elif cpu >= PIPELINE_CPU_WARN:
+        logger.info("CPU=%s%% [%s]", cpu, label)
 
 
-# -------------------------------------------------
-# Helper Functions
-# -------------------------------------------------
+def _wait_for_cpu(label: str = "") -> None:
+    max_wait = 60
+    waited = 0
 
-def calculate_file_hash(content: str) -> str:
-    """Calculate SHA-256 hash of file content"""
+    while waited < max_wait:
+        cpu = psutil.cpu_percent(interval=1)
+
+        if cpu < PIPELINE_CPU_PAUSE:
+            return
+
+        logger.warning("Waiting for CPU (%s%%) [%s]", cpu, label)
+        time.sleep(3)
+        waited += 3
+
+    logger.warning(
+        "CPU still high after %ss — proceeding [%s]",
+        max_wait,
+        label,
+    )
+
+
+def _safe_str(value: Any) -> str:
+    if value is None:
+        return ""
+
     try:
-        return hashlib.sha256(content.encode('utf-8')).hexdigest()
-    except Exception as e:
-        logger.error(f"Error hashing content: {e}")
-        return hashlib.sha256(b"error").hexdigest()
+        if isinstance(value, float) and value != value:
+            return ""
+    except Exception:
+        pass
+
+    text = str(value).strip()
+
+    if text.lower() in {"", "nan", "none", "null"}:
+        return ""
+
+    return text
 
 
-def print_pipeline_header():
-    """Print pipeline startup information"""
-    logger.info("=" * 70)
-    logger.info("🚀 LOVDATA TOKEN-AWARE INGESTION PIPELINE")
-    logger.info("=" * 70)
-    logger.info(f"   Configuration:")
-    logger.info(f"   • Max tokens per chunk: {MAX_TOKENS_PER_CHUNK}")
-    logger.info(f"   • Overlap tokens: {OVERLAP_TOKENS}")
-    logger.info(f"   • Batch size: {BATCH_SIZE}")
-    logger.info(f"   • Chunk delay: {CHUNK_DELAY}s")
-    logger.info(f"   • Max retries: {MAX_RETRIES}")
-    logger.info(f"   • SageMaker endpoint: {SAGEMAKER_ENDPOINT}")
-    logger.info(f"   • Milvus: {MILVUS_HOST}:{MILVUS_PORT}/{MILVUS_COLLECTION}")
-    logger.info(f"   • Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    logger.info("=" * 70)
+def _pick(*values: Any) -> str:
+    for value in values:
+        text = _safe_str(value)
+        if text:
+            return text
+    return ""
 
 
-def print_statistics(stats: dict, start_time: datetime, failed_files: list):
-    """Print final pipeline statistics"""
-    end_time = datetime.now()
-    duration = end_time - start_time
-    
-    logger.info("\n" + "=" * 70)
-    logger.info("📊 FINAL STATISTICS")
-    logger.info("=" * 70)
-    logger.info(f"   Total files:       {stats['total_files']}")
-    logger.info(f"   ✅ Successful:      {stats['successful']}")
-    logger.info(f"   ❌ Failed:          {stats['failed']}")
-    logger.info(f"   ⏭️  Skipped (dup):   {stats['skipped_duplicates']}")
-    logger.info(f"   📝 Total chunks:    {stats['total_chunks']}")
-    logger.info(f"   ✂️  Split chunks:    {stats['split_chunks']}")
-    logger.info(f"   ⏱️  Duration:        {duration}")
-    logger.info(f"   📅 Completed:       {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
-    
-    # Token-aware benefits
-    if stats['split_chunks'] > 0:
-        logger.info("\n" + "=" * 70)
-        logger.info("✅ TOKEN-AWARE BENEFITS")
-        logger.info("=" * 70)
-        logger.info(f"   Intelligently split {stats['split_chunks']} oversized chunks")
-        logger.info("   ✓ No data loss (vs character truncation)")
-        logger.info("   ✓ Preserved sentence boundaries")
-        logger.info("   ✓ Maintained context with overlap")
-        logger.info("   ✓ VRAM-safe processing")
-    
-    # Failed files
-    if failed_files:
-        logger.info("\n" + "=" * 70)
-        logger.info("❌ FAILED FILES")
-        logger.info("=" * 70)
-        for fname, reason in failed_files[:20]:  # Show first 20
-            logger.info(f"   • {fname}: {reason}")
-        if len(failed_files) > 20:
-            logger.info(f"   ... and {len(failed_files) - 20} more")
-
-
-# -------------------------------------------------
-# Main Pipeline
-# -------------------------------------------------
-
-def run_pipeline(limit: int = None):
+def _normalise_source_doc_url(url: str) -> str:
     """
-    Complete ingestion pipeline with token-aware chunking
-    
-    Args:
-        limit: Number of files to process (None = all)
+    Keep only the real base Lovdata document URL.
+    Removes any ::internal locator and any #fragment.
     """
-    
-    start_time = datetime.now()
-    print_pipeline_header()
-    
-    # Statistics tracking
-    stats = {
-        "total_files": 0,
-        "successful": 0,
-        "failed": 0,
-        "total_chunks": 0,
-        "split_chunks": 0,
-        "skipped_duplicates": 0
+    url = _safe_str(url)
+    if not url:
+        return ""
+
+    if "::" in url:
+        url = url.split("::", 1)[0]
+
+    if "#" in url:
+        url = url.split("#", 1)[0]
+
+    return url.rstrip("/")
+
+
+def _build_section_url(source_doc_url: str, section_ref: str) -> str:
+    """
+    Build a browser-clickable Lovdata section URL in the format:
+        https://lovdata.no/dokument/NL/lov/2017-06-16-51#§19
+
+    The § character is kept as-is (not percent-encoded) so the URL
+    matches Lovdata's own link format exactly.
+
+    Example:
+        base:    https://lovdata.no/dokument/NL/lov/2017-06-16-51
+        ref:     §19
+        result:  https://lovdata.no/dokument/NL/lov/2017-06-16-51#§19
+    """
+    base = _safe_str(source_doc_url)
+    anchor = _safe_str(section_ref)
+
+    if not base:
+        return ""
+
+    # Strip any existing :: locator or # fragment to get a clean base
+    base = base.split("::")[0].split("#")[0].rstrip("/")
+
+    if not anchor:
+        return base
+
+    # Remove spaces only — keep § as-is to match Lovdata's URL format
+    anchor_clean = anchor.replace(" ", "")
+
+    return f"{base}#{anchor_clean}"
+
+
+def _build_document_id(source_id: str, section_ref: str) -> str:
+    source_clean = re.sub(
+        r"[^A-Za-z0-9_-]+",
+        "-",
+        _safe_str(source_id).lower(),
+    ).strip("-")
+
+    ref_clean = re.sub(
+        r"[^A-Za-z0-9_-]+",
+        "-",
+        _safe_str(section_ref).replace("§", "par").lower(),
+    ).strip("-")
+
+    return f"{source_clean}__{ref_clean}"
+
+
+def _derive_source_id(
+    *,
+    metadata: Dict[str, Any],
+    source_doc_url: str,
+    file_name: str,
+) -> str:
+    metadata_id = _safe_str(metadata.get("id"))
+    if metadata_id:
+        return metadata_id.upper()
+
+    url = _normalise_source_doc_url(source_doc_url)
+    match = re.search(
+        r"/(lov|forskrift)/(\d{4}-\d{2}-\d{2}(?:-\d+)?)",
+        url,
+        re.IGNORECASE,
+    )
+    if match:
+        prefix = "LOV" if match.group(1).lower() == "lov" else "FORSKRIFT"
+        return f"{prefix}-{match.group(2)}".upper()
+
+    stem = _safe_str(file_name).replace(".xml", "")
+    if stem:
+        return stem.upper()
+
+    return "UNKNOWN"
+
+
+def _derive_source_type(
+    *,
+    metadata: Dict[str, Any],
+    source_doc_url: str,
+    file_name: str,
+) -> str:
+    meta_type = _safe_str(metadata.get("type")).lower()
+    if meta_type:
+        return meta_type
+
+    url = _normalise_source_doc_url(source_doc_url).lower()
+    fname = _safe_str(file_name).lower()
+
+    if "/forskrift/" in url or "/dokument/sf/" in url or fname.startswith("sf-"):
+        return "forskrift"
+
+    if "/lov/" in url or "/dokument/nl/" in url or fname.startswith("nl-") or fname.startswith("lov-"):
+        return "lov"
+
+    return "lov"
+
+
+def _derive_version_date(
+    *,
+    metadata: Dict[str, Any],
+    source_doc_url: str,
+    file_name: str,
+) -> str:
+    metadata_date = _safe_str(metadata.get("dato"))
+    if metadata_date:
+        match = re.search(r"(\d{4}-\d{2}-\d{2})", metadata_date)
+        if match:
+            return match.group(1)
+
+    url = _normalise_source_doc_url(source_doc_url)
+    match = re.search(r"(\d{4}-\d{2}-\d{2})", url)
+    if match:
+        return match.group(1)
+
+    fname = _safe_str(file_name)
+    match = re.search(r"(\d{4})[-_]?(\d{2})[-_]?(\d{2})", fname)
+    if match:
+        return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
+
+    return "1970-01-01"
+
+
+def _coerce_tier(value: Any) -> int:
+    text = _safe_str(value)
+    if not text:
+        return 1
+    try:
+        return int(float(text))
+    except Exception:
+        return 1
+
+
+def _row_to_dict(row: Any) -> Dict[str, Any]:
+    if isinstance(row, dict):
+        return dict(row)
+
+    if hasattr(row, "model_dump"):
+        return row.model_dump()
+
+    if hasattr(row, "dict"):
+        return row.dict()
+
+    if is_dataclass(row):
+        return asdict(row)
+
+    field_names = [
+        "file_name",
+        "domain_name",
+        "subdomain_name",
+        "b2b_b2c",
+        "jurisdiction",
+        "tier",
+        "source_link",
+        "legal_validation",
+        "canonical_subdomain",
+        "legal_notes",
+        "sheet_name",
+        "row_number",
+    ]
+
+    return {
+        field: getattr(row, field, None)
+        for field in field_names
     }
-    
-    failed_files = []
-    
+
+
+def _chunk_obj_to_dict(chunk_obj: Any) -> Dict[str, Any]:
+    if hasattr(chunk_obj, "to_dict"):
+        return chunk_obj.to_dict()
+
+    if isinstance(chunk_obj, dict):
+        return dict(chunk_obj)
+
+    if hasattr(chunk_obj, "__dict__"):
+        return {
+            key: value
+            for key, value in vars(chunk_obj).items()
+            if not key.startswith("_")
+        }
+
+    raise TypeError(f"Unsupported chunk object type: {type(chunk_obj)}")
+
+
+def run_pipeline(workbook_path: Path) -> Dict[str, int]:
+    logger.info("=" * 88)
+    logger.info("DIGIRETT VALIDATED INGESTION STARTED")
+    logger.info("Workbook: %s", workbook_path.resolve())
+    logger.info("=" * 88)
+
+    if not workbook_path.exists():
+        raise FileNotFoundError(
+            f"Workbook not found: {workbook_path}"
+        )
+
+    loader = ExcelLoader(workbook_path)
+    gate = ValidationGate()
+    chunker = DigiRettChunker()
+    embedder = TokenAwareAzureEmbedder()
+    supabase_store = SupabaseStore()
+    milvus_store = MilvusTextStore()
+
+    rows = loader.load()
+
+    if not rows:
+        logger.error("No rows found in workbook: %s", workbook_path)
+        return {
+            "rows_total": 0,
+            "rows_ingested": 0,
+            "rows_skipped_validation": 0,
+            "rows_skipped_missing_file_name": 0,
+            "rows_skipped_source_not_found": 0,
+            "rows_skipped_xml_not_found": 0,
+            "rows_failed": 0,
+            "chunks_total": 0,
+            "chunks_stored": 0,
+        }
+
+    stats = {
+        "rows_total": 0,
+        "rows_ingested": 0,
+        "rows_skipped_validation": 0,
+        "rows_skipped_missing_file_name": 0,
+        "rows_skipped_source_not_found": 0,
+        "rows_skipped_xml_not_found": 0,
+        "rows_failed": 0,
+        "chunks_total": 0,
+        "chunks_stored": 0,
+    }
+
     try:
-        # ============================================================
-        # STEP 1: Initialize Components
-        # ============================================================
-        
-        logger.info("\n📦 Initializing components...")
-        
-        # Milvus store (your actual implementation)
-        try:
-            milvus_store = MilvusLovdataStore(
-                milvus_host=MILVUS_HOST,
-                milvus_port=MILVUS_PORT,
-                collection_name=MILVUS_COLLECTION
-            )
-            logger.info("   ✅ Milvus store initialized")
-        except Exception as e:
-            logger.error(f"   ❌ Failed to initialize Milvus: {e}")
-            raise
-        
-        # Token-aware chunker
-        try:
-            chunker = NorwegianLovdataChunker(
-                max_tokens=MAX_TOKENS_PER_CHUNK,
-                overlap_tokens=OVERLAP_TOKENS
-            )
+        for row_idx, row in enumerate(rows, start=1):
+            stats["rows_total"] += 1
+
+            row_data = _row_to_dict(row)
+
+            file_name = _safe_str(row_data.get("file_name"))
+            sheet_name = _safe_str(row_data.get("sheet_name"))
+            row_number = _safe_str(row_data.get("row_number"))
+
+            logger.info("-" * 88)
             logger.info(
-                f"   ✅ Token-aware chunker initialized "
-                f"(max={MAX_TOKENS_PER_CHUNK}, overlap={OVERLAP_TOKENS})"
+                "ROW %s/%s | sheet=%s | row=%s | file_name=%s",
+                row_idx,
+                len(rows),
+                sheet_name or "<unknown>",
+                row_number or "<unknown>",
+                file_name or "<missing>",
             )
-        except Exception as e:
-            logger.error(f"   ❌ Failed to initialize chunker: {e}")
-            raise
-        
-        # Token-aware embedder with batch processing
-        try:
-            embedder = SageMakerBGEEmbedder(
-                endpoint_name=SAGEMAKER_ENDPOINT,
-                region_name=AWS_REGION,
-                batch_size=BATCH_SIZE,
-                chunk_delay=CHUNK_DELAY,
-                max_retries=MAX_RETRIES,
-                retry_delay=RETRY_DELAY,
-                warn_token_threshold=MAX_TOKENS_PER_CHUNK
-            )
-            logger.info(
-                f"   ✅ Token-aware embedder initialized "
-                f"(batch={BATCH_SIZE}, delay={CHUNK_DELAY}s)"
-            )
-        except Exception as e:
-            logger.error(f"   ❌ Failed to initialize embedder: {e}")
-            raise
-        
-        # ============================================================
-        # STEP 2: Load XML Files
-        # ============================================================
-        
-        logger.info("\n📥 Loading XML files from local folder...")
-        
-        if not RAW_XML_DIR.exists():
-            raise RuntimeError(f"Directory not found: {RAW_XML_DIR}")
-        
-        xml_files = sorted(RAW_XML_DIR.glob("*.xml"))
-        
-        if not xml_files:
-            raise RuntimeError(f"No XML files found in {RAW_XML_DIR}")
-        
-        if limit:
-            xml_files = xml_files[:limit]
-            logger.info(f"   📌 Limited to first {limit} files")
-        
-        logger.info(f"   ✅ Found {len(xml_files)} XML files")
-        
-        # ============================================================
-        # STEP 3: Convert XML to Clean Text
-        # ============================================================
-        
-        logger.info("\n🔄 Converting XML to clean text...")
-        
-        try:
-            documents = process_xml_to_text(xml_files, max_workers=4)
-            logger.info(f"   ✅ Converted {len(documents)} documents")
-        except Exception as e:
-            logger.error(f"   ❌ XML processing failed: {e}")
-            raise
-        
-        if not documents:
-            raise RuntimeError("No valid documents after XML processing")
-        
-        stats["total_files"] = len(documents)
-        
-        # ============================================================
-        # STEP 4: Process Each Document (Token-Aware)
-        # ============================================================
-        
-        logger.info("\n" + "=" * 70)
-        logger.info("📊 PROCESSING DOCUMENTS (TOKEN-AWARE)")
-        logger.info("=" * 70)
-        
-        for idx, doc in enumerate(documents, 1):
-            try:
-                # Memory cleanup
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                
-                # Extract document data
-                file_name = doc["file_name"]
-                clean_name = file_name.replace(".xml", "").replace(".txt", "")
-                text = doc["text"]
-                metadata = doc.get("metadata", {})
-                url = metadata.get("url", "")
-                
-                logger.info(f"\n[{idx}/{len(documents)}] 📄 {clean_name}")
-                logger.info("-" * 70)
-                
-                # Validate document
-                if not text or len(text.strip()) < 50:
-                    logger.warning("   ⚠️  Document too short, skipping")
-                    failed_files.append((clean_name, "Document too short"))
-                    stats["failed"] += 1
-                    continue
-                
-                # Calculate file hash
-                file_hash = calculate_file_hash(text)
-                logger.debug(f"   File hash: {file_hash[:16]}...")
-                
-                # ========================================================
-                # TOKEN-AWARE CHUNKING
-                # ========================================================
-                
-                logger.info(f"   ✂️  Token-aware chunking (max={MAX_TOKENS_PER_CHUNK} tokens)...")
-                
-                try:
-                    doc_metadata, chunks = chunker.chunk_text(
-                        text=text,
-                        file_name=clean_name,
-                        zip_name=ARCHIVE_NAME,
-                        url=url
-                    )
-                except Exception as e:
-                    logger.error(f"   ❌ Chunking failed: {e}")
-                    failed_files.append((clean_name, f"Chunking error: {str(e)[:50]}"))
-                    stats["failed"] += 1
-                    continue
-                
-                # Filter valid chunks
-                valid_chunks = [c for c in chunks if c.text and c.text.strip()]
-                
-                if not valid_chunks:
-                    logger.warning("   ⚠️  No valid chunks created, skipping")
-                    failed_files.append((clean_name, "No valid chunks"))
-                    stats["failed"] += 1
-                    continue
-                
-                # Get chunk statistics
-                chunk_stats = chunker.get_statistics(valid_chunks)
-                stats["split_chunks"] += chunk_stats.get("split_chunks", 0)
-                
+
+            decision = gate.evaluate(row_data)
+
+            if not decision.should_ingest:
+                stats["rows_skipped_validation"] += 1
                 logger.info(
-                    f"   ✅ Created {len(valid_chunks)} chunks "
-                    f"({chunk_stats.get('split_chunks', 0)} were split)"
+                    "SKIP ROW | validation failed | reason=%s | legal_validation=%s",
+                    decision.reason,
+                    decision.legal_validation or "<empty>",
                 )
-                logger.info(
-                    f"      Avg tokens: {chunk_stats.get('avg_token_count', 0):.0f}, "
-                    f"Max tokens: {chunk_stats.get('max_token_count', 0)}, "
-                    f"Avg length: {chunk_stats.get('avg_chunk_length', 0):.0f} chars"
-                )
-                
-                # ========================================================
-                # Prepare Chunk Payload for Milvus
-                # ========================================================
-                
-                chunk_dicts = []
-                for i, chunk in enumerate(valid_chunks):
-                    chunk_dict = {
-                        "stable_chunk_id": chunk.chunk_id,
-                        "file_name": clean_name,
-                        "file_hash": file_hash,
-                        "chunk_index": i,
-                        "parent_index": chunk.parent_index,
-                        "child_index": chunk.child_index,
-                        "parent_type": chunk.parent_type,
-                        "parent_title": chunk.parent_title,
-                        "text": chunk.text,
-                        "url": url,  # From XML metadata
-                        "token_count": chunk.token_count,
-                        "is_split": chunk.is_split,
-                        "split_index": chunk.split_index
-                    }
-                    
-                    # Add document metadata if available
-                    if chunk.metadata:
-                        chunk_dict["metadata"] = chunk.metadata
-                    
-                    chunk_dicts.append(chunk_dict)
-                
-                # ========================================================
-                # BATCH EMBEDDING GENERATION
-                # ========================================================
-                
-                logger.info(
-                    f"   🧠 Generating embeddings (batch_size={BATCH_SIZE})..."
-                )
-                
-                try:
-                    chunk_dicts = embedder.embed_chunks(chunk_dicts)
-                except Exception as e:
-                    logger.error(f"   ❌ Embedding generation failed: {e}")
-                    failed_files.append((clean_name, f"Embedding error: {str(e)[:50]}"))
-                    stats["failed"] += 1
-                    continue
-                
-                # Filter chunks with successful embeddings
-                valid_embeddings = [c for c in chunk_dicts if c.get("embedding") is not None]
-                
-                if not valid_embeddings:
-                    logger.error("   ❌ No valid embeddings returned")
-                    failed_files.append((clean_name, "No embeddings"))
-                    stats["failed"] += 1
-                    continue
-                
-                success_rate = len(valid_embeddings) / len(chunk_dicts) * 100
-                logger.info(
-                    f"   ✅ Generated {len(valid_embeddings)}/{len(chunk_dicts)} embeddings "
-                    f"({success_rate:.1f}%)"
-                )
-                
-                # ========================================================
-                # Insert into Milvus
-                # ========================================================
-                
-                logger.info("   💾 Storing in Milvus...")
-                
-                try:
-                    result = milvus_store.insert_chunks(valid_embeddings)
-                    
-                    if result.get("skipped"):
-                        logger.warning("   ⏭️  Already processed (skipped)")
-                        stats["skipped_duplicates"] += 1
-                    else:
-                        inserted = result.get("inserted", 0)
-                        logger.info(f"   ✅ Inserted {inserted} chunks into Milvus")
-                        stats["total_chunks"] += inserted
-                        stats["successful"] += 1
-                
-                except Exception as e:
-                    logger.error(f"   ❌ Milvus insertion failed: {e}")
-                    failed_files.append((clean_name, f"Milvus error: {str(e)[:50]}"))
-                    stats["failed"] += 1
-                    continue
-                
-                logger.info(f"   ✅ Completed {clean_name}")
-            
-            except Exception as e:
-                logger.error(f"   ❌ Unexpected error processing {clean_name}: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-                failed_files.append((clean_name, f"Unexpected: {str(e)[:50]}"))
-                stats["failed"] += 1
                 continue
-        
-        # ============================================================
-        # STEP 5: Final Statistics and Cleanup
-        # ============================================================
-        
-        print_statistics(stats, start_time, failed_files)
-        
-        # Milvus collection stats
-        logger.info("\n" + "=" * 70)
-        logger.info("💾 MILVUS COLLECTION STATS")
-        logger.info("=" * 70)
-        try:
-            milvus_stats = milvus_store.get_stats()
-            for key, value in milvus_stats.items():
-                logger.info(f"   {key}: {value}")
-        except Exception as e:
-            logger.error(f"   Failed to get Milvus stats: {e}")
-        
-        # Cleanup
-        try:
-            milvus_store.close()
-        except Exception as e:
-            logger.error(f"   Error closing Milvus: {e}")
-        
-        logger.info("\n" + "=" * 70)
-        logger.info("🎉 TOKEN-AWARE PIPELINE COMPLETED SUCCESSFULLY")
-        logger.info("=" * 70)
-        
-        # Return stats for programmatic access
-        return {
-            "success": True,
-            "stats": stats,
-            "failed_files": failed_files,
-            "duration": datetime.now() - start_time
-        }
-    
-    except Exception as e:
-        logger.error(f"\n❌ PIPELINE FAILED: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        
-        return {
-            "success": False,
-            "error": str(e),
-            "stats": stats,
-            "failed_files": failed_files,
-            "duration": datetime.now() - start_time
-        }
 
+            if not file_name:
+                stats["rows_skipped_missing_file_name"] += 1
+                logger.warning("SKIP ROW | file_name is empty")
+                continue
 
-# -------------------------------------------------
-# Entry Point
-# -------------------------------------------------
+            _cpu_guard(label=f"row:{row_idx}")
+            gc.collect()
+
+            matched = supabase_store.find_source_metadata_by_file_name(file_name)
+
+            if not matched:
+                stats["rows_skipped_source_not_found"] += 1
+                logger.warning(
+                    "SKIP ROW | file_name not found in source tables | file_name=%s",
+                    file_name,
+                )
+                continue
+
+            xml_bucket_path = _pick(
+                matched.get("xml_bucket_path"),
+                file_name,
+            )
+
+            xml_content = supabase_store.download_xml_text_from_storage(xml_bucket_path)
+
+            if not xml_content:
+                stats["rows_skipped_xml_not_found"] += 1
+                logger.error(
+                    "SKIP ROW | XML not found in Supabase bucket | file_name=%s | path=%s",
+                    file_name,
+                    xml_bucket_path,
+                )
+                continue
+
+            with TemporaryDirectory() as tmpdir:
+                xml_tmp = Path(tmpdir) / file_name
+                xml_tmp.write_text(xml_content, encoding="utf-8")
+                parsed_text_doc = parse_lovdata_xml(xml_tmp)
+
+            if not parsed_text_doc or not parsed_text_doc.get("text"):
+                stats["rows_failed"] += 1
+                logger.error(
+                    "ROW FAILED | text_processor returned empty | file_name=%s",
+                    file_name,
+                )
+                continue
+
+            clean_text = _safe_str(parsed_text_doc.get("text"))
+            xml_meta = parsed_text_doc.get("metadata", {}) or {}
+
+            source_doc_url = _normalise_source_doc_url(
+                _pick(
+                    row_data.get("source_link"),
+                    matched.get("source_doc_url"),
+                    matched.get("source_url"),
+                    matched.get("lovdata_url"),
+                    matched.get("source_link"),
+                    parsed_text_doc.get("document_url"),
+                    xml_meta.get("url"),
+                )
+            )
+
+            if not source_doc_url:
+                stats["rows_failed"] += 1
+                logger.error(
+                    "ROW FAILED | source_doc_url resolved empty | file_name=%s",
+                    file_name,
+                )
+                continue
+
+            b2b_b2c = _pick(
+                row_data.get("b2b_b2c"),
+                matched.get("b2b_b2c"),
+                "BOTH",
+            )
+
+            tier = _pick(
+                row_data.get("tier"),
+                matched.get("tier"),
+                "1",
+            )
+
+            jurisdiction = _pick(
+                row_data.get("jurisdiction"),
+                matched.get("jurisdiction"),
+                "NO",
+            )
+
+            doc_title = _pick(
+                xml_meta.get("fulltittel"),
+                xml_meta.get("korttittel"),
+                matched.get("title"),
+                file_name,
+            )
+
+            source_id = _derive_source_id(
+                metadata=xml_meta,
+                source_doc_url=source_doc_url,
+                file_name=file_name,
+            )
+
+            source_type = _derive_source_type(
+                metadata=xml_meta,
+                source_doc_url=source_doc_url,
+                file_name=file_name,
+            )
+
+            version_date = _derive_version_date(
+                metadata=xml_meta,
+                source_doc_url=source_doc_url,
+                file_name=file_name,
+            )
+
+            chunk_logger = _get_chunk_logger(file_name)
+            chunk_logger.info("=" * 80)
+            chunk_logger.info("FILE | %s", file_name)
+            chunk_logger.info("SOURCE_ID | %s", source_id)
+            chunk_logger.info("SOURCE_DOC_URL | %s", source_doc_url)
+            chunk_logger.info("DOC_TITLE | %s", doc_title)
+            chunk_logger.info("SOURCE_TYPE | %s", source_type)
+            chunk_logger.info("VERSION_DATE | %s", version_date)
+            chunk_logger.info("DOMAIN | %s", decision.final_domain or "")
+            chunk_logger.info("SUBDOMAIN | %s", decision.final_subdomain or "")
+            chunk_logger.info("B2B_B2C | %s", b2b_b2c)
+            chunk_logger.info("JURISDICTION | %s", jurisdiction)
+            chunk_logger.info("=" * 80)
+
+            try:
+                chunk_objs = chunker.chunk(
+                    text=clean_text,
+                    source_id=source_id,
+                    source_url=source_doc_url,
+                    doc_title=doc_title,
+                    domain=decision.final_domain or "",
+                    subdomain=decision.final_subdomain or "",
+                    source_type=source_type,
+                    tier=_coerce_tier(tier),
+                    version_date=version_date,
+                    language="nb",
+                )
+            except Exception as exc:
+                stats["rows_failed"] += 1
+                logger.error(
+                    "ROW FAILED | chunker failed | file_name=%s | error=%s",
+                    file_name,
+                    exc,
+                )
+                continue
+
+            if not chunk_objs:
+                stats["rows_failed"] += 1
+                logger.error(
+                    "ROW FAILED | chunker returned 0 chunks | file_name=%s",
+                    file_name,
+                )
+                continue
+
+            chunks_by_section: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+
+            for chunk_obj in chunk_objs:
+                ok, reason = validate_chunk(chunk_obj)
+                if not ok:
+                    logger.warning(
+                        "SKIP CHUNK | file_name=%s | reason=%s",
+                        file_name,
+                        reason,
+                    )
+                    continue
+
+                chunk_dict = _chunk_obj_to_dict(chunk_obj)
+
+                content_ok, content_reason = validate_chunk_content(chunk_dict)
+                if not content_ok:
+                    logger.warning(
+                        "SKIP CHUNK | content | file_name=%s | citation_anchor=%s"
+                        " | reason=%s | preview=%s",
+                        file_name,
+                        chunk_dict.get("citation_anchor", ""),
+                        content_reason,
+                        (chunk_dict.get("text") or "")[:80],
+                    )
+                    continue
+
+                section_ref = _safe_str(chunk_dict.get("citation_anchor"))
+                if not section_ref:
+                    logger.warning(
+                        "SKIP CHUNK | file_name=%s | missing citation_anchor",
+                        file_name,
+                    )
+                    continue
+
+                # Build clean section URL in format: base#§19
+                # Always rebuilt here from the clean source_doc_url
+                # so we never carry over :: from chunker output
+                section_url = _build_section_url(source_doc_url, section_ref)
+
+                chunk_dict["file_name"] = file_name
+                chunk_dict["source_id"] = source_id
+                chunk_dict["source_doc_url"] = source_doc_url
+                chunk_dict["source_url"] = section_url
+                chunk_dict["section_ref"] = section_ref
+                chunk_dict["section_url"] = section_url
+                chunk_dict["domain"] = decision.final_domain or ""
+                chunk_dict["subdomain"] = decision.final_subdomain or ""
+                chunk_dict["b2b_b2c"] = b2b_b2c
+                chunk_dict["tier"] = str(tier)
+                chunk_dict["jurisdiction"] = jurisdiction
+
+                chunks_by_section[section_ref].append(chunk_dict)
+
+            if not chunks_by_section:
+                stats["rows_failed"] += 1
+                logger.error(
+                    "ROW FAILED | no valid chunks after validation | file_name=%s",
+                    file_name,
+                )
+                continue
+
+            row_success = False
+            total_file_chunks = 0
+
+            for section_idx, (section_ref, section_chunks) in enumerate(
+                chunks_by_section.items(),
+                start=1,
+            ):
+                document_id = _build_document_id(source_id, section_ref)
+                section_url = _build_section_url(source_doc_url, section_ref)
+
+                chunk_logger.info("-" * 80)
+                chunk_logger.info("SECTION %s | %s", section_idx, section_ref)
+                chunk_logger.info("DOCUMENT_ID | %s", document_id)
+                chunk_logger.info("SECTION_URL | %s", section_url)
+                chunk_logger.info("CHUNKS | %s", len(section_chunks))
+
+                for idx, chunk in enumerate(section_chunks, start=1):
+                    chunk["document_id"] = document_id
+                    # Ensure section_url is always clean for every chunk
+                    chunk["source_url"] = section_url
+                    chunk["section_url"] = section_url
+                    chunk_logger.info(
+                        "chunk[%s] | chunk_id=%s | token_count=%s | section_url=%s",
+                        idx,
+                        chunk.get("chunk_id", ""),
+                        chunk.get("token_count", ""),
+                        section_url,
+                    )
+                    chunk_logger.info("TEXT_START")
+                    chunk_logger.info("%s", chunk.get("text", ""))
+                    chunk_logger.info("TEXT_END")
+
+                try:
+                    embedded = embedder.embed_chunks(
+                        section_chunks,
+                        text_field="enriched_text",
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "FAIL SECTION | embedding failed | file_name=%s | section=%s | error=%s",
+                        file_name,
+                        section_ref,
+                        exc,
+                    )
+                    continue
+
+                embedded = [c for c in embedded if c.get("embedding") is not None]
+                if not embedded:
+                    logger.error(
+                        "FAIL SECTION | no embeddings returned | file_name=%s | section=%s",
+                        file_name,
+                        section_ref,
+                    )
+                    continue
+
+                milvus_metadata = {
+                    "document_id": document_id,
+                    "file_name": file_name,
+                    "source_doc_url": source_doc_url,
+                    "section_ref": section_ref,
+                    "domain": decision.final_domain or "",
+                    "subdomain": decision.final_subdomain or "",
+                    "b2b_b2c": b2b_b2c,
+                    "tier": str(tier),
+                    "jurisdiction": jurisdiction,
+                }
+
+                _wait_for_cpu(label=f"milvus:{document_id}")
+
+                try:
+                    milvus_result = milvus_store.insert_chunks(
+                        embedded,
+                        milvus_metadata,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "FAIL SECTION | milvus insert failed | file_name=%s | section=%s | error=%s",
+                        file_name,
+                        section_ref,
+                        exc,
+                    )
+                    continue
+
+                inserted = int(milvus_result.get("inserted", 0))
+                stats["chunks_total"] += len(section_chunks)
+                stats["chunks_stored"] += inserted
+                total_file_chunks += inserted
+                row_success = True
+
+                logger.info(
+                    "SECTION DONE | file_name=%s | section=%s | section_url=%s | inserted=%s",
+                    file_name,
+                    section_ref,
+                    section_url,
+                    inserted,
+                )
+
+            if row_success:
+                supabase_ok = supabase_store.upsert_file_metadata(
+                    file_name=file_name,
+                    source_id=source_id,
+                    source_doc_url=source_doc_url,
+                    domain=decision.final_domain or "",
+                    subdomain=decision.final_subdomain or "",
+                    b2b_b2c=b2b_b2c,
+                    tier=str(tier),
+                    jurisdiction=jurisdiction,
+                    legal_validation=decision.legal_validation,
+                    xml_bucket_path=xml_bucket_path,
+                    doc_title=doc_title,
+                )
+
+                if supabase_ok:
+                    stats["rows_ingested"] += 1
+                    logger.info(
+                        "SUPABASE DONE | file_name=%s | chunks=%s",
+                        file_name,
+                        total_file_chunks,
+                    )
+                else:
+                    stats["rows_failed"] += 1
+                    logger.error("SUPABASE FAILED | file_name=%s", file_name)
+            else:
+                stats["rows_failed"] += 1
+                logger.error(
+                    "ROW FAILED | nothing stored in Milvus | file_name=%s",
+                    file_name,
+                )
+
+            time.sleep(PIPELINE_DOC_SLEEP)
+
+    finally:
+        milvus_store.close()
+
+    logger.info("=" * 88)
+    logger.info("DIGIRETT VALIDATED INGESTION COMPLETED")
+    logger.info("rows_total               : %s", stats["rows_total"])
+    logger.info("rows_ingested            : %s", stats["rows_ingested"])
+    logger.info("rows_skipped_validation  : %s", stats["rows_skipped_validation"])
+    logger.info("rows_skipped_missing     : %s", stats["rows_skipped_missing_file_name"])
+    logger.info("rows_skipped_source      : %s", stats["rows_skipped_source_not_found"])
+    logger.info("rows_skipped_xml         : %s", stats["rows_skipped_xml_not_found"])
+    logger.info("rows_failed              : %s", stats["rows_failed"])
+    logger.info("chunks_total             : %s", stats["chunks_total"])
+    logger.info("chunks_stored            : %s", stats["chunks_stored"])
+    logger.info("=" * 88)
+
+    return stats
+
 
 if __name__ == "__main__":
-    # Parse command line arguments
-    limit = None
-    
-    if len(sys.argv) > 1:
-        try:
-            limit = int(sys.argv[1])
-            logger.info(f"\n📌 Processing limited to {limit} files")
-        except ValueError:
-            logger.error("Invalid limit argument. Usage: python main.py [limit]")
-            sys.exit(1)
-    else:
-        logger.info("\n📌 Processing all available files")
-    
-    # Run pipeline
-    result = run_pipeline(limit=limit)
-    
-    # Exit with appropriate code
-    sys.exit(0 if result["success"] else 1)
+    workbook_path = Path(
+        r"D:\axtrlabs\Digirett-AI-Agent\ingestion\data\Client_dataset\Domain_Metadata_VALIDATED (2).xlsx"
+    )
+
+    try:
+        run_pipeline(workbook_path=workbook_path)
+
+    except KeyboardInterrupt:
+        logger.warning("Pipeline stopped by user")
+        sys.exit(130)
+
+    except Exception as exc:
+        logger.error(
+            "Pipeline failed: %s",
+            exc,
+            exc_info=True,
+        )
+        sys.exit(1)

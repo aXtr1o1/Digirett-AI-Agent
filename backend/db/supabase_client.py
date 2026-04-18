@@ -1,3 +1,4 @@
+
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -106,25 +107,6 @@ class SupabaseClient:
 
         except Exception as exc:
             logger.error(f" update_conversation_title failed | {exc}")
-            return False
-
-    def update_conversation_summary(
-        self,
-        conversation_id: str,
-        summary: str,
-    ) -> bool:
-        """Update the conversation_summary column for a conversation."""
-        try:
-            self._get().table("conversations").update({
-                "conversation_summary": summary,
-                "updated_at": datetime.utcnow().isoformat(),
-            }).eq("conversation_id", conversation_id).execute()
-
-            logger.info(f"✅ Updated summary for conversation {conversation_id}")
-            return True
-
-        except Exception as exc:
-            logger.error(f"❌ update_conversation_summary failed | {exc}")
             return False
 
     def soft_delete_conversation(self, conversation_id: str) -> bool:
