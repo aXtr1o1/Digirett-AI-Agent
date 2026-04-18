@@ -1,0 +1,126 @@
+import { useState, useCallback } from "react";
+
+const BASE_URL = "http://localhost:8000";
+
+/**
+ * useDocumentUpload
+ *
+ * Handles document upload and session status for Digirett.
+ *
+ * Usage:
+ *   const { uploadDocument, sessionStatus, fetchSessionStatus, uploadError, isUploading } =
+ *     useDocumentUpload(conversationId, user.id);
+ */
+const useDocumentUpload = (conversationId, userId) => {
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+  const [sessionStatus, setSessionStatus] = useState(null);
+  // uploadedDocs: array of { document_id, file_name, upload_order }
+  const [uploadedDocs, setUploadedDocs] = useState([]);
+
+  // ── Fetch session status ──────────────────────────────────────────────────
+  const fetchSessionStatus = useCallback(async (convId) => {
+    const id = convId || conversationId;
+    if (!id) return;
+
+    try {
+      const res = await fetch(`${BASE_URL}/api/v1/documents/session/${id}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setSessionStatus(data);
+    } catch (err) {
+      console.error("[useDocumentUpload] fetchSessionStatus error:", err);
+    }
+  }, [conversationId]);
+
+  // ── Upload a document ─────────────────────────────────────────────────────
+  const uploadDocument = useCallback(async (file, convId) => {
+    const id = convId || conversationId;
+
+    // Client-side guards
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (!["pdf", "docx", "doc"].includes(ext)) {
+      setUploadError("Only PDF or Word documents (.pdf, .docx, .doc) are accepted.");
+      return null;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      setUploadError("File is too large. Maximum size is 20 MB.");
+      return null;
+    }
+    if (!id || !userId) {
+      setUploadError("No active conversation. Send a message first to start a session.");
+      return null;
+    }
+
+    setIsUploading(true);
+    setUploadError(null);
+
+    try {
+      const form = new FormData();
+      form.append("conversation_id", id);
+      form.append("user_id", userId);
+      form.append("file", file);
+      // ⚠️ Do NOT set Content-Type manually — browser sets it with the boundary
+
+      const res = await fetch(`${BASE_URL}/api/v1/documents/upload`, {
+        method: "POST",
+        body: form,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        // 429 → session limit reached
+        setUploadError(data.message ?? "Upload failed.");
+        return null;
+      }
+
+      // Track uploaded docs
+      setUploadedDocs(prev => [
+        ...prev,
+        {
+          document_id: data.document_id,
+          file_name: data.file_name,
+          upload_order: data.upload_order,
+        },
+      ]);
+
+      // Refresh session status after upload
+      await fetchSessionStatus(id);
+
+      return data; // caller can use data.message for a toast, etc.
+
+    } catch (err) {
+      console.error("[useDocumentUpload] uploadDocument error:", err);
+      setUploadError("Network error. Please try again.");
+      return null;
+    } finally {
+      setIsUploading(false);
+    }
+  }, [conversationId, userId, fetchSessionStatus]);
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const clearUploadError = useCallback(() => setUploadError(null), []);
+
+  // docs_remaining === 0 means session limit hit
+  const isUploadDisabled =
+    isUploading ||
+    (sessionStatus !== null && sessionStatus.docs_remaining === 0);
+
+  const isChatDisabled =
+    sessionStatus !== null && sessionStatus.turns_remaining === 0;
+
+  return {
+    uploadDocument,
+    fetchSessionStatus,
+    sessionStatus,
+    uploadedDocs,
+    isUploading,
+    uploadError,
+    clearUploadError,
+    isUploadDisabled,
+    isChatDisabled,
+  };
+};
+
+export default useDocumentUpload;

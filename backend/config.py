@@ -38,15 +38,6 @@ class Settings(BaseSettings):
     # Max characters of context sent to LLM (covers ~20 000 tokens)
     CONTEXT_MAX_LENGTH: int = 80000
 
-        # ── Reranker ─────────────────────────────────────────────────────────
-    # HuggingFace model ID downloaded at runtime
-    #RERANKER_MODEL_NAME: str
-    # Number of chunks to retrieve from Milvus before reranking (recall stage)
-    RERANKER_RECALL_TOP_K: int
-    # Number of chunks to keep after reranking (passed to validation + generation)
-    RERANKER_FINAL_TOP_K: int
-    RERANKER_MIN_SCORE: float
-
     # ── Rate Limiting ────────────────────────────────────────────────────
     RATE_LIMIT_PER_MINUTE: int = 250
 
@@ -72,7 +63,7 @@ class Settings(BaseSettings):
 
     # ── Conversation ──────────────────────────────────────────────────────
     AUTO_SUMMARY_THRESHOLD: int = 50
-    DEFAULT_USER_ID: str = "2a06144d-4675-4c38-b7f8-13c02da91af5"
+    # DEFAULT_USER_ID: str = "admin"
     MAX_CONVERSATION_TITLE_LENGTH: int = 100
     SOFT_DELETE: bool = True
 
@@ -93,4 +84,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-print(f">>> DEFAULT_USER_ID loaded as: {settings.DEFAULT_USER_ID}")

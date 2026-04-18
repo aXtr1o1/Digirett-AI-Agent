@@ -24,27 +24,60 @@ api.interceptors.request.use(
   },
   (error) => Promise.reject(error)
 );
+
 // Response interceptor
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    let message = "Something went wrong";
-
     if (error.response) {
-      message =
-        error.response.data?.message ||   // ✅ backend global handler
-        error.response.data?.detail ||    // fallback
-        "Something went wrong";
-    } 
-    else if (error.request) {
-      message = "Server not reachable";
+      const { status, data } = error.response;
+
+      if (status === 401) {
+        console.error("Unauthorized:", data);
+      } else if (status === 403) {
+        console.error("Access forbidden:", data);
+      } else if (status === 500) {
+        console.error("Server error:", data);
+      }
+    } else if (error.request) {
+      console.error("Network error:", error.message);
+    } else {
+      console.error("Error:", error.message);
     }
 
-    // 🔥 POPUP HERE
-    alert(message);
+    let message = "Something went wrong";
 
-    // ❗ IMPORTANT: return original error (not new Error)
-    return Promise.reject(error);
+if (error.response) {
+
+  if (error.response.status === 500) {
+    message = "Server error. Please try again.";
+  }
+
+  else if (error.response.status === 404) {
+    message = "Data not found.";
+  }
+
+  else if (error.response.status === 401) {
+    message = "Please login again.";
+  }
+
+  else {
+    message =
+      error.response.data?.detail ||
+      "Something went wrong";
+  }
+
+}
+
+else if (error.request) {
+
+  message = "Server not reachable";
+
+}
+
+return Promise.reject(
+  new Error(message)
+);
   }
 );
 

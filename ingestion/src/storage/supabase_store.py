@@ -1,579 +1,176 @@
-### This code defines the SupabaseStore class, which manages metadata about law documents in a Supabase database and handles the uploading of raw XML files to Supabase storage. It includes methods for calculating file hashes, checking for existing files, inserting/upserting metadata, and cleaning up storage. The class is designed to be used in the Lovdata ingestion pipeline, ensuring that files are not duplicated and that metadata is kept up to date. Detailed logging is included for monitoring operations and troubleshooting.
-#  import os
-# import hashlib
-# from supabase import create_client, Client
-# from datetime import datetime, timezone
-# import logging
+from __future__ import annotations
 
-# logger = logging.getLogger(__name__)
-
-# from ingestion.src.config import (
-#     SUPABASE_URL,
-#     SUPABASE_SERVICE_KEY,
-#     SUPABASE_BUCKET,
-#     SUPABASE_TABLE 
-# )
-
-
-# class SupabaseStore:
-#     """
-#     Supabase storage handler WITHOUT year field.
-#     Uploads XML files and manages metadata in lovdata_metadata table.
-#     """
-    
-#     def __init__(self):
-#         self.supabase: Client | None = None
-#         self._connected = False
-#         self._uploaded_hashes = set()
-    
-#     def _ensure_connection(self):
-#         if not self._connected:
-#             self.supabase = create_client(
-#                 SUPABASE_URL,
-#                 SUPABASE_SERVICE_KEY
-#             )
-#             self._connected = True
-
-
-#     def calculate_hash(self, file_path: str) -> str:
-#         """Calculate SHA256 hash of file."""
-#         sha256_hash = hashlib.sha256()
-#         with open(file_path, "rb") as f:
-#             for byte_block in iter(lambda: f.read(4096), b""):
-#                 sha256_hash.update(byte_block)
-#         return sha256_hash.hexdigest()
-
-#     def upload_xml_to_storage(self, file_path: str, destination_filename: str) -> bool:
-#         self._ensure_connection()
-        
-#         """
-#         Upload XML WITHOUT .xml extension, with duplicate prevention.
-        
-#         Args:
-#             file_path: Path to local XML file
-#             destination_filename: Target filename (extension will be removed)
-            
-#         Returns:
-#             True if successful or already exists, False on error
-#         """
-#         try:
-#             # Remove .xml extension
-#             clean_name = os.path.splitext(destination_filename)[0]
-#             while clean_name.lower().endswith('.xml'):
-#                 clean_name = clean_name[:-4]
-            
-#             storage_path = f"raw/{clean_name}"
-            
-#             # Check if exists
-#             try:
-#                 existing = self.supabase.storage.from_(SUPABASE_BUCKET).list("raw")
-#                 existing_files = {f['name'] for f in existing}
-                
-#                 if clean_name in existing_files:
-#                     logger.info(f"⏭️  File already exists in storage: {clean_name}, skipping upload")
-#                     return True
-                    
-#             except Exception as check_error:
-#                 logger.debug(f"Could not check existing files: {check_error}")
-            
-#             # Upload
-#             with open(file_path, "rb") as f:
-#                 self.supabase.storage.from_(SUPABASE_BUCKET).upload(
-#                     path=storage_path,
-#                     file=f,
-#                     file_options={
-#                         "cache-control": "3600",
-#                         "upsert": "false",
-#                         "content-type": "application/xml"
-#                     }
-#                 )
-            
-#             logger.info(f"✅ Uploaded to storage: {storage_path}")
-#             return True
-            
-#         except Exception as e:
-#             if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
-#                 logger.info(f"⏭️  File already exists: {clean_name}, skipping")
-#                 return True
-            
-#             logger.error(f"❌ Storage upload failed for {destination_filename}: {e}")
-#             return False
-
-#     def insert_file_metadata(
-#         self,
-#         file_name: str,
-#         file_hash: str,
-#         file_size: int,
-#         zip_name: str,
-#         url: str = None,
-#         file_storage_uri: str = None
-#     ):
-#         self._ensure_connection()
-
-#         try:
-#             status = self.classify_file(file_name, file_hash)
-
-#             if status == "UNCHANGED":
-#                 logger.info(f"⏭️  UNCHANGED file skipped: {file_name}")
-#                 return "UNCHANGED"
-
-#             storage_uri = url or file_storage_uri
-#             if not storage_uri:
-#                 raise ValueError("Either 'url' or 'file_storage_uri' must be provided")
-
-#             metadata = {
-#                 "zip_name": zip_name,
-#                 "file_name": file_name,
-#                 "file_hash": file_hash,
-#                 "file_size": file_size,
-#                 "file_storage_uri": storage_uri,
-#                 "milvus_inserted_at": datetime.now(timezone.utc).isoformat()
-#             }
-
-#             if status == "UPDATED":
-#                 logger.info(f"🔄 Updating metadata for {file_name}")
-#                 self.supabase.table(SUPABASE_TABLE)\
-#                     .delete() \
-#                     .eq("file_name", file_name) \
-#                     .execute()
-
-#             self.supabase.table(SUPABASE_TABLE) \
-#                 .insert(metadata) \
-#                 .execute()
-
-#             logger.info(f"✅ Metadata stored for {file_name}")
-#             return status
-
-#         except Exception as e:
-#             logger.error(f"❌ Metadata operation failed for {file_name}: {e}")
-#             raise
-
-#     def file_name_exists(self, file_name: str) -> bool:
-#         """Check if file with given NAME exists in database."""
-#         self._ensure_connection()
-#         try:
-#             response = (
-#                 self.supabase
-#                 .table(SUPABASE_TABLE)
-#                 .select("file_name")
-#                 .eq("file_name", file_name)
-#                 .limit(1)
-#                 .execute()
-#             )
-#             return len(response.data) > 0
-#         except Exception as e:
-#             logger.error(f"❌ Error checking file name existence: {e}")
-#             return False
-
-#     # ✅ ADD THIS METHOD RIGHT HERE
-#     def file_exists(self, file_hash: str) -> bool:
-#         """Check if file with given HASH exists in database (for test compatibility)."""
-#         self._ensure_connection()
-#         try:
-#             response = (
-#                 self.supabase
-#                 .table(SUPABASE_TABLE)
-#                 .select("file_hash")
-#                 .eq("file_hash", file_hash)
-#                 .limit(1)
-#                 .execute()
-#             )
-#             return len(response.data) > 0
-#         except Exception:
-#             return False
-        
-#     def zip_already_processed(self, zip_name: str) -> bool:
-#         """
-#         Check whether a ZIP archive has already been ingested.
-#         """
-#         self._ensure_connection()
-
-#         try:
-#             response = (
-#                 self.supabase
-#                 .table(SUPABASE_TABLE)
-#                 .select("zip_name")
-#                 .eq("zip_name", zip_name)
-#                 .limit(1)
-#                 .execute()
-#             )
-
-#             return len(response.data) > 0
-
-#         except Exception as e:
-#             logger.error(f"❌ ZIP check failed: {e}")
-#             return False
-        
-#     def classify_file(self, file_name: str, file_hash: str) -> str:
-#         """
-#         Classify file as NEW, UPDATED, or UNCHANGED.
-
-#         Rules:
-#         - File name not found          -> NEW
-#         - File name exists, hash same  -> UNCHANGED
-#         - File name exists, hash diff  -> UPDATED
-#         """
-#         self._ensure_connection()
-
-#         try:
-#             response = (
-#                 self.supabase
-#                 .table(SUPABASE_TABLE)
-#                 .select("file_hash")
-#                 .eq("file_name", file_name)
-#                 .limit(1)
-#                 .execute()
-#             )
-
-#             # No record → NEW FILE
-#             if not response.data:
-#                 return "NEW"
-
-#             existing_hash = response.data[0]["file_hash"]
-
-#             # Same content
-#             if existing_hash == file_hash:
-#                 return "UNCHANGED"
-
-#             # Same name, different content
-#             return "UPDATED"
-
-#         except Exception as e:
-#             logger.error(f"❌ Classification failed for {file_name}: {e}")
-#             raise
-    
-#     def get_all_file_hashes(self) -> set:
-#         """Retrieve all file hashes from database."""
-#         self._ensure_connection()
-#         try:
-#             response = self.supabase.table(SUPABASE_TABLE).select("file_hash").execute()
-#             return {row['file_hash'] for row in response.data if row.get('file_hash')}
-#         except Exception as e:
-#             logger.error(f"❌ Error fetching file hashes: {e}")
-#             return set()
-        
-#     def get_all_file_names(self) -> set:
-#         """Retrieve ALL file names from database using pagination."""
-#         self._ensure_connection()
-
-#         try:
-#             all_files = set()
-#             batch_size = 1000
-#             offset = 0
-
-#             while True:
-#                 response = (
-#                     self.supabase
-#                     .table(SUPABASE_TABLE)
-#                     .select("file_name")
-#                     .range(offset, offset + batch_size - 1)
-#                     .execute()
-#                 )
-
-#                 data = response.data
-
-#                 if not data:
-#                     break
-
-#                 for row in data:
-#                     if row.get("file_name"):
-#                         all_files.add(row["file_name"])
-
-#                 offset += batch_size
-#                 logger.info(f"Fetched {len(all_files)} Supabase file names...")
-
-#             return all_files
-
-#         except Exception as e:
-#             logger.error(f"❌ Error fetching file names: {e}")
-#             return set()
-
-#     # ✅ ADD THIS METHOD HERE
-#     def delete_xml_from_storage(self, file_name: str):
-#         """
-#         Delete XML file from Supabase storage (rollback use).
-#         """
-#         self._ensure_connection()
-
-#         try:
-#             clean_name = os.path.splitext(file_name)[0]
-#             storage_path = f"raw/{clean_name}"
-
-#             self.supabase.storage.from_(SUPABASE_BUCKET).remove([storage_path])
-
-#             logger.warning(f"🧹 Rolled back storage file: {storage_path}")
-
-#         except Exception as e:
-#             logger.error(f"❌ Failed to delete storage file {file_name}: {e}")
-        
-#     def cleanup_duplicate_xml_files(self):
-#         """Remove .xml files from storage (cleanup utility)."""
-#         self._ensure_connection()
-#         try:
-#             logger.info("🧹 Cleaning up duplicate .xml files...")
-#             files = self.supabase.storage.from_(SUPABASE_BUCKET).list("raw")
-#             xml_files = [f['name'] for f in files if f['name'].endswith('.xml')]
-            
-#             if not xml_files:
-#                 logger.info("✅ No .xml files to clean up")
-#                 return
-            
-#             logger.info(f"Found {len(xml_files)} .xml files to remove")
-            
-#             batch_size = 50
-#             for i in range(0, len(xml_files), batch_size):
-#                 batch = xml_files[i:i+batch_size]
-#                 paths = [f"raw/{name}" for name in batch]
-#                 self.supabase.storage.from_(SUPABASE_BUCKET).remove(paths)
-#                 logger.info(f"🗑️  Deleted {len(batch)} .xml files")
-            
-#             logger.info(f"✅ Cleanup complete: removed {len(xml_files)} files")
-            
-#         except Exception as e:
-#             logger.error(f"❌ Cleanup failed: {e}")
-#-------------------------------------------------------------------
-
-
-"""
-storage/supabase_store.py
-==========================
-Manages the law_documents_metadata table in Supabase.
-
-Table schema:
-    id                 BIGSERIAL PRIMARY KEY
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    domain_name        TEXT NOT NULL
-    subdomain_name     TEXT
-    source_type        TEXT NOT NULL
-    lovdata_url        VARCHAR(500) NOT NULL
-    file_hash          VARCHAR(128) NOT NULL UNIQUE
-    file_size          INTEGER CHECK (file_size >= 0)
-    milvus_inserted_at TIMESTAMPTZ
-
-One row per XML file (file_hash UNIQUE).
-When a file appears in multiple XL sheets, values are comma-joined.
-"""
-
-import hashlib
 import logging
-import os
 from datetime import datetime, timezone
-from typing import Optional, Set
+from typing import Optional
 
 from supabase import Client, create_client
 
 from ingestion.src.config import (
     SUPABASE_BUCKET,
     SUPABASE_SERVICE_KEY,
+    SUPABASE_SOURCE_TABLE_AI,
+    SUPABASE_SOURCE_TABLE_PREDEFINED,
     SUPABASE_TABLE,
     SUPABASE_URL,
 )
+
 
 logger = logging.getLogger(__name__)
 
 
 class SupabaseStore:
-
     def __init__(self) -> None:
         self.supabase: Optional[Client] = None
         self._connected = False
 
     def _ensure_connection(self) -> None:
         if not self._connected:
-            self.supabase   = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+            self.supabase = create_client(
+                SUPABASE_URL,
+                SUPABASE_SERVICE_KEY,
+            )
             self._connected = True
 
-    # ------------------------------------------------------------------
-    # File hash
-    # ------------------------------------------------------------------
-
-    def calculate_hash(self, file_path: str) -> str:
-        sha256 = hashlib.sha256()
-        with open(file_path, "rb") as f:
-            for block in iter(lambda: f.read(4096), b""):
-                sha256.update(block)
-        return sha256.hexdigest()
-
-    # ------------------------------------------------------------------
-    # Existence check
-    # ------------------------------------------------------------------
-
-    def file_exists(self, file_hash: str) -> bool:
+    def _find_in_table_by_file_name(
+        self,
+        table_name: str,
+        file_name: str,
+    ) -> dict | None:
         self._ensure_connection()
+
         try:
             response = (
-                self.supabase
-                .table(SUPABASE_TABLE)
-                .select("file_hash")
-                .eq("file_hash", file_hash)
+                self.supabase.table(table_name)
+                .select("*")
+                .eq("file_name", file_name)
                 .limit(1)
                 .execute()
             )
-            return len(response.data) > 0
+
+            if response.data:
+                return response.data[0]
+
+            return None
+
         except Exception as exc:
-            logger.error(f"file_exists check failed: {exc}")
-            return False
+            logger.error(
+                "find in table failed | table=%s | file=%s | error=%s",
+                table_name,
+                file_name,
+                exc,
+            )
+            return None
 
-    def get_all_file_hashes(self) -> Set[str]:
-        self._ensure_connection()
-        try:
-            response = self.supabase.table(SUPABASE_TABLE).select("file_hash").execute()
-            return {r["file_hash"] for r in response.data if r.get("file_hash")}
-        except Exception as exc:
-            logger.error(f"get_all_file_hashes failed: {exc}")
-            return set()
-
-    # ------------------------------------------------------------------
-    # Insert / upsert metadata
-    # ------------------------------------------------------------------
-
-    def insert_law_documents_metadata(
+    def find_source_metadata_by_file_name(
         self,
-        lovdata_url:    str,
-        file_hash:      str,
-        file_size:      int,
-        domain_name:    str,
-        subdomain_name: str = "",
-        source_type:    str = "",
-    ) -> bool:
-        """
-        Upsert one row into law_documents_metadata.
-        Conflicts on file_hash are resolved by updating existing metadata fields.
-        Returns True on success.
-        """
+        file_name: str,
+    ) -> dict | None:
+        row = self._find_in_table_by_file_name(
+            SUPABASE_SOURCE_TABLE_PREDEFINED,
+            file_name,
+        )
+
+        if row:
+            row["_matched_table"] = SUPABASE_SOURCE_TABLE_PREDEFINED
+            return row
+
+        row = self._find_in_table_by_file_name(
+            SUPABASE_SOURCE_TABLE_AI,
+            file_name,
+        )
+
+        if row:
+            row["_matched_table"] = SUPABASE_SOURCE_TABLE_AI
+            return row
+
+        return None
+
+    def download_xml_text_from_storage(
+        self,
+        bucket_path: str,
+    ) -> str | None:
         self._ensure_connection()
+
+        try:
+            response = (
+                self.supabase.storage
+                .from_(SUPABASE_BUCKET)
+                .download(bucket_path)
+            )
+
+            if response is None:
+                return None
+
+            if isinstance(response, bytes):
+                return response.decode("utf-8")
+
+            if hasattr(response, "decode"):
+                return response.decode("utf-8")
+
+            return str(response)
+
+        except Exception as exc:
+            logger.error(
+                "download_xml_text_from_storage failed | path=%s | error=%s",
+                bucket_path,
+                exc,
+            )
+            return None
+
+    def upsert_file_metadata(
+        self,
+        file_name: str,
+        source_id: str,
+        source_doc_url: str,
+        domain: str,
+        subdomain: str,
+        b2b_b2c: str,
+        tier: str,
+        jurisdiction: str,
+        legal_validation: str,
+        xml_bucket_path: str,
+        doc_title: str,
+    ) -> bool:
+        self._ensure_connection()
+
+        now = datetime.now(timezone.utc).isoformat()
+
         row = {
-            "lovdata_url":        lovdata_url,
-            "file_hash":          file_hash,
-            "file_size":          max(0, file_size),
-            "domain_name":        domain_name    or "",
-            "subdomain_name":     subdomain_name or "",
-            "source_type":        source_type    or "",
-            "milvus_inserted_at": datetime.now(timezone.utc).isoformat(),
+            "file_name": file_name,
+            "source_id": source_id,
+            "source_doc_url": source_doc_url,
+            "domain": domain,
+            "subdomain": subdomain,
+            "b2b_b2c": b2b_b2c,
+            "tier": tier,
+            "jurisdiction": jurisdiction,
+            "legal_validation": legal_validation,
+            "xml_bucket_path": xml_bucket_path,
+            "doc_title": doc_title,
+            "updated_at": now,
         }
-        try:
-            self.supabase.table(SUPABASE_TABLE).upsert(
-                row, on_conflict="file_hash"
-            ).execute()
-            logger.info(
-                f"  Supabase upserted | url={lovdata_url} | "
-                f"domain={domain_name!r} | sub={subdomain_name!r} | "
-                f"type={source_type!r}"
-            )
-            return True
-        except Exception as exc:
-            logger.error(f"insert_law_documents_metadata failed: {exc}")
-            return False
-
-    def append_law_documents_metadata(
-        self,
-        file_hash:      str,
-        domain_name:    str,
-        subdomain_name: str = "",
-        source_type:    str = "",
-    ) -> bool:
-        """
-        Append new domain/subdomain/source_type values to an existing row,
-        avoiding duplicates in the comma-separated strings.
-        Returns True on success.
-        """
-        self._ensure_connection()
-
-        def _append(existing: str, new_val: str) -> str:
-            if not new_val:
-                return existing
-            parts = [p.strip() for p in existing.split(",") if p.strip()]
-            for part in [p.strip() for p in new_val.split(",") if p.strip()]:
-                if part not in parts:
-                    parts.append(part)
-            return ", ".join(parts)
 
         try:
-            response = (
-                self.supabase
-                .table(SUPABASE_TABLE)
-                .select("domain_name, subdomain_name, source_type")
-                .eq("file_hash", file_hash)
-                .limit(1)
+            (
+                self.supabase.table(SUPABASE_TABLE)
+                .upsert(row, on_conflict="file_name")
                 .execute()
             )
-            if not response.data:
-                logger.warning(
-                    f"  append_law_documents_metadata: no row found for "
-                    f"file_hash={file_hash[:8]}..."
-                )
-                return False
-
-            row = response.data[0]
-            updated = {
-                "domain_name":    _append(row.get("domain_name",    ""), domain_name),
-                "subdomain_name": _append(row.get("subdomain_name", ""), subdomain_name),
-                "source_type":    _append(row.get("source_type",    ""), source_type),
-            }
-
-            self.supabase.table(SUPABASE_TABLE).update(updated).eq(
-                "file_hash", file_hash
-            ).execute()
 
             logger.info(
-                f"  Supabase metadata appended | "
-                f"domain={updated['domain_name']!r} | "
-                f"sub={updated['subdomain_name']!r} | "
-                f"type={updated['source_type']!r}"
+                "Supabase file metadata upserted | file_name=%s | source_id=%s",
+                file_name,
+                source_id,
             )
+
             return True
 
         except Exception as exc:
-            logger.error(f"append_law_documents_metadata failed: {exc}")
+            logger.error(
+                "upsert_file_metadata failed | file_name=%s | error=%s",
+                file_name,
+                exc,
+            )
+
             return False
-
-    # ------------------------------------------------------------------
-    # Storage (raw XML)
-    # ------------------------------------------------------------------
-
-    def upload_xml_to_storage(self, file_path: str, destination_filename: str) -> bool:
-        self._ensure_connection()
-        try:
-            clean_name = os.path.splitext(destination_filename)[0]
-            while clean_name.lower().endswith(".xml"):
-                clean_name = clean_name[:-4]
-            storage_path = f"raw/{clean_name}"
-
-            try:
-                existing       = self.supabase.storage.from_(SUPABASE_BUCKET).list("raw")
-                existing_files = {f["name"] for f in existing}
-                if clean_name in existing_files:
-                    logger.info(f"  Already in storage, skipping: {clean_name}")
-                    return True
-            except Exception:
-                pass
-
-            with open(file_path, "rb") as f:
-                self.supabase.storage.from_(SUPABASE_BUCKET).upload(
-                    path=storage_path,
-                    file=f,
-                    file_options={
-                        "cache-control": "3600",
-                        "upsert":        "false",
-                        "content-type":  "application/xml",
-                    },
-                )
-            logger.info(f"  Uploaded to storage: {storage_path}")
-            return True
-
-        except Exception as exc:
-            if "already exists" in str(exc).lower() or "duplicate" in str(exc).lower():
-                logger.info(f"  Already in storage: {destination_filename}")
-                return True
-            logger.error(f"  Upload failed for {destination_filename}: {exc}")
-            return False
-
-    def delete_xml_from_storage(self, file_name: str) -> None:
-        self._ensure_connection()
-        try:
-            clean_name   = os.path.splitext(file_name)[0]
-            storage_path = f"raw/{clean_name}"
-            self.supabase.storage.from_(SUPABASE_BUCKET).remove([storage_path])
-            logger.warning(f"  Storage rollback: {storage_path}")
-        except Exception as exc:
-            logger.error(f"  delete_xml_from_storage failed: {exc}")
