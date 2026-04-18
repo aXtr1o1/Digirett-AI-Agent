@@ -19,12 +19,15 @@ import { API_BASE_URL, DEFAULT_USER_ID } from "../utils/constants";
 // Example:
 //   API_BASE_URL = "http://localhost:8000"       → ws://localhost:8000/api/v1/chat/ws
 //   API_BASE_URL = "http://localhost:8000/api/v1" → ws://localhost:8000/api/v1/chat/ws
+
+// FIX: use SAFE_API_BASE_URL for cleanBase — previously API_BASE_URL was used
+// directly which crashes when process.env.REACT_APP_API_URL is undefined (CI).
 const SAFE_API_BASE_URL =
   typeof API_BASE_URL === "string" && API_BASE_URL.length > 0
     ? API_BASE_URL
     : "http://localhost:8000";
 
-const cleanBase = API_BASE_URL.replace(/\/+$/, "");
+const cleanBase = SAFE_API_BASE_URL.replace(/\/+$/, "");  // ← was API_BASE_URL
 
 const WS_URL =
   cleanBase
@@ -66,7 +69,7 @@ const chatService = {
         console.log("[chatService] Payload:", requestBody);
 
         ws = new WebSocket(WS_URL);
-        
+
         // Per-query state — same variables as the old SSE version
         let fullMessage            = "";
         let sources                = [];
@@ -148,13 +151,9 @@ const chatService = {
           console.log("[chatService] WS closed | code:", e.code, "reason:", e.reason);
           if (cancelled) return;
           if (!completeFired && !fullMessage) {
-
             if (onError) {
-              onError({
-                message: "Connection lost. Please try again."
-              });
+              onError({ message: "Connection lost. Please try again." });
             }
-
             return;
           }
           // Closed before complete event arrived — fire onComplete with buffered text
@@ -175,17 +174,10 @@ const chatService = {
 
         // ── 4. Network / protocol error ────────────────────────────────
         ws.onerror = (e) => {
-
-        console.error("[chatService] WS error:", e);
-
-        if (!cancelled && onError) {
-
-          onError({
-            message: "Connection error. Please try again."
-          });
-
-        }
-
+          console.error("[chatService] WS error:", e);
+          if (!cancelled && onError) {
+            onError({ message: "Connection error. Please try again." });
+          }
         };
 
       } catch (err) {
