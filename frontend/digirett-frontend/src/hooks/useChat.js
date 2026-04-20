@@ -2,7 +2,6 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import chatService from "../services/chatService";
 import conversationService from "../services/conversationService";
 import useDocumentUpload from "./useDocumentUpload";
-import useDocumentUpload from "./useDocumentUpload";
 import { MESSAGE_ROLES } from "../utils/constants";
 
 const useChat = (
@@ -12,9 +11,6 @@ const useChat = (
   userId
 ) => {
   const [messages, setMessages] = useState([]);
-  const addMessage = useCallback((msg) => {
-  setMessages((prev) => [...prev, msg]);
-}, []);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [streamingMessage, setStreamingMessage] = useState("");
@@ -22,6 +18,10 @@ const useChat = (
 
   const activeConversationIdRef = useRef(conversationId);
   const abortRef = useRef(null);
+
+  const addMessage = useCallback((msg) => {
+    setMessages((prev) => [...prev, msg]);
+  }, []);
 
   const {
     uploadDocument,
@@ -39,19 +39,22 @@ const useChat = (
     activeConversationIdRef.current = conversationId;
   }, [conversationId]);
 
-  // ── Load messages for an existing conversation ────────────────────────────
+  // Load messages
   const loadMessages = useCallback(async () => {
     if (!conversationId) {
       setMessages([]);
-      setMessages([]);
       return;
     }
+
     setIsLoading(true);
     setError(null);
+
     try {
       const data =
         await conversationService.getConversationWithMessages(conversationId);
+
       const msgs = Array.isArray(data.messages) ? data.messages : [];
+
       const normalized = msgs.map((m) => ({
         id: m.message_id,
         role: m.role,
@@ -59,6 +62,7 @@ const useChat = (
         sources: m.sources || [],
         timestamp: m.created_at || new Date().toISOString(),
       }));
+
       setMessages(normalized);
     } catch (err) {
       console.error("[useChat] loadMessages error:", err);
@@ -68,39 +72,32 @@ const useChat = (
     }
   }, [conversationId]);
 
-  // ── Auto-create a conversation if none exists ─────────────────────────────
-  // This lets users upload a doc on a brand-new chat without having to send
-  // a text message first. The backend requires user_id = DEFAULT_USER_ID.
+  // Ensure conversation exists
   const ensureConversation = useCallback(async () => {
     if (activeConversationIdRef.current) {
       return activeConversationIdRef.current;
     }
 
     try {
-      // ✅ Correct method name: createNewConversation (not createConversation)
-      // ✅ Returns response.data which has shape { conversation_id, ... }
       const data = await conversationService.createNewConversation();
       const newId = data?.conversation_id;
 
-      if (!newId) {
-        console.error("[useChat] createNewConversation returned no ID:", data);
-        throw new Error("No conversation_id in response");
-      }
+      if (!newId) throw new Error("No conversation_id");
 
       activeConversationIdRef.current = newId;
 
-      if (onConversationCreated) onConversationCreated(newId, null);
-      if (moveConversationToTop) moveConversationToTop(newId);
+      onConversationCreated?.(newId, null);
+      moveConversationToTop?.(newId);
 
       return newId;
     } catch (err) {
       console.error("[useChat] ensureConversation error:", err);
-      setError("Failed to start a session. Please try again.");
+      setError("Failed to start a session.");
       return null;
     }
   }, [onConversationCreated, moveConversationToTop]);
 
-  // ── Send message — accepts { text, file } OR a plain string ──────────────
+  // Send message
   const sendMessage = useCallback(
     async (payload) => {
       const messageText =
@@ -115,20 +112,18 @@ const useChat = (
 
       setError(null);
 
-      // ── Step 1: Upload file if provided ───────────────────────────────────
+      // Upload file first
       if (file) {
-        // Auto-create conversation if needed — no blocking error shown to user
         const convId = await ensureConversation();
         if (!convId) return;
 
         const uploadResult = await uploadDocument(file, convId);
         if (!uploadResult) return;
 
-        // Only a file was sent — done after upload, no text to stream
         if (!messageText.trim()) return;
       }
 
-      // ── Step 2: Optimistically add user message ────────────────────────────
+      // Add user message
       const userMessage = {
         id: crypto.randomUUID(),
         role: MESSAGE_ROLES.USER,
@@ -138,15 +133,13 @@ const useChat = (
       };
 
       setMessages((prev) => [...prev, userMessage]);
+
       setIsStreaming(true);
       setStreamingMessage("");
 
       let firstTokenReceived = false;
       const activeConversationId = activeConversationIdRef.current || null;
-      let firstTokenReceived = false;
-      const activeConversationId = activeConversationIdRef.current || null;
 
-      // ── Step 3: Stream response via WebSocket ──────────────────────────────
       abortRef.current = chatService.sendMessage(
         activeConversationId,
         messageText,
@@ -159,14 +152,6 @@ const useChat = (
           }
           setStreamingMessage((prev) => prev + token);
         },
-        // STREAM TOKEN
-        (token) => {
-          if (!firstTokenReceived) {
-            firstTokenReceived = true;
-            setStreamingMessage("");
-          }
-          setStreamingMessage((prev) => prev + token);
-        },
 
         // COMPLETE
         (data) => {
@@ -177,28 +162,20 @@ const useChat = (
             sources: data.sources || [],
             timestamp: new Date().toISOString(),
           };
-        // COMPLETE
-        (data) => {
-          const assistantMessage = {
-            id: data.messageId || crypto.randomUUID(),
-            role: MESSAGE_ROLES.ASSISTANT,
-            content: data.message,
-            sources: data.sources || [],
-            timestamp: new Date().toISOString(),
-          };
 
-          setMessages((prev) => [...prev, assistantMessage]);
-          setStreamingMessage("");
-          setIsStreaming(false);
           setMessages((prev) => [...prev, assistantMessage]);
           setStreamingMessage("");
           setIsStreaming(false);
 
           if (data.conversationId) {
             activeConversationIdRef.current = data.conversationId;
-            const backendTitle = data.metadata?.conversation_title || null;
-            if (onConversationCreated) onConversationCreated(data.conversationId, backendTitle);
-            if (moveConversationToTop) moveConversationToTop(data.conversationId);
+
+            const backendTitle =
+              data.metadata?.conversation_title || null;
+
+            onConversationCreated?.(data.conversationId, backendTitle);
+            moveConversationToTop?.(data.conversationId);
+
             fetchSessionStatus(data.conversationId);
           }
         },
@@ -214,21 +191,20 @@ const useChat = (
     },
     [
       ensureConversation,
+      uploadDocument,
       onConversationCreated,
       moveConversationToTop,
-      uploadDocument,
       fetchSessionStatus,
     ]
   );
 
-  // ── Stop streaming ────────────────────────────────────────────────────────
-  // ── Stop streaming ────────────────────────────────────────────────────────
+  // Stop streaming
   const stopStreaming = useCallback(() => {
     if (abortRef.current) {
       abortRef.current();
       abortRef.current = null;
+
       if (streamingMessage) {
-        setMessages((prev) => [
         setMessages((prev) => [
           ...prev,
           {
@@ -238,9 +214,9 @@ const useChat = (
             sources: [],
             timestamp: new Date().toISOString(),
           },
-          },
         ]);
       }
+
       setIsStreaming(false);
       setStreamingMessage("");
     }
