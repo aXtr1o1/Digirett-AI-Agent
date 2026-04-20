@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 
 from pymilvus import connections, Collection, utility
 from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
 
@@ -308,7 +309,7 @@ class MilvusClient:
             results = self._collection.search(
                 data=[embedding],
                 anns_field="embedding",
-                param={"metric_type": "COSINE", "params": {"ef": 256}},
+                param={"metric_type": "COSINE", "params": {"ef": 128}},
                 limit=top_k,
                 output_fields=output_fields,
                 expr=expr,

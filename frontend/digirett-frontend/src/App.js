@@ -106,6 +106,7 @@
 // }
 
 // export default App;
+import React, { useEffect } from "react";   // ✅ add useEffect here
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import SignInPage from "./pages/SignInPage";

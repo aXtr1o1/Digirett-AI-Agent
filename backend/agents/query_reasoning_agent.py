@@ -1,4 +1,5 @@
 
+
 import logging
 from typing import Dict, List, Optional
 
@@ -60,8 +61,6 @@ Criminal law
 Property law
 Procedural law
 
-IMPORTANT: "Company law" does NOT cover prokura, signaturregistrering, or pant.
-These belong to "Commercial agency law", "Business registration law", and "Security rights".
 You must determine domain dynamically from the mechanism described.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -234,13 +233,11 @@ OUTPUT FORMAT (STRICT – NO EXTRA TEXT)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Legal Topic               : <short description>
-Legal Domain              : <must be EXACTLY one of the 12 allowed domain values listed below>
-Jurisdiction              : <NO / EU-EEA / both>
-Source Type               : <lov / forskrift / both>
+Legal Domain              : <broad legal field>
 Primary Statute Name      : <most likely governing Norwegian law>
-Primary Statute ID        : <official Lovdata statute id OR full Lovdata URL if known>
+Primary Statute ID        : <official Lovdata statute id>
 Secondary Statute Name    : <if relevant, else "none">
-Secondary Statute ID      : <official Lovdata statute id or full Lovdata URL or "none">
+Secondary Statute ID      : <official Lovdata statute id or "none">
 Key Mechanism             : <core legal mechanism being regulated>
 Key Concepts              : <comma-separated statute-native terms>
 Enriched Query            : <single dense statute-anchored sentence>
@@ -312,8 +309,8 @@ STEP B — After determining the correct statute for the current query, apply th
   and determine the statute independently. Do NOT default to the previous statute.
 
 • Distinguish between:
-  - Mechanism change → new statute required
-  - Analytical dimension change (structure, scope, overview of the SAME topic) → keep same statute
+  - Mechanism change (requires new statute), and
+  - Analytical dimension change (structure, scope, systematics, overview).
 
 • If only the analytical dimension changes (e.g. "explain more briefly",
   "give an overview", "summarise"):
@@ -321,10 +318,6 @@ STEP B — After determining the correct statute for the current query, apply th
   - Abstract to statute level if structural/systematic explanation is requested.
   - Do NOT carry forward previously extracted subtopics.
   - Reformulate the enriched query to reflect the new analytical focus only.
-• If the current query introduces additional legal mechanisms
-  beyond the previous query (even if partially overlapping),
-  re-run full statute classification.
-  Do NOT preserve statute continuity in multi-mechanism queries.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ENRICHED QUERY RULES
@@ -338,7 +331,9 @@ The Enriched Query must:
 • If multi-mechanism: reference BOTH statute families naturally.
 • Be ONE dense statutory-style sentence.
 • Expand terminology, not legal interpretation.
+• Reflect statute-level abstraction if structural explanation is requested.
 
+Do not cite § numbers unless present in the query.
 Respond in the same language as the user query.
 
 REASONING PATTERNS:
@@ -446,9 +441,6 @@ class QueryReasoningAgent:
                 "primary_statute_id": statute_id,
                 "secondary_statute_id": secondary_statute_id,
                 "response_style": response_style,
-                "domain": domain,
-                "jurisdiction": jurisdiction,
-                "source_type": source_type,
             }
 
         except Exception as exc:

@@ -3,8 +3,12 @@ import MainLayout from "../components/layout/MainLayout";
 import ChatContainer from "../components/chat/ChatContainer";
 import useConversations from "../hooks/useConversations";
 
-const ChatPage = () => {
+// TODO: once you know your auth file, replace userId={null} with userId={user?.id}
+// and add the import, e.g:
+//   import { useAuth } from "../providers/AuthProvider";
+//   const { user } = useAuth();
 
+const ChatPage = () => {
   const {
     conversations,
     isLoading,
@@ -13,20 +17,17 @@ const ChatPage = () => {
     deleteConversation,
     handleAutoCreatedConversation,
     moveConversationToTop,
-    setCurrentConversationId
+    setCurrentConversationId,
   } = useConversations();
 
   return (
     <MainLayout
       conversations={conversations}
       currentConversationId={currentConversationId}
-
-      // ✅ Clicking New Chat only opens empty welcome page
       onNewChat={() => {
         localStorage.removeItem("conversationId");
         setCurrentConversationId(null);
       }}
-
       onSelectConversation={selectConversation}
       onDeleteConversation={deleteConversation}
       isLoadingConversations={isLoading}
@@ -35,6 +36,7 @@ const ChatPage = () => {
         conversationId={currentConversationId}
         onConversationCreated={handleAutoCreatedConversation}
         moveConversationToTop={moveConversationToTop}
+        userId={null}
       />
     </MainLayout>
   );

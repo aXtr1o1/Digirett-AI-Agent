@@ -1,3 +1,27 @@
+"""
+services/rag_service.py
+
+RAG Service — multi-agent pipeline orchestrator.
+
+Changes from Phase 1 (retrieval only — nothing else touched):
+─────────────────────────────────────────────────────────────
+1. _handle_legal:
+   - QueryReasoningAgent now returns secondary_statute_id + response_style
+   - RouterAgent returns subdomain_candidates + b2b_b2c
+   - RetrieverAgent.run() called with enriched_query + all metadata filters
+     (the 4-level fallback + BM25 re-rank is inside RetrieverAgent)
+   - _retrieve_and_validate() replaced by direct RetrieverAgent.run() call
+     (SourceValidationAgent was already disabled; validation logic simplified)
+   - statute_filter passed as Lovdata URL (resolved from primary_statute_id)
+
+2. _build_context:
+   - reads section_ref instead of url/source_url for RAG context assembly
+   - url alias still set in MilvusClient so chat.py citation display is untouched
+
+Everything else (casual, docqa, hybrid, followup, saving, streaming,
+chat.py, message_service.py) is completely unchanged.
+"""
+
 import logging
 import re
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -23,6 +47,11 @@ logger = logging.getLogger(__name__)
 
 # Redis key template for storing reasoning context between turns
 _REASONING_META_KEY = "reasoning:statute:{conversation_id}"
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Statute ID → Lovdata URL resolver  (unchanged from Phase 1)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 _LOVDATA_BASE = "https://lovdata.no"
 
@@ -277,7 +306,7 @@ class RAGService:
             yield {"type": "error", "message": str(exc)}
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # CASUAL PIPELINE
+    # CASUAL PIPELINE — unchanged
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _handle_casual(
@@ -316,7 +345,7 @@ class RAGService:
         logger.info(f"✅ CASUAL pipeline complete | tokens={token_count}")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # LEGAL PIPELINE
+    # LEGAL PIPELINE — retrieval logic updated, streaming/saving unchanged
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _handle_legal(
@@ -488,6 +517,10 @@ class RAGService:
 
         logger.info(f"📊 Score={score} | Confidence={confidence}")
 
+        # ── [7] Score gate — block low-confidence answers entirely ───────────
+        # score < 0.5 means the retrieved chunks do not support the query.
+        # Do NOT stream an LLM answer in this case — stream the no-result
+        # message instead so the user never sees a hallucinated response.
         if score < 0.5:
             logger.warning(
                 f"⚠️  Score={score} below threshold — blocking LLM answer | "
@@ -575,7 +608,7 @@ class RAGService:
         )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # DOCQA PIPELINE
+    # DOCQA PIPELINE — completely unchanged
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _handle_docqa(
@@ -652,7 +685,7 @@ class RAGService:
         )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # HYBRID PIPELINE
+    # HYBRID PIPELINE — completely unchanged
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _handle_hybrid(
@@ -731,7 +764,7 @@ class RAGService:
         )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # FOLLOWUP WITH DOC
+    # FOLLOWUP WITH DOC — completely unchanged
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _handle_followup_with_doc(

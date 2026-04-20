@@ -9,6 +9,39 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
   const { isCopied, copyToClipboard } = useCopyToClipboard();
   const isUser = message.role === "user";
   const isDark = theme === "dark";
+  // ✅ FILE MESSAGE HANDLING (ADD THIS BLOCK)
+  if (message.type === "file") {
+    return (
+      <div className="flex gap-4 mb-6 justify-end">
+
+        {/* FILE MESSAGE UI */}
+        <div className="flex flex-col items-end max-w-[85%]">
+          <div
+            className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-sm ${
+              isDark
+                ? "bg-[#2f2f2f] text-white"
+                : "bg-gray-100 text-gray-900"
+            }`}
+          >
+            <span>📄</span>
+            <span className="truncate max-w-[200px]">
+              {message.fileName}
+            </span>
+          </div>
+        </div>
+
+        {/* USER AVATAR */}
+        <div
+          className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center mt-1 ${
+            isDark ? "bg-gray-600" : "bg-gray-300"
+          }`}
+        >
+          <User className={`h-4 w-4 ${isDark ? "text-gray-200" : "text-gray-600"}`} />
+        </div>
+
+      </div>
+    );
+  }
 
   return (
     <div className={`flex gap-4 mb-6 ${isUser ? "justify-end" : "justify-start"}`}>
@@ -53,51 +86,48 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
                 remarkPlugins={[remarkGfm]}
                 components={{
 
-              table: (props) => (
-                <div className="overflow-x-auto my-4">
-                  <table
-                    className={`border-collapse w-full text-sm rounded-lg overflow-hidden ${
-                      isDark
-                        ? "bg-gray-900 border border-gray-700"
-                        : "bg-white border border-gray-300 shadow-sm"
-                    }`}
-                    {...props}
-                  />
-                </div>
-              ),
+                  /* ✅ TABLE SUPPORT ADDED */
+                  table: (props) => (
+                    <div className="overflow-x-auto my-4">
+                      <table
+                        className={`border-collapse w-full text-sm ${
+                          isDark ? "border-gray-700" : "border-gray-300"
+                        }`}
+                        {...props}
+                      />
+                    </div>
+                  ),
 
-              tr: (props) => (
-                <tr
-                  className={
-                    isDark
-                      ? "border-b border-gray-700"
-                      : "border-b border-gray-200"
-                  }
-                  {...props}
-                />
-              ),
+                  tr: (props) => (
+                    <tr
+                      className={
+                        isDark
+                          ? "border-b border-gray-700"
+                          : "border-b border-gray-200"
+                      }
+                      {...props}
+                    />
+                  ),
 
-              th: (props) => (
-                <th
-                  className={`px-3 py-2 text-left font-semibold ${
-                    isDark
-                      ? "bg-gray-800 border border-gray-700"
-                      : "bg-gray-100 border border-gray-300"
-                  }`}
-                  {...props}
-                />
-              ),
+                  th: (props) => (
+                    <th
+                      className={`px-3 py-2 text-left font-semibold border ${
+                        isDark
+                          ? "border-gray-700 bg-gray-800"
+                          : "border-gray-300 bg-gray-100"
+                      }`}
+                      {...props}
+                    />
+                  ),
 
-              td: (props) => (
-                <td
-                  className={`px-3 py-2 ${
-                    isDark
-                      ? "border border-gray-700 bg-gray-900"
-                      : "border border-gray-300 bg-white"
-                  }`}
-                  {...props}
-                />
-              ),
+                  td: (props) => (
+                    <td
+                      className={`px-3 py-2 border ${
+                        isDark ? "border-gray-700" : "border-gray-300"
+                      }`}
+                      {...props}
+                    />
+                  ),
 
                   /* EXISTING MARKDOWN STYLES */
 

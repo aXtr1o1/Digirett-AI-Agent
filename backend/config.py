@@ -71,7 +71,7 @@ class Settings(BaseSettings):
 
     # ── Conversation ─────────────────────────────────────────────────────
     AUTO_SUMMARY_THRESHOLD: int = 50
-    DEFAULT_USER_ID: str = "2a06144d-4675-4c38-b7f8-13c02da91af5"
+    # DEFAULT_USER_ID: str = "admin"
     MAX_CONVERSATION_TITLE_LENGTH: int = 100
     SOFT_DELETE: bool = True
 
@@ -122,4 +122,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-print(f">>> DEFAULT_USER_ID loaded as: {settings.DEFAULT_USER_ID}")
