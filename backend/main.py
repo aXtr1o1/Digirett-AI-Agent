@@ -7,13 +7,12 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from api.routes import chat, conversations, health, messages, documents
+from api.routes import chat, conversations, health, messages
 from config import settings
 from db.milvus_client import get_milvus
 from db.redis_client import get_redis
 from db.supabase_client import get_supabase
 from services.conversation_service import ConversationService
-from services.document_service import DocumentService
 from services.embedding_service import EmbeddingService
 from services.llm_service import LLMService
 from services.message_service import MessageService
@@ -36,7 +35,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Lovdata RAG API...")
 
     milvus_client = None
-    redis_client  = None
+    redis_client = None
 
     try:
         logger.info("Connecting to Milvus...")
@@ -53,7 +52,7 @@ async def lifespan(app: FastAPI):
             host=settings.REDIS_HOST,
             port=settings.REDIS_PORT,
             db=settings.REDIS_DB,
-            password=settings.REDIS_PASSWORD,
+            password=settings.REDIS_PASSWORD or None,
         )
 
         logger.info("Connecting to Supabase...")
@@ -69,12 +68,6 @@ async def lifespan(app: FastAPI):
         logger.info("Initializing Embedding service...")
         embedding_service = EmbeddingService()
 
-        logger.info("Initializing Document service...")
-        document_service = DocumentService(
-            redis_client=redis_client,
-            supabase_client=supabase_client,
-        )
-
         logger.info("Initializing RAG service...")
         rag_service = RAGService(
             llm_service=llm_service,
@@ -82,7 +75,6 @@ async def lifespan(app: FastAPI):
             redis_client=redis_client,
             supabase_client=supabase_client,
             embedding_service=embedding_service,
-            document_service=document_service,
         )
 
         logger.info("Initializing Conversation service...")
@@ -115,12 +107,10 @@ async def lifespan(app: FastAPI):
             conversation_service=conversation_service,
             message_service=message_service,
         )
+        # CHANGED: pass conversation_service so messages route can do 404 checks
         messages.set_services(
             message_service=message_service,
             conversation_service=conversation_service,
-        )
-        documents.set_services(
-            document_service=document_service,
         )
 
         logger.info("All services ready — server is live")
@@ -165,39 +155,6 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-from fastapi import Request
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-from starlette.exceptions import HTTPException
-
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"message": exc.detail if isinstance(exc.detail, str) else str(exc.detail)},
-    )
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    first_error = exc.errors()[0] if exc.errors() else {}
-    msg = first_error.get("msg", "Invalid request payload")
-    return JSONResponse(
-        status_code=400,
-        content={"message": msg},
-    )
-
-
-@app.exception_handler(Exception)
-async def generic_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception | {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"message": "An unexpected error occurred. Please try again."},
-    )
-
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -210,7 +167,6 @@ app.include_router(health.router,        prefix="/api/v1")
 app.include_router(chat.router,          prefix="/api/v1")
 app.include_router(conversations.router, prefix="/api/v1")
 app.include_router(messages.router,      prefix="/api/v1")
-app.include_router(documents.router,     prefix="/api/v1")
 
 logger.info("FastAPI app created")
 

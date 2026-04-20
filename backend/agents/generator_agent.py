@@ -133,9 +133,9 @@ LANGUAGE RULE:
         response_style: str = "",
     ) -> AsyncIterator[str]:
         import json
-        logger.info(" GeneratorAgent: legal stream starting")
+        logger.info("  GeneratorAgent: legal stream starting")
 
-        buffer = ""  
+        buffer = ""  # <-- initialize buffer to store all streamed content
 
         if not rag_context or not rag_context.strip():
             error_msg = (

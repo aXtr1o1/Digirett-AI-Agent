@@ -225,38 +225,6 @@ class LLMService:
             logger.warning(f"  Title generation failed, using fallback | {exc}")
             return first_user_message[:60]
 
-    async def generate_conversation_summary(
-        self,
-        messages: List[Dict[str, str]],
-    ) -> str:
-        """
-        Generate a concise summary of the last N messages.
-        Called by MemoryAgent.maybe_update_summary every 10 messages.
-        """
-        convo_text = "\n".join(
-            f"{m['role'].capitalize()}: {m['content'][:300]}"
-            for m in messages
-        )
-        prompt = (
-            "Summarize the following conversation excerpt in 3-5 sentences. "
-            "Focus on the key legal topics discussed, questions asked, and conclusions reached. "
-            "Be concise and factual.\n\n"
-            f"{convo_text}\n\n"
-            "Summary:"
-        )
-        try:
-            async with llm_span("summary_generation"):
-                response = await self._llm.agenerate([[HumanMessage(content=prompt)]])
-                summary = response.generations[0][0].text.strip()
-                logger.info(f"✅ Conversation summary generated ({len(summary)} chars)")
-                return summary
-        except Exception as exc:
-            logger.warning(f"⚠️ generate_conversation_summary failed | {exc}")
-            # Fallback: join message snippets
-            return " | ".join(
-                f"{m['role']}: {m['content'][:80]}" for m in messages[:4]
-            )
-
     async def check_connection(self) -> bool:
         """Smoke-test the Azure OpenAI endpoint. Returns True when reachable."""
         try:
