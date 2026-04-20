@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import chatService from "../services/chatService";
 import conversationService from "../services/conversationService";
 import useDocumentUpload from "./useDocumentUpload";
+import useDocumentUpload from "./useDocumentUpload";
 import { MESSAGE_ROLES } from "../utils/constants";
 
 const useChat = (
@@ -41,6 +42,7 @@ const useChat = (
   // ── Load messages for an existing conversation ────────────────────────────
   const loadMessages = useCallback(async () => {
     if (!conversationId) {
+      setMessages([]);
       setMessages([]);
       return;
     }
@@ -141,12 +143,22 @@ const useChat = (
 
       let firstTokenReceived = false;
       const activeConversationId = activeConversationIdRef.current || null;
+      let firstTokenReceived = false;
+      const activeConversationId = activeConversationIdRef.current || null;
 
       // ── Step 3: Stream response via WebSocket ──────────────────────────────
       abortRef.current = chatService.sendMessage(
         activeConversationId,
         messageText,
 
+        // STREAM TOKEN
+        (token) => {
+          if (!firstTokenReceived) {
+            firstTokenReceived = true;
+            setStreamingMessage("");
+          }
+          setStreamingMessage((prev) => prev + token);
+        },
         // STREAM TOKEN
         (token) => {
           if (!firstTokenReceived) {
@@ -165,7 +177,19 @@ const useChat = (
             sources: data.sources || [],
             timestamp: new Date().toISOString(),
           };
+        // COMPLETE
+        (data) => {
+          const assistantMessage = {
+            id: data.messageId || crypto.randomUUID(),
+            role: MESSAGE_ROLES.ASSISTANT,
+            content: data.message,
+            sources: data.sources || [],
+            timestamp: new Date().toISOString(),
+          };
 
+          setMessages((prev) => [...prev, assistantMessage]);
+          setStreamingMessage("");
+          setIsStreaming(false);
           setMessages((prev) => [...prev, assistantMessage]);
           setStreamingMessage("");
           setIsStreaming(false);
@@ -198,11 +222,13 @@ const useChat = (
   );
 
   // ── Stop streaming ────────────────────────────────────────────────────────
+  // ── Stop streaming ────────────────────────────────────────────────────────
   const stopStreaming = useCallback(() => {
     if (abortRef.current) {
       abortRef.current();
       abortRef.current = null;
       if (streamingMessage) {
+        setMessages((prev) => [
         setMessages((prev) => [
           ...prev,
           {
@@ -211,6 +237,7 @@ const useChat = (
             content: streamingMessage,
             sources: [],
             timestamp: new Date().toISOString(),
+          },
           },
         ]);
       }
