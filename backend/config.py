@@ -8,7 +8,7 @@ class Settings(BaseSettings):
 
     # ── API ──────────────────────────────────────────────────────────────
     APP_NAME: str = "Lovdata RAG API"
-    VERSION: str = "2.0.0"
+    VERSION: str = "1.0.0"
     DEBUG: bool = False
     ALLOWED_ORIGINS: List[str]
 
@@ -38,9 +38,7 @@ class Settings(BaseSettings):
     # Max characters of context sent to LLM (covers ~20 000 tokens)
     CONTEXT_MAX_LENGTH: int = 80000
 
-        # ── Reranker ─────────────────────────────────────────────────────────
-    # HuggingFace model ID downloaded at runtime
-    #RERANKER_MODEL_NAME: str
+    # ── Reranker ─────────────────────────────────────────────────────────
     # Number of chunks to retrieve from Milvus before reranking (recall stage)
     RERANKER_RECALL_TOP_K: int
     # Number of chunks to keep after reranking (passed to validation + generation)
@@ -52,13 +50,14 @@ class Settings(BaseSettings):
 
     # ── Redis (deployed, not Docker) ─────────────────────────────────────
     REDIS_HOST: str
-    REDIS_PORT: int
-    REDIS_DB: int
-    REDIS_PASSWORD: str
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_USERNAME: str | None = None
+    REDIS_PASSWORD: str | None = None
     # TTLs (seconds)
     CACHE_TTL: int = 3600
     ENABLE_CACHE: bool = True
-    CONVERSATION_CONTEXT_TTL: int = 1800 
+    CONVERSATION_CONTEXT_TTL: int = 1800
     USER_SESSION_TTL: int = 3600
     STREAMING_BUFFER_TTL: int = 60
     MAX_CONTEXT_MESSAGES: int = 20
@@ -70,15 +69,45 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
 
-    # ── Conversation ──────────────────────────────────────────────────────
+    # ── Conversation ─────────────────────────────────────────────────────
     AUTO_SUMMARY_THRESHOLD: int = 50
     DEFAULT_USER_ID: str = "2a06144d-4675-4c38-b7f8-13c02da91af5"
     MAX_CONVERSATION_TITLE_LENGTH: int = 100
     SOFT_DELETE: bool = True
 
+    # ── Document Agent Session Limits ─────────────────────────────────────
+    # Full session TTL — 4 hours. Redis keys for doc sessions expire after this.
+    DOC_SESSION_TTL_SECONDS: int = 14400
+    
+    # ┌─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┐
+    # │ TESTING MODE — Commented out for document feature testing       │
+    # │ Set DOC_TESTING_MODE = False to revert to production limits     │
+    # └─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┘
+    DOC_TESTING_MODE: bool = True
+    
+    # Max documents a user can upload within one 4-hour session.
+    # PRODUCTION: 2 | TESTING: 999 (unlimited for testing)
+    DOC_MAX_PER_SESSION: int = 999 if DOC_TESTING_MODE else 2
+    
+    # Max query turns (user messages) allowed within one 4-hour session.
+    # PRODUCTION: 10 | TESTING: 999 (unlimited for testing)
+    DOC_MAX_TURNS_PER_SESSION: int = 999 if DOC_TESTING_MODE else 10
+    
+    # Max file size for document uploads (bytes). Default = 20 MB.
+    DOC_MAX_FILE_SIZE_BYTES: int = 20 * 1024 * 1024
+
     # ── Logging ───────────────────────────────────────────────────────────
-    LOG_LEVEL: str = "INFO"
+    # DEBUG level for detailed workflow visibility, INFO for production
+    LOG_LEVEL: str = "DEBUG" if DOC_TESTING_MODE else "INFO"
     LOG_DIR: str = "./logs"
+    LOG_WITH_COLORS: bool = True
+    LOG_INCLUDE_TIMESTAMPS: bool = True
+    LOG_INCLUDE_EMOJIS: bool = True
+    
+    # ── Query Enrichment (Phase 2) ────────────────────────────────────────
+    ENABLE_ENRICHED_QUERY: bool = True
+    ENRICHMENT_SUMMARY_MAX_CHARS: int = 500
+    ENRICHMENT_KEYWORDS_COUNT: int = 5
 
     # ── Retry ─────────────────────────────────────────────────────────────
     MAX_RETRIES: int = 3

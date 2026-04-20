@@ -42,6 +42,7 @@ class RerankerAgent:
                 for i, chunk in enumerate(chunks)
             ]
         )
+        logger.info(f"Formatted Chunk: {formatted_chunks}")
 
         prompt = f"""
 You are a legal relevance scoring system.
