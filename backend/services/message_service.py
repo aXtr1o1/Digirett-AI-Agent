@@ -27,16 +27,19 @@ class MessageService:
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     def get_conversation_messages(
-        self,
-        conversation_id: str,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> List[Dict[str, Any]]:
-        
+    self,
+    conversation_id: str,
+    limit: int = 100,
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
+    
         try:
             response = (
                 self._supabase.table("messages")
-                .select("message_id, conversation_id, role, content, sources, metadata, created_at")
+                .select(
+                    "message_id, conversation_id, role, content, "
+                    "sources, metadata, created_at, type, file_name"
+                )
                 .eq("conversation_id", conversation_id)
                 .or_("is_deleted.is.null,is_deleted.eq.false")
                 .order("created_at", desc=False)
@@ -48,15 +51,24 @@ class MessageService:
             for msg in messages:
                 if msg["role"] == "assistant":
                     msg["sources"] = self._normalize_sources(msg.get("sources") or [])
+                    # Strip <think> tags from assistant content
+                    if msg.get("content"):
+                        import re
+                        msg["content"] = re.sub(
+                            r'<think>.*?</think>', '', msg["content"], flags=re.DOTALL
+                        ).strip()
                 else:
                     msg["sources"] = []
+
+                # Ensure type and file_name are always present for frontend
+                msg["type"]      = msg.get("type") or "text"
+                msg["file_name"] = msg.get("file_name")
 
             return messages
 
         except Exception as exc:
-            logger.error(f" get_conversation_messages failed | {exc}")
+            logger.error(f"get_conversation_messages failed | {exc}")
             return []
-
     def get_llm_context(
         self,
         conversation_id: str,
@@ -88,17 +100,20 @@ class MessageService:
         assistant_message: str,
         metadata: Dict[str, Any],
         rag_chunks: Optional[List[Dict[str, Any]]] = None,
-    ) -> Tuple[str, str]:
+        skip_save_user: bool = False,
+    ) -> Tuple[Optional[str], str]:
        
         rag_chunks = rag_chunks or []
 
         try:
             # 1. Save user message
-            user_msg_id = self._save_single_message(
-                conversation_id=conversation_id,
-                role="user",
-                content=user_message,
-            )
+            user_msg_id = None
+            if not skip_save_user:
+                user_msg_id = self._save_single_message(
+                    conversation_id=conversation_id,
+                    role="user",
+                    content=user_message,
+                )
 
             # 2. Normalize sources for storage
             normalized_sources = [
@@ -154,7 +169,8 @@ class MessageService:
         assistant_message: str,
         metadata: Dict[str, Any],
         rag_chunks: Optional[List[Dict[str, Any]]] = None,
-    ) -> Tuple[str, str]:
+        skip_save_user: bool = False,
+    ) -> Tuple[Optional[str], str]:
         """Alias for save_exchange() — preserved for backward compatibility."""
         return self.save_exchange(
             conversation_id=conversation_id,
@@ -162,6 +178,7 @@ class MessageService:
             assistant_message=assistant_message,
             metadata=metadata,
             rag_chunks=rag_chunks,
+            skip_save_user=skip_save_user,
         )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

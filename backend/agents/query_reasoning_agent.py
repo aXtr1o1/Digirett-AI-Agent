@@ -1,4 +1,14 @@
+"""
+agents/query_reasoning_agent.py
 
+LLM-based query reasoning agent — the "BRAIN" of the retrieval pipeline.
+
+Extracts: domain, primary_statute_id, secondary_statute_id,
+          enriched_query, jurisdiction, source_type, response_style.
+
+Integrated from retrieve_v3 experiment into Phase 1 production codebase.
+Only import change: uses production `config.settings` instead of experiment config.
+"""
 
 import logging
 from typing import Dict, List, Optional
@@ -28,6 +38,7 @@ _ALLOWED_DOMAINS = frozenset({
     "tvistelosning_smb",
 })
 
+
 REASONING_PATTERNS: str = """
 STRUCTURAL STATUTE DETECTION FRAMEWORK FOR NORWEGIAN LAW
 
@@ -48,19 +59,33 @@ the legal mechanism being regulated — not just keywords.
 Examples of domains (non-exhaustive, do not treat as fixed list):
 
 Company law (corporate governance, capital, board duties, daglig leder, styret)
+
 Commercial agency law (prokura, fullmakt, representasjonsrett, signaturrett)
+
 Business registration law (Foretaksregisteret, registerplikt, meldeplikt)
+
 Insolvency law (bankruptcy, reconstruction, insolvency tests)
+
 Creditor protection law (omstøtelse, dekningsloven, avoidance)
+
 Security rights (pledge, collateral, mortgage, pant)
+
 Contract law (agreement validity, breach, formation)
+
 Employment law
+
 Administrative law
+
 Tax law
+
 Criminal law
+
 Property law
+
 Procedural law
 
+IMPORTANT: "Company law" does NOT cover prokura, signaturregistrering, or pant.
+These belong to "Commercial agency law", "Business registration law", and "Security rights".
 You must determine domain dynamically from the mechanism described.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -109,10 +134,9 @@ unless one statute clearly governs all mechanisms.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 3 — MAP MECHANISM TO STATUTE FAMILY
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Based on the legal mechanism and domain,
-identify the primary Norwegian statute family that governs it.
+
 PRIORITY ROUTING TABLE — apply BEFORE general rules:
-(use as reference points for reasoning — do not treat as exhaustive):
+
 MECHANISM: prokura, prokurist, særfullmakt for driftshandlinger
 → PRIMARY: prokuraloven
 → NOT aksjeloven (even if the entity is an AS/ASA)
@@ -136,7 +160,7 @@ MECHANISM: daglig leders kompetanse og myndighetsgrenser,
            hva faller innenfor/utenfor daglig ledelse,
            daglig leders representasjon utad
 → PRIMARY: aksjeloven (for AS), allmennaksjeloven (for ASA)
-→ NOT selskapsloven, NOT helseforetaksloven, NOT IKS-loven
+
 MECHANISM: styrets kompetanse, styrevedtak, styrebehandling,
            generalforsamlingens myndighet, aksjeeiernes rettigheter
 → PRIMARY: aksjeloven (for AS), allmennaksjeloven (for ASA)
@@ -155,6 +179,16 @@ MECHANISM: konkurs, gjeldsforhandling, insolvens, betalingsudyktighet,
 MECHANISM: omstøtelse av transaksjoner, kreditorskadelige disposisjoner
 → PRIMARY: dekningsloven
 
+MECHANISM: arbeidsforhold, arbeidsavtale, oppsigelse, avskjed
+→ PRIMARY: arbeidsmiljøloven
+→ SECONDARY: ferieloven, tjenestemannsloven (for state employees)
+
+MECHANISM: skatt, skatteberegning, fradrag, skattesubjekt, skatteplikt
+→ PRIMARY: skatteloven
+
+MECHANISM: regnskap, bokføring, årsregnskap, revisjonsplikt
+→ PRIMARY: regnskapsloven, bokføringsloven
+
 GENERAL RULES — apply only when no PRIORITY ROUTING matches:
 • Corporate internal governance of AS/ASA → aksjeloven / allmennaksjeloven
 • Insolvency or bankruptcy procedure → konkursloven
@@ -162,59 +196,36 @@ GENERAL RULES — apply only when no PRIORITY ROUTING matches:
 • Security rights in assets → panteloven
 • Registration and legal protection → foretaksregisterloven
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 4 — DERIVE THE OFFICIAL LOVDATA FILE IDENTIFIER
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WIDELY USED NORWEGIAN STATUTES AND THEIR LOVDATA IDs:
+  avtaleloven           → LOV-1918-05-31-4
+  aksjeloven            → LOV-1997-06-13-44
+  allmennaksjeloven     → LOV-1997-06-13-45
+  foretaksregisterloven → LOV-1985-06-21-78
+  prokuraloven          → LOV-1985-06-21-80
+  selskapsloven         → LOV-1985-06-21-83
+  panteloven            → LOV-1980-02-08-2
+  konkursloven          → LOV-1984-06-08-58
+  dekningsloven         → LOV-1984-06-08-59
+  arbeidsmiljøloven     → LOV-2005-06-17-62
+  ferieloven            → LOV-1988-04-29-21
+  skatteloven           → LOV-1999-03-26-14
+  regnskapsloven        → LOV-1998-07-17-56
+  bokføringsloven       → LOV-2004-11-19-73
+  revisorloven          → LOV-2020-11-20-128
+  finansavtaleloven     → LOV-2020-11-26-129
+  verdipapirhandelloven → LOV-2007-06-29-75
+  tvisteloven           → LOV-2005-06-17-90
+  straffeloven          → LOV-2005-05-20-28
+  forvaltningsloven     → LOV-1967-02-10-0
+  plan- og bygningsloven → LOV-2008-06-27-71
+  kommuneloven          → LOV-2018-06-22-83
+  tinglysingsloven      → LOV-1935-03-07-2
+  husleieloven          → LOV-1999-03-26-17
+  kjøpsloven            → LOV-1988-05-13-27
+  forbrukerkjøpsloven   → LOV-2002-06-21-34
 
-Using your knowledge of Norwegian law and web search of Lovdata website, derive the official Lovdata
-statute identifier for the governing law.
-
-The Lovdata format is: LOV-YYYY-MM-DD-NNN
-  YYYY = year the law was enacted
-  MM   = month enacted
-  DD   = day enacted
-  NNN  = sequential number of the law that year
-
-Derivation process — reason through what you know:
-
-  From Steps you know the statute family name (e.g. "aksjeloven").
-  From your legal knowledge, recall the enactment date and number.
-  Construct the identifier from: enactment date + sequential number.
-
-  Widely used Norwegian statutes and their identifiers
-  (use as reference points for reasoning — do not treat as exhaustive):
-
-    avtaleloven           → LOV-1918-05-31-4
-    aksjeloven            → LOV-1997-06-13-44
-    allmennaksjeloven     → LOV-1997-06-13-45
-    foretaksregisterloven → LOV-1985-06-21-78
-    prokuraloven          → LOV-1985-06-21-80
-    selskapsloven         → LOV-1985-06-21-83
-    panteloven            → LOV-1980-02-08-2
-    konkursloven          → LOV-1984-06-08-58
-    dekningsloven         → LOV-1984-06-08-59
-    arbeidsmiljøloven     → LOV-2005-06-17-62
-    ferieloven            → LOV-1988-04-29-21
-    skatteloven           → LOV-1999-03-26-14
-    regnskapsloven        → LOV-1998-07-17-56
-    bokføringsloven       → LOV-2004-11-19-73
-    revisorloven          → LOV-2020-11-20-128
-    finansavtaleloven     → LOV-2020-11-26-129
-    verdipapirhandelloven → LOV-2007-06-29-75
-    tvisteloven           → LOV-2005-06-17-90
-    straffeloven          → LOV-2005-05-20-28
-    forvaltningsloven     → LOV-1967-02-10-0
-    plan- og bygningsloven → LOV-2008-06-27-71
-    kommuneloven          → LOV-2018-06-22-83
-    tinglysingsloven      → LOV-1935-03-07-2
-    husleieloven          → LOV-1999-03-26-17
-    kjøpsloven            → LOV-1988-05-13-27
-    forbrukerkjøpsloven   → LOV-2002-06-21-34
-
-  For SECONDARY statutes: apply the same derivation reasoning.
-
-  The Enriched Query must include statute-native vocabulary
-  and reference the identified statute family.
+CRITICAL: Never default to aksjeloven for questions about prokura,
+signaturregistrering, foretaksregistrering, or pant.
 """
 
 
@@ -233,11 +244,13 @@ OUTPUT FORMAT (STRICT – NO EXTRA TEXT)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Legal Topic               : <short description>
-Legal Domain              : <broad legal field>
+Legal Domain              : <must be EXACTLY one of the 12 allowed domain values listed below>
+Jurisdiction              : <NO / EU-EEA / both>
+Source Type               : <lov / forskrift / both>
 Primary Statute Name      : <most likely governing Norwegian law>
-Primary Statute ID        : <official Lovdata statute id>
+Primary Statute ID        : <official Lovdata statute id OR full Lovdata URL if known>
 Secondary Statute Name    : <if relevant, else "none">
-Secondary Statute ID      : <official Lovdata statute id or "none">
+Secondary Statute ID      : <official Lovdata statute id or full Lovdata URL or "none">
 Key Mechanism             : <core legal mechanism being regulated>
 Key Concepts              : <comma-separated statute-native terms>
 Enriched Query            : <single dense statute-anchored sentence>
@@ -252,7 +265,7 @@ ALLOWED LEGAL DOMAIN VALUES (use EXACTLY these keys)
 
 {domain_list}
 
-Mapping guidance (use mechanism, not entity type) for referance:
+Mapping guidance (use mechanism, not entity type):
   - Employment contracts, dismissal, working conditions → arbeidsrett
   - Annual accounts, bookkeeping, audit, financial reporting → arsregnskap_og_selskapsrapporte
   - Contract formation, validity, breach, general obligations → avtalerett
@@ -287,37 +300,17 @@ STATUTE ROUTING PRINCIPLES
 CONTEXT CONTINUITY RULE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-If PREVIOUS_STATUTE_ID is provided in the conversation context:
+If PREVIOUS_STATUTE_ID is provided:
 
-STEP A — ALWAYS determine the correct statute for the CURRENT query independently
-using the STATUTE ROUTING PRINCIPLES above. Do NOT default to the previous statute.
-STEP B — After determining the correct statute for the current query, apply these rules:
-
-• If the current query introduces a NEW legal mechanism or references a different
-  law/topic area → use the newly determined statute. Ignore PREVIOUS_STATUTE_ID.
-  Examples of domain switches that MUST produce a new statute:
-  - Previous: aksjeloven (company governance) → Current: prokura, prokuraloven
-  - Previous: aksjeloven → Current: foretaksregisterloven (registration rules)
-  - Previous: any statute → Current: a question that explicitly names a different law
-
-• If the current query is clearly a follow-up or rephrasing of the previous question
-  (e.g. "explain more briefly", "give an overview", "what about that", "forklar mer",
-  "kan du utdype", "summarise") AND the same legal mechanism still governs
-  → keep PREVIOUS_STATUTE_ID.
-
-• If uncertain whether it is a follow-up or a new topic → treat it as a NEW topic
-  and determine the statute independently. Do NOT default to the previous statute.
-
-• Distinguish between:
-  - Mechanism change (requires new statute), and
-  - Analytical dimension change (structure, scope, systematics, overview).
-
-• If only the analytical dimension changes (e.g. "explain more briefly",
-  "give an overview", "summarise"):
-  - Keep the same statute.
-  - Abstract to statute level if structural/systematic explanation is requested.
-  - Do NOT carry forward previously extracted subtopics.
-  - Reformulate the enriched query to reflect the new analytical focus only.
+STEP A — Determine the correct statute for the CURRENT query independently.
+STEP B — Then apply:
+• New legal mechanism or different law/topic → use newly determined statute.
+• Clear follow-up or rephrasing of same question (e.g. "explain more briefly",
+  "give an overview", "forklar mer", "summarise") AND same mechanism → keep PREVIOUS_STATUTE_ID.
+• If uncertain → treat as new topic, determine statute independently.
+• Mechanism change → new statute required.
+• Only analytical dimension changes → keep same statute.
+• Multi-mechanism queries → always re-run full statute classification.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ENRICHED QUERY RULES
@@ -328,19 +321,27 @@ The Enriched Query must:
 • Contain at least TWO statute-native legal terms.
 • Explicitly reference the identified statute family name.
 • Avoid repeating the user's wording without legal enrichment.
+• Avoid generic phrases like "i henhold til loven".
 • If multi-mechanism: reference BOTH statute families naturally.
 • Be ONE dense statutory-style sentence.
 • Expand terminology, not legal interpretation.
-• Reflect statute-level abstraction if structural explanation is requested.
 
-Do not cite § numbers unless present in the query.
 Respond in the same language as the user query.
 
 REASONING PATTERNS:
 {reasoning_patterns}
 """
 
+
 class QueryReasoningAgent:
+    """
+    LLM-based query reasoning agent — the BRAIN of the retrieval pipeline.
+
+    Extracts: domain, primary_statute_id, secondary_statute_id,
+              enriched_query, jurisdiction, source_type, response_style.
+
+    Production version: uses settings from config.settings (not experiment config).
+    """
 
     _ALLOWED_DOMAINS = _ALLOWED_DOMAINS
 
@@ -441,6 +442,9 @@ class QueryReasoningAgent:
                 "primary_statute_id": statute_id,
                 "secondary_statute_id": secondary_statute_id,
                 "response_style": response_style,
+                "domain": domain,
+                "jurisdiction": jurisdiction,
+                "source_type": source_type,
             }
 
         except Exception as exc:
@@ -457,6 +461,7 @@ class QueryReasoningAgent:
                 "source_type": None,
             }
 
+    # ── Context builder ───────────────────────────────────────────────────
 
     @staticmethod
     def _build_context_str(
