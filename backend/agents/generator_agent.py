@@ -133,9 +133,9 @@ LANGUAGE RULE:
         response_style: str = "",
     ) -> AsyncIterator[str]:
         import json
-        logger.info("  GeneratorAgent: legal stream starting")
+        logger.info(" GeneratorAgent: legal stream starting")
 
-        buffer = ""  # <-- initialize buffer to store all streamed content
+        buffer = ""  
 
         if not rag_context or not rag_context.strip():
             error_msg = (
@@ -166,7 +166,7 @@ LANGUAGE RULE:
 
         user_prompt = (
             f"{style_block}"
-            f"CRITICAL: Answer ONLY from the sources below.\n\n"
+            f"CRITICAL: Answer ONLY from the sources and chunks below.\n\n"
             f"KILDER (Sources):\n{rag_context}\n\n"
             f"SPØRSMÅL (Question):\n{query}\n\n"
             f"Respond in {language}. Be direct and cite sources.\n"
