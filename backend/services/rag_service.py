@@ -30,7 +30,6 @@ from agents.memory_agent import MemoryAgent
 from agents.orchestrator_agent import OrchestratorAgent
 from agents.retriever_agent import RetrieverAgent
 from agents.query_reasoning_agent import QueryReasoningAgent
-from agents.reranker_agent import RerankerAgent          # kept — not removed
 from agents.router_agent import RouterAgent
 from agents.document_classifier_agent import DocumentClassifierAgent
 from agents.document_qa_agent import DocumentQAAgent
@@ -42,6 +41,7 @@ from services.embedding_service import EmbeddingService
 from services.llm_service import LLMService, _extract_score, _score_to_confidence
 from services.document_service import DocumentService
 from config import settings
+from config_domains import normalize_domain
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +101,41 @@ def _resolve_statute_url(statute_id: Optional[str]) -> Optional[str]:
     return url
 
 
+def _is_statute_explicit(query: str) -> bool:
+    """
+    Detect if user explicitly named a law in the query.
+
+    Returns True if query contains patterns like:
+    - "Lov om..."
+    - "LOV-"
+    - "bestemmelse i"
+    - "§" (section symbol)
+
+    Returns False if statute is inferred from mechanism/domain.
+    """
+    if not query:
+        return False
+
+    query_lower = query.lower()
+    explicit_patterns = [
+        "lov om",
+        "loven",
+        "loven om",
+        "loven for",
+        "loven 20",  # LOV-YYYY format
+        "lov-",
+        "for-",  # FOR = forskrift
+        "res-",  # RES = resolution
+        "bestemmelse i",
+        "kapittel",
+        "§",
+        "lovdatas",
+        "lovdata",
+    ]
+
+    return any(pattern in query_lower for pattern in explicit_patterns)
+
+
 class RAGService:
 
     def __init__(
@@ -133,7 +168,6 @@ class RAGService:
             generator_agent=llm_service.get_generator_agent(),
         )
         self._reasoning_agent = QueryReasoningAgent()
-        self._reranker_agent = RerankerAgent()   # kept — not used in legal pipeline anymore
         self._router_agent = RouterAgent()
         self._doc_classifier = DocumentClassifierAgent()
         self._doc_qa_agent = DocumentQAAgent()
@@ -294,9 +328,67 @@ class RAGService:
                     ):
                         yield event
             else:
-                logger.info("💬 CASUAL query")
-                async for event in self._handle_casual(query, history, language):
-                    yield event
+                # ── CASUAL with document: intercept and re-route ───────────
+                # If a document is in the session, even "casual-sounding" queries
+                # like "Explain this document" must go through the doc classifier
+                # instead of the casual pipeline.
+                if (
+                    self._document_service
+                    and self._document_service.has_documents(conversation_id)
+                ):
+                    logger.info(
+                        "📄 CASUAL query but document in session — "
+                        "routing through doc classifier"
+                    )
+                    doc_summary = self._document_service.get_doc_summary(
+                        conversation_id
+                    )
+                    doc_class_result = await self._doc_classifier.classify(
+                        query=query,
+                        conversation_history=history,
+                        doc_summary=doc_summary,
+                    )
+                    doc_intent = doc_class_result["intent"]
+                    logger.info(
+                        f"📄 Doc classifier (from CASUAL): {doc_intent} | "
+                        f"reason='{doc_class_result.get('reason', '')}'"
+                    )
+
+                    if doc_intent == "DOCQA":
+                        async for event in self._handle_docqa(
+                            query=query,
+                            language=language,
+                            history=history,
+                            conversation_id=conversation_id,
+                        ):
+                            yield event
+                    elif doc_intent == "HYBRID":
+                        async for event in self._handle_hybrid(
+                            query=query,
+                            language=language,
+                            top_k=top_k,
+                            min_score=min_score,
+                            history=history,
+                            conversation_id=conversation_id,
+                        ):
+                            yield event
+                    elif doc_intent == "FOLLOWUP":
+                        async for event in self._handle_followup_with_doc(
+                            query=query,
+                            language=language,
+                            history=history,
+                            conversation_id=conversation_id,
+                        ):
+                            yield event
+                    else:
+                        # doc_intent == "LEGAL" or truly unrelated — casual is fine
+                        logger.info("💬 CASUAL query (doc present but unrelated)")
+                        async for event in self._handle_casual(query, history, language):
+                            yield event
+                else:
+                    logger.info("💬 CASUAL query")
+                    async for event in self._handle_casual(query, history, language):
+                        yield event
 
         except Exception as exc:
             logger.error(
@@ -357,7 +449,7 @@ class RAGService:
         history: List[Dict[str, str]],
         conversation_id: str,
     ) -> AsyncIterator[Dict[str, Any]]:
-        logger.info("⚖️  LEGAL pipeline (v3 retrieval)")
+        logger.info("⚖️  LEGAL pipeline (v5 — registry-aware retrieval)")
 
         context_window = history[-9:] if history else []
 
@@ -372,10 +464,11 @@ class RAGService:
             if reasoning_meta:
                 previous_statute_id = reasoning_meta.get("statute_id")
                 previous_enriched_query = reasoning_meta.get("enriched_query")
+                prev_query_preview = str(previous_enriched_query)[:60]
                 logger.info(
                     f"📖 Loaded reasoning context | "
                     f"statute_id={previous_statute_id} | "
-                    f"prev_query='{str(previous_enriched_query)[:60]}'"
+                    f"prev_query='{prev_query_preview}'"
                 )
         except Exception as exc:
             logger.warning(f"⚠️  Could not read reasoning meta from Redis | {exc}")
@@ -393,12 +486,24 @@ class RAGService:
         domain = reasoning_result.get("domain")
         jurisdiction = reasoning_result.get("jurisdiction")
 
+        # ── NEW: read registry flag ────────────────────────────────────────
+        # True  = StatuteRegistry gave a deterministic match → trust it fully
+        # False = LLM inferred the statute → soft hint only, allow fallback
+        statute_from_registry: bool = reasoning_result.get("statute_from_registry", False)
+
+        # Normalize domain to canonical lowercase format
+        if domain:
+            domain = normalize_domain(domain) or domain
+
+        enriched_query_preview = enriched_query[:80]
         logger.info(
-            f"🧠 Enriched query : '{enriched_query[:80]}'"
+            f"🧠 Enriched query : '{enriched_query_preview}'"
         )
         logger.info(
-            f"   statute={primary_statute_id} | domain={domain} | "
-            f"jurisdiction={jurisdiction} | style='{response_style}'"
+            f"   statute={primary_statute_id} | "
+            f"registry={statute_from_registry} | "
+            f"domain={domain} | jurisdiction={jurisdiction} | "
+            f"style='{response_style}'"
         )
 
         # ── [2] RouterAgent ────────────────────────────────────────────────
@@ -411,6 +516,10 @@ class RAGService:
         final_jurisdiction = jurisdiction or router_result.get("jurisdiction") or None
         subdomain_candidates = router_result.get("subdomain_candidates") or []
         b2b_b2c = router_result.get("b2b_b2c") or "BOTH"
+
+        # Ensure final_domain is normalized
+        if final_domain:
+            final_domain = normalize_domain(final_domain) or final_domain
 
         logger.info(
             f"🔀 Router: domain={final_domain} | subdomains={subdomain_candidates} | "
@@ -445,7 +554,12 @@ class RAGService:
             f"🗂  statute_filter: '{primary_statute_id}' → '{statute_filter}'"
         )
 
-        # ── [4] RetrieverAgent (4-level fallback + BM25) ──────────────────
+        # ── [3.5] REMOVED: _is_statute_explicit() no longer controls fallback ─
+        # The hard-block is now controlled exclusively by statute_from_registry
+        # inside RetrieverAgent. This prevents wrong-statute blocking while
+        # still stopping drift for confirmed registry statutes.
+
+        # ── [4] RetrieverAgent (5-level fallback + BM25) ──────────────────
         search_results = await self._retriever_agent.run(
             query=query,
             enriched_query=enriched_query,
@@ -457,123 +571,52 @@ class RAGService:
             jurisdiction=final_jurisdiction,
             subdomain_candidates=subdomain_candidates,
             b2b_b2c=b2b_b2c,
+            statute_from_registry=statute_from_registry,   # ← NEW
         )
 
-        # ── [5] Handle empty results ───────────────────────────────────────
+        # ── [5] Build RAG context ──────────────────────────────────────────
         if not search_results:
-            logger.warning(
-                "⚠️  No Milvus results after 4-level fallback | "
-                f"query='{query}' | statute='{primary_statute_id}' | "
-                f"domain={domain} | jurisdiction={jurisdiction} | language={language}"
+            logger.warning("⚠️  No results from RetrieverAgent — returning no-context response")
+            no_context_msg = (
+                "Jeg finner ingen relevante juridiske utdrag fra min kunnskap for dette spørsmålet."
+                if language == "norwegian"
+                else "I cannot find any relevant legal excerpts from my knowledge for this question."
             )
             yield {"type": "sources", "data": []}
-
-            no_result = (
-                "Jeg finner ingen relevante lovutdrag i den tilgjengelige "
-                "Lovdata-databasen som direkte svarer på dette spørsmålet. "
-                "Det kan være at spørsmålet er formulert for generelt eller gjelder "
-                "et område som ikke dekkes av tilgjengelige kilder. "
-                "Du kan prøve å omformulere spørsmålet eller gi mer spesifikke "
-                "detaljer for et mer presist svar."
-                if language == "norwegian"
-                else
-                "I cannot find any relevant legal excerpts from my knowledge. "
-                "The question may be too general or relate to an area not covered "
-                "in the available sources. You may try rephrasing the question or "
-                "providing more specific details for a more accurate response."
-            )
-
-            for char in no_result:
+            for char in no_context_msg:
                 yield {"type": "token", "data": char}
-
             yield {
                 "type": "complete",
                 "metadata": {
                     "intent": "LEGAL",
                     "language": language,
-                    "primary_statute_id": primary_statute_id,
-                    "chunks_retrieved": 0,
+                    "full_answer": no_context_msg,
                     "score": 0.1,
-                    "confidence": "No sources found",
-                    "full_answer": no_result,
+                    "confidence": "No sources available",
                     "rag_chunks": [],
+                    "tokens_generated": len(no_context_msg),
                 },
             }
             return
 
-        # ── [6] Build RAG context and score ───────────────────────────────
         rag_context = self._build_context(search_results)
-
-        score_result = await self._llm.generate_legal_answer(
-            query=query,
-            rag_context=rag_context,
-            language=language,
-            conversation_history=history,
-            response_style=response_style,
-        )
-        score = score_result["score"]
-        confidence = score_result["confidence"]
-        scored_answer = score_result["answer"]
-
-        logger.info(f"📊 Score={score} | Confidence={confidence}")
-
-        # ── [7] Score gate — block low-confidence answers entirely ───────────
-        # score < 0.5 means the retrieved chunks do not support the query.
-        # Do NOT stream an LLM answer in this case — stream the no-result
-        # message instead so the user never sees a hallucinated response.
-        if score < 0.5:
+        if len(rag_context) > settings.CONTEXT_MAX_LENGTH:
+            rag_context = rag_context[:settings.CONTEXT_MAX_LENGTH]
             logger.warning(
-                f"⚠️  Score={score} below threshold — blocking LLM answer | "
-                f"chunks={len(search_results)} | statute={primary_statute_id}"
-            )
-            yield {"type": "sources", "data": []}
-
-            no_support_msg = (
-                "Jeg finner ingen relevante juridiske utdrag fra min kunnskap."
-                if language == "norwegian"
-                else "I cannot find any relevant legal excerpts from my knowledge."
+                f"⚠️  RAG context truncated to {settings.CONTEXT_MAX_LENGTH} chars"
             )
 
-            for char in no_support_msg:
-                yield {"type": "token", "data": char}
+        # Emit sources for the frontend
+        source_urls = []
+        seen = set()
+        for chunk in search_results:
+            url = chunk.get("url") or chunk.get("source_doc_url") or ""
+            if url and url not in seen:
+                seen.add(url)
+                source_urls.append(url)
+        yield {"type": "sources", "data": source_urls}
 
-            yield {
-                "type": "complete",
-                "metadata": {
-                    "intent": "LEGAL",
-                    "language": language,
-                    "primary_statute_id": primary_statute_id,
-                    "chunks_retrieved": len(search_results),
-                    "tokens_generated": len(no_support_msg),
-                    "score": score,
-                    "confidence": confidence,
-                    "full_answer": no_support_msg,
-                    "rag_chunks": [],
-                },
-            }
-            return
-
-        # ── [8] Emit sources (score >= 0.5 only) ──────────────────────────
-        visible_chunks = search_results
-        seen_urls: set = set()
-        visible_sources = []
-        for r in search_results:
-            base_url = r.get("source_doc_url") or r.get("url") or ""
-            if not base_url:
-                continue
-            section_ref = (r.get("section_ref") or "").strip()
-            full_url = (
-                f"{base_url}/{section_ref}" if section_ref else base_url
-            )
-            if full_url not in seen_urls:
-                seen_urls.add(full_url)
-                visible_sources.append(full_url)
-        yield {"type": "sources", "data": visible_sources}
-        logger.info(
-            f"✅ Emitting {len(visible_sources)} source URLs with section_ref (score >= 0.5)"
-        )
-
-        # ── [9] Stream answer ─────────────────────────────────────────────
+        # ── [6] Generate answer (streaming) ───────────────────────────────
         full_answer = ""
         token_count = 0
 
@@ -588,23 +631,28 @@ class RAGService:
             full_answer += token
             yield {"type": "token", "data": token}
 
+        # ── [7] Score and emit completion ──────────────────────────────────
+        # FIX: removed duplicate local import — _extract_score and
+        # _score_to_confidence are already imported at module level above.
+        answer, score = _extract_score(full_answer)
+        confidence = _score_to_confidence(score)
+
+        fallback_level = search_results[0].get("fallback_level", 0) if search_results else "n/a"
         yield {
             "type": "complete",
             "metadata": {
                 "intent": "LEGAL",
                 "language": language,
-                "primary_statute_id": primary_statute_id,
-                "chunks_retrieved": len(search_results),
                 "tokens_generated": token_count,
                 "score": score,
                 "confidence": confidence,
-                "full_answer": scored_answer,
-                "rag_chunks": visible_chunks,
+                "full_answer": answer,
+                "rag_chunks": search_results,
             },
         }
         logger.info(
-            f"✅ LEGAL pipeline complete | "
-            f"chunks={len(search_results)} | tokens={token_count}"
+            f"✅ LEGAL pipeline complete | tokens={token_count} | "
+            f"score={score} | fallback_levels_used={fallback_level}"
         )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -663,7 +711,7 @@ class RAGService:
             yield {"type": "token", "data": token}
 
         # Strip [SCORE:x.x] from docqa answer
-        score_pattern = re.compile(r"\[SCORE:([0-9.]+)\]")
+        score_pattern = re.compile(r"\[SCORE:\s*([0-9.]+)\]")
         score_match = score_pattern.search(full_answer)
         score = float(score_match.group(1)) if score_match else 0.7
         clean_answer = score_pattern.sub("", full_answer).strip()
@@ -715,13 +763,20 @@ class RAGService:
                 yield event
             return
 
-        # VDB search for legal context (uses new retrieval pipeline)
+        # FIX: all required RetrieverAgent.run() kwargs now explicitly passed.
+        # enriched_query=query is intentional — hybrid skips reasoning enrichment.
         search_results = await self._retriever_agent.run(
             query=query,
-            enriched_query=query,   # no reasoning enrichment for hybrid
+            enriched_query=query,
             top_k=top_k,
             min_score=min_score,
             history=history,
+            statute_filter=None,
+            domain=None,
+            jurisdiction=None,
+            subdomain_candidates=[],
+            b2b_b2c="BOTH",
+            statute_from_registry=False,
         )
 
         rag_context = self._build_context(search_results) if search_results else ""
@@ -742,7 +797,7 @@ class RAGService:
             full_answer += token
             yield {"type": "token", "data": token}
 
-        score_pattern = re.compile(r"\[SCORE:([0-9.]+)\]")
+        score_pattern = re.compile(r"\[SCORE:\s*([0-9.]+)\]")
         score_match = score_pattern.search(full_answer)
         score = float(score_match.group(1)) if score_match else 0.7
         clean_answer = score_pattern.sub("", full_answer).strip()

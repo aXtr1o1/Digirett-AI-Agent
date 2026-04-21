@@ -218,7 +218,7 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
 
   // Send message
   const sendMessage = () => {
-    if ((message.trim() || file) && !disabled && !isStreaming) {
+    if ((message.trim() || file) && !isStreaming) {
       onSend({
         text: message,
         file: file,
@@ -326,6 +326,7 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
           type="file"
           ref={fileInputRef}
           onChange={handleFileSelect}
+          accept=".pdf,.docx,.doc"
           style={{ display: "none" }}
         />
 
@@ -335,7 +336,7 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={disabled || isStreaming}
+          disabled={isStreaming}
           rows={1}
           placeholder="Ask Anything..."
           style={{

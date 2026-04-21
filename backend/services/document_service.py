@@ -1,3 +1,23 @@
+"""
+services/document_service.py
+
+Handles the full document lifecycle:
+  1. Parse  — extract text from PDF/DOCX using PyMuPDF (fitz)
+  2. Store  — persist in both Redis (fast, TTL-scoped) and Supabase (durable)
+  3. Retrieve — load doc text for a given conversation/session
+  4. Session enforcement — 2 doc limit + 10 turn limit per 4-hour session
+
+Redis key schema (new keys, zero collision with existing keys):
+  doc:session:<session_id>          → { doc_count, turn_count, session_start, docs: [...] }
+  doc:text:<document_id>            → raw extracted text (TTL = 4h)
+
+Supabase tables used (after running 001_documents.sql):
+  documents                         → document metadata + extracted_text
+  conversations.session_turn_count  → incremented on every user turn
+  conversations.document_count      → incremented on every doc upload
+  conversations.session_id          → links conversation to a Redis session
+"""
+
 import logging
 import re
 import time
@@ -269,7 +289,7 @@ class DocumentService:
             logger.error(f"❌ Redis doc text store failed | {exc}")
             raise
 
-        # ── Store in Supabase ─────────────────────────────────────────────
+        # ── Store in Supabase (Metadata) ───────────────────────────────────
         try:
             from datetime import datetime, timedelta
             now = datetime.utcnow()
@@ -289,7 +309,22 @@ class DocumentService:
                 "created_at":     now.isoformat(),
                 "expires_at":     expires_at.isoformat(),
             }).execute()
-            logger.info(f"💾 Doc saved in Supabase | document_id={document_id}")
+            logger.info(f"💾 Doc metadata saved in Supabase | document_id={document_id}")
+            
+            # ── Store binary content in Supabase Storage ──────────────────────
+            # Bucket: 'lovdata-documents' | Path: 'uploads/{document_id}.{ext}'
+            try:
+                storage_path = f"uploads/{document_id}.{ext}"
+                self._supabase._get().storage.from_("lovdata-documents").upload(
+                    path=storage_path,
+                    file=file_bytes,
+                    file_options={"content-type": f"application/{ext}" if ext != 'pdf' else 'application/pdf'}
+                )
+                logger.info(f"💾 Binary file uploaded to storage | path={storage_path}")
+            except Exception as storage_exc:
+                logger.error(f"❌ Supabase Storage upload failed | {storage_exc}")
+                # We don't fail the whole request since RAG can still work with the text
+                
         except Exception as exc:
             logger.error(f"❌ Supabase doc store failed | {exc}")
             # Don't raise — Redis has the text, pipeline can still work
@@ -331,6 +366,39 @@ class DocumentService:
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # RETRIEVE DOCUMENT TEXT
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    def get_document_binary(self, document_id: str) -> Optional[Tuple[bytes, str, str]]:
+        """
+        Retrieve the original binary document content and metadata.
+        Returns: (file_bytes, filename, content_type)
+        """
+        try:
+            # 1. Get metadata to know the extension/type
+            doc_data = (
+                self._supabase.table("documents")
+                .select("file_name, file_type")
+                .eq("document_id", document_id)
+                .single()
+                .execute()
+            )
+            
+            if not doc_data.data:
+                return None
+            
+            filename = doc_data.data["file_name"]
+            ext = doc_data.data["file_type"]
+            
+            # 2. Fetch from Storage
+            storage_path = f"uploads/{document_id}.{ext}"
+            file_bytes = self._supabase._get().storage.from_("lovdata-documents").download(storage_path)
+            
+            content_type = "application/pdf" if ext == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            
+            return file_bytes, filename, content_type
+            
+        except Exception as exc:
+            logger.error(f"❌ get_document_binary failed | id={document_id} | {exc}")
+            return None
 
     def get_document_text(self, document_id: str) -> Optional[str]:
         """
@@ -431,3 +499,41 @@ class DocumentService:
         if not text:
             return None
         return text[:500]
+
+    def save_file_message(
+    self,
+    conversation_id: str,
+    role: str,
+    content: Optional[str],
+    file_name: str,
+    metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """
+        Inserts a file-upload message row into the messages table.
+        This is what makes uploaded files reappear in chat history after refresh.
+        """
+        import uuid as _uuid
+        message_id = str(_uuid.uuid4())
+
+        try:
+            self._supabase.table("messages").insert({
+                "message_id":      message_id,
+                "conversation_id": conversation_id,
+                "role":            role,
+                "content":         content or "",
+                "type":            "file-with-text",
+                "file_name":       file_name,
+                "sources":         [],
+                "metadata":        {"message_type": "file_upload", "document_id": metadata.get("document_id") if isinstance(metadata, dict) else None},
+                "is_deleted":      False,
+            }).execute()
+
+            logger.info(
+                f"💾 File message saved | message_id={message_id} | "
+                f"file={file_name} | conv={conversation_id}"
+            )
+            return message_id
+
+        except Exception as exc:
+            logger.error(f"❌ save_file_message DB insert failed | {exc}", exc_info=True)
+            raise

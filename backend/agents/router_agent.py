@@ -1,3 +1,30 @@
+"""
+agents/router_agent.py
+
+Legal Query Routing Engine
+===========================
+Classifies an enriched query into structured Milvus retrieval filters
+using the DigiRett AI Legal Taxonomy v1.0.1.
+
+HOW IT FITS IN THE PIPELINE
+-----------------------------
+  1. QueryReasoningAgent.run()  →  enriched_query, domain, jurisdiction
+  2. RouterAgent.run()          →  subdomain_candidates, b2b_b2c, relationship_type
+  3. RAGService merges both     →  final Milvus filter expression
+  4. RetrieverAgent.run()       →  filtered vector search
+
+The router runs on the ENRICHED QUERY (not the raw query) so it benefits
+from the statute-anchored vocabulary produced by the reasoning agent.
+
+The domain from the reasoning agent is passed as a HIGH-PRIORITY hint.
+The router only overrides it when the keyword evidence is clearly stronger.
+
+TAXONOMY SOURCE
+---------------
+DigiRett AI — Legal Taxonomy v1.0.1
+Contract Law (Avtalerett) + Employment Law (Arbeidsrett)
+All enum values are UPPERCASE per spec: B2B | B2C | BOTH, NO | EU-EEA | BOTH.
+"""
 
 import json
 import logging

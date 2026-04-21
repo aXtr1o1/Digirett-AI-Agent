@@ -1,3 +1,24 @@
+"""
+agents/retriever_agent.py
+
+Retrieval Agent — 4-Level Statute-Anchored Fallback + BM25 Re-ranking.
+
+Replaces the old RetrieverAgent (single Milvus call) and RerankerAgent
+(LLM-based scoring) with:
+
+  L0  source_doc_url + domain + subdomain + jurisdiction + b2b_b2c
+  L1  source_doc_url + domain
+  L2  source_doc_url only
+  L3  no filter — pure vector search
+
+BM25 re-ranking (RRF fusion) is applied on the candidate set before
+returning top_k results.  No LLM call needed for reranking.
+
+The RerankerAgent class is kept in its own file and still exists —
+it is simply no longer called from the legal pipeline.  This avoids
+any import errors in other parts of the codebase.
+"""
+
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -24,6 +45,10 @@ _ANTI_HALLUCINATION_TEXT = (
 
 
 class _BM25Reranker:
+    """
+    Reciprocal Rank Fusion of dense COSINE score + BM25 score.
+    Falls back to dense-only when rank_bm25 is not installed.
+    """
 
     _K = 60  # RRF constant
 
@@ -82,7 +107,17 @@ class _BM25Reranker:
 
 
 class RetrieverAgent:
+    """
+    Orchestrates the full retrieval pipeline:
 
+      1. Embed the enriched query
+      2. Run 4-level fallback ladder against Milvus
+      3. BM25 re-rank the candidate set
+      4. Return top_k results
+
+    Constructor signature is unchanged — embedding_service and milvus_client
+    are injected from RAGService exactly as before.
+    """
 
     def __init__(self, embedding_service: Any, milvus_client: Any) -> None:
         self._embedding = embedding_service
@@ -103,6 +138,28 @@ class RetrieverAgent:
         subdomain_candidates: Optional[List[str]] = None,
         b2b_b2c: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
+        """
+        Run the full retrieval pipeline and return re-ranked results.
+
+        Parameters
+        ----------
+        query           : raw user query (used for BM25 scoring)
+        enriched_query  : statute-anchored query from QueryReasoningAgent (used for embedding)
+        top_k           : number of results to return after re-ranking
+        statute_filter  : Lovdata URL or LOV-ID used for source_doc_url LIKE filter
+        domain          : Milvus `domain` field value
+        jurisdiction    : Milvus `jurisdiction` field value
+        subdomain_candidates : list of subdomain label strings from RouterAgent
+        b2b_b2c         : "B2B" / "B2C" / "BOTH"
+
+        Returns
+        -------
+        List of result dicts, each containing at minimum:
+            text, score, score_dense, score_bm25,
+            source_doc_url, section_ref, url (alias for source_doc_url),
+            domain, subdomain, chunk_id, document_id,
+            fallback_level
+        """
         sep = "=" * 60
         logger.info(
             f"\n{sep}\n🔍 RetrieverAgent.run | query='{query[:60]}'\n{sep}"

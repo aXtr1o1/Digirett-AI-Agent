@@ -5,16 +5,9 @@ const useConversations = () => {
   const [conversations, setConversations] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [currentConversationId, setCurrentConversationId] = useState(null);
-    useEffect(() => {
-
-    const savedId = localStorage.getItem("conversationId");
-
-    if (savedId) {
-      setCurrentConversationId(savedId);
-    }
-
-  }, []);
+  const [currentConversationId, setCurrentConversationId] = useState(() => {
+    return localStorage.getItem("conversationId") || null;
+  });
   /**
    * Load all conversations for the default user
    * GET /conversations/user/{user_id}
@@ -115,14 +108,13 @@ const createConversation = useCallback(async () => {
    * Select a conversation by ID (sidebar click)
    */
 const selectConversation = useCallback((conversationId) => {
-
-  setCurrentConversationId(conversationId);
-
-  if (conversationId) {
-    localStorage.setItem("conversationId", conversationId);
-  }
-
-}, []);
+    setCurrentConversationId(conversationId);
+    if (conversationId) {
+      localStorage.setItem("conversationId", conversationId);
+    } else {
+      localStorage.removeItem("conversationId");
+    }
+  }, []);
   /**
    * Delete a conversation
    * DELETE /conversations/{conversation_id}
@@ -219,6 +211,7 @@ const handleAutoCreatedConversation = useCallback(
   if (!newConversationId) return;
 
   setCurrentConversationId(newConversationId);
+  localStorage.setItem("conversationId", newConversationId);
 
   setConversations(prev => {
 

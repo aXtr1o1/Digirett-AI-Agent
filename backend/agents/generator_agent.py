@@ -166,7 +166,7 @@ LANGUAGE RULE:
 
         user_prompt = (
             f"{style_block}"
-            f"CRITICAL: Answer ONLY from the sources and chunks below.\n\n"
+            f"CRITICAL: Answer ONLY from the sources below.\n\n"
             f"KILDER (Sources):\n{rag_context}\n\n"
             f"SPØRSMÅL (Question):\n{query}\n\n"
             f"Respond in {language}. Be direct and cite sources.\n"

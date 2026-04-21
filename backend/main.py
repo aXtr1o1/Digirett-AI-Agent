@@ -121,6 +121,8 @@ async def lifespan(app: FastAPI):
         )
         documents.set_services(
             document_service=document_service,
+            llm_service=llm_service,
+
         )
 
         logger.info("All services ready — server is live")
@@ -223,5 +225,6 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         reload=True,
+        loop="asyncio",
         log_level="info",
     )
