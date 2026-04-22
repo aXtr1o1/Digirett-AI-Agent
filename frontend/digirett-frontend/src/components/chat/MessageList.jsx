@@ -2,22 +2,21 @@ import React, { useEffect, useRef } from "react";
 import Message from "./Message";
 import TypingIndicator from "./TypingIndicator";
 import LoadingSpinner from "../common/LoadingSpinner";
-import GlowingOrb from "../common/GlowingOrb";
 
 const MessageList = ({
   messages,
   isLoading,
   streamingMessage,
   isStreaming,
+  isProcessingDoc,
   theme = "dark",
 }) => {
   const messagesEndRef = useRef(null);
   const isDark = theme === "dark";
 
-  // 🔥 Auto-scroll on new messages OR streaming updates
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingMessage, isStreaming]);
+  }, [messages, streamingMessage, isStreaming, isProcessingDoc]);
 
   if (isLoading) {
     return (
@@ -27,23 +26,13 @@ const MessageList = ({
     );
   }
 
-  // ✅ Welcome Screen (only when nothing exists)
-  if (messages.length === 0 && !isStreaming && !streamingMessage) {
+  if (messages.length === 0 && !isStreaming && !streamingMessage && !isProcessingDoc) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
-        {/* Glowing Orb */}
-        {/* <div style={{ marginBottom: "32px" }}>
-          <GlowingOrb theme={theme} size={80} />
-        </div> */}
-
-        <h2 className={`text-4xl font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+        <h2 className={`text-4xl font-semibold mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>
           Welcome to DigiRett AI
         </h2>
-
-        <p
-          className={`text-sm max-w-sm ${isDark ? "text-gray-400" : "text-gray-500"
-            }`}
-        >
+        <p className={`text-sm max-w-sm ${isDark ? "text-gray-400" : "text-gray-500"}`}>
           Ask me anything about Norwegian law and regulations.
         </p>
       </div>
@@ -52,7 +41,7 @@ const MessageList = ({
 
   return (
     <div className="w-full px-4 py-6">
-      {/* Existing Messages */}
+      {/* Historical + live messages */}
       {messages.map((message) => (
         <Message
           key={message.id || Math.random()}
@@ -61,7 +50,12 @@ const MessageList = ({
         />
       ))}
 
-      {/* 🔥 Streaming Assistant Message */}
+      {/* Doc processing — reuses TypingIndicator with a different label */}
+      {isProcessingDoc && (
+        <TypingIndicator theme={theme} label="Analysing document" />
+      )}
+
+      {/* Streaming assistant response */}
       {isStreaming && streamingMessage && (
         <Message
           message={{
@@ -73,12 +67,11 @@ const MessageList = ({
         />
       )}
 
-      {/* 🧠 Thinking State (Before First Token) */}
-      {isStreaming && !streamingMessage && (
+      {/* Thinking dots — text-only queries before first token */}
+      {isStreaming && !streamingMessage && !isProcessingDoc && (
         <TypingIndicator theme={theme} />
       )}
 
-      {/* Scroll Anchor */}
       <div ref={messagesEndRef} />
     </div>
   );

@@ -18,6 +18,8 @@ const useChat = (
   const [error, setError] = useState(null);
   const [streamingMessage, setStreamingMessage] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  // ✅ NEW: tracks whether we're processing/uploading a document (shows loading indicator)
+  const [isProcessingDoc, setIsProcessingDoc] = useState(false);
 
   const activeConversationIdRef = useRef(conversationId);
   const abortRef = useRef(null);
@@ -57,7 +59,7 @@ const useChat = (
         content: m.content || "",
         sources: m.sources || [],
         timestamp: m.created_at || new Date().toISOString(),
-        // ✅ These two fields now come from DB — file messages restore correctly
+        // ✅ Restore file messages correctly from DB
         type: m.type || "text",
         fileName: m.file_name || null,
         documentId: m.metadata?.document_id || null,
@@ -84,9 +86,6 @@ const useChat = (
         throw new Error("No conversation_id in response");
       }
       activeConversationIdRef.current = newId;
-      // ⚠️ DO NOT call onConversationCreated here yet
-      // We will call it after we successfully save the first message(s) to DB
-      // to avoid loadMessages wiping our local state before it's saved.
       if (moveConversationToTop) moveConversationToTop(newId);
       return newId;
     } catch (err) {
@@ -118,7 +117,7 @@ const useChat = (
 
         const hasQuery = !!messageText.trim();
 
-        // ✅ GPT-style: show the file bubble FIRST (before upload starts)
+        // ✅ STEP 1: Show the file bubble FIRST (GPT-style — user message on top)
         const fileMsgId = crypto.randomUUID();
         setMessages((prev) => [
           ...prev,
@@ -134,18 +133,20 @@ const useChat = (
           },
         ]);
 
-        // ✅ Show processing indicator BELOW the file bubble
-        setIsStreaming(true);
+        // ✅ STEP 2: Show document processing indicator BELOW the file bubble
+        setIsProcessingDoc(true);
+        setIsStreaming(false);
         setStreamingMessage("");
 
+        // ✅ STEP 3: Upload and get summary
         const uploadResult = await uploadDocument(file, convId, hasQuery);
+
         if (!uploadResult) {
-          setIsStreaming(false);
-          setStreamingMessage("");
+          setIsProcessingDoc(false);
           return;
         }
 
-        // ✅ Update the file message with the real document ID
+        // ✅ STEP 4: Update the file bubble with the real document ID
         setMessages((prev) =>
           prev.map((m) =>
             m.id === fileMsgId
@@ -154,7 +155,24 @@ const useChat = (
           )
         );
 
-        // ✅ Sequence DB saves for correct order (GPT style)
+        // ✅ STEP 5: If there's a summary (doc-only, no query), show it BELOW the file bubble
+        if (!hasQuery && uploadResult.summary_text) {
+          const summaryMsgId = crypto.randomUUID();
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: summaryMsgId,
+              role: MESSAGE_ROLES.ASSISTANT,
+              type: "text",
+              content: uploadResult.summary_text,
+              sources: [],
+              timestamp: new Date().toISOString(),
+            },
+          ]);
+          setIsProcessingDoc(false);
+        }
+
+        // ── Save to DB (sequence matters for correct reload order) ────────
         // 1. Save file message FIRST
         try {
           await fetch(`${API_BASE_URL}/api/v1/documents/message/${convId}`, {
@@ -169,8 +187,7 @@ const useChat = (
             }),
           });
 
-          // ✅ For new conversations, NOW trigger the creation event
-          // since we have at least one message in DB for loadMessages to find
+          // For new conversations, trigger creation AFTER first message is in DB
           if (!conversationId && onConversationCreated) {
             onConversationCreated(convId, null);
           }
@@ -178,7 +195,7 @@ const useChat = (
           console.error("[useChat] ❌ save_file_message call failed:", err);
         }
 
-        // 2. Save summary message SECOND
+        // 2. Save summary message SECOND (so it appears after file on reload)
         if (uploadResult.summary_text) {
           try {
             await fetch(`${API_BASE_URL}/api/v1/documents/summary-message/${convId}`, {
@@ -194,14 +211,31 @@ const useChat = (
           }
         }
 
-        // Doc only — no query to stream
+        // Doc only — no query to stream, stop here
         if (!hasQuery) {
-          setIsStreaming(false);
-          setStreamingMessage("");
+          setIsProcessingDoc(false);
           return;
         }
 
-        // ── Stream response for file + query ──────────────────────────────
+        // ── File + query: stream the RAG response ─────────────────────────
+        // Show summary inline first if available
+        if (uploadResult.summary_text) {
+          const summaryMsgId = crypto.randomUUID();
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: summaryMsgId,
+              role: MESSAGE_ROLES.ASSISTANT,
+              type: "text",
+              content: uploadResult.summary_text,
+              sources: [],
+              timestamp: new Date().toISOString(),
+            },
+          ]);
+        }
+
+        setIsProcessingDoc(false);
+        setIsStreaming(true);
         setStreamingMessage("");
 
         let firstTokenReceived = false;
@@ -232,7 +266,6 @@ const useChat = (
             if (data.conversationId) {
               activeConversationIdRef.current = data.conversationId;
               const backendTitle = data.metadata?.conversation_title || null;
-              // If it's still null (unlikely but possible), trigger it
               if (!conversationId && onConversationCreated) onConversationCreated(data.conversationId, backendTitle);
               if (moveConversationToTop) moveConversationToTop(data.conversationId);
               fetchSessionStatus(data.conversationId);
@@ -243,14 +276,15 @@ const useChat = (
             setError(err?.message || "Failed to generate response");
             setIsStreaming(false);
             setStreamingMessage("");
+            setIsProcessingDoc(false);
           },
           { skipSaveUser: true }
         );
 
-        return; // ⭐ exit here — don't fall through to text-only path
+        return;
       }
 
-      // ── Text only bubble ────────────────────────────────────────────────
+      // ── Text only path ──────────────────────────────────────────────────
       setMessages((prev) => [
         ...prev,
         {
@@ -262,7 +296,6 @@ const useChat = (
         },
       ]);
 
-      // ── Stream response ───────────────────────────────────────────────────
       setIsStreaming(true);
       setStreamingMessage("");
 
@@ -313,8 +346,10 @@ const useChat = (
       moveConversationToTop,
       uploadDocument,
       fetchSessionStatus,
+      conversationId,
     ]
   );
+
   // ── Stop streaming ────────────────────────────────────────────────────────
   const stopStreaming = useCallback(() => {
     if (abortRef.current) {
@@ -341,6 +376,7 @@ const useChat = (
     setMessages([]);
     setStreamingMessage("");
     setError(null);
+    setIsProcessingDoc(false);
   }, []);
 
   useEffect(() => {
@@ -357,6 +393,7 @@ const useChat = (
     error,
     streamingMessage,
     isStreaming,
+    isProcessingDoc,        // ✅ NEW: expose for UI loading indicator
     sendMessage,
     loadMessages,
     stopStreaming,
