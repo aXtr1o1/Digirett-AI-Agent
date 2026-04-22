@@ -1,23 +1,3 @@
-"""
-services/document_service.py
-
-Handles the full document lifecycle:
-  1. Parse  — extract text from PDF/DOCX using PyMuPDF (fitz)
-  2. Store  — persist in both Redis (fast, TTL-scoped) and Supabase (durable)
-  3. Retrieve — load doc text for a given conversation/session
-  4. Session enforcement — 2 doc limit + 10 turn limit per 4-hour session
-
-Redis key schema (new keys, zero collision with existing keys):
-  doc:session:<session_id>          → { doc_count, turn_count, session_start, docs: [...] }
-  doc:text:<document_id>            → raw extracted text (TTL = 4h)
-
-Supabase tables used (after running 001_documents.sql):
-  documents                         → document metadata + extracted_text
-  conversations.session_turn_count  → incremented on every user turn
-  conversations.document_count      → incremented on every doc upload
-  conversations.session_id          → links conversation to a Redis session
-"""
-
 import logging
 import re
 import time
