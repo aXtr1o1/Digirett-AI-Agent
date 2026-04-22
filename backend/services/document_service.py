@@ -537,3 +537,42 @@ class DocumentService:
         except Exception as exc:
             logger.error(f"❌ save_file_message DB insert failed | {exc}", exc_info=True)
             raise
+
+    def save_summary_message(
+        self,
+        conversation_id: str,
+        content: str,
+        document_id: Optional[str] = None,
+    ) -> str:
+        """
+        Inserts a document summary as an assistant message row into the messages table.
+        This is what makes AI summaries reappear in chat history after refresh.
+        """
+        import uuid as _uuid
+        message_id = str(_uuid.uuid4())
+
+        try:
+            self._supabase.table("messages").insert({
+                "message_id":      message_id,
+                "conversation_id": conversation_id,
+                "role":            "assistant",
+                "content":         content,
+                "type":            "text",
+                "file_name":       None,
+                "sources":         [],
+                "metadata":        {
+                    "message_type": "document_summary",
+                    "document_id": document_id,
+                },
+                "is_deleted":      False,
+            }).execute()
+
+            logger.info(
+                f"💾 Summary message saved | message_id={message_id} | "
+                f"conv={conversation_id}"
+            )
+            return message_id
+
+        except Exception as exc:
+            logger.error(f"❌ save_summary_message DB insert failed | {exc}", exc_info=True)
+            raise

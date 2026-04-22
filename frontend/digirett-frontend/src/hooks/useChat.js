@@ -52,14 +52,14 @@ const useChat = (
       const msgs = Array.isArray(data.messages) ? data.messages : [];
 
       const normalized = msgs.map((m) => ({
-        id:        m.message_id,
-        role:      m.role,
-        content:   m.content || "",
-        sources:   m.sources || [],
+        id: m.message_id,
+        role: m.role,
+        content: m.content || "",
+        sources: m.sources || [],
         timestamp: m.created_at || new Date().toISOString(),
         // ✅ These two fields now come from DB — file messages restore correctly
-        type:      m.type || "text",
-        fileName:  m.file_name || null,
+        type: m.type || "text",
+        fileName: m.file_name || null,
         documentId: m.metadata?.document_id || null,
       }));
 
@@ -84,7 +84,9 @@ const useChat = (
         throw new Error("No conversation_id in response");
       }
       activeConversationIdRef.current = newId;
-      if (onConversationCreated) onConversationCreated(newId, null);
+      // ⚠️ DO NOT call onConversationCreated here yet
+      // We will call it after we successfully save the first message(s) to DB
+      // to avoid loadMessages wiping our local state before it's saved.
       if (moveConversationToTop) moveConversationToTop(newId);
       return newId;
     } catch (err) {
@@ -95,7 +97,7 @@ const useChat = (
   }, [onConversationCreated, moveConversationToTop]);
 
   // ── Send message ──────────────────────────────────────────────────────────
-const sendMessage = useCallback(
+  const sendMessage = useCallback(
     async (payload) => {
       const messageText =
         typeof payload === "string" ? payload : payload?.text ?? "";
@@ -115,24 +117,45 @@ const sendMessage = useCallback(
         if (!convId) return;
 
         const hasQuery = !!messageText.trim();
-        const uploadResult = await uploadDocument(file, convId, hasQuery);
-        if (!uploadResult) return;
 
-        // Combined file + text bubble — single bubble, no separate text bubble
+        // ✅ GPT-style: show the file bubble FIRST (before upload starts)
+        const fileMsgId = crypto.randomUUID();
         setMessages((prev) => [
           ...prev,
           {
-            id: crypto.randomUUID(),
+            id: fileMsgId,
             role: MESSAGE_ROLES.USER,
             type: "file-with-text",
-            fileName: uploadResult.file_name || file.name,
-            documentId: uploadResult?.document_id,
+            fileName: file.name,
+            documentId: null, // will be updated after upload
             content: messageText.trim() || null,
             sources: [],
             timestamp: new Date().toISOString(),
           },
         ]);
-        // Save file message to DB so it persists on refresh
+
+        // ✅ Show processing indicator BELOW the file bubble
+        setIsStreaming(true);
+        setStreamingMessage("");
+
+        const uploadResult = await uploadDocument(file, convId, hasQuery);
+        if (!uploadResult) {
+          setIsStreaming(false);
+          setStreamingMessage("");
+          return;
+        }
+
+        // ✅ Update the file message with the real document ID
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === fileMsgId
+              ? { ...m, fileName: uploadResult.file_name || file.name, documentId: uploadResult.document_id }
+              : m
+          )
+        );
+
+        // ✅ Sequence DB saves for correct order (GPT style)
+        // 1. Save file message FIRST
         try {
           await fetch(`${API_BASE_URL}/api/v1/documents/message/${convId}`, {
             method: "POST",
@@ -145,15 +168,40 @@ const sendMessage = useCallback(
               document_id: uploadResult.document_id,
             }),
           });
+
+          // ✅ For new conversations, NOW trigger the creation event
+          // since we have at least one message in DB for loadMessages to find
+          if (!conversationId && onConversationCreated) {
+            onConversationCreated(convId, null);
+          }
         } catch (err) {
           console.error("[useChat] ❌ save_file_message call failed:", err);
         }
 
+        // 2. Save summary message SECOND
+        if (uploadResult.summary_text) {
+          try {
+            await fetch(`${API_BASE_URL}/api/v1/documents/summary-message/${convId}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                content: uploadResult.summary_text,
+                document_id: uploadResult.document_id,
+              }),
+            });
+          } catch (err) {
+            console.error("[useChat] ❌ save_summary_message call failed:", err);
+          }
+        }
+
         // Doc only — no query to stream
-        if (!hasQuery) return;
+        if (!hasQuery) {
+          setIsStreaming(false);
+          setStreamingMessage("");
+          return;
+        }
 
         // ── Stream response for file + query ──────────────────────────────
-        setIsStreaming(true);
         setStreamingMessage("");
 
         let firstTokenReceived = false;
@@ -184,7 +232,8 @@ const sendMessage = useCallback(
             if (data.conversationId) {
               activeConversationIdRef.current = data.conversationId;
               const backendTitle = data.metadata?.conversation_title || null;
-              if (onConversationCreated) onConversationCreated(data.conversationId, backendTitle);
+              // If it's still null (unlikely but possible), trigger it
+              if (!conversationId && onConversationCreated) onConversationCreated(data.conversationId, backendTitle);
               if (moveConversationToTop) moveConversationToTop(data.conversationId);
               fetchSessionStatus(data.conversationId);
             }

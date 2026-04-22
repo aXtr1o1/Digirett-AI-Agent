@@ -87,9 +87,8 @@ const ChatContainer = ({
           />
         </div>
         <p
-          className={`text-center text-xs pb-3 ${
-            isDark ? "text-gray-500" : "text-gray-400"
-          }`}
+          className={`text-center text-xs pb-3 ${isDark ? "text-gray-500" : "text-gray-400"
+            }`}
         >
           DigiRett can make mistakes. Verify important legal information.
         </p>

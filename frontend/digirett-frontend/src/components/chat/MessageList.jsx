@@ -35,15 +35,14 @@ const MessageList = ({
         {/* <div style={{ marginBottom: "32px" }}>
           <GlowingOrb theme={theme} size={80} />
         </div> */}
-        
+
         <h2 className={`text-4xl font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
           Welcome to DigiRett AI
         </h2>
 
         <p
-          className={`text-sm max-w-sm ${
-            isDark ? "text-gray-400" : "text-gray-500"
-          }`}
+          className={`text-sm max-w-sm ${isDark ? "text-gray-400" : "text-gray-500"
+            }`}
         >
           Ask me anything about Norwegian law and regulations.
         </p>

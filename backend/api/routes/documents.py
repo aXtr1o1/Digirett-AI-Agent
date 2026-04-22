@@ -190,6 +190,46 @@ async def save_file_message(conversation_id: str, body: FileMessageRequest):
         )
 
 
+# ── Save summary message endpoint ────────────────────────────────────────────
+class SummaryMessageRequest(BaseModel):
+    content: str
+    document_id: Optional[str] = None
+
+
+@router.post(
+    "/documents/summary-message/{conversation_id}",
+    tags=["Documents"],
+    summary="Persist an AI document summary as an assistant message for history",
+)
+async def save_summary_message(conversation_id: str, body: SummaryMessageRequest):
+    """
+    Called by frontend after a document upload + summary generation.
+    Saves the AI summary as an assistant message so it reappears
+    correctly when the conversation is loaded from history (after refresh).
+    """
+    if _document_service is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Document service not available.",
+        )
+    try:
+        message_id = _document_service.save_summary_message(
+            conversation_id=conversation_id,
+            content=body.content,
+            document_id=body.document_id,
+        )
+        return {"message_id": message_id, "status": "saved"}
+    except Exception as exc:
+        logger.error(
+            f"❌ save_summary_message failed | conv={conversation_id} | {exc}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save summary message: {exc}",
+        )
+
+
 # ── Session status endpoint ───────────────────────────────────────────────────
 @router.get(
     "/documents/session/{conversation_id}",

@@ -101,8 +101,12 @@ const uploadDocument = useCallback(async (file, convId, skipSummary = false) => 
     setUploadedDocs(prev => [...prev, { file_name: returnedFileName, document_id: documentId }]);
     await fetchSessionStatus(id);
 
-    // ✅ Return the confirmed file name and document_id so useChat can save the message row
-    return { file_name: returnedFileName, document_id: documentId };
+    // ✅ Return everything needed by useChat
+    return { 
+      file_name: returnedFileName, 
+      document_id: documentId,
+      summary_text: summaryText.trim()
+    };
 
   } catch (err) {
     console.error("[useDocumentUpload] uploadDocument error:", err);
