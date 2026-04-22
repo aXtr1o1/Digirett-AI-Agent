@@ -1,8 +1,16 @@
+"""
+Document upload + session status + document retrieval endpoints.
+
+POST /api/v1/documents/upload
+GET  /api/v1/documents/session/{conversation_id}
+GET  /api/v1/documents/conversation/{conversation_id}  
+"""
+
 import logging
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -82,7 +90,6 @@ async def upload_document(
     allowed, docs_remaining = _document_service.check_doc_limit(conversation_id)
     if not allowed:
         session = _document_service.get_or_create_session(conversation_id)
-        import time
         elapsed = time.time() - session.get("session_start", time.time())
         remaining_hours = max(0, round((4 * 3600 - elapsed) / 3600, 1))
         raise HTTPException(
@@ -160,11 +167,6 @@ async def upload_document(
     summary="Persist a file-upload event as a chat message for history",
 )
 async def save_file_message(conversation_id: str, body: FileMessageRequest):
-    """
-    Called by frontend after a successful upload.
-    Saves a message row of type 'file-with-text' so the file card
-    reappears correctly when the conversation is loaded from history.
-    """
     if _document_service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

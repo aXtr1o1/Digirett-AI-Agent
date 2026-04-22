@@ -1,15 +1,3 @@
-"""
-agents/query_reasoning_agent.py
-
-LLM-based query reasoning agent — the "BRAIN" of the retrieval pipeline.
-
-Extracts: domain, primary_statute_id, secondary_statute_id,
-          enriched_query, jurisdiction, source_type, response_style.
-
-Integrated from retrieve_v3 experiment into Phase 1 production codebase.
-Only import change: uses production `config.settings` instead of experiment config.
-"""
-
 import logging
 from typing import Dict, List, Optional
 
@@ -17,12 +5,14 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import AzureChatOpenAI
 
 from config import settings
+from agents.statute_registry import get_registry
 
 logger = logging.getLogger(__name__)
 
+_registry = get_registry()
+
 
 # ── Allowed domains (must match Milvus `domain` field values) ──────────────
-# These are the 12 DigiRett domains stored in Milvus.
 _ALLOWED_DOMAINS = frozenset({
     "arbeidsrett",
     "arsregnskap_og_selskapsrapporte",
@@ -196,33 +186,55 @@ GENERAL RULES — apply only when no PRIORITY ROUTING matches:
 • Security rights in assets → panteloven
 • Registration and legal protection → foretaksregisterloven
 
-WIDELY USED NORWEGIAN STATUTES AND THEIR LOVDATA IDs:
-  avtaleloven           → LOV-1918-05-31-4
-  aksjeloven            → LOV-1997-06-13-44
-  allmennaksjeloven     → LOV-1997-06-13-45
-  foretaksregisterloven → LOV-1985-06-21-78
-  prokuraloven          → LOV-1985-06-21-80
-  selskapsloven         → LOV-1985-06-21-83
-  panteloven            → LOV-1980-02-08-2
-  konkursloven          → LOV-1984-06-08-58
-  dekningsloven         → LOV-1984-06-08-59
-  arbeidsmiljøloven     → LOV-2005-06-17-62
-  ferieloven            → LOV-1988-04-29-21
-  skatteloven           → LOV-1999-03-26-14
-  regnskapsloven        → LOV-1998-07-17-56
-  bokføringsloven       → LOV-2004-11-19-73
-  revisorloven          → LOV-2020-11-20-128
-  finansavtaleloven     → LOV-2020-11-26-129
-  verdipapirhandelloven → LOV-2007-06-29-75
-  tvisteloven           → LOV-2005-06-17-90
-  straffeloven          → LOV-2005-05-20-28
-  forvaltningsloven     → LOV-1967-02-10-0
-  plan- og bygningsloven → LOV-2008-06-27-71
-  kommuneloven          → LOV-2018-06-22-83
-  tinglysingsloven      → LOV-1935-03-07-2
-  husleieloven          → LOV-1999-03-26-17
-  kjøpsloven            → LOV-1988-05-13-27
-  forbrukerkjøpsloven   → LOV-2002-06-21-34
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 4 — DERIVE THE OFFICIAL LOVDATA FILE IDENTIFIER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IMPORTANT: The statute ID may have already been determined by the
+deterministic registry lookup (shown in the REGISTRY HINT below, if present).
+If a REGISTRY HINT is provided, use that statute ID — do not override it.
+
+Using your knowledge of Norwegian law, derive the official Lovdata
+statute identifier for the governing law.
+
+The Lovdata format is: LOV-YYYY-MM-DD-NNN
+  YYYY = year the law was enacted
+  MM   = month enacted
+  DD   = day enacted
+  NNN  = sequential number of the law that year
+
+Derivation process — reason through what you know:
+
+  From Steps you know the statute family name (e.g. "aksjeloven").
+  From your legal knowledge, recall the enactment date and number.
+  Construct the identifier from: enactment date + sequential number.
+
+  Widely used Norwegian statutes and their identifiers
+  (use as reference points for reasoning — do not treat as exhaustive):
+
+    avtaleloven           → LOV-1918-05-31-4
+    aksjeloven            → LOV-1997-06-13-44
+    allmennaksjeloven     → LOV-1997-06-13-45
+    foretaksregisterloven → LOV-1985-06-21-78
+    prokuraloven          → LOV-1985-06-21-80
+    selskapsloven         → LOV-1985-06-21-83
+    panteloven            → LOV-1980-02-08-2
+    konkursloven          → LOV-1984-06-08-58
+    dekningsloven         → LOV-1984-06-08-59
+    arbeidsmiljøloven     → LOV-2005-06-17-62
+    ferieloven            → LOV-1988-04-29-21
+    skatteloven           → LOV-1999-03-26-14
+    regnskapsloven        → LOV-1998-07-17-56
+    bokføringsloven       → LOV-2004-11-19-73
+    revisorloven          → LOV-2020-11-20-128
+    finansavtaleloven     → LOV-2020-11-26-129
+    verdipapirhandelloven → LOV-2007-06-29-75
+    tvisteloven           → LOV-2005-06-17-90
+    straffeloven          → LOV-2005-05-20-28
+    forvaltningsloven     → LOV-1967-02-10-0
+    husleieloven          → LOV-1999-03-26-17
+    kjøpsloven            → LOV-1988-05-13-27
+    forbrukerkjøpsloven   → LOV-2002-06-21-34
 
 CRITICAL: Never default to aksjeloven for questions about prokura,
 signaturregistrering, foretaksregistrering, or pant.
@@ -239,14 +251,12 @@ Your task is to:
 3. Preserve statute continuity when applicable.
 4. Produce a statute-anchored enriched query optimized for vector retrieval.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT FORMAT (STRICT – NO EXTRA TEXT)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Legal Topic               : <short description>
-Legal Domain              : <must be EXACTLY one of the 12 allowed domain values listed below>
-Jurisdiction              : <NO / EU-EEA / both>
-Source Type               : <lov / forskrift / both>
+Legal Domain              : <one of the allowed domain keys below>
 Primary Statute Name      : <most likely governing Norwegian law>
 Primary Statute ID        : <official Lovdata statute id OR full Lovdata URL if known>
 Secondary Statute Name    : <if relevant, else "none">
@@ -254,18 +264,21 @@ Secondary Statute ID      : <official Lovdata statute id or full Lovdata URL or 
 Key Mechanism             : <core legal mechanism being regulated>
 Key Concepts              : <comma-separated statute-native terms>
 Enriched Query            : <single dense statute-anchored sentence>
-Response Style            : <one plain-English instruction for the generator, e.g. "Brief overview requested. Keep under 150 words and avoid subheadings." or "Standard structured response." — derive from the user's phrasing>
+Response Style            : <one plain-English instruction for the generator>
+Legal Domain              : <canonical domain key>
+Jurisdiction              : <NO / EU-EEA / both>
+Source Type               : <lov / forskrift / both>
 
 Do not output anything outside this structure.
 Do not explain your reasoning.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ALLOWED LEGAL DOMAIN VALUES (use EXACTLY these keys)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 {domain_list}
 
-Mapping guidance (use mechanism, not entity type):
+Mapping guidance (use mechanism, not entity type) for reference:
   - Employment contracts, dismissal, working conditions → arbeidsrett
   - Annual accounts, bookkeeping, audit, financial reporting → arsregnskap_og_selskapsrapporte
   - Contract formation, validity, breach, general obligations → avtalerett
@@ -282,9 +295,9 @@ Mapping guidance (use mechanism, not entity type):
 JURISDICTION values: NO / EU-EEA / both
 SOURCE TYPE values: lov / forskrift / both
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STATUTE ROUTING PRINCIPLES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 • Mechanism overrides entity type.
 • Select the statute that structurally governs the legal power, obligation,
@@ -296,25 +309,27 @@ STATUTE ROUTING PRINCIPLES
 • Never invent statute IDs.
 • Always output Primary Statute ID.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CONTEXT CONTINUITY RULE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 If PREVIOUS_STATUTE_ID is provided:
 
-STEP A — Determine the correct statute for the CURRENT query independently.
-STEP B — Then apply:
-• New legal mechanism or different law/topic → use newly determined statute.
-• Clear follow-up or rephrasing of same question (e.g. "explain more briefly",
-  "give an overview", "forklar mer", "summarise") AND same mechanism → keep PREVIOUS_STATUTE_ID.
-• If uncertain → treat as new topic, determine statute independently.
-• Mechanism change → new statute required.
-• Only analytical dimension changes → keep same statute.
-• Multi-mechanism queries → always re-run full statute classification.
+STEP A — ALWAYS determine the correct statute for the CURRENT query independently
+using the STATUTE ROUTING PRINCIPLES above. Do NOT default to the previous statute.
+STEP B — After determining the correct statute for the current query, apply these rules:
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• If the current query introduces a NEW legal mechanism or references a different
+  law/topic area → use the newly determined statute. Ignore PREVIOUS_STATUTE_ID.
+
+• If the current query is clearly a follow-up or rephrasing of the previous question
+  AND the same legal mechanism still governs → keep PREVIOUS_STATUTE_ID.
+
+• If uncertain whether it is a follow-up or a new topic → treat it as a NEW topic.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ENRICHED QUERY RULES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 The Enriched Query must:
 • Be 15–22 words.
@@ -333,15 +348,8 @@ REASONING PATTERNS:
 """
 
 
+
 class QueryReasoningAgent:
-    """
-    LLM-based query reasoning agent — the BRAIN of the retrieval pipeline.
-
-    Extracts: domain, primary_statute_id, secondary_statute_id,
-              enriched_query, jurisdiction, source_type, response_style.
-
-    Production version: uses settings from config.settings (not experiment config).
-    """
 
     _ALLOWED_DOMAINS = _ALLOWED_DOMAINS
 
@@ -354,7 +362,7 @@ class QueryReasoningAgent:
             temperature=0.1,
             streaming=False,
         )
-        logger.info("✅ QueryReasoningAgent initialised")
+        logger.info("✅ QueryReasoningAgent initialised (v4 — deterministic statute routing)")
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -364,20 +372,41 @@ class QueryReasoningAgent:
         context_window: Optional[List[Dict[str, str]]] = None,
         previous_statute_id: Optional[str] = None,
         previous_enriched_query: Optional[str] = None,
-    ) -> Dict[str, str]:
-        """
-        Run reasoning on a user query.
-
-        Returns dict with:
-            enriched_query, primary_statute_id, secondary_statute_id,
-            response_style, domain, jurisdiction, source_type
-        """
+    ) -> Dict:
+        
         logger.info(f"🧠 QueryReasoningAgent: reasoning on '{query[:70]}'")
+
+        # ── STEP 0: Deterministic registry lookup (before LLM) ────────────
+        registry_result = _registry.lookup(query)
+        registry_statute_id = None
+        registry_domain = None
+        statute_from_registry = False
+
+        if registry_result:
+            registry_statute_id = registry_result["id"]
+            registry_domain = registry_result.get("domain")
+            statute_from_registry = True
+            logger.info(
+                f"📖 Registry hit: id={registry_statute_id} | domain={registry_domain}"
+            )
+        else:
+            logger.info("📖 Registry: no match — LLM will infer statute")
 
         try:
             domain_list = "\n".join(
                 f"  {d}" for d in sorted(self._ALLOWED_DOMAINS)
             )
+
+            # Inject registry hint into prompt when available
+            registry_hint = ""
+            if registry_statute_id:
+                registry_hint = (
+                    f"\n\n⚠️  REGISTRY HINT (AUTHORITATIVE — DO NOT OVERRIDE):\n"
+                    f"  The statute for this query has been deterministically identified as:\n"
+                    f"  Primary Statute ID: {registry_statute_id}\n"
+                    f"  Domain: {registry_domain}\n"
+                    f"  Use EXACTLY this statute ID in your output. Do not change it.\n"
+                )
 
             system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
                 domain_list=domain_list,
@@ -391,9 +420,9 @@ class QueryReasoningAgent:
             )
 
             user_content = (
-                f"{context_str}\n\nCURRENT QUERY:\n{query}"
+                f"{context_str}\n\nCURRENT QUERY:\n{query}{registry_hint}"
                 if context_str
-                else f"CURRENT QUERY:\n{query}"
+                else f"CURRENT QUERY:\n{query}{registry_hint}"
             )
 
             messages = [
@@ -407,15 +436,20 @@ class QueryReasoningAgent:
             logger.debug(f"🧠 Raw output:\n{raw_output}")
 
             enriched_query = self._extract_enriched_query(raw_output, fallback=query)
-            statute_id = self._extract_statute_id(raw_output)
+            llm_statute_id = self._extract_statute_id(raw_output)
             statute_name = self._extract_statute_name(raw_output)
             secondary_statute_id = self._extract_secondary_statute_id(raw_output)
             response_style = self._extract_response_style(raw_output)
-            domain = self._extract_domain(raw_output)
+            llm_domain = self._extract_domain(raw_output)
             jurisdiction = self._extract_jurisdiction(raw_output)
             source_type = self._extract_source_type(raw_output)
 
-            # Pad short queries with key concepts
+            # ── PRECEDENCE RULES ──────────────────────────────────────────
+            # Registry result beats LLM for statute ID and domain
+            final_statute_id = registry_statute_id or llm_statute_id
+            final_domain = registry_domain or llm_domain
+
+            # ── Enrich the query string ───────────────────────────────────
             if len(enriched_query.split()) < 15:
                 key_concepts = self._extract_key_concepts(raw_output)
                 if key_concepts:
@@ -423,45 +457,46 @@ class QueryReasoningAgent:
                         f"{enriched_query} Dette gjelder særlig {key_concepts.strip()}."
                     )
 
-            # Anchor enriched query to statute ID(s)
-            if statute_id and not secondary_statute_id:
-                enriched_query = f"{statute_name} ({statute_id}): {enriched_query}"
-            elif statute_id and secondary_statute_id:
+            if final_statute_id and not secondary_statute_id:
+                enriched_query = f"{statute_name} ({final_statute_id}): {enriched_query}"
+            elif final_statute_id and secondary_statute_id:
                 enriched_query = (
-                    f"{statute_name} ({statute_id}) og sekundær lov "
+                    f"{statute_name} ({final_statute_id}) og sekundær lov "
                     f"({secondary_statute_id}): {enriched_query}"
                 )
 
             logger.info(
-                f"🧠 enriched='{enriched_query[:80]}' | statute={statute_id} | "
-                f"domain={domain} | jurisdiction={jurisdiction}"
+                f"🧠 enriched='{enriched_query[:80]}' | statute={final_statute_id} "
+                f"({'registry' if statute_from_registry else 'LLM'}) | "
+                f"domain={final_domain} | jurisdiction={jurisdiction}"
             )
 
             return {
                 "enriched_query": enriched_query,
-                "primary_statute_id": statute_id,
+                "primary_statute_id": final_statute_id,
                 "secondary_statute_id": secondary_statute_id,
+                "statute_from_registry": statute_from_registry,
                 "response_style": response_style,
-                "domain": domain,
+                "domain": final_domain,
                 "jurisdiction": jurisdiction,
                 "source_type": source_type,
             }
 
         except Exception as exc:
             logger.warning(
-                f"⚠️  QueryReasoningAgent failed — using raw query: {exc}"
+                f"⚠️  QueryReasoningAgent LLM failed — using registry result if available: {exc}"
             )
+            # Even if LLM fails, return registry result if we have one
             return {
                 "enriched_query": query,
-                "primary_statute_id": None,
+                "primary_statute_id": registry_statute_id,
                 "secondary_statute_id": None,
+                "statute_from_registry": statute_from_registry,
                 "response_style": "",
-                "domain": None,
+                "domain": registry_domain,
                 "jurisdiction": None,
                 "source_type": None,
             }
-
-    # ── Context builder ───────────────────────────────────────────────────
 
     @staticmethod
     def _build_context_str(
@@ -576,29 +611,31 @@ class QueryReasoningAgent:
         return ""
 
     def _extract_domain(self, raw: str) -> Optional[str]:
+        # Check both "Legal Domain" occurrences (prompt has it twice)
+        found = []
         for line in raw.splitlines():
             if line.strip().lower().startswith("legal domain"):
                 idx = line.find(":")
                 if idx != -1:
                     val = line[idx + 1:].strip()
                     if val in self._ALLOWED_DOMAINS:
-                        return val
-                    logger.warning(
-                        f"⚠️  Domain '{val}' not in allowed set — dropping"
-                    )
-                    return None
-        return None
+                        found.append(val)
+                    else:
+                        logger.warning(
+                            f"⚠️  Domain '{val}' not in allowed set — dropping"
+                        )
+        return found[-1] if found else None
 
     @staticmethod
     def _extract_jurisdiction(raw: str) -> Optional[str]:
-        allowed = {"NO", "EU-EEA", "both"}
+        allowed = {"NO", "EU-EEA", "BOTH", "both"}
         for line in raw.splitlines():
             if line.strip().lower().startswith("jurisdiction"):
                 idx = line.find(":")
                 if idx != -1:
                     val = line[idx + 1:].strip()
                     if val in allowed:
-                        return val
+                        return "BOTH" if val.lower() == "both" else val
         return None
 
     @staticmethod
@@ -610,5 +647,5 @@ class QueryReasoningAgent:
                 if idx != -1:
                     val = line[idx + 1:].strip().lower()
                     if val in allowed:
-                        return val
+                        return "BOTH" if val.lower() == "both" else val
         return None

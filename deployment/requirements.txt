@@ -1,2 +1,0 @@
-sagemaker<3.0.0
-transformers==4.26.1

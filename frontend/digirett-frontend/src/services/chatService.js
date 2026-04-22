@@ -1,27 +1,5 @@
 import { API_BASE_URL, DEFAULT_USER_ID } from "../utils/constants";
 
-/**
- * Chat Service — WebSocket streaming
- *
- * Connects to ws://host/api/v1/chat/ws
- * Streams tokens back exactly like ChatGPT (character by character via onChunk)
- *
- * Backend message format:
- *   { type: "intent",   data: { intent: "LEGAL", language: "norwegian" } }
- *   { type: "sources",  data: ["url1", "url2"] }
- *   { type: "token",    data: "partial text" }          ← streamed word by word
- *   { type: "complete", metadata: { conversation_id, message_id, ... } }
- *   { type: "error",    message: "..." }
- */
-
-// ── Derive WebSocket URL from API_BASE_URL ────────────────────────────────
-// Strips any trailing /api/v1 or trailing slash so we can append the full path cleanly.
-// Example:
-//   API_BASE_URL = "http://localhost:8000"       → ws://localhost:8000/api/v1/chat/ws
-//   API_BASE_URL = "http://localhost:8000/api/v1" → ws://localhost:8000/api/v1/chat/ws
-
-// FIX: use SAFE_API_BASE_URL for cleanBase — previously API_BASE_URL was used
-// directly which crashes when process.env.REACT_APP_API_URL is undefined (CI).
 const SAFE_API_BASE_URL =
   typeof API_BASE_URL === "string" && API_BASE_URL.length > 0
     ? API_BASE_URL
