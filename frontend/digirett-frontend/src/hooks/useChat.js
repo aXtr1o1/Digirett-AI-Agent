@@ -18,6 +18,8 @@ const useChat = (
   const [error, setError] = useState(null);
   const [streamingMessage, setStreamingMessage] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  // ✅ NEW: tracks whether we're processing/uploading a document (shows loading indicator)
+  const [isProcessingDoc, setIsProcessingDoc] = useState(false);
 
   const activeConversationIdRef = useRef(conversationId);
   const abortRef = useRef(null);
@@ -52,14 +54,14 @@ const useChat = (
       const msgs = Array.isArray(data.messages) ? data.messages : [];
 
       const normalized = msgs.map((m) => ({
-        id:        m.message_id,
-        role:      m.role,
-        content:   m.content || "",
-        sources:   m.sources || [],
+        id: m.message_id,
+        role: m.role,
+        content: m.content || "",
+        sources: m.sources || [],
         timestamp: m.created_at || new Date().toISOString(),
-        // ✅ These two fields now come from DB — file messages restore correctly
-        type:      m.type || "text",
-        fileName:  m.file_name || null,
+        // ✅ Restore file messages correctly from DB
+        type: m.type || "text",
+        fileName: m.file_name || null,
         documentId: m.metadata?.document_id || null,
       }));
 
@@ -84,7 +86,6 @@ const useChat = (
         throw new Error("No conversation_id in response");
       }
       activeConversationIdRef.current = newId;
-      if (onConversationCreated) onConversationCreated(newId, null);
       if (moveConversationToTop) moveConversationToTop(newId);
       return newId;
     } catch (err) {
@@ -95,7 +96,7 @@ const useChat = (
   }, [onConversationCreated, moveConversationToTop]);
 
   // ── Send message ──────────────────────────────────────────────────────────
-const sendMessage = useCallback(
+  const sendMessage = useCallback(
     async (payload) => {
       const messageText =
         typeof payload === "string" ? payload : payload?.text ?? "";
@@ -115,24 +116,64 @@ const sendMessage = useCallback(
         if (!convId) return;
 
         const hasQuery = !!messageText.trim();
-        const uploadResult = await uploadDocument(file, convId, hasQuery);
-        if (!uploadResult) return;
 
-        // Combined file + text bubble — single bubble, no separate text bubble
+        // ✅ STEP 1: Show the file bubble FIRST (GPT-style — user message on top)
+        const fileMsgId = crypto.randomUUID();
         setMessages((prev) => [
           ...prev,
           {
-            id: crypto.randomUUID(),
+            id: fileMsgId,
             role: MESSAGE_ROLES.USER,
             type: "file-with-text",
-            fileName: uploadResult.file_name || file.name,
-            documentId: uploadResult?.document_id,
+            fileName: file.name,
+            documentId: null, // will be updated after upload
             content: messageText.trim() || null,
             sources: [],
             timestamp: new Date().toISOString(),
           },
         ]);
-        // Save file message to DB so it persists on refresh
+
+        // ✅ STEP 2: Show document processing indicator BELOW the file bubble
+        setIsProcessingDoc(true);
+        setIsStreaming(false);
+        setStreamingMessage("");
+
+        // ✅ STEP 3: Upload and get summary
+        const uploadResult = await uploadDocument(file, convId, hasQuery);
+
+        if (!uploadResult) {
+          setIsProcessingDoc(false);
+          return;
+        }
+
+        // ✅ STEP 4: Update the file bubble with the real document ID
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === fileMsgId
+              ? { ...m, fileName: uploadResult.file_name || file.name, documentId: uploadResult.document_id }
+              : m
+          )
+        );
+
+        // ✅ STEP 5: If there's a summary (doc-only, no query), show it BELOW the file bubble
+        if (!hasQuery && uploadResult.summary_text) {
+          const summaryMsgId = crypto.randomUUID();
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: summaryMsgId,
+              role: MESSAGE_ROLES.ASSISTANT,
+              type: "text",
+              content: uploadResult.summary_text,
+              sources: [],
+              timestamp: new Date().toISOString(),
+            },
+          ]);
+          setIsProcessingDoc(false);
+        }
+
+        // ── Save to DB (sequence matters for correct reload order) ────────
+        // 1. Save file message FIRST
         try {
           await fetch(`${API_BASE_URL}/api/v1/documents/message/${convId}`, {
             method: "POST",
@@ -145,14 +186,55 @@ const sendMessage = useCallback(
               document_id: uploadResult.document_id,
             }),
           });
+
+          // For new conversations, trigger creation AFTER first message is in DB
+          if (!conversationId && onConversationCreated) {
+            onConversationCreated(convId, null);
+          }
         } catch (err) {
           console.error("[useChat] ❌ save_file_message call failed:", err);
         }
 
-        // Doc only — no query to stream
-        if (!hasQuery) return;
+        // 2. Save summary message SECOND (so it appears after file on reload)
+        if (uploadResult.summary_text) {
+          try {
+            await fetch(`${API_BASE_URL}/api/v1/documents/summary-message/${convId}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                content: uploadResult.summary_text,
+                document_id: uploadResult.document_id,
+              }),
+            });
+          } catch (err) {
+            console.error("[useChat] ❌ save_summary_message call failed:", err);
+          }
+        }
 
-        // ── Stream response for file + query ──────────────────────────────
+        // Doc only — no query to stream, stop here
+        if (!hasQuery) {
+          setIsProcessingDoc(false);
+          return;
+        }
+
+        // ── File + query: stream the RAG response ─────────────────────────
+        // Show summary inline first if available
+        if (uploadResult.summary_text) {
+          const summaryMsgId = crypto.randomUUID();
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: summaryMsgId,
+              role: MESSAGE_ROLES.ASSISTANT,
+              type: "text",
+              content: uploadResult.summary_text,
+              sources: [],
+              timestamp: new Date().toISOString(),
+            },
+          ]);
+        }
+
+        setIsProcessingDoc(false);
         setIsStreaming(true);
         setStreamingMessage("");
 
@@ -184,7 +266,7 @@ const sendMessage = useCallback(
             if (data.conversationId) {
               activeConversationIdRef.current = data.conversationId;
               const backendTitle = data.metadata?.conversation_title || null;
-              if (onConversationCreated) onConversationCreated(data.conversationId, backendTitle);
+              if (!conversationId && onConversationCreated) onConversationCreated(data.conversationId, backendTitle);
               if (moveConversationToTop) moveConversationToTop(data.conversationId);
               fetchSessionStatus(data.conversationId);
             }
@@ -194,14 +276,15 @@ const sendMessage = useCallback(
             setError(err?.message || "Failed to generate response");
             setIsStreaming(false);
             setStreamingMessage("");
+            setIsProcessingDoc(false);
           },
           { skipSaveUser: true }
         );
 
-        return; // ⭐ exit here — don't fall through to text-only path
+        return;
       }
 
-      // ── Text only bubble ────────────────────────────────────────────────
+      // ── Text only path ──────────────────────────────────────────────────
       setMessages((prev) => [
         ...prev,
         {
@@ -213,7 +296,6 @@ const sendMessage = useCallback(
         },
       ]);
 
-      // ── Stream response ───────────────────────────────────────────────────
       setIsStreaming(true);
       setStreamingMessage("");
 
@@ -264,8 +346,10 @@ const sendMessage = useCallback(
       moveConversationToTop,
       uploadDocument,
       fetchSessionStatus,
+      conversationId,
     ]
   );
+
   // ── Stop streaming ────────────────────────────────────────────────────────
   const stopStreaming = useCallback(() => {
     if (abortRef.current) {
@@ -292,6 +376,7 @@ const sendMessage = useCallback(
     setMessages([]);
     setStreamingMessage("");
     setError(null);
+    setIsProcessingDoc(false);
   }, []);
 
   useEffect(() => {
@@ -308,6 +393,7 @@ const sendMessage = useCallback(
     error,
     streamingMessage,
     isStreaming,
+    isProcessingDoc,        // ✅ NEW: expose for UI loading indicator
     sendMessage,
     loadMessages,
     stopStreaming,

@@ -20,6 +20,7 @@ const ChatContainer = ({
     error,
     streamingMessage,
     isStreaming,
+    isProcessingDoc,
     sendMessage,
     loadMessages,
     stopStreaming,
@@ -63,6 +64,7 @@ const ChatContainer = ({
             isLoading={isLoading}
             streamingMessage={streamingMessage}
             isStreaming={isStreaming}
+            isProcessingDoc={isProcessingDoc}
             theme={theme}
           />
         </div>
@@ -75,6 +77,7 @@ const ChatContainer = ({
             onSend={sendMessage}
             disabled={isLoading || isChatDisabled}
             isStreaming={isStreaming}
+            isProcessingDoc={isProcessingDoc}
             onStop={stopStreaming}
             theme={theme}
             // ── document upload props ────────────────────────────────────────
@@ -87,9 +90,8 @@ const ChatContainer = ({
           />
         </div>
         <p
-          className={`text-center text-xs pb-3 ${
-            isDark ? "text-gray-500" : "text-gray-400"
-          }`}
+          className={`text-center text-xs pb-3 ${isDark ? "text-gray-500" : "text-gray-400"
+            }`}
         >
           DigiRett can make mistakes. Verify important legal information.
         </p>
