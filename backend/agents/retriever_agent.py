@@ -119,6 +119,28 @@ class RetrieverAgent:
         # ── KEPT for backward compat but no longer controls hard-block ──
         statute_explicit: bool = False,
     ) -> List[Dict[str, Any]]:
+        """
+        Run the full retrieval pipeline and return re-ranked results.
+
+        Parameters
+        ----------
+        query           : raw user query (used for BM25 scoring)
+        enriched_query  : statute-anchored query from QueryReasoningAgent (used for embedding)
+        top_k           : number of results to return after re-ranking
+        statute_filter  : Lovdata URL or LOV-ID used for source_doc_url LIKE filter
+        domain          : Milvus `domain` field value
+        jurisdiction    : Milvus `jurisdiction` field value
+        subdomain_candidates : list of subdomain label strings from RouterAgent
+        b2b_b2c         : "B2B" / "B2C" / "BOTH"
+
+        Returns
+        -------
+        List of result dicts, each containing at minimum:
+            text, score, score_dense, score_bm25,
+            source_doc_url, section_ref, url (alias for source_doc_url),
+            domain, subdomain, chunk_id, document_id,
+            fallback_level
+        """
         sep = "=" * 60
         logger.info(f"\n{sep}\n🔍 RetrieverAgent.run | query='{query[:60]}'\n{sep}")
         logger.info(f"  Enriched query      : {enriched_query[:100]}")

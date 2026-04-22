@@ -139,7 +139,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest) -> None
 
         # ── Step 1: Get or create conversation ────────────────
         conversation_id = chat_request.conversation_id
-        user_id         = chat_request.user_id
+        user_id = chat_request.user_id or "2a06144d-4675-4c38-b7f8-13c02da91af5"
 
         if not conversation_id:
             conversation      = _conversation_service.create_conversation(
@@ -205,9 +205,16 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest) -> None
                             "chunks_retrieved": metadata.get("chunks_retrieved", 0),
                         },
                         rag_chunks=chunks_to_save,
+                        skip_save_user=chat_request.skip_save_user,
                     )
                     logger.info(
                         f"✅ Saved | user={user_msg_id} | assistant={assistant_msg_id}"
+                    )
+                    # After save_exchange succeeds, check if summary needs updating
+                    await _rag_service._memory_agent.maybe_update_summary(
+                        conversation_id=conversation_id,
+                        llm_service=_llm_service,
+                        conversation_service=_conversation_service,
                     )
                 except Exception as save_exc:
                     logger.error(
@@ -309,4 +316,4 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest) -> None
         try:
             await websocket.send_json({"type": "error", "message": str(exc)})
         except Exception:
-            pass
+            pass    

@@ -1,4 +1,3 @@
-
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -55,11 +54,23 @@ class ConversationService:
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     def get_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
-        
+
         try:
             cached = self._cache.get_conversation_meta(conversation_id)
+
             if cached:
                 logger.debug(f" Conversation cache hit: {conversation_id}")
+
+                # 🔥 Update updated_at even if coming from cache
+                now = datetime.utcnow().isoformat()
+
+                self._supabase.table("conversations").update({
+                    "updated_at": now
+                }).eq("conversation_id", conversation_id).execute()
+
+                cached["updated_at"] = now
+                self._cache.set_conversation_meta(conversation_id, cached)
+
                 return cached
 
             response = (
@@ -69,17 +80,30 @@ class ConversationService:
                 .eq("is_deleted", False)
                 .execute()
             )
+
             if not response.data:
                 logger.warning(f"⚠️  Conversation not found: {conversation_id}")
                 return None
 
             conversation = response.data[0]
+
+            # 🔥 Update updated_at when accessed
+            now = datetime.utcnow().isoformat()
+
+            self._supabase.table("conversations").update({
+                "updated_at": now
+            }).eq("conversation_id", conversation_id).execute()
+
+            conversation["updated_at"] = now
+
             self._cache.set_conversation_meta(conversation_id, conversation)
+
             return conversation
 
         except Exception as exc:
             logger.error(f" get_conversation failed | {exc}")
             return None
+
 
     def get_user_conversations(
         self,
@@ -87,20 +111,8 @@ class ConversationService:
         limit: int = 50,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        
-        try:
-            # Try loading from the cached ID list
-            cached_ids = self._cache.get_user_conversations(user_id)
-            if cached_ids:
-                conversations = []
-                for conv_id in cached_ids:
-                    conv = self.get_conversation(conv_id)
-                    if conv:
-                        conversations.append(conv)
-                logger.debug(f"✅ User conversations from cache: {user_id}")
-                return conversations
 
-            # Fall back to Supabase
+        try:
             response = (
                 self._supabase.table("conversations")
                 .select("*")
@@ -110,11 +122,12 @@ class ConversationService:
                 .range(offset, offset + limit - 1)
                 .execute()
             )
+
             conversations = response.data or []
 
-            # Warm cache
             ids = [c["conversation_id"] for c in conversations]
             self._cache.set_user_conversations(user_id, ids)
+
             for conv in conversations:
                 self._cache.set_conversation_meta(conv["conversation_id"], conv)
 
@@ -145,6 +158,25 @@ class ConversationService:
 
         except Exception as exc:
             logger.error(f" update_title failed | {exc}")
+            return False
+
+    def update_summary(self, conversation_id: str, summary: str) -> bool:
+        """Save a rolling summary of messages into the conversations table."""
+        try:
+            success = self._supabase.update_conversation_summary(
+                conversation_id=conversation_id,
+                summary=summary,
+            )
+            if success:
+                # Invalidate cache so next read picks up the new summary
+                cached = self._cache.get_conversation_meta(conversation_id)
+                if cached:
+                    cached["conversation_summary"] = summary
+                    self._cache.set_conversation_meta(conversation_id, cached)
+                logger.info(f"✅ Summary updated for {conversation_id}")
+            return success
+        except Exception as exc:
+            logger.error(f"❌ update_summary failed | {exc}")
             return False
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -42,6 +42,7 @@ from services.llm_service import LLMService, _extract_score, _score_to_confidenc
 from services.document_service import DocumentService
 from config import settings
 from config_domains import normalize_domain
+from config_domains import normalize_domain
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,41 @@ def _resolve_statute_url(statute_id: Optional[str]) -> Optional[str]:
     url = f"{_LOVDATA_BASE}/{type_path}/{year}-{month}-{day}-{int(number)}"
     logger.debug(f"🗂  statute_id '{statute_id}' → URL '{url}'")
     return url
+
+
+def _is_statute_explicit(query: str) -> bool:
+    """
+    Detect if user explicitly named a law in the query.
+
+    Returns True if query contains patterns like:
+    - "Lov om..."
+    - "LOV-"
+    - "bestemmelse i"
+    - "§" (section symbol)
+
+    Returns False if statute is inferred from mechanism/domain.
+    """
+    if not query:
+        return False
+
+    query_lower = query.lower()
+    explicit_patterns = [
+        "lov om",
+        "loven",
+        "loven om",
+        "loven for",
+        "loven 20",  # LOV-YYYY format
+        "lov-",
+        "for-",  # FOR = forskrift
+        "res-",  # RES = resolution
+        "bestemmelse i",
+        "kapittel",
+        "§",
+        "lovdatas",
+        "lovdata",
+    ]
+
+    return any(pattern in query_lower for pattern in explicit_patterns)
 
 
 def _is_statute_explicit(query: str) -> bool:
@@ -389,6 +425,69 @@ class RAGService:
                     logger.info("💬 CASUAL query")
                     async for event in self._handle_casual(query, history, language):
                         yield event
+                        yield event
+            else:
+                # ── CASUAL with document: intercept and re-route ───────────
+                # If a document is in the session, even "casual-sounding" queries
+                # like "Explain this document" must go through the doc classifier
+                # instead of the casual pipeline.
+                if (
+                    self._document_service
+                    and self._document_service.has_documents(conversation_id)
+                ):
+                    logger.info(
+                        "📄 CASUAL query but document in session — "
+                        "routing through doc classifier"
+                    )
+                    doc_summary = self._document_service.get_doc_summary(
+                        conversation_id
+                    )
+                    doc_class_result = await self._doc_classifier.classify(
+                        query=query,
+                        conversation_history=history,
+                        doc_summary=doc_summary,
+                    )
+                    doc_intent = doc_class_result["intent"]
+                    logger.info(
+                        f"📄 Doc classifier (from CASUAL): {doc_intent} | "
+                        f"reason='{doc_class_result.get('reason', '')}'"
+                    )
+
+                    if doc_intent == "DOCQA":
+                        async for event in self._handle_docqa(
+                            query=query,
+                            language=language,
+                            history=history,
+                            conversation_id=conversation_id,
+                        ):
+                            yield event
+                    elif doc_intent == "HYBRID":
+                        async for event in self._handle_hybrid(
+                            query=query,
+                            language=language,
+                            top_k=top_k,
+                            min_score=min_score,
+                            history=history,
+                            conversation_id=conversation_id,
+                        ):
+                            yield event
+                    elif doc_intent == "FOLLOWUP":
+                        async for event in self._handle_followup_with_doc(
+                            query=query,
+                            language=language,
+                            history=history,
+                            conversation_id=conversation_id,
+                        ):
+                            yield event
+                    else:
+                        # doc_intent == "LEGAL" or truly unrelated — casual is fine
+                        logger.info("💬 CASUAL query (doc present but unrelated)")
+                        async for event in self._handle_casual(query, history, language):
+                            yield event
+                else:
+                    logger.info("💬 CASUAL query")
+                    async for event in self._handle_casual(query, history, language):
+                        yield event
 
         except Exception as exc:
             logger.error(
@@ -462,6 +561,7 @@ class RAGService:
             if reasoning_meta:
                 previous_statute_id = reasoning_meta.get("statute_id")
                 previous_enriched_query = reasoning_meta.get("enriched_query")
+                prev_query_preview = str(previous_enriched_query)[:60]
                 logger.info(
                     f"📖 Loaded reasoning context | "
                     f"statute_id={previous_statute_id} | "
@@ -565,12 +665,11 @@ class RAGService:
                 "metadata": {
                     "intent": "LEGAL",
                     "language": language,
-                    "primary_statute_id": primary_statute_id,
-                    "chunks_retrieved": 0,
+                    "full_answer": no_context_msg,
                     "score": 0.1,
-                    "confidence": "No sources found",
-                    "full_answer": no_result,
+                    "confidence": "No sources available",
                     "rag_chunks": [],
+                    "tokens_generated": len(no_context_msg),
                 },
             }
             return
@@ -669,8 +768,6 @@ class RAGService:
             "metadata": {
                 "intent": "LEGAL",
                 "language": language,
-                "primary_statute_id": primary_statute_id,
-                "chunks_retrieved": len(search_results),
                 "tokens_generated": token_count,
                 "score": score,
                 "confidence": confidence,
@@ -740,7 +837,7 @@ class RAGService:
             yield {"type": "token", "data": token}
 
         # Strip [SCORE:x.x] from docqa answer
-        score_pattern = re.compile(r"\[SCORE:([0-9.]+)\]")
+        score_pattern = re.compile(r"\[SCORE:\s*([0-9.]+)\]")
         score_match = score_pattern.search(full_answer)
         score = float(score_match.group(1)) if score_match else 0.7
         clean_answer = score_pattern.sub("", full_answer).strip()
@@ -794,12 +891,21 @@ class RAGService:
 
         # FIX: all required RetrieverAgent.run() kwargs now explicitly passed.
         # enriched_query=query is intentional — hybrid skips reasoning enrichment.
+        # FIX: all required RetrieverAgent.run() kwargs now explicitly passed.
+        # enriched_query=query is intentional — hybrid skips reasoning enrichment.
         search_results = await self._retriever_agent.run(
             query=query,
+            enriched_query=query,
             enriched_query=query,
             top_k=top_k,
             min_score=min_score,
             history=history,
+            statute_filter=None,
+            domain=None,
+            jurisdiction=None,
+            subdomain_candidates=[],
+            b2b_b2c="BOTH",
+            statute_from_registry=False,
             statute_filter=None,
             domain=None,
             jurisdiction=None,
@@ -826,7 +932,7 @@ class RAGService:
             full_answer += token
             yield {"type": "token", "data": token}
 
-        score_pattern = re.compile(r"\[SCORE:([0-9.]+)\]")
+        score_pattern = re.compile(r"\[SCORE:\s*([0-9.]+)\]")
         score_match = score_pattern.search(full_answer)
         score = float(score_match.group(1)) if score_match else 0.7
         clean_answer = score_pattern.sub("", full_answer).strip()

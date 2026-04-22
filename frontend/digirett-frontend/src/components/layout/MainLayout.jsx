@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import Sidebar from "./Sidebar";
 import BackgroundLayer from "../common/BackgroundLayer";
 
+// AFTER
 const MainLayout = ({
   children,
   conversations,
@@ -9,8 +10,9 @@ const MainLayout = ({
   onSelectConversation,
   onNewChat,
   onDeleteConversation,
+  theme: initialTheme = "light",            // ← accept prop, default light
 }) => {
-  const [theme, setTheme] = useState("dark"); // Default to dark theme
+  const [theme, setTheme] = useState(initialTheme);  // ← use prop as initial value
   const isDark = theme === "dark";
 
   const handleToggleTheme = () => {

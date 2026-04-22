@@ -9,8 +9,6 @@ GET  /api/v1/documents/conversation/{conversation_id}   ← NEW (Problem 1 fix)
 """
 
 import logging
-import time
-
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -19,7 +17,6 @@ from typing import List, Optional
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# ── Injected from main.py via set_services() ─────────────────────────────────
 _document_service = None
 _llm_service = None
 
@@ -30,7 +27,6 @@ def set_services(document_service, llm_service=None) -> None:
     _llm_service = llm_service
 
 
-# ── Response models ───────────────────────────────────────────────────────────
 class DocumentUploadResponse(BaseModel):
     document_id:    str
     file_name:      str
@@ -49,31 +45,20 @@ class SessionStatusResponse(BaseModel):
     turns_remaining:  int
     has_documents:    bool
     session_active:   bool
+    docs:             list = []
 
 
-class DocumentMetaResponse(BaseModel):
-    """Metadata for a single document — returned when restoring history."""
-    document_id:  str
-    file_name:    str
-    char_count:   int
-    upload_order: int
-
-
-class ConversationDocumentsResponse(BaseModel):
-    """
-    All documents uploaded in a conversation's session.
-    Called by the frontend on conversation load / history click
-    so it can restore the document display without re-uploading.
-    """
-    conversation_id: str
-    has_documents:   bool
-    documents:       List[DocumentMetaResponse]
+class FileMessageRequest(BaseModel):
+    role:        str
+    content:     Optional[str] = None
+    type:        str = "file-with-text"
+    file_name:   str
+    document_id: Optional[str] = None
 
 
 # ── Upload endpoint ───────────────────────────────────────────────────────────
 @router.post(
     "/documents/upload",
-    response_model=DocumentUploadResponse,
     tags=["Documents"],
     summary="Upload a document (PDF or DOCX) for document-grounded QA",
 )
@@ -134,7 +119,9 @@ async def upload_document(
             detail=f"Failed to process document: {exc}",
         )
 
-    # ── Auto-summarize: stream summary back as assistant response ─────────
+    # ── Auto-summarize via streaming ──────────────────────────────────────
+    # KEY CHANGE: we now add file_name as a response header so the frontend
+    # can read it even from a StreamingResponse
     if _llm_service is not None:
         doc_text = _document_service.get_document_text(doc_meta["document_id"])
 
@@ -143,20 +130,27 @@ async def upload_document(
                 yield token
 
         logger.info(f"📝 Streaming auto-summary | doc_id={doc_meta['document_id']}")
-        return StreamingResponse(stream_summary(), media_type="text/plain")
+        return StreamingResponse(
+            stream_summary(),
+            media_type="text/plain",
+            headers={
+                # Frontend reads these headers to know the upload succeeded
+                "X-Document-Id":   doc_meta["document_id"],
+                "X-File-Name":     filename,
+                "X-File-Type":     doc_meta["file_type"],
+                "X-Docs-Remaining": str(doc_meta["docs_remaining"]),
+                # Allow frontend JS to read these custom headers
+                "Access-Control-Expose-Headers": (
+                    "X-Document-Id, X-File-Name, X-File-Type, X-Docs-Remaining"
+                ),
+            },
+        )
 
+    # ── Fallback JSON if no LLM ───────────────────────────────────────────
     remaining = doc_meta["docs_remaining"]
     message = (
-        f"Document '{filename}' uploaded and parsed successfully. "
-        + (
-            f"1 more document can be uploaded this session."
-            if remaining == 1
-            else "No more documents can be uploaded this session."
-            if remaining == 0
-            else f"{remaining} more documents can be uploaded this session."
-        )
+        f"Document '{filename}' uploaded successfully."
     )
-
     return DocumentUploadResponse(
         document_id=doc_meta["document_id"],
         file_name=doc_meta["file_name"],
@@ -166,6 +160,43 @@ async def upload_document(
         docs_remaining=remaining,
         message=message,
     )
+
+
+# ── Save file message endpoint ────────────────────────────────────────────────
+@router.post(
+    "/documents/message/{conversation_id}",
+    tags=["Documents"],
+    summary="Persist a file-upload event as a chat message for history",
+)
+async def save_file_message(conversation_id: str, body: FileMessageRequest):
+    """
+    Called by frontend after a successful upload.
+    Saves a message row of type 'file-with-text' so the file card
+    reappears correctly when the conversation is loaded from history.
+    """
+    if _document_service is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Document service not available.",
+        )
+    try:
+        message_id = _document_service.save_file_message(
+            conversation_id=conversation_id,
+            role=body.role,
+            content=body.content,
+            file_name=body.file_name,
+            metadata={"document_id": body.document_id},
+        )
+        return {"message_id": message_id, "status": "saved"}
+    except Exception as exc:
+        logger.error(
+            f"❌ save_file_message failed | conv={conversation_id} | {exc}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save file message: {exc}",
+        )
 
 
 # ── Session status endpoint ───────────────────────────────────────────────────
@@ -185,6 +216,7 @@ async def get_session_status(conversation_id: str):
     session = _document_service.get_or_create_session(conversation_id)
     doc_count  = session.get("doc_count", 0)
     turn_count = session.get("turn_count", 0)
+    docs       = session.get("docs", [])
 
     from services.document_service import MAX_DOCS_PER_SESSION, MAX_TURNS_PER_SESSION
 
@@ -196,113 +228,43 @@ async def get_session_status(conversation_id: str):
         turns_remaining=max(0, MAX_TURNS_PER_SESSION - turn_count),
         has_documents=_document_service.has_documents(conversation_id),
         session_active=True,
+        docs=docs,
     )
 
 
-# ── NEW: Conversation documents endpoint (Problem 1 fix) ─────────────────────
+# ── View/Download endpoint ───────────────────────────────────────────────────
 @router.get(
-    "/documents/conversation/{conversation_id}",
-    response_model=ConversationDocumentsResponse,
+    "/documents/view/{document_id}",
     tags=["Documents"],
-    summary="Get all documents uploaded in a conversation (for history restore)",
+    summary="View or download the original uploaded document",
 )
-async def get_conversation_documents(conversation_id: str):
-    """
-    Called by the frontend when a user opens a conversation from history.
-    Returns the list of documents uploaded in that conversation's session.
-
-    Two sources are checked in order:
-      1. Redis (fast — if session is still alive within 4h)
-      2. Supabase (persistent — if Redis has expired, reads from documents table)
-
-    This ensures documents are visible even after a page refresh or
-    switching between conversations in the sidebar.
-    """
+async def get_document_view(document_id: str):
     if _document_service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Document service not available.",
         )
 
-    # ── Try Redis first (fast path) ───────────────────────────────────────
-    docs_meta = _document_service.get_session_documents(conversation_id)
+    result = _document_service.get_document_binary(document_id)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found or could not be retrieved from storage.",
+        )
 
-    # ── Supabase fallback (Redis expired or server restarted) ─────────────
-    if not docs_meta:
-        try:
-            response = (
-                _document_service._supabase.table("documents")
-                .select("document_id, file_name, char_count, upload_order")
-                .eq("conversation_id", conversation_id)
-                .eq("is_active", True)
-                .order("upload_order", desc=False)
-                .execute()
-            )
-            rows = response.data or []
-            if rows:
-                # Re-warm Redis session with Supabase data so subsequent
-                # queries can find the document text
-                session = _document_service.get_or_create_session(conversation_id)
-                for row in rows:
-                    doc_id = row["document_id"]
-                    # Only add if not already tracked in session
-                    existing_ids = {d["document_id"] for d in session.get("docs", [])}
-                    if doc_id not in existing_ids:
-                        # Re-fetch text from Supabase to re-warm Redis text cache
-                        text_response = (
-                            _document_service._supabase.table("documents")
-                            .select("extracted_text")
-                            .eq("document_id", doc_id)
-                            .single()
-                            .execute()
-                        )
-                        if text_response.data:
-                            extracted_text = text_response.data.get("extracted_text", "")
-                            if extracted_text:
-                                from services.document_service import SESSION_TTL_SECONDS
-                                try:
-                                    _document_service._redis._get().setex(
-                                        f"doc:text:{doc_id}",
-                                        SESSION_TTL_SECONDS,
-                                        extracted_text,
-                                    )
-                                except Exception as redis_exc:
-                                    logger.warning(
-                                        f"⚠️ Could not re-warm Redis for doc {doc_id} | {redis_exc}"
-                                    )
-                        session["docs"].append({
-                            "document_id":  row["document_id"],
-                            "file_name":    row["file_name"],
-                            "char_count":   row["char_count"],
-                            "upload_order": row["upload_order"],
-                        })
-                        session["doc_count"] = max(
-                            session.get("doc_count", 0), row["upload_order"]
-                        )
+    file_bytes, filename, content_type = result
 
-                _document_service._save_session(conversation_id, session)
-                docs_meta = session["docs"]
-                logger.info(
-                    f"📂 Restored {len(docs_meta)} doc(s) from Supabase for "
-                    f"conv={conversation_id}"
-                )
-        except Exception as exc:
-            logger.error(
-                f"❌ Supabase document restore failed | conv={conversation_id} | {exc}",
-                exc_info=True,
-            )
-            docs_meta = []
+    from fastapi.responses import Response
+    import urllib.parse
 
-    return ConversationDocumentsResponse(
-        conversation_id=conversation_id,
-        has_documents=bool(docs_meta),
-        documents=[
-            DocumentMetaResponse(
-                document_id=d["document_id"],
-                file_name=d["file_name"],
-                char_count=d["char_count"],
-                upload_order=d["upload_order"],
-            )
-            for d in sorted(docs_meta, key=lambda x: x.get("upload_order", 0))
-        ],
+    # UTF-8 encoded filename for Content-Disposition (handles non-ASCII chars)
+    filename_encoded = urllib.parse.quote(filename)
+    
+    return Response(
+        content=file_bytes,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f"inline; filename*=UTF-8''{filename_encoded}",
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
     )

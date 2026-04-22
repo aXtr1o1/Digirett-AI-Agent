@@ -22,6 +22,7 @@ const ChatPage = () => {
 
   return (
     <MainLayout
+      theme="light"
       conversations={conversations}
       currentConversationId={currentConversationId}
       onNewChat={() => {

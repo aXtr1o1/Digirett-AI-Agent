@@ -48,17 +48,18 @@ const chatService = {
    * @param {Function}    onError         - called with an Error object on failure
    * @returns {Function}                  - cancel() function — same API as the old SSE version
    */
-  sendMessage: (conversationId, message, onChunk, onComplete, onError) => {
+  sendMessage: (conversationId, message, onChunk, onComplete, onError, options = {}) => {
     let ws        = null;
     let cancelled = false;
 
     (async () => {
       try {
         const requestBody = {
-          query:       message,
-          user_id:     DEFAULT_USER_ID,
-          top_k:       3,
-          temperature: 0.7,
+          query:          message,
+          user_id:        DEFAULT_USER_ID,
+          top_k:          3,
+          temperature:    0.7,
+          skip_save_user: !!options.skipSaveUser,
         };
 
         if (conversationId) {
