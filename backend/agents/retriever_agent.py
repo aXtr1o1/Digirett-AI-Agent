@@ -1,3 +1,25 @@
+"""
+agents/retriever_agent.py
+
+RetrieverAgent — v5 (smart statute_explicit + registry-aware fallback).
+
+Key changes from v4:
+─────────────────────────────────────────────────────────────────────
+1. statute_from_registry parameter (NEW):
+   - True  → statute ID came from StatuteRegistry (deterministic).
+              Hard-block fallback if statute exhausted (safe — we know the ID is correct).
+   - False → statute ID came from LLM inference (unreliable).
+              Never hard-block: always allow domain fallback (L3) and pure-vector (L4).
+
+2. _is_statute_explicit() is no longer the sole guard.
+   It still detects "Lov om" in queries (for logging/metrics) but does NOT
+   control the hard-block alone — only statute_from_registry does that.
+
+3. Fallback ladder unchanged (L0→L1→L2→L3→L4) but:
+   - LLM-inferred statutes: if L0-L2 return 0 results → continue to L3/L4
+   - Registry statutes:     if L0-L2 return 0 results → stop (correct statute not in VDB)
+"""
+
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -16,15 +38,8 @@ logger = logging.getLogger(__name__)
 # How many candidates to fetch before re-ranking (top_k × OVERFETCH_FACTOR)
 _OVERFETCH_FACTOR = 4
 
-# Anti-hallucination text returned when all 4 levels return 0 results
-_ANTI_HALLUCINATION_TEXT = (
-    "DigiRett AI kan ikke bekrefte et svar fra autoriserte kilder for dette spørsmålet. "
-    "Vennligst kontakt en kvalifisert advokat for veiledning om dette rettslige spørsmålet."
-)
-
 
 class _BM25Reranker:
-
     _K = 60  # RRF constant
 
     @classmethod
@@ -48,9 +63,7 @@ class _BM25Reranker:
             bm25 = BM25Okapi(tok_c)
             bm25_scores = bm25.get_scores(tok_q)
 
-            # Dense rank (by position in results list — already sorted by COSINE)
             dense_ranked = {i: rank for rank, i in enumerate(range(len(results)))}
-            # BM25 rank
             bm25_ranked_idx = sorted(
                 range(len(results)), key=lambda i: bm25_scores[i], reverse=True
             )
@@ -66,7 +79,7 @@ class _BM25Reranker:
             ]
             rrf.sort(key=lambda x: x[1], reverse=True)
 
-            reranked = []
+            reranked: List[Dict[str, Any]] = []
             for i, rrf_val in rrf[:top_k]:
                 r = results[i].copy()
                 r["score"] = round(rrf_val, 6)
@@ -75,19 +88,19 @@ class _BM25Reranker:
                 reranked.append(r)
 
             return reranked
-
         except Exception as exc:
             logger.warning(f"⚠️  BM25 rerank failed: {exc} — using dense-only")
             return results[:top_k]
 
 
 class RetrieverAgent:
-
-
     def __init__(self, embedding_service: Any, milvus_client: Any) -> None:
         self._embedding = embedding_service
         self._milvus = milvus_client
-        logger.info("✅ RetrieverAgent initialized (v3 — 4-level fallback + BM25)")
+        logger.info(
+            "✅ RetrieverAgent initialized "
+            "(v5 — registry-aware statute blocking + BM25)"
+        )
 
     async def run(
         self,
@@ -96,36 +109,35 @@ class RetrieverAgent:
         top_k: int = 5,
         min_score: float = 0.0,
         history: Optional[List[Dict[str, str]]] = None,
-        # New metadata filters from QueryReasoningAgent + RouterAgent
-        statute_filter: Optional[str] = None,      # Lovdata URL or LOV-YYYY-MM-DD-NNN
-        domain: Optional[str] = None,              # e.g. "selskapsrett"
-        jurisdiction: Optional[str] = None,        # e.g. "NO"
+        statute_filter: Optional[str] = None,
+        domain: Optional[str] = None,
+        jurisdiction: Optional[str] = None,
         subdomain_candidates: Optional[List[str]] = None,
         b2b_b2c: Optional[str] = None,
+        # ── NEW parameter ───────────────────────────────────────────────
+        statute_from_registry: bool = False,
+        # ── KEPT for backward compat but no longer controls hard-block ──
+        statute_explicit: bool = False,
     ) -> List[Dict[str, Any]]:
         sep = "=" * 60
-        logger.info(
-            f"\n{sep}\n🔍 RetrieverAgent.run | query='{query[:60]}'\n{sep}"
-        )
-        logger.info(f"  Enriched query  : {enriched_query[:100]}")
-        logger.info(f"  statute_filter  : {statute_filter}")
-        logger.info(f"  domain          : {domain}")
-        logger.info(f"  jurisdiction    : {jurisdiction}")
-        logger.info(f"  subdomain_cands : {subdomain_candidates}")
-        logger.info(f"  b2b_b2c         : {b2b_b2c}")
+        logger.info(f"\n{sep}\n🔍 RetrieverAgent.run | query='{query[:60]}'\n{sep}")
+        logger.info(f"  Enriched query      : {enriched_query[:100]}")
+        logger.info(f"  statute_filter      : {statute_filter}")
+        logger.info(f"  statute_from_registry: {statute_from_registry}")
+        logger.info(f"  domain              : {domain}")
+        logger.info(f"  jurisdiction        : {jurisdiction}")
+        logger.info(f"  subdomain_cands     : {subdomain_candidates}")
+        logger.info(f"  b2b_b2c             : {b2b_b2c}")
 
-        # ── 1. Embed enriched query ────────────────────────────────────────
         query_embedding = await self._embedding.embed_query(enriched_query)
-        logger.debug(f"  Embedding dim   : {len(query_embedding)}")
+        logger.debug(f"  Embedding dim       : {len(query_embedding)}")
 
         fetch_k = top_k * _OVERFETCH_FACTOR
         candidates: List[Dict[str, Any]] = []
         fallback_level = 0
 
-        # ── 2. 4-Level fallback ladder ─────────────────────────────────────
+        # ── L0: statute + domain + subdomain + jurisdiction + b2b ──────────
         logger.info("[Fallback] Starting L0…")
-
-        # L0 — tightest: statute + domain + subdomain + jurisdiction + b2b
         candidates = self._milvus_search(
             query_embedding=query_embedding,
             top_k=fetch_k,
@@ -146,7 +158,7 @@ class RetrieverAgent:
                 top_k=fetch_k,
                 statute_filter=statute_filter,
                 domain=domain,
-                jurisdiction=jurisdiction,
+                jurisdiction=None,
                 subdomain_candidates=None,
                 b2b_b2c=None,
                 fallback_level=1,
@@ -168,9 +180,46 @@ class RetrieverAgent:
             )
             logger.info(f"  L2 → {len(candidates)} candidates")
 
+        # ── CRITICAL GATE: only hard-block when statute ID is CERTAIN ──────
+        # If the statute came from the deterministic registry, we KNOW the ID
+        # is correct. If the VDB has no chunks for it, there is nothing to
+        # return — falling through to L3/L4 would retrieve wrong-statute content.
+        #
+        # If the statute came from LLM inference, the ID may be wrong.
+        # Always fall through to domain-level search so the user gets
+        # some answer rather than empty context.
+        if not candidates and statute_filter:
+            if statute_from_registry:
+                logger.warning(
+                    "⚠️  Registry statute exhausted L0-L2. "
+                    "Statute is confirmed correct but NOT in VDB. "
+                    "Stopping retrieval — wrong-statute drift would harm accuracy."
+                )
+                return []
+            else:
+                logger.info(
+                    "ℹ️  LLM-inferred statute exhausted L0-L2. "
+                    "Statute ID may be wrong — continuing to domain-level fallback."
+                )
+
         if not candidates:
             fallback_level = 3
-            logger.info("[Fallback] L2 empty → trying L3 (no filter, pure vector)…")
+            logger.info("[Fallback] → trying L3 (domain + subdomain, NO statute)…")
+            candidates = self._milvus_search(
+                query_embedding=query_embedding,
+                top_k=fetch_k,
+                statute_filter=None,
+                domain=domain,
+                jurisdiction=jurisdiction,
+                subdomain_candidates=subdomain_candidates,
+                b2b_b2c=b2b_b2c,
+                fallback_level=3,
+            )
+            logger.info(f"  L3 → {len(candidates)} candidates")
+
+        if not candidates:
+            fallback_level = 4
+            logger.info("[Fallback] L3 empty → trying L4 (pure vector, no filters)…")
             candidates = self._milvus_search(
                 query_embedding=query_embedding,
                 top_k=fetch_k,
@@ -179,29 +228,23 @@ class RetrieverAgent:
                 jurisdiction=None,
                 subdomain_candidates=None,
                 b2b_b2c=None,
-                fallback_level=3,
+                fallback_level=4,
             )
-            logger.info(f"  L3 → {len(candidates)} candidates")
+            logger.info(f"  L4 → {len(candidates)} candidates")
 
         if not candidates:
             logger.warning(
-                "⚠️  All 4 fallback levels returned 0 results. "
+                "⚠️  All 5 fallback levels returned 0 results. "
                 "Collection may be empty or query is fully out of domain."
             )
             return []
 
-        # ── 3. BM25 re-rank ───────────────────────────────────────────────
         logger.info(
             f"[BM25] Re-ranking {len(candidates)} candidates → top {top_k} "
             f"(BM25: {'on' if _BM25_AVAILABLE else 'off'})…"
         )
-        reranked = _BM25Reranker.rerank(
-            results=candidates,
-            raw_query=query,
-            top_k=top_k,
-        )
+        reranked = _BM25Reranker.rerank(results=candidates, raw_query=query, top_k=top_k)
 
-        # ── 4. Annotate with fallback level ────────────────────────────────
         for r in reranked:
             r["fallback_level"] = fallback_level
 
@@ -218,8 +261,6 @@ class RetrieverAgent:
 
         return reranked
 
-    # ── Internal ──────────────────────────────────────────────────────────
-
     def _milvus_search(
         self,
         query_embedding: List[float],
@@ -231,7 +272,6 @@ class RetrieverAgent:
         b2b_b2c: Optional[str],
         fallback_level: int,
     ) -> List[Dict[str, Any]]:
-        """Thin wrapper — delegates all filter logic to MilvusClient."""
         try:
             return self._milvus.search(
                 embedding=query_embedding,
