@@ -1,27 +1,3 @@
-"""
-services/rag_service.py
-
-RAG Service — multi-agent pipeline orchestrator.
-
-Changes from Phase 1 (retrieval only — nothing else touched):
-─────────────────────────────────────────────────────────────
-1. _handle_legal:
-   - QueryReasoningAgent now returns secondary_statute_id + response_style
-   - RouterAgent returns subdomain_candidates + b2b_b2c
-   - RetrieverAgent.run() called with enriched_query + all metadata filters
-     (the 4-level fallback + BM25 re-rank is inside RetrieverAgent)
-   - _retrieve_and_validate() replaced by direct RetrieverAgent.run() call
-     (SourceValidationAgent was already disabled; validation logic simplified)
-   - statute_filter passed as Lovdata URL (resolved from primary_statute_id)
-
-2. _build_context:
-   - reads section_ref instead of url/source_url for RAG context assembly
-   - url alias still set in MilvusClient so chat.py citation display is untouched
-
-Everything else (casual, docqa, hybrid, followup, saving, streaming,
-chat.py, message_service.py) is completely unchanged.
-"""
-
 import logging
 import re
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -42,13 +18,11 @@ from services.llm_service import LLMService, _extract_score, _score_to_confidenc
 from services.document_service import DocumentService
 from config import settings
 from config_domains import normalize_domain
-from config_domains import normalize_domain
 
 logger = logging.getLogger(__name__)
 
 # Redis key template for storing reasoning context between turns
 _REASONING_META_KEY = "reasoning:statute:{conversation_id}"
-
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Statute ID → Lovdata URL resolver  (unchanged from Phase 1)
@@ -137,41 +111,6 @@ def _is_statute_explicit(query: str) -> bool:
     return any(pattern in query_lower for pattern in explicit_patterns)
 
 
-def _is_statute_explicit(query: str) -> bool:
-    """
-    Detect if user explicitly named a law in the query.
-
-    Returns True if query contains patterns like:
-    - "Lov om..."
-    - "LOV-"
-    - "bestemmelse i"
-    - "§" (section symbol)
-
-    Returns False if statute is inferred from mechanism/domain.
-    """
-    if not query:
-        return False
-
-    query_lower = query.lower()
-    explicit_patterns = [
-        "lov om",
-        "loven",
-        "loven om",
-        "loven for",
-        "loven 20",  # LOV-YYYY format
-        "lov-",
-        "for-",  # FOR = forskrift
-        "res-",  # RES = resolution
-        "bestemmelse i",
-        "kapittel",
-        "§",
-        "lovdatas",
-        "lovdata",
-    ]
-
-    return any(pattern in query_lower for pattern in explicit_patterns)
-
-
 class RAGService:
 
     def __init__(
@@ -213,10 +152,6 @@ class RAGService:
             "✅ RAGService initialized | "
             "retrieval=v3 (4-level fallback + BM25) | document agent active"
         )
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # PUBLIC INTERFACE — unchanged
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def process_query(
         self,
@@ -364,73 +299,6 @@ class RAGService:
                     ):
                         yield event
             else:
-                # ── CASUAL with document: intercept and re-route ───────────
-                # If a document is in the session, even "casual-sounding" queries
-                # like "Explain this document" must go through the doc classifier
-                # instead of the casual pipeline.
-                if (
-                    self._document_service
-                    and self._document_service.has_documents(conversation_id)
-                ):
-                    logger.info(
-                        "📄 CASUAL query but document in session — "
-                        "routing through doc classifier"
-                    )
-                    doc_summary = self._document_service.get_doc_summary(
-                        conversation_id
-                    )
-                    doc_class_result = await self._doc_classifier.classify(
-                        query=query,
-                        conversation_history=history,
-                        doc_summary=doc_summary,
-                    )
-                    doc_intent = doc_class_result["intent"]
-                    logger.info(
-                        f"📄 Doc classifier (from CASUAL): {doc_intent} | "
-                        f"reason='{doc_class_result.get('reason', '')}'"
-                    )
-
-                    if doc_intent == "DOCQA":
-                        async for event in self._handle_docqa(
-                            query=query,
-                            language=language,
-                            history=history,
-                            conversation_id=conversation_id,
-                        ):
-                            yield event
-                    elif doc_intent == "HYBRID":
-                        async for event in self._handle_hybrid(
-                            query=query,
-                            language=language,
-                            top_k=top_k,
-                            min_score=min_score,
-                            history=history,
-                            conversation_id=conversation_id,
-                        ):
-                            yield event
-                    elif doc_intent == "FOLLOWUP":
-                        async for event in self._handle_followup_with_doc(
-                            query=query,
-                            language=language,
-                            history=history,
-                            conversation_id=conversation_id,
-                        ):
-                            yield event
-                    else:
-                        # doc_intent == "LEGAL" or truly unrelated — casual is fine
-                        logger.info("💬 CASUAL query (doc present but unrelated)")
-                        async for event in self._handle_casual(query, history, language):
-                            yield event
-                else:
-                    logger.info("💬 CASUAL query")
-                    async for event in self._handle_casual(query, history, language):
-                        yield event
-                        yield event
-            else:
-                # ── CASUAL with document: intercept and re-route ───────────
-                # If a document is in the session, even "casual-sounding" queries
-                # like "Explain this document" must go through the doc classifier
-                # instead of the casual pipeline.
                 if (
                     self._document_service
                     and self._document_service.has_documents(conversation_id)
@@ -496,10 +364,6 @@ class RAGService:
             )
             yield {"type": "error", "message": str(exc)}
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # CASUAL PIPELINE — unchanged
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
     async def _handle_casual(
         self,
         query: str,
@@ -535,10 +399,6 @@ class RAGService:
         }
         logger.info(f"✅ CASUAL pipeline complete | tokens={token_count}")
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # LEGAL PIPELINE — retrieval logic updated, streaming/saving unchanged
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
     async def _handle_legal(
         self,
         query: str,
@@ -561,7 +421,6 @@ class RAGService:
             if reasoning_meta:
                 previous_statute_id = reasoning_meta.get("statute_id")
                 previous_enriched_query = reasoning_meta.get("enriched_query")
-                prev_query_preview = str(previous_enriched_query)[:60]
                 logger.info(
                     f"📖 Loaded reasoning context | "
                     f"statute_id={previous_statute_id} | "
@@ -665,11 +524,12 @@ class RAGService:
                 "metadata": {
                     "intent": "LEGAL",
                     "language": language,
-                    "full_answer": no_context_msg,
+                    "primary_statute_id": primary_statute_id,
+                    "chunks_retrieved": 0,
                     "score": 0.1,
-                    "confidence": "No sources available",
+                    "confidence": "No sources found",
+                    "full_answer": no_result,
                     "rag_chunks": [],
-                    "tokens_generated": len(no_context_msg),
                 },
             }
             return
@@ -768,6 +628,8 @@ class RAGService:
             "metadata": {
                 "intent": "LEGAL",
                 "language": language,
+                "primary_statute_id": primary_statute_id,
+                "chunks_retrieved": len(search_results),
                 "tokens_generated": token_count,
                 "score": score,
                 "confidence": confidence,
@@ -780,10 +642,6 @@ class RAGService:
             f"chunks={len(search_results)} | tokens={token_count} | score={score} | "
             f"fallback=L{search_results[0].get('fallback_level', 0) if search_results else 'n/a'}"
         )
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # DOCQA PIPELINE — completely unchanged
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _handle_docqa(
         self,
@@ -837,7 +695,7 @@ class RAGService:
             yield {"type": "token", "data": token}
 
         # Strip [SCORE:x.x] from docqa answer
-        score_pattern = re.compile(r"\[SCORE:\s*([0-9.]+)\]")
+        score_pattern = re.compile(r"\[SCORE:([0-9.]+)\]")
         score_match = score_pattern.search(full_answer)
         score = float(score_match.group(1)) if score_match else 0.7
         clean_answer = score_pattern.sub("", full_answer).strip()
@@ -857,10 +715,6 @@ class RAGService:
         logger.info(
             f"✅ DOCQA pipeline complete | tokens={token_count} | score={score}"
         )
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # HYBRID PIPELINE — completely unchanged
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _handle_hybrid(
         self,
@@ -888,24 +742,12 @@ class RAGService:
             ):
                 yield event
             return
-
-        # FIX: all required RetrieverAgent.run() kwargs now explicitly passed.
-        # enriched_query=query is intentional — hybrid skips reasoning enrichment.
-        # FIX: all required RetrieverAgent.run() kwargs now explicitly passed.
-        # enriched_query=query is intentional — hybrid skips reasoning enrichment.
         search_results = await self._retriever_agent.run(
             query=query,
-            enriched_query=query,
             enriched_query=query,
             top_k=top_k,
             min_score=min_score,
             history=history,
-            statute_filter=None,
-            domain=None,
-            jurisdiction=None,
-            subdomain_candidates=[],
-            b2b_b2c="BOTH",
-            statute_from_registry=False,
             statute_filter=None,
             domain=None,
             jurisdiction=None,
@@ -932,7 +774,7 @@ class RAGService:
             full_answer += token
             yield {"type": "token", "data": token}
 
-        score_pattern = re.compile(r"\[SCORE:\s*([0-9.]+)\]")
+        score_pattern = re.compile(r"\[SCORE:([0-9.]+)\]")
         score_match = score_pattern.search(full_answer)
         score = float(score_match.group(1)) if score_match else 0.7
         clean_answer = score_pattern.sub("", full_answer).strip()
@@ -952,10 +794,6 @@ class RAGService:
         logger.info(
             f"✅ HYBRID pipeline complete | tokens={token_count} | score={score}"
         )
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # FOLLOWUP WITH DOC — completely unchanged
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _handle_followup_with_doc(
         self,
@@ -1020,10 +858,6 @@ class RAGService:
             parts.append(f"[{i}] {header}\n{text}")
 
         return "\n\n---\n\n".join(parts)
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # ENRICHED VDB HELPERS (Phase 2 — kept, not removed)
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     async def _extract_document_summary(self, doc_text: str) -> str:
         doc_excerpt = doc_text[:2000]

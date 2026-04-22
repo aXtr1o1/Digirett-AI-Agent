@@ -1,11 +1,9 @@
 """
-api/routes/documents.py
-
 Document upload + session status + document retrieval endpoints.
 
 POST /api/v1/documents/upload
 GET  /api/v1/documents/session/{conversation_id}
-GET  /api/v1/documents/conversation/{conversation_id}   ← NEW (Problem 1 fix)
+GET  /api/v1/documents/conversation/{conversation_id}  
 """
 
 import logging
@@ -169,11 +167,6 @@ async def upload_document(
     summary="Persist a file-upload event as a chat message for history",
 )
 async def save_file_message(conversation_id: str, body: FileMessageRequest):
-    """
-    Called by frontend after a successful upload.
-    Saves a message row of type 'file-with-text' so the file card
-    reappears correctly when the conversation is loaded from history.
-    """
     if _document_service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

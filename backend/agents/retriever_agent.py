@@ -1,25 +1,3 @@
-"""
-agents/retriever_agent.py
-
-RetrieverAgent — v5 (smart statute_explicit + registry-aware fallback).
-
-Key changes from v4:
-─────────────────────────────────────────────────────────────────────
-1. statute_from_registry parameter (NEW):
-   - True  → statute ID came from StatuteRegistry (deterministic).
-              Hard-block fallback if statute exhausted (safe — we know the ID is correct).
-   - False → statute ID came from LLM inference (unreliable).
-              Never hard-block: always allow domain fallback (L3) and pure-vector (L4).
-
-2. _is_statute_explicit() is no longer the sole guard.
-   It still detects "Lov om" in queries (for logging/metrics) but does NOT
-   control the hard-block alone — only statute_from_registry does that.
-
-3. Fallback ladder unchanged (L0→L1→L2→L3→L4) but:
-   - LLM-inferred statutes: if L0-L2 return 0 results → continue to L3/L4
-   - Registry statutes:     if L0-L2 return 0 results → stop (correct statute not in VDB)
-"""
-
 import logging
 from typing import Any, Dict, List, Optional
 

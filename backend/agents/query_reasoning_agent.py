@@ -1,27 +1,3 @@
-"""
-agents/query_reasoning_agent.py
-
-QueryReasoningAgent — enriches user queries for vector retrieval.
-
-Key changes (v4 — deterministic statute routing):
-─────────────────────────────────────────────────
-1. StatuteRegistry.lookup() is called BEFORE the LLM.
-   If a deterministic match is found the statute ID and domain are pinned
-   immediately — the LLM cannot override them.
-
-2. statute_from_registry flag is propagated so RetrieverAgent knows
-   whether to trust the statute filter (hard-block fallback) or treat
-   it as a soft hint (allow domain-level fallback).
-
-3. LLM reasoning is still used for:
-   - Query enrichment (the enriched_query string)
-   - Response style detection
-   - Secondary statute detection
-   - Domain refinement when no registry match
-
-4. Domain extracted from registry result takes priority over LLM domain.
-"""
-
 import logging
 from typing import Dict, List, Optional
 
@@ -374,14 +350,6 @@ REASONING PATTERNS:
 
 
 class QueryReasoningAgent:
-    """
-    LLM-based query reasoning agent — the BRAIN of the retrieval pipeline.
-
-    Extracts: domain, primary_statute_id, secondary_statute_id,
-              enriched_query, jurisdiction, source_type, response_style.
-
-    Production version: uses settings from config.settings (not experiment config).
-    """
 
     _ALLOWED_DOMAINS = _ALLOWED_DOMAINS
 
@@ -405,19 +373,7 @@ class QueryReasoningAgent:
         previous_statute_id: Optional[str] = None,
         previous_enriched_query: Optional[str] = None,
     ) -> Dict:
-        """
-        Run reasoning on a user query.
-
-        Returns dict with:
-            enriched_query          : str
-            primary_statute_id      : str | None
-            secondary_statute_id    : str | None
-            statute_from_registry   : bool  ← NEW: True = deterministic, False = LLM-inferred
-            response_style          : str
-            domain                  : str | None
-            jurisdiction            : str | None
-            source_type             : str | None
-        """
+        
         logger.info(f"🧠 QueryReasoningAgent: reasoning on '{query[:70]}'")
 
         # ── STEP 0: Deterministic registry lookup (before LLM) ────────────

@@ -1,16 +1,3 @@
-"""
-agents/router_agent.py
-
-RouterAgent — classifies query into domain + subdomain + metadata filters.
-
-Fixes from v2:
-─────────────────────────────────────────────────────────────────────
-1. Complete subdomain list for ALL 12 domains (was only partial).
-2. Domain output is ALWAYS normalized to canonical lowercase before return.
-3. "Årsregnskap og selskapsrapportering" style titles are mapped to canonical.
-4. Subdomain matching uses semantic match against the FULL canonical list.
-"""
-
 import json
 import logging
 import re
