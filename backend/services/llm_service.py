@@ -278,10 +278,10 @@ class LLMService:
         messages = [
             SystemMessage(content=(
                 "You are a document summarizer. "
-                "Identify the language of the document and respond ONLY in that language. "
+                "Identify the language of the document and Strictly respond ONLY in that language. "
                 "English document → English summary. "
                 "Norwegian document → Norwegian summary. "
-                "Never translate. Never switch languages."
+                "Never translate. Never switch languages. and Never mix languages in your response."
             )),
             HumanMessage(content=(
                 f"Summarize the following document in 3-5 sentences. "

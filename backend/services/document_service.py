@@ -5,6 +5,7 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 import fitz  # PyMuPDF
+from langdetect import detect, LangDetectException
 
 from config import settings
 from db.redis_client import RedisClient
@@ -30,6 +31,39 @@ class DocumentService:
         logger.info("✅ DocumentService initialized")
         if settings.DOC_TESTING_MODE:
             logger.info("🧪 TESTING MODE ACTIVE - Document limits disabled for testing")
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # LANGUAGE DETECTION
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    def detect_document_language(self, text: str) -> str:
+        """
+        Detect the language of the document text.
+        Returns: 'norwegian', 'english', or a language code from langdetect.
+        Falls back to 'english' if detection fails.
+        """
+        try:
+            if not text or len(text.strip()) < 50:
+                logger.warning("📄 Document too short for reliable language detection")
+                return "english"
+            
+            # Detect language from first 1000 characters
+            detected_lang = detect(text[:1000])
+            
+            # Normalize language codes
+            if detected_lang in ('no', 'nb', 'nn'):
+                return "norwegian"
+            elif detected_lang in ('en', 'en-US', 'en-GB'):
+                return "english"
+            else:
+                logger.info(f"🌐 Detected language code: {detected_lang}")
+                return detected_lang
+        except LangDetectException as exc:
+            logger.warning(f"⚠️ Language detection failed | {exc} | defaulting to 'english'")
+            return "english"
+        except Exception as exc:
+            logger.error(f"❌ Language detection error | {exc}")
+            return "english"
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # SESSION MANAGEMENT
@@ -249,6 +283,10 @@ class DocumentService:
         extracted_text = self.parse_document(file_bytes, filename)
         char_count = len(extracted_text)
 
+        # ── Detect language ──────────────────────────────────────────────
+        document_language = self.detect_document_language(extracted_text)
+        logger.info(f"🌐 Detected document language: {document_language}")
+
         # ── Generate document ID ─────────────────────────────────────────
         document_id = str(uuid.uuid4())
 
@@ -284,6 +322,7 @@ class DocumentService:
                 "file_type":      ext,
                 "extracted_text": extracted_text,
                 "char_count":     char_count,
+                "language":       document_language,
                 "upload_order":   upload_order,
                 "is_active":      True,
                 "created_at":     now.isoformat(),
@@ -316,6 +355,7 @@ class DocumentService:
             "document_id": document_id,
             "file_name":   filename,
             "char_count":  char_count,
+            "language":    document_language,
             "upload_order": upload_order,
         })
         self._save_session(conversation_id, session)
@@ -334,6 +374,7 @@ class DocumentService:
             "file_name":    filename,
             "file_type":    ext,
             "char_count":   char_count,
+            "language":     document_language,
             "upload_order": upload_order,
             "docs_remaining": MAX_DOCS_PER_SESSION - upload_order,
         }
@@ -479,6 +520,24 @@ class DocumentService:
         if not text:
             return None
         return text[:500]
+
+    def get_document_language(self, conversation_id: str) -> Optional[str]:
+        """
+        Retrieve the language of the documents in this conversation.
+        Returns the language of the most recently uploaded document.
+        If multiple documents are present, returns the latest one's language.
+        Returns None if no documents exist.
+        """
+        docs = self.get_session_documents(conversation_id)
+        if not docs:
+            return None
+        
+        # Sort by upload_order descending to get the latest
+        docs_sorted = sorted(docs, key=lambda d: d.get("upload_order", 0), reverse=True)
+        latest_language = docs_sorted[0].get("language", "english")
+        
+        logger.info(f"📄 Document language for conv={conversation_id}: {latest_language}")
+        return latest_language
 
     def save_file_message(
     self,
