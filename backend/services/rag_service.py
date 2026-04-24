@@ -219,6 +219,19 @@ class RAGService:
             language = intent_result["language"]
             logger.info(f"🎯 Intent: {intent} | Language: {language}")
 
+            # ── Override language with document language if documents exist ────
+            if (
+                self._document_service
+                and self._document_service.has_documents(conversation_id)
+            ):
+                doc_language = self._document_service.get_document_language(conversation_id)
+                if doc_language:
+                    logger.info(
+                        f"🌐 Using document language '{doc_language}' "
+                        f"instead of query language '{language}'"
+                    )
+                    language = doc_language
+
             yield {"type": "intent", "data": {"intent": intent, "language": language}}
 
             if intent == "LEGAL":
