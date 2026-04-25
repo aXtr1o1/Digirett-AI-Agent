@@ -250,6 +250,7 @@ class SupabaseClient:
                     "similarity_score": chunk.get("score", 0.0),
                     "rank": idx,
                     "created_at": datetime.utcnow().isoformat(),
+                    "source_title": chunk.get("_resolved_title"),
                 }
                 for idx, chunk in enumerate(chunks, start=1)
             ]

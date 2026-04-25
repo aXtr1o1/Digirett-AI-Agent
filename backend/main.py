@@ -18,6 +18,8 @@ from services.embedding_service import EmbeddingService
 from services.llm_service import LLMService
 from services.message_service import MessageService
 from services.rag_service import RAGService
+from services.lovdata_title_fetcher import LovdataTitleFetcher
+
 from telemetry.tracing import setup_tracing
 from utils.logger import setup_logger
 
@@ -91,10 +93,21 @@ async def lifespan(app: FastAPI):
             redis_client=redis_client,
         )
 
+        # ── Title fetcher must be created BEFORE MessageService ──────────
+        # It resolves Lovdata URLs to human-readable Norwegian titles using
+        # a 3-layer cache: Redis (L1) → Supabase lovdata_url_titles (L2)
+        # → httpx fetch (L3). MessageService calls it inside save_exchange.
+        logger.info("Initializing Lovdata title fetcher...")
+        title_fetcher = LovdataTitleFetcher(
+            redis_client=redis_client,
+            supabase_client=supabase_client,
+        )
+
         logger.info("Initializing Message service...")
         message_service = MessageService(
             supabase_client=supabase_client,
             redis_client=redis_client,
+            title_fetcher=title_fetcher,          # ← wired in
         )
 
         logger.info("Injecting services into route modules...")
@@ -122,7 +135,6 @@ async def lifespan(app: FastAPI):
         documents.set_services(
             document_service=document_service,
             llm_service=llm_service,
-
         )
 
         logger.info("All services ready — server is live")
