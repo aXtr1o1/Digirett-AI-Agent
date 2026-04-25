@@ -76,6 +76,7 @@ class LLMService:
         query: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
+        language: Optional[str] = None,
     ) -> AsyncIterator[str]:
         """Stream casual response tokens. No RAG context involved."""
         async with llm_span("casual_generation"):
@@ -83,6 +84,7 @@ class LLMService:
                 query=query,
                 conversation_history=conversation_history,
                 temperature=temperature,
+                language=language,
             ):
                 yield token
 

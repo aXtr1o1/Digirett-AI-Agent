@@ -196,7 +196,8 @@ const useChat = (
         }
 
         // 2. Save summary message SECOND (so it appears after file on reload)
-        if (uploadResult.summary_text) {
+        // Only save when there is NO query — with a query, doc_qa handles the response
+        if (!hasQuery && uploadResult.summary_text) {
           try {
             await fetch(`${API_BASE_URL}/api/v1/documents/summary-message/${convId}`, {
               method: "POST",
@@ -218,21 +219,7 @@ const useChat = (
         }
 
         // ── File + query: stream the RAG response ─────────────────────────
-        // Show summary inline first if available
-        if (uploadResult.summary_text) {
-          const summaryMsgId = crypto.randomUUID();
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: summaryMsgId,
-              role: MESSAGE_ROLES.ASSISTANT,
-              type: "text",
-              content: uploadResult.summary_text,
-              sources: [],
-              timestamp: new Date().toISOString(),
-            },
-          ]);
-        }
+        // Do NOT show summary here — doc_qa / legal / hybrid will stream the answer
 
         setIsProcessingDoc(false);
         setIsStreaming(true);
