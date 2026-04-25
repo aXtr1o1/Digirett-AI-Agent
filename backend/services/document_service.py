@@ -37,11 +37,7 @@ class DocumentService:
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     def detect_document_language(self, text: str) -> str:
-        """
-        Detect the language of the document text.
-        Returns: 'norwegian', 'english', or a language code from langdetect.
-        Falls back to 'english' if detection fails.
-        """
+        
         try:
             if not text or len(text.strip()) < 50:
                 logger.warning("📄 Document too short for reliable language detection")
@@ -70,17 +66,7 @@ class DocumentService:
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     def get_or_create_session(self, conversation_id: str) -> Dict[str, Any]:
-        """
-        Load the session state for a conversation from Redis.
-        Creates a fresh session if none exists.
-
-        Returns a dict with:
-          session_id    : str
-          doc_count     : int  (0-2)
-          turn_count    : int  (0-10)
-          session_start : float (unix timestamp)
-          docs          : list of {document_id, file_name, char_count}
-        """
+        
         redis_key = f"doc:session:{conversation_id}"
         raw = self._redis.get_conversation_meta(redis_key)
 
@@ -120,14 +106,7 @@ class DocumentService:
         self._redis.set_conversation_meta(redis_key, session, ttl=remaining_ttl)
 
     def check_turn_limit(self, conversation_id: str) -> Tuple[bool, int]:
-        """
-        Check if the user has hit the 10-turn limit.
         
-        ⚠️  TESTING MODE OVERRIDE: If DOC_TESTING_MODE=True, always allows queries.
-
-        Returns:
-            (allowed: bool, turns_remaining: int)
-        """
         # ┌─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┐
         # │ TESTING MODE — Skip turn limit enforcement                  │
         # └─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┘
@@ -142,11 +121,7 @@ class DocumentService:
         return allowed, remaining
 
     def increment_turn_count(self, conversation_id: str) -> int:
-        """
-        Increment the turn counter for this conversation session.
-        Returns the new turn count.
-        Called by RAGService BEFORE processing each query.
-        """
+       
         session = self.get_or_create_session(conversation_id)
         session["turn_count"] = session.get("turn_count", 0) + 1
         self._save_session(conversation_id, session)
