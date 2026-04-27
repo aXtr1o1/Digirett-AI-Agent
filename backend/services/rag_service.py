@@ -616,11 +616,18 @@ class RAGService:
             full_url = f"{base_url}/{section_ref}" if section_ref else base_url
             if full_url and full_url not in seen_urls:
                 seen_urls.add(full_url)
-                visible_sources.append({"url": full_url, "doc_title": doc_title})
+                visible_sources.append({
+                    "url": full_url, 
+                    "doc_title": doc_title,
+                    "section_ref": section_ref
+                })
             # Also emit base URL so frontend shows the law itself
             if base_url and base_url not in seen_urls:
                 seen_urls.add(base_url)
-                visible_sources.append({"url": base_url, "doc_title": doc_title})
+                visible_sources.append({
+                    "url": base_url, 
+                    "doc_title": doc_title
+                })
 
         yield {"type": "sources", "data": visible_sources}
         logger.info(f"✅ Emitted {len(visible_sources)} source URLs (section_ref included)")

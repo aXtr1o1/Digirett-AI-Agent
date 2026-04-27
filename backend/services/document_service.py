@@ -470,7 +470,9 @@ class DocumentService:
         if not docs:
             return ""
 
-        docs_sorted = sorted(docs, key=lambda d: d.get("upload_order", 0))
+        # Reverse sort so the MOST RECENT document is at the top of the text.
+        # This prevents the newest document from being truncated if the total size exceeds the LLM context.
+        docs_sorted = sorted(docs, key=lambda d: d.get("upload_order", 0), reverse=True)
         parts = []
         for doc_meta in docs_sorted:
             text = self.get_document_text(doc_meta["document_id"])
@@ -480,7 +482,8 @@ class DocumentService:
                     f"{doc_meta['file_name']} ===\n\n{text}"
                 )
 
-        return "\n\n{'='*60}\n\n".join(parts)
+        divider = "\n\n" + "=" * 60 + "\n\n"
+        return divider.join(parts)
 
     def has_documents(self, conversation_id: str) -> bool:
         """Check if the current session has at least one uploaded document."""

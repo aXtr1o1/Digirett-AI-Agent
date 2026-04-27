@@ -374,9 +374,14 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest) -> None
                 titled_sources = []
                 for idx, s in enumerate(visible_sources):
                     if isinstance(s, dict) and s.get("url"):
+                        final_title = _translated_titles[idx]
+                        if s.get("section_ref"):
+                            final_title = f"{final_title} - {s['section_ref']}"
+                        
                         titled_sources.append({
-                            "title": _translated_titles[idx],
+                            "title": final_title,
                             "url":   s["url"],
+                            "section_ref": s.get("section_ref"),
                         })
                     else:
                         titled_sources.append(s)
@@ -511,11 +516,15 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest) -> None
                     # ✅ FIX: prefer the already-translated title from titled_sources.
                     # _resolved_title_map is Norwegian (raw Lovdata HTML) — only use
                     # it as a last resort if titled_sources somehow has no title.
-                    best_title = (
-                        src.get("title")              # ← translated title (Step B above)
-                        or _resolved_title_map.get(url)  # ← Norwegian fallback
-                        or url
-                    )
+                    best_title = src.get("title")
+                    if not best_title:
+                        best_title = _resolved_title_map.get(url)
+                        if best_title and src.get("section_ref"):
+                            best_title = f"{best_title} - {src['section_ref']}"
+                    
+                    if not best_title:
+                        best_title = url
+
                     normalized_sources.append({"title": best_title, "url": url})
 
                 metadata["conversation_id"] = conversation_id
