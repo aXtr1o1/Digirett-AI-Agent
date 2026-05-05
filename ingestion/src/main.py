@@ -1,1636 +1,380 @@
 # from __future__ import annotations
 
-# import gc
-# import logging
-# import re
-# import sys
-# import time
-# import warnings
-# from collections import defaultdict
-# from dataclasses import asdict, is_dataclass
-# from pathlib import Path
-# from tempfile import TemporaryDirectory
-# from typing import Any, Dict, List
-
-# import psutil
-
-# from ingestion.src.config import (
-#     LOG_FILE,
-#     PIPELINE_CPU_MAX,
-#     PIPELINE_CPU_PAUSE,
-#     PIPELINE_CPU_WARN,
-#     PIPELINE_DOC_SLEEP,
-#     validate_runtime_config,
-# )
-# from ingestion.src.loaders.excel_loader import ExcelLoader
-# from ingestion.src.processors.chunk_validator import validate_chunk_content
-# from ingestion.src.processors.chunker import DigiRettChunker, validate_chunk
-# from ingestion.src.processors.embedder import TokenAwareAzureEmbedder
-# from ingestion.src.processors.text_processor import parse_lovdata_xml
-# from ingestion.src.processors.validation_gate import ValidationGate
-# from ingestion.src.storage.milvus_store import MilvusTextStore
-# from ingestion.src.storage.supabase_store import SupabaseStore
-
-
-# warnings.filterwarnings(
-#     "ignore",
-#     message="pkg_resources is deprecated as an API",
-#     category=UserWarning,
-# )
-
-# validate_runtime_config()
-
-# LOG_PATH = Path(LOG_FILE)
-# LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-# CHUNK_LOG_DIR = LOG_PATH.parent / "chunking"
-# CHUNK_LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-# logging.basicConfig(
-#     level=logging.INFO,
-#     format="%(asctime)s | %(levelname)s | %(message)s",
-#     handlers=[
-#         logging.FileHandler(LOG_PATH, encoding="utf-8"),
-#         logging.StreamHandler(sys.stdout),
-#     ],
-#     force=True,
-# )
-
-# logger = logging.getLogger("digirett-validated-ingestion")
-
-
-# def _get_chunk_logger(file_name: str) -> logging.Logger:
-#     stem = Path(file_name).stem
-#     chunk_logger = logging.getLogger(f"chunking.{stem}")
-#     chunk_logger.setLevel(logging.INFO)
-#     chunk_logger.propagate = False
-
-#     target_path = CHUNK_LOG_DIR / f"{stem}.log"
-
-#     if not any(
-#         isinstance(h, logging.FileHandler)
-#         and Path(h.baseFilename) == target_path
-#         for h in chunk_logger.handlers
-#     ):
-#         for handler in list(chunk_logger.handlers):
-#             chunk_logger.removeHandler(handler)
-
-#         file_handler = logging.FileHandler(
-#             target_path,
-#             encoding="utf-8",
-#         )
-#         file_handler.setFormatter(
-#             logging.Formatter(
-#                 "%(asctime)s | %(levelname)s | %(message)s"
-#             )
-#         )
-#         chunk_logger.addHandler(file_handler)
-
-#     return chunk_logger
-
-
-# def _cpu_guard(label: str = "") -> None:
-#     cpu = psutil.cpu_percent(interval=None)
-
-#     if cpu >= PIPELINE_CPU_MAX:
-#         logger.warning("CPU=%s%% [%s] — pausing 8s", cpu, label)
-#         time.sleep(8.0)
-
-#     elif cpu >= PIPELINE_CPU_PAUSE:
-#         logger.warning("CPU=%s%% [%s] — pausing 3s", cpu, label)
-#         time.sleep(3.0)
-
-#     elif cpu >= PIPELINE_CPU_WARN:
-#         logger.info("CPU=%s%% [%s]", cpu, label)
-
-
-# def _wait_for_cpu(label: str = "") -> None:
-#     max_wait = 60
-#     waited = 0
-
-#     while waited < max_wait:
-#         cpu = psutil.cpu_percent(interval=1)
-
-#         if cpu < PIPELINE_CPU_PAUSE:
-#             return
-
-#         logger.warning("Waiting for CPU (%s%%) [%s]", cpu, label)
-#         time.sleep(3)
-#         waited += 3
-
-#     logger.warning(
-#         "CPU still high after %ss — proceeding [%s]",
-#         max_wait,
-#         label,
-#     )
-
-
-# def _safe_str(value: Any) -> str:
-#     if value is None:
-#         return ""
-
-#     try:
-#         if isinstance(value, float) and value != value:
-#             return ""
-#     except Exception:
-#         pass
-
-#     text = str(value).strip()
-
-#     if text.lower() in {"", "nan", "none", "null"}:
-#         return ""
-
-#     return text
-
-
-# def _pick(*values: Any) -> str:
-#     for value in values:
-#         text = _safe_str(value)
-#         if text:
-#             return text
-#     return ""
-
-
-# def _normalise_source_doc_url(url: str) -> str:
-#     """
-#     Keep only the real base Lovdata document URL.
-#     Removes any ::internal locator and any #fragment.
-#     """
-#     url = _safe_str(url)
-#     if not url:
-#         return ""
-
-#     if "::" in url:
-#         url = url.split("::", 1)[0]
-
-#     if "#" in url:
-#         url = url.split("#", 1)[0]
-
-#     return url.rstrip("/")
-
-
-# def _build_section_url(source_doc_url: str, section_ref: str) -> str:
-#     """
-#     Build a browser-clickable Lovdata section URL in the format:
-#         https://lovdata.no/dokument/NL/lov/2017-06-16-51#§19
-
-#     The § character is kept as-is (not percent-encoded) so the URL
-#     matches Lovdata's own link format exactly.
-
-#     Example:
-#         base:    https://lovdata.no/dokument/NL/lov/2017-06-16-51
-#         ref:     §19
-#         result:  https://lovdata.no/dokument/NL/lov/2017-06-16-51#§19
-#     """
-#     base = _safe_str(source_doc_url)
-#     anchor = _safe_str(section_ref)
-
-#     if not base:
-#         return ""
-
-#     # Strip any existing :: locator or # fragment to get a clean base
-#     base = base.split("::")[0].split("#")[0].rstrip("/")
-
-#     if not anchor:
-#         return base
-
-#     # Remove spaces only — keep § as-is to match Lovdata's URL format
-#     anchor_clean = anchor.replace(" ", "")
-
-#     return f"{base}#{anchor_clean}"
-
-
-# def _build_document_id(source_id: str, section_ref: str) -> str:
-#     source_clean = re.sub(
-#         r"[^A-Za-z0-9_-]+",
-#         "-",
-#         _safe_str(source_id).lower(),
-#     ).strip("-")
-
-#     ref_clean = re.sub(
-#         r"[^A-Za-z0-9_-]+",
-#         "-",
-#         _safe_str(section_ref).replace("§", "par").lower(),
-#     ).strip("-")
-
-#     return f"{source_clean}__{ref_clean}"
-
-
-# def _derive_source_id(
-#     *,
-#     metadata: Dict[str, Any],
-#     source_doc_url: str,
-#     file_name: str,
-# ) -> str:
-#     metadata_id = _safe_str(metadata.get("id"))
-#     if metadata_id:
-#         return metadata_id.upper()
-
-#     url = _normalise_source_doc_url(source_doc_url)
-#     match = re.search(
-#         r"/(lov|forskrift)/(\d{4}-\d{2}-\d{2}(?:-\d+)?)",
-#         url,
-#         re.IGNORECASE,
-#     )
-#     if match:
-#         prefix = "LOV" if match.group(1).lower() == "lov" else "FORSKRIFT"
-#         return f"{prefix}-{match.group(2)}".upper()
-
-#     stem = _safe_str(file_name).replace(".xml", "")
-#     if stem:
-#         return stem.upper()
-
-#     return "UNKNOWN"
-
-
-# def _derive_source_type(
-#     *,
-#     metadata: Dict[str, Any],
-#     source_doc_url: str,
-#     file_name: str,
-# ) -> str:
-#     meta_type = _safe_str(metadata.get("type")).lower()
-#     if meta_type:
-#         return meta_type
-
-#     url = _normalise_source_doc_url(source_doc_url).lower()
-#     fname = _safe_str(file_name).lower()
-
-#     if "/forskrift/" in url or "/dokument/sf/" in url or fname.startswith("sf-"):
-#         return "forskrift"
-
-#     if "/lov/" in url or "/dokument/nl/" in url or fname.startswith("nl-") or fname.startswith("lov-"):
-#         return "lov"
-
-#     return "lov"
-
-
-# def _derive_version_date(
-#     *,
-#     metadata: Dict[str, Any],
-#     source_doc_url: str,
-#     file_name: str,
-# ) -> str:
-#     metadata_date = _safe_str(metadata.get("dato"))
-#     if metadata_date:
-#         match = re.search(r"(\d{4}-\d{2}-\d{2})", metadata_date)
-#         if match:
-#             return match.group(1)
-
-#     url = _normalise_source_doc_url(source_doc_url)
-#     match = re.search(r"(\d{4}-\d{2}-\d{2})", url)
-#     if match:
-#         return match.group(1)
-
-#     fname = _safe_str(file_name)
-#     match = re.search(r"(\d{4})[-_]?(\d{2})[-_]?(\d{2})", fname)
-#     if match:
-#         return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
-
-#     return "1970-01-01"
-
-
-# def _coerce_tier(value: Any) -> int:
-#     text = _safe_str(value)
-#     if not text:
-#         return 1
-#     try:
-#         return int(float(text))
-#     except Exception:
-#         return 1
-
-
-# def _row_to_dict(row: Any) -> Dict[str, Any]:
-#     if isinstance(row, dict):
-#         return dict(row)
-
-#     if hasattr(row, "model_dump"):
-#         return row.model_dump()
-
-#     if hasattr(row, "dict"):
-#         return row.dict()
-
-#     if is_dataclass(row):
-#         return asdict(row)
-
-#     field_names = [
-#         "file_name",
-#         "domain_name",
-#         "subdomain_name",
-#         "b2b_b2c",
-#         "jurisdiction",
-#         "tier",
-#         "source_link",
-#         "legal_validation",
-#         "canonical_subdomain",
-#         "legal_notes",
-#         "sheet_name",
-#         "row_number",
-#     ]
-
-#     return {
-#         field: getattr(row, field, None)
-#         for field in field_names
-#     }
-
-
-# def _chunk_obj_to_dict(chunk_obj: Any) -> Dict[str, Any]:
-#     if hasattr(chunk_obj, "to_dict"):
-#         return chunk_obj.to_dict()
-
-#     if isinstance(chunk_obj, dict):
-#         return dict(chunk_obj)
-
-#     if hasattr(chunk_obj, "__dict__"):
-#         return {
-#             key: value
-#             for key, value in vars(chunk_obj).items()
-#             if not key.startswith("_")
-#         }
-
-#     raise TypeError(f"Unsupported chunk object type: {type(chunk_obj)}")
-
-
-# def run_pipeline(workbook_path: Path) -> Dict[str, int]:
-#     logger.info("=" * 88)
-#     logger.info("DIGIRETT VALIDATED INGESTION STARTED")
-#     logger.info("Workbook: %s", workbook_path.resolve())
-#     logger.info("=" * 88)
-
-#     if not workbook_path.exists():
-#         raise FileNotFoundError(
-#             f"Workbook not found: {workbook_path}"
-#         )
-
-#     loader = ExcelLoader(workbook_path)
-#     gate = ValidationGate()
-#     chunker = DigiRettChunker()
-#     embedder = TokenAwareAzureEmbedder()
-#     supabase_store = SupabaseStore()
-#     milvus_store = MilvusTextStore()
-
-#     rows = loader.load()
-
-#     if not rows:
-#         logger.error("No rows found in workbook: %s", workbook_path)
-#         return {
-#             "rows_total": 0,
-#             "rows_ingested": 0,
-#             "rows_skipped_validation": 0,
-#             "rows_skipped_missing_file_name": 0,
-#             "rows_skipped_source_not_found": 0,
-#             "rows_skipped_xml_not_found": 0,
-#             "rows_failed": 0,
-#             "chunks_total": 0,
-#             "chunks_stored": 0,
-#         }
-
-#     stats = {
-#         "rows_total": 0,
-#         "rows_ingested": 0,
-#         "rows_skipped_validation": 0,
-#         "rows_skipped_missing_file_name": 0,
-#         "rows_skipped_source_not_found": 0,
-#         "rows_skipped_xml_not_found": 0,
-#         "rows_failed": 0,
-#         "chunks_total": 0,
-#         "chunks_stored": 0,
-#     }
-
-#     try:
-#         for row_idx, row in enumerate(rows, start=1):
-#             stats["rows_total"] += 1
-
-#             row_data = _row_to_dict(row)
-
-#             file_name = _safe_str(row_data.get("file_name"))
-#             sheet_name = _safe_str(row_data.get("sheet_name"))
-#             row_number = _safe_str(row_data.get("row_number"))
-
-#             logger.info("-" * 88)
-#             logger.info(
-#                 "ROW %s/%s | sheet=%s | row=%s | file_name=%s",
-#                 row_idx,
-#                 len(rows),
-#                 sheet_name or "<unknown>",
-#                 row_number or "<unknown>",
-#                 file_name or "<missing>",
-#             )
-
-#             decision = gate.evaluate(row_data)
-
-#             if not decision.should_ingest:
-#                 stats["rows_skipped_validation"] += 1
-#                 logger.info(
-#                     "SKIP ROW | validation failed | reason=%s | legal_validation=%s",
-#                     decision.reason,
-#                     decision.legal_validation or "<empty>",
-#                 )
-#                 continue
-
-#             if not file_name:
-#                 stats["rows_skipped_missing_file_name"] += 1
-#                 logger.warning("SKIP ROW | file_name is empty")
-#                 continue
-
-#             _cpu_guard(label=f"row:{row_idx}")
-#             gc.collect()
-
-#             matched = supabase_store.find_source_metadata_by_file_name(file_name)
-
-#             if not matched:
-#                 stats["rows_skipped_source_not_found"] += 1
-#                 logger.warning(
-#                     "SKIP ROW | file_name not found in source tables | file_name=%s",
-#                     file_name,
-#                 )
-#                 continue
-
-#             xml_bucket_path = _pick(
-#                 matched.get("xml_bucket_path"),
-#                 file_name,
-#             )
-
-#             xml_content = supabase_store.download_xml_text_from_storage(xml_bucket_path)
-
-#             if not xml_content:
-#                 stats["rows_skipped_xml_not_found"] += 1
-#                 logger.error(
-#                     "SKIP ROW | XML not found in Supabase bucket | file_name=%s | path=%s",
-#                     file_name,
-#                     xml_bucket_path,
-#                 )
-#                 continue
-
-#             with TemporaryDirectory() as tmpdir:
-#                 xml_tmp = Path(tmpdir) / file_name
-#                 xml_tmp.write_text(xml_content, encoding="utf-8")
-#                 parsed_text_doc = parse_lovdata_xml(xml_tmp)
-
-#             if not parsed_text_doc or not parsed_text_doc.get("text"):
-#                 stats["rows_failed"] += 1
-#                 logger.error(
-#                     "ROW FAILED | text_processor returned empty | file_name=%s",
-#                     file_name,
-#                 )
-#                 continue
-
-#             clean_text = _safe_str(parsed_text_doc.get("text"))
-#             xml_meta = parsed_text_doc.get("metadata", {}) or {}
-
-#             source_doc_url = _normalise_source_doc_url(
-#                 _pick(
-#                     row_data.get("source_link"),
-#                     matched.get("source_doc_url"),
-#                     matched.get("source_url"),
-#                     matched.get("lovdata_url"),
-#                     matched.get("source_link"),
-#                     parsed_text_doc.get("document_url"),
-#                     xml_meta.get("url"),
-#                 )
-#             )
-
-#             if not source_doc_url:
-#                 stats["rows_failed"] += 1
-#                 logger.error(
-#                     "ROW FAILED | source_doc_url resolved empty | file_name=%s",
-#                     file_name,
-#                 )
-#                 continue
-
-#             b2b_b2c = _pick(
-#                 row_data.get("b2b_b2c"),
-#                 matched.get("b2b_b2c"),
-#                 "BOTH",
-#             )
-
-#             tier = _pick(
-#                 row_data.get("tier"),
-#                 matched.get("tier"),
-#                 "1",
-#             )
-
-#             jurisdiction = _pick(
-#                 row_data.get("jurisdiction"),
-#                 matched.get("jurisdiction"),
-#                 "NO",
-#             )
-
-#             doc_title = _pick(
-#                 xml_meta.get("fulltittel"),
-#                 xml_meta.get("korttittel"),
-#                 matched.get("title"),
-#                 file_name,
-#             )
-
-#             source_id = _derive_source_id(
-#                 metadata=xml_meta,
-#                 source_doc_url=source_doc_url,
-#                 file_name=file_name,
-#             )
-
-#             source_type = _derive_source_type(
-#                 metadata=xml_meta,
-#                 source_doc_url=source_doc_url,
-#                 file_name=file_name,
-#             )
-
-#             version_date = _derive_version_date(
-#                 metadata=xml_meta,
-#                 source_doc_url=source_doc_url,
-#                 file_name=file_name,
-#             )
-
-#             chunk_logger = _get_chunk_logger(file_name)
-#             chunk_logger.info("=" * 80)
-#             chunk_logger.info("FILE | %s", file_name)
-#             chunk_logger.info("SOURCE_ID | %s", source_id)
-#             chunk_logger.info("SOURCE_DOC_URL | %s", source_doc_url)
-#             chunk_logger.info("DOC_TITLE | %s", doc_title)
-#             chunk_logger.info("SOURCE_TYPE | %s", source_type)
-#             chunk_logger.info("VERSION_DATE | %s", version_date)
-#             chunk_logger.info("DOMAIN | %s", decision.final_domain or "")
-#             chunk_logger.info("SUBDOMAIN | %s", decision.final_subdomain or "")
-#             chunk_logger.info("B2B_B2C | %s", b2b_b2c)
-#             chunk_logger.info("JURISDICTION | %s", jurisdiction)
-#             chunk_logger.info("=" * 80)
-
-#             try:
-#                 chunk_objs = chunker.chunk(
-#                     text=clean_text,
-#                     source_id=source_id,
-#                     source_url=source_doc_url,
-#                     doc_title=doc_title,
-#                     domain=decision.final_domain or "",
-#                     subdomain=decision.final_subdomain or "",
-#                     source_type=source_type,
-#                     tier=_coerce_tier(tier),
-#                     version_date=version_date,
-#                     language="nb",
-#                 )
-#             except Exception as exc:
-#                 stats["rows_failed"] += 1
-#                 logger.error(
-#                     "ROW FAILED | chunker failed | file_name=%s | error=%s",
-#                     file_name,
-#                     exc,
-#                 )
-#                 continue
-
-#             if not chunk_objs:
-#                 stats["rows_failed"] += 1
-#                 logger.error(
-#                     "ROW FAILED | chunker returned 0 chunks | file_name=%s",
-#                     file_name,
-#                 )
-#                 continue
-
-#             chunks_by_section: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-
-#             for chunk_obj in chunk_objs:
-#                 ok, reason = validate_chunk(chunk_obj)
-#                 if not ok:
-#                     logger.warning(
-#                         "SKIP CHUNK | file_name=%s | reason=%s",
-#                         file_name,
-#                         reason,
-#                     )
-#                     continue
-
-#                 chunk_dict = _chunk_obj_to_dict(chunk_obj)
-
-#                 content_ok, content_reason = validate_chunk_content(chunk_dict)
-#                 if not content_ok:
-#                     logger.warning(
-#                         "SKIP CHUNK | content | file_name=%s | citation_anchor=%s"
-#                         " | reason=%s | preview=%s",
-#                         file_name,
-#                         chunk_dict.get("citation_anchor", ""),
-#                         content_reason,
-#                         (chunk_dict.get("text") or "")[:80],
-#                     )
-#                     continue
-
-#                 section_ref = _safe_str(chunk_dict.get("citation_anchor"))
-#                 if not section_ref:
-#                     logger.warning(
-#                         "SKIP CHUNK | file_name=%s | missing citation_anchor",
-#                         file_name,
-#                     )
-#                     continue
-
-#                 # Build clean section URL in format: base#§19
-#                 # Always rebuilt here from the clean source_doc_url
-#                 # so we never carry over :: from chunker output
-#                 section_url = _build_section_url(source_doc_url, section_ref)
-
-#                 chunk_dict["file_name"] = file_name
-#                 chunk_dict["source_id"] = source_id
-#                 chunk_dict["source_doc_url"] = source_doc_url
-#                 chunk_dict["source_url"] = section_url
-#                 chunk_dict["section_ref"] = section_ref
-#                 chunk_dict["section_url"] = section_url
-#                 chunk_dict["domain"] = decision.final_domain or ""
-#                 chunk_dict["subdomain"] = decision.final_subdomain or ""
-#                 chunk_dict["b2b_b2c"] = b2b_b2c
-#                 chunk_dict["tier"] = str(tier)
-#                 chunk_dict["jurisdiction"] = jurisdiction
-
-#                 chunks_by_section[section_ref].append(chunk_dict)
-
-#             if not chunks_by_section:
-#                 stats["rows_failed"] += 1
-#                 logger.error(
-#                     "ROW FAILED | no valid chunks after validation | file_name=%s",
-#                     file_name,
-#                 )
-#                 continue
-
-#             row_success = False
-#             total_file_chunks = 0
-
-#             for section_idx, (section_ref, section_chunks) in enumerate(
-#                 chunks_by_section.items(),
-#                 start=1,
-#             ):
-#                 document_id = _build_document_id(source_id, section_ref)
-#                 section_url = _build_section_url(source_doc_url, section_ref)
-
-#                 chunk_logger.info("-" * 80)
-#                 chunk_logger.info("SECTION %s | %s", section_idx, section_ref)
-#                 chunk_logger.info("DOCUMENT_ID | %s", document_id)
-#                 chunk_logger.info("SECTION_URL | %s", section_url)
-#                 chunk_logger.info("CHUNKS | %s", len(section_chunks))
-
-#                 for idx, chunk in enumerate(section_chunks, start=1):
-#                     chunk["document_id"] = document_id
-#                     # Ensure section_url is always clean for every chunk
-#                     chunk["source_url"] = section_url
-#                     chunk["section_url"] = section_url
-#                     chunk_logger.info(
-#                         "chunk[%s] | chunk_id=%s | token_count=%s | section_url=%s",
-#                         idx,
-#                         chunk.get("chunk_id", ""),
-#                         chunk.get("token_count", ""),
-#                         section_url,
-#                     )
-#                     chunk_logger.info("TEXT_START")
-#                     chunk_logger.info("%s", chunk.get("text", ""))
-#                     chunk_logger.info("TEXT_END")
-
-#                 try:
-#                     embedded = embedder.embed_chunks(
-#                         section_chunks,
-#                         text_field="enriched_text",
-#                     )
-#                 except Exception as exc:
-#                     logger.error(
-#                         "FAIL SECTION | embedding failed | file_name=%s | section=%s | error=%s",
-#                         file_name,
-#                         section_ref,
-#                         exc,
-#                     )
-#                     continue
-
-#                 embedded = [c for c in embedded if c.get("embedding") is not None]
-#                 if not embedded:
-#                     logger.error(
-#                         "FAIL SECTION | no embeddings returned | file_name=%s | section=%s",
-#                         file_name,
-#                         section_ref,
-#                     )
-#                     continue
-
-#                 milvus_metadata = {
-#                     "document_id": document_id,
-#                     "file_name": file_name,
-#                     "source_doc_url": source_doc_url,
-#                     "section_ref": section_ref,
-#                     "domain": decision.final_domain or "",
-#                     "subdomain": decision.final_subdomain or "",
-#                     "b2b_b2c": b2b_b2c,
-#                     "tier": str(tier),
-#                     "jurisdiction": jurisdiction,
-#                 }
-
-#                 _wait_for_cpu(label=f"milvus:{document_id}")
-
-#                 try:
-#                     milvus_result = milvus_store.insert_chunks(
-#                         embedded,
-#                         milvus_metadata,
-#                     )
-#                 except Exception as exc:
-#                     logger.error(
-#                         "FAIL SECTION | milvus insert failed | file_name=%s | section=%s | error=%s",
-#                         file_name,
-#                         section_ref,
-#                         exc,
-#                     )
-#                     continue
-
-#                 inserted = int(milvus_result.get("inserted", 0))
-#                 stats["chunks_total"] += len(section_chunks)
-#                 stats["chunks_stored"] += inserted
-#                 total_file_chunks += inserted
-#                 row_success = True
-
-#                 logger.info(
-#                     "SECTION DONE | file_name=%s | section=%s | section_url=%s | inserted=%s",
-#                     file_name,
-#                     section_ref,
-#                     section_url,
-#                     inserted,
-#                 )
-
-#             if row_success:
-#                 supabase_ok = supabase_store.upsert_file_metadata(
-#                     file_name=file_name,
-#                     source_id=source_id,
-#                     source_doc_url=source_doc_url,
-#                     domain=decision.final_domain or "",
-#                     subdomain=decision.final_subdomain or "",
-#                     b2b_b2c=b2b_b2c,
-#                     tier=str(tier),
-#                     jurisdiction=jurisdiction,
-#                     legal_validation=decision.legal_validation,
-#                     xml_bucket_path=xml_bucket_path,
-#                     doc_title=doc_title,
-#                 )
-
-#                 if supabase_ok:
-#                     stats["rows_ingested"] += 1
-#                     logger.info(
-#                         "SUPABASE DONE | file_name=%s | chunks=%s",
-#                         file_name,
-#                         total_file_chunks,
-#                     )
-#                 else:
-#                     stats["rows_failed"] += 1
-#                     logger.error("SUPABASE FAILED | file_name=%s", file_name)
-#             else:
-#                 stats["rows_failed"] += 1
-#                 logger.error(
-#                     "ROW FAILED | nothing stored in Milvus | file_name=%s",
-#                     file_name,
-#                 )
-
-#             time.sleep(PIPELINE_DOC_SLEEP)
-
-#     finally:
-#         milvus_store.close()
-
-#     logger.info("=" * 88)
-#     logger.info("DIGIRETT VALIDATED INGESTION COMPLETED")
-#     logger.info("rows_total               : %s", stats["rows_total"])
-#     logger.info("rows_ingested            : %s", stats["rows_ingested"])
-#     logger.info("rows_skipped_validation  : %s", stats["rows_skipped_validation"])
-#     logger.info("rows_skipped_missing     : %s", stats["rows_skipped_missing_file_name"])
-#     logger.info("rows_skipped_source      : %s", stats["rows_skipped_source_not_found"])
-#     logger.info("rows_skipped_xml         : %s", stats["rows_skipped_xml_not_found"])
-#     logger.info("rows_failed              : %s", stats["rows_failed"])
-#     logger.info("chunks_total             : %s", stats["chunks_total"])
-#     logger.info("chunks_stored            : %s", stats["chunks_stored"])
-#     logger.info("=" * 88)
-
-#     return stats
-
-
-# if __name__ == "__main__":
-#     workbook_path = Path(
-#         r"D:\axtrlabs\Digirett-AI-Agent\ingestion\data\Client_dataset\Domain_Metadata_VALIDATED (2).xlsx"
-#     )
-
-#     try:
-#         run_pipeline(workbook_path=workbook_path)
-
-#     except KeyboardInterrupt:
-#         logger.warning("Pipeline stopped by user")
-#         sys.exit(130)
-
-#     except Exception as exc:
-#         logger.error(
-#             "Pipeline failed: %s",
-#             exc,
-#             exc_info=True,
-#         )
-#         sys.exit(1)
-
-from __future__ import annotations
-import gc
+import json as _json
 import logging
-import re
+import os
 import sys
-import time
-import warnings
+import re
 from collections import defaultdict
-from dataclasses import asdict, is_dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from tempfile import TemporaryDirectory
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-import psutil
+from dotenv import load_dotenv
 
-from ingestion.src.config import (
-    LOG_FILE,
-    PIPELINE_CPU_MAX,
-    PIPELINE_CPU_PAUSE,
-    PIPELINE_CPU_WARN,
-    PIPELINE_DOC_SLEEP,
-    validate_runtime_config,
-)
-from ingestion.src.loaders.excel_loader import ExcelLoader
-from ingestion.src.processors.chunk_validator import validate_chunk_content
-from ingestion.src.processors.chunker import DigiRettChunker, validate_chunk
+# Load .env before any other imports
+load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Env vars — resolved once here, passed explicitly to components
+# ---------------------------------------------------------------------------
+
+SUPABASE_XAPI_BUCKET: str = os.environ.get("SUPABASE_XAPI_BUCKET", "demo_1")
+SUPABASE_XAPI_TABLE: str = os.environ.get("SUPABASE_XAPI_TABLE", "demo_1")
+MILVUS_COLLECTION: str = os.environ.get("MILVUS_COLLECTION", "demo_data")
+
+# ---------------------------------------------------------------------------
+# Internal imports (after env load)
+# ---------------------------------------------------------------------------
+
+from ingestion.factory.adapter_factory import AdapterFactory
+from ingestion.validation.validation_gate import PipelineValidationGate
+from ingestion.deduplication.deduplicator import Deduplicator
+from ingestion.collectors.xapi_collector import SupabaseXAPIStore, build_storage_path
+from ingestion.src.processors.chunker import DigiRettChunker
 from ingestion.src.processors.embedder import TokenAwareAzureEmbedder
-from ingestion.src.processors.text_processor import parse_lovdata_xml
-from ingestion.src.processors.validation_gate import ValidationGate
 from ingestion.src.storage.milvus_store import MilvusTextStore
-from ingestion.src.storage.supabase_store import SupabaseStore
+from ingestion.src.utils.reference_logger import log_for_reference
 
-
-warnings.filterwarnings(
-    "ignore",
-    message="pkg_resources is deprecated as an API",
-    category=UserWarning,
-)
-
-validate_runtime_config()
-
-LOG_PATH = Path(LOG_FILE)
-LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-CHUNK_LOG_DIR = LOG_PATH.parent / "chunking"
-CHUNK_LOG_DIR.mkdir(parents=True, exist_ok=True)
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_PATH, encoding="utf-8"),
-        logging.StreamHandler(sys.stdout),
-    ],
-    force=True,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
+logger = logging.getLogger("digirett-pipeline")
 
-logger = logging.getLogger("digirett-validated-ingestion")
-
-
-def _get_chunk_logger(file_name: str) -> logging.Logger:
-    stem = Path(file_name).stem
-    chunk_logger = logging.getLogger(f"chunking.{stem}")
-    chunk_logger.setLevel(logging.INFO)
-    chunk_logger.propagate = False
-
-    target_path = CHUNK_LOG_DIR / f"{stem}.log"
-
-    if not any(
-        isinstance(h, logging.FileHandler)
-        and Path(h.baseFilename) == target_path
-        for h in chunk_logger.handlers
-    ):
-        for handler in list(chunk_logger.handlers):
-            chunk_logger.removeHandler(handler)
-
-        file_handler = logging.FileHandler(
-            target_path,
-            encoding="utf-8",
-        )
-        file_handler.setFormatter(
-            logging.Formatter(
-                "%(asctime)s | %(levelname)s | %(message)s"
-            )
-        )
-        chunk_logger.addHandler(file_handler)
-
-    return chunk_logger
-
-
-def _cpu_guard(label: str = "") -> None:
-    cpu = psutil.cpu_percent(interval=None)
-
-    if cpu >= PIPELINE_CPU_MAX:
-        logger.warning("CPU=%s%% [%s] — pausing 8s", cpu, label)
-        time.sleep(8.0)
-
-    elif cpu >= PIPELINE_CPU_PAUSE:
-        logger.warning("CPU=%s%% [%s] — pausing 3s", cpu, label)
-        time.sleep(3.0)
-
-    elif cpu >= PIPELINE_CPU_WARN:
-        logger.info("CPU=%s%% [%s]", cpu, label)
-
-
-def _wait_for_cpu(label: str = "") -> None:
-    max_wait = 60
-    waited = 0
-
-    while waited < max_wait:
-        cpu = psutil.cpu_percent(interval=1)
-
-        if cpu < PIPELINE_CPU_PAUSE:
-            return
-
-        logger.warning("Waiting for CPU (%s%%) [%s]", cpu, label)
-        time.sleep(3)
-        waited += 3
-
-    logger.warning(
-        "CPU still high after %ss — proceeding [%s]",
-        max_wait,
-        label,
-    )
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _safe_str(value: Any) -> str:
     if value is None:
         return ""
-
     try:
-        if isinstance(value, float) and value != value:
+        if isinstance(value, float) and value != value:  # NaN check
             return ""
     except Exception:
         pass
-
-    text = str(value).strip()
-
-    if text.lower() in {"", "nan", "none", "null"}:
-        return ""
-
-    return text
+    return str(value).strip()
 
 
-def _pick(*values: Any) -> str:
-    for value in values:
-        text = _safe_str(value)
-        if text:
-            return text
-    return ""
+# ---------------------------------------------------------------------------
+# 6-Step Pipeline
+# ---------------------------------------------------------------------------
 
 
-def _normalise_source_doc_url(url: str) -> str:
+def run_layered_pipeline(
+    source_name: str = "xapi",
+    dry_run: bool = False,
+    input_path: Optional[str] = None,
+    limit: Optional[int] = None,
+    refresh: bool = False,
+) -> Dict[str, int]:
     """
-    Keep only the real base Lovdata document URL.
-    Removes any ::internal locator and any #fragment.
+    Unified Ingestion Flow:
+
+    Step 1 — Fetch (XAPIAdapter.fetch calls XAPI HTTP endpoints)
+    Step 2 — Store (adapter uploads JSON to bucket + upserts metadata row)
+              NOTE: Steps 1+2 are fused inside the adapter because fetching
+              detail+paragraphs is expensive; we don't want to do it twice.
+              The adapter returns lightweight refs; main.py drives Steps 3-7.
+    Step 3 — Normalise (download bucket JSON → plain text via content_text)
+    Step 4 — Deduplicate (dok_id check in Supabase; upsert if exists)
+    Step 5 — Validate (field + business rules; skip FAIL docs, log errors)
+    Step 6 — Chunk & Embed
+    Step 7 — Milvus store
     """
-    url = _safe_str(url)
-    if not url:
-        return ""
-
-    if "::" in url:
-        url = url.split("::", 1)[0]
-
-    if "#" in url:
-        url = url.split("#", 1)[0]
-
-    return url.rstrip("/")
-
-
-def _build_section_url(source_doc_url: str, section_ref: str) -> str:
-    """
-    Build a browser-clickable Lovdata section URL in the format:
-        https://lovdata.no/dokument/NL/lov/2017-06-16-51#§19
-
-    The § character is kept as-is (not percent-encoded) so the URL
-    matches Lovdata's own link format exactly.
-
-    Example:
-        base:    https://lovdata.no/dokument/NL/lov/2017-06-16-51
-        ref:     §19
-        result:  https://lovdata.no/dokument/NL/lov/2017-06-16-51#§19
-    """
-    base = _safe_str(source_doc_url)
-    anchor = _safe_str(section_ref)
-
-    if not base:
-        return ""
-
-    # Strip any existing :: locator or # fragment to get a clean base
-    base = base.split("::")[0].split("#")[0].rstrip("/")
-
-    if not anchor:
-        return base
-
-    # Remove spaces only — keep § as-is to match Lovdata's URL format
-    anchor_clean = anchor.replace(" ", "")
-
-    return f"{base}#{anchor_clean}"
-
-
-def _build_document_id(source_id: str, section_ref: str) -> str:
-    source_clean = re.sub(
-        r"[^A-Za-z0-9_-]+",
-        "-",
-        _safe_str(source_id).lower(),
-    ).strip("-")
-
-    ref_clean = re.sub(
-        r"[^A-Za-z0-9_-]+",
-        "-",
-        _safe_str(section_ref).replace("§", "par").lower(),
-    ).strip("-")
-
-    return f"{source_clean}__{ref_clean}"
-
-
-def _derive_source_id(
-    *,
-    metadata: Dict[str, Any],
-    source_doc_url: str,
-    file_name: str,
-) -> str:
-    metadata_id = _safe_str(metadata.get("id"))
-    if metadata_id:
-        return metadata_id.upper()
-
-    url = _normalise_source_doc_url(source_doc_url)
-    match = re.search(
-        r"/(lov|forskrift)/(\d{4}-\d{2}-\d{2}(?:-\d+)?)",
-        url,
-        re.IGNORECASE,
+    logger.info("=" * 88)
+    logger.info("DIGIRETT PIPELINE STARTED")
+    logger.info(
+        "source=%s | bucket=%s | table=%s | collection=%s",
+        source_name,
+        SUPABASE_XAPI_BUCKET,
+        SUPABASE_XAPI_TABLE,
+        MILVUS_COLLECTION,
     )
-    if match:
-        prefix = "LOV" if match.group(1).lower() == "lov" else "FORSKRIFT"
-        return f"{prefix}-{match.group(2)}".upper()
+    logger.info("=" * 88)
 
-    stem = _safe_str(file_name).replace(".xml", "")
-    if stem:
-        return stem.upper()
-
-    return "UNKNOWN"
-
-
-def _derive_source_type(
-    *,
-    metadata: Dict[str, Any],
-    source_doc_url: str,
-    file_name: str,
-) -> str:
-    meta_type = _safe_str(metadata.get("type")).lower()
-    if meta_type:
-        return meta_type
-
-    url = _normalise_source_doc_url(source_doc_url).lower()
-    fname = _safe_str(file_name).lower()
-
-    if "/forskrift/" in url or "/dokument/sf/" in url or fname.startswith("sf-"):
-        return "forskrift"
-
-    if "/lov/" in url or "/dokument/nl/" in url or fname.startswith("nl-") or fname.startswith("lov-"):
-        return "lov"
-
-    return "lov"
-
-
-def _derive_version_date(
-    *,
-    metadata: Dict[str, Any],
-    source_doc_url: str,
-    file_name: str,
-) -> str:
-    metadata_date = _safe_str(metadata.get("dato"))
-    if metadata_date:
-        match = re.search(r"(\d{4}-\d{2}-\d{2})", metadata_date)
-        if match:
-            return match.group(1)
-
-    url = _normalise_source_doc_url(source_doc_url)
-    match = re.search(r"(\d{4}-\d{2}-\d{2})", url)
-    if match:
-        return match.group(1)
-
-    fname = _safe_str(file_name)
-    match = re.search(r"(\d{4})[-_]?(\d{2})[-_]?(\d{2})", fname)
-    if match:
-        return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
-
-    return "1970-01-01"
-
-
-def _coerce_tier(value: Any) -> int:
-    text = _safe_str(value)
-    if not text:
-        return 1
-    try:
-        return int(float(text))
-    except Exception:
-        return 1
-
-
-def _row_to_dict(row: Any) -> Dict[str, Any]:
-    if isinstance(row, dict):
-        return dict(row)
-
-    if hasattr(row, "model_dump"):
-        return row.model_dump()
-
-    if hasattr(row, "dict"):
-        return row.dict()
-
-    if is_dataclass(row):
-        return asdict(row)
-
-    field_names = [
-        "file_name",
-        "domain_name",
-        "subdomain_name",
-        "b2b_b2c",
-        "jurisdiction",
-        "tier",
-        "source_link",
-        "legal_validation",
-        "canonical_subdomain",
-        "legal_notes",
-        "sheet_name",
-        "row_number",
-    ]
-
-    return {
-        field: getattr(row, field, None)
-        for field in field_names
+    stats: Dict[str, int] = {
+        "docs_fetched": 0,
+        "docs_stored": 0,
+        "docs_normalised": 0,
+        "docs_duplicates": 0,
+        "docs_validated": 0,
+        "docs_processed": 0,
+        "docs_failed": 0,
     }
 
+    # ── STEP 1 + 2: FETCH & STORE ──────────────────────────────────────────
+    logger.info("\n[STEP 1+2] FETCHING AND STORING DATA...")
 
-def _chunk_obj_to_dict(chunk_obj: Any) -> Dict[str, Any]:
-    if hasattr(chunk_obj, "to_dict"):
-        return chunk_obj.to_dict()
+    factory = AdapterFactory()
+    adapter = factory.create(source_name)
 
-    if isinstance(chunk_obj, dict):
-        return dict(chunk_obj)
+    if limit:
+        adapter.config["fetch_limit"] = limit
+    if refresh:
+        adapter.config["refresh"] = True
 
-    if hasattr(chunk_obj, "__dict__"):
-        return {
-            key: value
-            for key, value in vars(chunk_obj).items()
-            if not key.startswith("_")
-        }
+    # adapter.fetch() performs Steps 1+2 and returns lightweight ref dicts.
+    # Each ref dict: { dok_id, domain_name, source_id, already_stored }
+    refs: List[Dict[str, Any]] = adapter.fetch(
+    input_path=input_path,
+    )
 
-    raise TypeError(f"Unsupported chunk object type: {type(chunk_obj)}")
+    stats["docs_fetched"] = len(refs)
+    stats["docs_stored"] = len(refs)  # every ref was either upserted or already stored
+    logger.info("Fetched %d document references.", stats["docs_fetched"])
 
-
-def run_pipeline(workbook_path: Path) -> Dict[str, int]:
-    logger.info("=" * 88)
-    logger.info("DIGIRETT VALIDATED INGESTION STARTED")
-    logger.info("Workbook: %s", workbook_path.resolve())
-    logger.info("=" * 88)
-
-    if not workbook_path.exists():
-        raise FileNotFoundError(
-            f"Workbook not found: {workbook_path}"
-        )
-
-    loader = ExcelLoader(workbook_path)
-    gate = ValidationGate()
+    # ── Per-document components (instantiated once, reused) ────────────────
+    # FIX: Deduplicator receives table_name explicitly — no XAPI-specific import
+    store = SupabaseXAPIStore()
+    gate = PipelineValidationGate()
+    deduplicator = Deduplicator(table_name=SUPABASE_XAPI_TABLE)
     chunker = DigiRettChunker()
     embedder = TokenAwareAzureEmbedder()
-    supabase_store = SupabaseStore()
     milvus_store = MilvusTextStore()
 
-    rows = loader.load()
 
-    if not rows:
-        logger.error("No rows found in workbook: %s", workbook_path)
-        return {
-            "rows_total": 0,
-            "rows_ingested": 0,
-            "rows_skipped_validation": 0,
-            "rows_skipped_missing_file_name": 0,
-            "rows_skipped_source_not_found": 0,
-            "rows_skipped_xml_not_found": 0,
-            "rows_failed": 0,
-            "chunks_total": 0,
-            "chunks_stored": 0,
-        }
+    # ── MAIN LOOP (STEPS 3-7) ──────────────────────────────────────────────
+    for idx, ref in enumerate(refs, 1):
+        # Support both the fixed adapter shape {"dok_id": ..., "domain_name": ...}
+        # and the original adapter shape {"metadata": {"dok_id": ...}, "domain_name": ...}
+        dok_id: str = (
+            ref.get("dok_id")
+            or ref.get("doc_id")
+            or ref.get("source_id")
+            or (ref.get("metadata") or {}).get("dok_id")
+            or ""
+        )
+        if not dok_id:
+            logger.warning("[%d/%d] Ref missing dok_id — skipping.", idx, len(refs))
+            continue
 
-    stats = {
-        "rows_total": 0,
-        "rows_ingested": 0,
-        "rows_skipped_validation": 0,
-        "rows_skipped_missing_file_name": 0,
-        "rows_skipped_source_not_found": 0,
-        "rows_skipped_xml_not_found": 0,
-        "rows_failed": 0,
-        "chunks_total": 0,
-        "chunks_stored": 0,
-    }
+        domain_name: str = ref.get("domain_name") or "unknown"
+        logger.info("\n[%d/%d] PROCESSING: %s", idx, len(refs), dok_id)
 
-    try:
-        for row_idx, row in enumerate(rows, start=1):
-            stats["rows_total"] += 1
+        try:
+            # ── STEP 3: NORMALISE ─────────────────────────────────────────
+            logger.info("  Step 3: Normalising from bucket...")
 
-            row_data = _row_to_dict(row)
-
-            file_name = _safe_str(row_data.get("file_name"))
-            sheet_name = _safe_str(row_data.get("sheet_name"))
-            row_number = _safe_str(row_data.get("row_number"))
-
-            logger.info("-" * 88)
-            logger.info(
-                "ROW %s/%s | sheet=%s | row=%s | file_name=%s",
-                row_idx,
-                len(rows),
-                sheet_name or "<unknown>",
-                row_number or "<unknown>",
-                file_name or "<missing>",
-            )
-
-            decision = gate.evaluate(row_data)
-
-            if not decision.should_ingest:
-                stats["rows_skipped_validation"] += 1
-                logger.info(
-                    "SKIP ROW | validation failed | reason=%s | legal_validation=%s",
-                    decision.reason,
-                    decision.legal_validation or "<empty>",
-                )
-                continue
-
-            if not file_name:
-                stats["rows_skipped_missing_file_name"] += 1
-                logger.warning("SKIP ROW | file_name is empty")
-                continue
-
-            _cpu_guard(label=f"row:{row_idx}")
-            gc.collect()
-
-            matched = supabase_store.find_source_metadata_by_file_name(file_name)
-
-            if not matched:
-                stats["rows_skipped_source_not_found"] += 1
-                logger.warning(
-                    "SKIP ROW | file_name not found in source tables | file_name=%s",
-                    file_name,
-                )
-                continue
-
-            xml_bucket_path = _pick(
-                matched.get("xml_bucket_path"),
-                file_name,
-            )
-
-            xml_content = supabase_store.download_xml_text_from_storage(xml_bucket_path)
-
-            if not xml_content:
-                stats["rows_skipped_xml_not_found"] += 1
-                logger.error(
-                    "SKIP ROW | XML not found in Supabase bucket | file_name=%s | path=%s",
-                    file_name,
-                    xml_bucket_path,
-                )
-                continue
-
-            with TemporaryDirectory() as tmpdir:
-                xml_tmp = Path(tmpdir) / file_name
-                xml_tmp.write_text(xml_content, encoding="utf-8")
-                parsed_text_doc = parse_lovdata_xml(xml_tmp)
-
-            if not parsed_text_doc or not parsed_text_doc.get("text"):
-                stats["rows_failed"] += 1
-                logger.error(
-                    "ROW FAILED | text_processor returned empty | file_name=%s",
-                    file_name,
-                )
-                continue
-
-            clean_text = _safe_str(parsed_text_doc.get("text"))
-            xml_meta = parsed_text_doc.get("metadata", {}) or {}
-
-            source_doc_url = _normalise_source_doc_url(
-                _pick(
-                    row_data.get("source_link"),
-                    matched.get("source_doc_url"),
-                    matched.get("source_url"),
-                    matched.get("lovdata_url"),
-                    matched.get("source_link"),
-                    parsed_text_doc.get("document_url"),
-                    xml_meta.get("url"),
-                )
-            )
-
-            if not source_doc_url:
-                stats["rows_failed"] += 1
-                logger.error(
-                    "ROW FAILED | source_doc_url resolved empty | file_name=%s",
-                    file_name,
-                )
-                continue
-
-            b2b_b2c = _pick(
-                row_data.get("b2b_b2c"),
-                matched.get("b2b_b2c"),
-                "BOTH",
-            )
-
-            tier = _pick(
-                row_data.get("tier"),
-                matched.get("tier"),
-                "1",
-            )
-
-            jurisdiction = _pick(
-                row_data.get("jurisdiction"),
-                matched.get("jurisdiction"),
-                "NO",
-            )
-
-            doc_title = _pick(
-                xml_meta.get("fulltittel"),
-                xml_meta.get("korttittel"),
-                matched.get("title"),
-                file_name,
-            )
-
-            source_id = _derive_source_id(
-                metadata=xml_meta,
-                source_doc_url=source_doc_url,
-                file_name=file_name,
-            )
-
-            source_type = _derive_source_type(
-                metadata=xml_meta,
-                source_doc_url=source_doc_url,
-                file_name=file_name,
-            )
-
-            version_date = _derive_version_date(
-                metadata=xml_meta,
-                source_doc_url=source_doc_url,
-                file_name=file_name,
-            )
-
-            chunk_logger = _get_chunk_logger(file_name)
-            chunk_logger.info("=" * 80)
-            chunk_logger.info("FILE | %s", file_name)
-            chunk_logger.info("SOURCE_ID | %s", source_id)
-            chunk_logger.info("SOURCE_DOC_URL | %s", source_doc_url)
-            chunk_logger.info("DOC_TITLE | %s", doc_title)
-            chunk_logger.info("SOURCE_TYPE | %s", source_type)
-            chunk_logger.info("VERSION_DATE | %s", version_date)
-            chunk_logger.info("DOMAIN | %s", decision.final_domain or "")
-            chunk_logger.info("SUBDOMAIN | %s", decision.final_subdomain or "")
-            chunk_logger.info("B2B_B2C | %s", b2b_b2c)
-            chunk_logger.info("JURISDICTION | %s", jurisdiction)
-            chunk_logger.info("=" * 80)
-
+            storage_path = build_storage_path(dok_id)
             try:
-                chunk_objs = chunker.chunk(
-                    text=clean_text,
-                    source_id=source_id,
-                    source_url=source_doc_url,
-                    doc_title=doc_title,
-                    domain=decision.final_domain or "",
-                    subdomain=decision.final_subdomain or "",
-                    source_type=source_type,
-                    tier=_coerce_tier(tier),
-                    version_date=version_date,
-                    language="nb",
+                raw_bytes = store.client.storage.from_(SUPABASE_XAPI_BUCKET).download(
+                    storage_path
                 )
+                retrieved_json = _json.loads(raw_bytes)
             except Exception as exc:
-                stats["rows_failed"] += 1
                 logger.error(
-                    "ROW FAILED | chunker failed | file_name=%s | error=%s",
-                    file_name,
-                    exc,
+                    "  [FAIL] Bucket download failed for %s: %s", dok_id, exc
                 )
+                stats["docs_failed"] += 1
                 continue
+
+            # FIX: one canonical path — always `content_text` (written by map_paragraph)
+            paragraphs = retrieved_json.get("paragraphs", [])
+            text_content = "\n\n".join(
+                p.get("content_text", "")
+                for p in paragraphs
+                if p.get("content_text", "").strip()
+            )
+
+            meta_block = retrieved_json.get("metadata", {})
+
+            doc: Dict[str, Any] = {
+                "doc_id": dok_id,
+                # FIX: key is "source" — matches validation_rules.yaml required_fields
+                "source": source_name,
+                "title": _safe_str(meta_block.get("doc_title")) or "No Title",
+                "content": text_content,
+                "metadata": meta_block,
+                "raw_data": retrieved_json,
+                "source_url": _safe_str(meta_block.get("source_doc_url")),
+                # FIX: version_date may be None — use empty string, not None,
+                #      so field_validator doesn't blow up on str(None)
+                "version_date": _safe_str(meta_block.get("effective_date")),
+                "domain": domain_name,
+                "subdomain": "",
+            }
+
+            stats["docs_normalised"] += 1
+
+            # ── STEP 4: DEDUPLICATE (upsert strategy) ────────────────────
+            if not refresh:
+                logger.info("  Step 4: Deduplicating by dok_id...")
+                doc = deduplicator.check(doc)
+
+                if doc.get("is_duplicate"):
+                    # Upsert per requirement: update existing Supabase row with
+                    # latest domain/subdomain info, then continue to embed/store
+                    # in Milvus anyway. (If you want pure-skip, change to:
+                    #   stats["docs_duplicates"] += 1; continue)
+                    logger.info(
+                        "  [DUP] Already in Supabase (dok_id=%s) — will upsert metadata "
+                        "and re-embed into Milvus.",
+                        dok_id,
+                    )
+                    stats["docs_duplicates"] += 1
+                    # Fall through — do NOT continue; we still run Steps 5-7
+            else:
+                logger.info("  Step 4: Skipping dedup (refresh mode)")
+
+            # ── STEP 5: VALIDATE ──────────────────────────────────────────
+            logger.info("  Step 5: Validating...")
+            doc = gate.evaluate(doc)
+
+            if doc.get("validation_status") == "FAIL":
+                logger.warning(
+                    "  [SKIP] Validation FAIL for %s: %s",
+                    dok_id,
+                    doc.get("validation_errors"),
+                )
+                stats["docs_failed"] += 1
+                continue
+
+            stats["docs_validated"] += 1
+            domain_name = doc.get("domain") or domain_name
+            doc["domain"] = domain_name
+
+            # Audit log
+            try:
+                log_for_reference(dok_id, doc["raw_data"], doc["content"], is_xml=False)
+            except Exception:
+                pass  # audit log failure must not abort pipeline
+
+            # ── STEP 6: CHUNK & EMBED ─────────────────────────────────────
+            logger.info("  Step 6: Chunking & Embedding...")
+            chunk_objs = chunker.chunk(
+                text=doc["content"],
+                source_id=dok_id,
+                source_url=doc["metadata"].get("source_doc_url", ""),
+                doc_title=doc["title"],
+                domain=doc["domain"],
+                subdomain=doc["subdomain"],
+                source_type="law",
+                tier=1,
+                version_date=doc["metadata"].get("effective_date", ""),
+            )
 
             if not chunk_objs:
-                stats["rows_failed"] += 1
-                logger.error(
-                    "ROW FAILED | chunker returned 0 chunks | file_name=%s",
-                    file_name,
-                )
+                logger.warning("  [FAIL] No chunks generated for %s.", dok_id)
+                stats["docs_failed"] += 1
                 continue
 
-            chunks_by_section: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+            embedder.embed_chunks(chunk_objs)
 
-            for chunk_obj in chunk_objs:
-                ok, reason = validate_chunk(chunk_obj)
-                if not ok:
-                    logger.warning(
-                        "SKIP CHUNK | file_name=%s | reason=%s",
-                        file_name,
-                        reason,
-                    )
-                    continue
+            # ── STEP 7: MILVUS STORE ──────────────────────────────────────
+            logger.info(
+                "  Step 7: Persisting to Milvus (collection=%s)...", MILVUS_COLLECTION
+            )
 
-                chunk_dict = _chunk_obj_to_dict(chunk_obj)
+            chunks_by_section: Dict[str, List] = defaultdict(list)
+            for c in chunk_objs:
+                ref_key = c.get("section_ref") or "§1"
+                chunks_by_section[ref_key].append(c)
 
-                content_ok, content_reason = validate_chunk_content(chunk_dict)
-                if not content_ok:
-                    logger.warning(
-                        "SKIP CHUNK | content | file_name=%s | citation_anchor=%s"
-                        " | reason=%s | preview=%s",
-                        file_name,
-                        chunk_dict.get("citation_anchor", ""),
-                        content_reason,
-                        (chunk_dict.get("text") or "")[:80],
-                    )
-                    continue
+            if not dry_run:
+                for section_ref, section_chunks in chunks_by_section.items():
+                    milvus_metadata = {
+                        "document_id": dok_id,
+                        "source_doc_url": doc["metadata"].get("source_doc_url", ""),
+                        "section_ref": section_ref,
+                        "domain": doc["domain"],
+                        "subdomain": doc["subdomain"],
+                        "b2b_b2c": "BOTH",
+                        "tier": "1",
+                        "jurisdiction": "NO",
+                    }
+                    milvus_store.insert_chunks(section_chunks, milvus_metadata)
 
-                section_ref = _safe_str(chunk_dict.get("citation_anchor"))
-                if not section_ref:
-                    logger.warning(
-                        "SKIP CHUNK | file_name=%s | missing citation_anchor",
-                        file_name,
-                    )
-                    continue
-
-                # Build clean section URL in format: base#§19
-                # Always rebuilt here from the clean source_doc_url
-                # so we never carry over :: from chunker output
-                section_url = _build_section_url(source_doc_url, section_ref)
-
-                chunk_dict["file_name"] = file_name
-                chunk_dict["source_id"] = source_id
-                chunk_dict["source_doc_url"] = source_doc_url
-                chunk_dict["source_url"] = section_url
-                chunk_dict["section_ref"] = section_ref
-                chunk_dict["section_url"] = section_url
-                chunk_dict["domain"] = decision.final_domain or ""
-                chunk_dict["subdomain"] = decision.final_subdomain or ""
-                chunk_dict["b2b_b2c"] = b2b_b2c
-                chunk_dict["tier"] = str(tier)
-                chunk_dict["jurisdiction"] = jurisdiction
-
-                chunks_by_section[section_ref].append(chunk_dict)
-
-            if not chunks_by_section:
-                stats["rows_failed"] += 1
-                logger.error(
-                    "ROW FAILED | no valid chunks after validation | file_name=%s",
-                    file_name,
-                )
-                continue
-
-            row_success = False
-            total_file_chunks = 0
-
-            for section_idx, (section_ref, section_chunks) in enumerate(
-                chunks_by_section.items(),
-                start=1,
-            ):
-                document_id = _build_document_id(source_id, section_ref)
-                section_url = _build_section_url(source_doc_url, section_ref)
-
-                chunk_logger.info("-" * 80)
-                chunk_logger.info("SECTION %s | %s", section_idx, section_ref)
-                chunk_logger.info("DOCUMENT_ID | %s", document_id)
-                chunk_logger.info("SECTION_URL | %s", section_url)
-                chunk_logger.info("CHUNKS | %s", len(section_chunks))
-
-                for idx, chunk in enumerate(section_chunks, start=1):
-                    chunk["document_id"] = document_id
-                    # Ensure section_url is always clean for every chunk
-                    chunk["source_url"] = section_url
-                    chunk["section_url"] = section_url
-                    chunk_logger.info(
-                        "chunk[%s] | chunk_id=%s | token_count=%s | section_url=%s",
-                        idx,
-                        chunk.get("chunk_id", ""),
-                        chunk.get("token_count", ""),
-                        section_url,
-                    )
-                    chunk_logger.info("TEXT_START")
-                    chunk_logger.info("%s", chunk.get("text", ""))
-                    chunk_logger.info("TEXT_END")
-
+                # Upsert Supabase metadata row with final status
                 try:
-                    embedded = embedder.embed_chunks(
-                        section_chunks,
-                        text_field="enriched_text",
+                    store.client.table(SUPABASE_XAPI_TABLE).upsert(
+                        {
+                            "dok_id": dok_id,
+                            "fetch_status": "completed",
+                            "subdomain": "",
+                            "updated_at": datetime.now(timezone.utc).isoformat(),
+                        },
+                        on_conflict="dok_id",
+                    ).execute()
+                except Exception as sync_exc:
+                    logger.warning(
+                        "  [WARN] Could not upsert status to Supabase: %s", sync_exc
                     )
-                except Exception as exc:
-                    logger.error(
-                        "FAIL SECTION | embedding failed | file_name=%s | section=%s | error=%s",
-                        file_name,
-                        section_ref,
-                        exc,
-                    )
-                    continue
 
-                embedded = [c for c in embedded if c.get("embedding") is not None]
-                if not embedded:
-                    logger.error(
-                        "FAIL SECTION | no embeddings returned | file_name=%s | section=%s",
-                        file_name,
-                        section_ref,
-                    )
-                    continue
+            stats["docs_processed"] += 1
+            logger.info(
+                "  [OK] %s — %d sections → Milvus", dok_id, len(chunks_by_section)
+            )
 
-                milvus_metadata = {
-                    "document_id": document_id,
-                    "source_id": source_id,
-                    "file_name": file_name,
-                    "source_doc_url": source_doc_url,
-                    "section_ref": section_ref,
-                    "source_url": section_url,  # ADDED
-                    "domain": decision.final_domain or "",
-                    "subdomain": decision.final_subdomain or "",
-                    "b2b_b2c": b2b_b2c,
-                    "tier": str(tier),
-                    "jurisdiction": jurisdiction,
-                }
+        except Exception as exc:
+            logger.error(
+                "  [ERROR] Fatal failure for %s: %s", dok_id, exc, exc_info=True
+            )
+            stats["docs_failed"] += 1
 
-                _wait_for_cpu(label=f"milvus:{document_id}")
-
-                try:
-                    milvus_result = milvus_store.insert_chunks(
-                        embedded,
-                        milvus_metadata,
-                    )
-                except Exception as exc:
-                    logger.error(
-                        "FAIL SECTION | milvus insert failed | file_name=%s | section=%s | error=%s",
-                        file_name,
-                        section_ref,
-                        exc,
-                    )
-                    continue
-
-                inserted = int(milvus_result.get("inserted", 0))
-                stats["chunks_total"] += len(section_chunks)
-                stats["chunks_stored"] += inserted
-                total_file_chunks += inserted
-                row_success = True
-
-                logger.info(
-                    "SECTION DONE | file_name=%s | section=%s | section_url=%s | inserted=%s",
-                    file_name,
-                    section_ref,
-                    section_url,
-                    inserted,
-                )
-
-            if row_success:
-                supabase_ok = supabase_store.upsert_file_metadata(
-                    file_name=file_name,
-                    source_id=source_id,
-                    source_doc_url=source_doc_url,
-                    domain=decision.final_domain or "",
-                    subdomain=decision.final_subdomain or "",
-                    b2b_b2c=b2b_b2c,
-                    tier=str(tier),
-                    jurisdiction=jurisdiction,
-                    legal_validation=decision.legal_validation,
-                    xml_bucket_path=xml_bucket_path,
-                    doc_title=doc_title,
-                )
-
-                if supabase_ok:
-                    stats["rows_ingested"] += 1
-                    logger.info(
-                        "SUPABASE DONE | file_name=%s | chunks=%s",
-                        file_name,
-                        total_file_chunks,
-                    )
-                else:
-                    stats["rows_failed"] += 1
-                    logger.error("SUPABASE FAILED | file_name=%s", file_name)
-            else:
-                stats["rows_failed"] += 1
-                logger.error(
-                    "ROW FAILED | nothing stored in Milvus | file_name=%s",
-                    file_name,
-                )
-
-            time.sleep(PIPELINE_DOC_SLEEP)
-
-    finally:
-        milvus_store.close()
-
-    logger.info("=" * 88)
-    logger.info("DIGIRETT VALIDATED INGESTION COMPLETED")
-    logger.info("rows_total               : %s", stats["rows_total"])
-    logger.info("rows_ingested            : %s", stats["rows_ingested"])
-    logger.info("rows_skipped_validation  : %s", stats["rows_skipped_validation"])
-    logger.info("rows_skipped_missing     : %s", stats["rows_skipped_missing_file_name"])
-    logger.info("rows_skipped_source      : %s", stats["rows_skipped_source_not_found"])
-    logger.info("rows_skipped_xml         : %s", stats["rows_skipped_xml_not_found"])
-    logger.info("rows_failed              : %s", stats["rows_failed"])
-    logger.info("chunks_total             : %s", stats["chunks_total"])
-    logger.info("chunks_stored            : %s", stats["chunks_stored"])
+    # ── SUMMARY ───────────────────────────────────────────────────────────
+    logger.info("\n" + "=" * 88)
+    logger.info("PIPELINE SUMMARY")
+    logger.info("  Fetched:    %d", stats["docs_fetched"])
+    logger.info("  Stored:     %d", stats["docs_stored"])
+    logger.info("  Normalised: %d", stats["docs_normalised"])
+    logger.info("  Duplicates: %d (upserted)", stats["docs_duplicates"])
+    logger.info("  Validated:  %d", stats["docs_validated"])
+    logger.info("  Processed:  %d", stats["docs_processed"])
+    logger.info("  Failed:     %d", stats["docs_failed"])
     logger.info("=" * 88)
 
     return stats
 
 
+# ---------------------------------------------------------------------------
+# Legacy Excel pipeline stub
+# ---------------------------------------------------------------------------
+
+
+def run_pipeline(workbook_path: Path) -> None:
+    logger.info("Running legacy Excel pipeline for %s...", workbook_path)
+    # Stub — focus is the unified XAPI pipeline above.
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+
 if __name__ == "__main__":
-    workbook_path = Path(
-        r"D:\axtrlabs\Digirett-AI-Agent\ingestion\data\Client_dataset\Domain_Metadata_VALIDATED (2).xlsx"
+    import argparse
+
+    parser = argparse.ArgumentParser(description="DigiRett Unified Ingestion Pipeline")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="pipeline",
+        choices=["pipeline", "xapi", "excel"],
     )
+    parser.add_argument("--source", type=str, default="xapi")
+    parser.add_argument("--domain", type=str, help="Specific domain key")
+    parser.add_argument("--limit", type=int, help="Limit number of docs")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--refresh", action="store_true")
 
-    try:
-        run_pipeline(workbook_path=workbook_path)
+    args = parser.parse_args()
 
-    except KeyboardInterrupt:
-        logger.warning("Pipeline stopped by user")
-        sys.exit(130)
-
-    except Exception as exc:
-        logger.error(
-            "Pipeline failed: %s",
-            exc,
-            exc_info=True,
+    if args.mode in ("pipeline", "xapi"):
+        run_layered_pipeline(
+            source_name=args.source,
+            input_path=args.domain,
+            limit=args.limit,
+            dry_run=args.dry_run,
+            refresh=args.refresh,
         )
-        sys.exit(1)
+    else:
+        from ingestion.src.config import XL_DATASET_FOLDER
+        run_pipeline(Path(XL_DATASET_FOLDER))
