@@ -1,6 +1,6 @@
 import React from "react";
 
-const BackgroundLayer = ({ theme = "dark" }) => {
+const BackgroundLayer = ({ theme = "light" }) => {
   const isDark = theme === "dark";
 
   // Dark theme background (blue/light blue on dark base)

@@ -9,9 +9,8 @@ const TypingIndicator = ({ theme = "dark" }) => {
 
       {/* Avatar */}
       <div
-        className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${
-          isDark ? "bg-white" : "bg-black"
-        }`}
+        className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${isDark ? "bg-white" : "bg-black"
+          }`}
       >
         <Bot className={`h-6 w-6 ${isDark ? "text-black" : "text-white"}`} />
       </div>

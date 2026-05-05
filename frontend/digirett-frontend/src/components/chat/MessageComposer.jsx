@@ -1,182 +1,14 @@
-// import React, { useState, useRef, useEffect } from "react";
-// import { Send, StopCircle, Paperclip, Settings, Grid3x3, Mic, ArrowUp, Star } from "lucide-react";
-
-// const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark" }) => {
-//   const [message, setMessage] = useState("");
-//   const textareaRef = useRef(null);
-//   const isDark = theme === "dark";
-
-//   useEffect(() => {
-//     if (textareaRef.current) {
-//       textareaRef.current.style.height = "auto";
-//       const newHeight = Math.min(textareaRef.current.scrollHeight, 200);
-//       textareaRef.current.style.height = newHeight + "px";
-//       // Show scrollbar only when content exceeds max height
-//       textareaRef.current.style.overflowY =
-//         textareaRef.current.scrollHeight > 200 ? "scroll" : "hidden";
-//     }
-//   }, [message]);
-
-//   useEffect(() => {
-//     textareaRef.current?.focus();
-//   }, []);
-
-//   const sendMessage = () => {
-//     if (message.trim() && !disabled && !isStreaming) { 
-//       onSend(message);
-//       setMessage("");
-//       if (textareaRef.current) {
-//         textareaRef.current.style.height = "auto";
-//         textareaRef.current.style.overflowY = "hidden";
-//       }
-//     }
-//   };
-
-//   const handleKeyDown = (e) => {
-//     if (isStreaming) return;
-
-//     if (e.key === "Enter" && !e.shiftKey) {
-//       e.preventDefault();
-//       sendMessage();
-//     }
-//   };
-
-//   return (
-//     <div
-//       style={{
-//         display: "flex",
-//         alignItems: "center",
-//         gap: "12px",
-//         borderRadius: "12px",
-//         padding: "14px 16px",
-//         border: isDark 
-//           ? "1px solid rgba(59, 130, 246, 0.2)" 
-//           : "1px solid rgba(59, 130, 246, 0.15)",
-//         backgroundColor: isDark 
-//           ? "rgba(30, 30, 30, 0.3)" 
-//           : "rgba(255, 255, 255, 0.5)",
-//         backdropFilter: "blur(16px)",
-//         WebkitBackdropFilter: "blur(16px)",
-//         boxShadow: isDark
-//           ? "0 0 10px rgba(59, 130, 246, 0.1), 0 0 20px rgba(37, 99, 235, 0.05)"
-//           : "0 0 10px rgba(96, 165, 250, 0.08), 0 0 20px rgba(147, 197, 253, 0.05)",
-//         transition: "all 0.2s",
-//       }}
-//       onMouseEnter={(e) => {
-//         e.currentTarget.style.borderColor = isDark 
-//           ? "rgba(59, 130, 246, 0.3)" 
-//           : "rgba(59, 130, 246, 0.2)";
-//         e.currentTarget.style.boxShadow = isDark
-//           ? "0 0 15px rgba(59, 130, 246, 0.15), 0 0 30px rgba(37, 99, 235, 0.08)"
-//           : "0 0 15px rgba(96, 165, 250, 0.12), 0 0 30px rgba(147, 197, 253, 0.08)";
-//       }}
-//       onMouseLeave={(e) => {
-//         e.currentTarget.style.borderColor = isDark 
-//           ? "rgba(59, 130, 246, 0.2)" 
-//           : "rgba(59, 130, 246, 0.15)";
-//         e.currentTarget.style.boxShadow = isDark
-//           ? "0 0 10px rgba(59, 130, 246, 0.1), 0 0 20px rgba(37, 99, 235, 0.05)"
-//           : "0 0 10px rgba(96, 165, 250, 0.08), 0 0 20px rgba(147, 197, 253, 0.05)";
-//       }}
-//     >
-//       <textarea
-//         ref={textareaRef}
-//         value={message}
-//         onChange={(e) => setMessage(e.target.value)}
-//         onKeyDown={handleKeyDown}
-//         disabled={disabled || isStreaming}
-//         rows={1}
-//         placeholder="Ask Anything..."
-//         style={{
-//           flex: 1,
-//           resize: "none",
-//           background: "transparent",
-//           border: "none",
-//           outline: "none",
-//           fontSize: "16px",
-//           lineHeight: "24px",
-//           color: isDark ? "#f3f4f6" : "#111827",
-//           maxHeight: "200px",
-//           overflowY: "hidden",
-//           fontFamily: "inherit",
-//           padding: 0,
-//           minHeight: "24px",
-//           verticalAlign: "middle",
-//         }}
-//         className={isDark ? "placeholder-dark" : "placeholder-light"}
-//       />
-
-//       {/* Send Button */}
-//       {isStreaming ? (
-//         <button
-//           type="button"
-//           onClick={onStop}
-//           style={{
-//             width: "40px",
-//             height: "40px",
-//             borderRadius: "50%",
-//             backgroundColor: "#ef4444",
-//             border: "none",
-//             cursor: "pointer",
-//             display: "flex",
-//             alignItems: "center",
-//             justifyContent: "center",
-//             color: "#ffffff",
-//             transition: "all 0.2s",
-//             flexShrink: 0,
-//           }}
-//           onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#dc2626"}
-//           onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#ef4444"}
-//         >
-//           <StopCircle size={18} />
-//         </button>
-//       ) : (
-//         <button
-//           type="button"
-//           onClick={sendMessage}
-//           disabled={disabled || !message.trim()}
-//           style={{
-//             width: "40px",
-//             height: "40px",
-//             borderRadius: "50%",
-//             backgroundColor: (!disabled && message.trim()) 
-//               ? (isDark ? "#3B82F6" : "#2563EB")
-//               : (isDark ? "rgba(59, 130, 246, 0.4)" : "rgba(37, 99, 235, 0.4)"),
-//             border: "none",
-//             cursor: (!disabled && message.trim()) ? "pointer" : "not-allowed",
-
-//             display: "flex",
-//             alignItems: "center",
-//             justifyContent: "center",
-//             color: "#ffffff",
-//             transition: "all 0.2s",
-//             flexShrink: 0,
-//           }}
-//           onMouseEnter={(e) => {
-//             if (!disabled && message.trim()) {
-//               e.currentTarget.style.backgroundColor = isDark ? "#2563EB" : "#1D4ED8";
-//               e.currentTarget.style.transform = "scale(1.05)";
-//             }
-//           }}
-//           onMouseLeave={(e) => {
-//             if (!disabled && message.trim()) {
-//               e.currentTarget.style.backgroundColor = isDark ? "#3B82F6" : "#2563EB";
-//               e.currentTarget.style.transform = "scale(1)";
-//             }
-//           }}
-//         >
-//           <ArrowUp size={18} />
-//         </button>
-//       )}
-//     </div>
-//   );
-// };
-
-// export default MessageComposer;
 import React, { useState, useRef, useEffect } from "react";
 import { StopCircle, Paperclip, ArrowUp, X } from "lucide-react";
 
-const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark" }) => {
+const MessageComposer = ({
+  onSend,
+  disabled,
+  isStreaming,
+  isProcessingDoc,
+  onStop,
+  theme = "dark",
+}) => {
   const [message, setMessage] = useState("");
   const [file, setFile] = useState(null);
 
@@ -184,6 +16,8 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
   const fileInputRef = useRef(null);
 
   const isDark = theme === "dark";
+  // treat doc processing same as streaming — block all input
+  const isBusy = isStreaming || isProcessingDoc;
 
   // Auto resize textarea
   useEffect(() => {
@@ -218,30 +52,40 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
 
   // Send message
   const sendMessage = () => {
-    if ((message.trim() || file) && !disabled && !isStreaming) {
-      onSend({
-        text: message,
-        file: file,
-      });
+    if (isBusy || disabled) return;
+    if (!message.trim() && !file) return;
 
-      setMessage("");
-      setFile(null);
+    onSend({
+      text: message,
+      file: file,
+    });
 
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-        textareaRef.current.style.overflowY = "hidden";
-      }
+    setMessage("");
+    setFile(null);
+
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.overflowY = "hidden";
     }
   };
 
-  // Enter key send
+  // ✅ Enter key sends; Shift+Enter inserts newline
   const handleKeyDown = (e) => {
-    if (isStreaming) return;
+    if (isBusy) return;
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
     }
+  };
+
+  const canSend = !disabled && !isBusy && (!!message.trim() || !!file);
+
+  const getPlaceholder = () => {
+    if (isProcessingDoc) return "Analysing document…";
+    if (isBusy) return "Please wait…";
+    if (file) return "Add a question about the document";
+    return "Ask Anything...";
   };
 
   return (
@@ -269,7 +113,6 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
           }}
         >
           <span>📄 {file.name}</span>
-
           <button
             onClick={removeFile}
             style={{
@@ -281,6 +124,20 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
           >
             <X size={14} />
           </button>
+        </div>
+      )}
+
+      {/* Processing hint shown above input */}
+      {isProcessingDoc && (
+        <div
+          style={{
+            fontSize: "12px",
+            textAlign: "center",
+            color: isDark ? "#6b7280" : "#9ca3af",
+            padding: "2px 0",
+          }}
+        >
+          Analysing document — please wait…
         </div>
       )}
 
@@ -299,24 +156,27 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
             ? "rgba(30, 30, 30, 0.3)"
             : "rgba(255, 255, 255, 0.5)",
           backdropFilter: "blur(16px)",
+          opacity: isBusy ? 0.7 : 1,
+          transition: "opacity 0.2s",
         }}
       >
         {/* Upload Button */}
         <button
           type="button"
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => !isBusy && fileInputRef.current?.click()}
           style={{
             width: "36px",
             height: "36px",
             borderRadius: "50%",
             border: "none",
-            cursor: "pointer",
+            cursor: isBusy ? "not-allowed" : "pointer",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             backgroundColor: "transparent",
             color: isDark ? "#9ca3af" : "#6b7280",
             flexShrink: 0,
+            opacity: isBusy ? 0.4 : 1,
           }}
         >
           <Paperclip size={18} />
@@ -326,6 +186,7 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
           type="file"
           ref={fileInputRef}
           onChange={handleFileSelect}
+          accept=".pdf,.docx,.doc"
           style={{ display: "none" }}
         />
 
@@ -335,9 +196,9 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={disabled || isStreaming}
+          disabled={isBusy || disabled}
           rows={1}
-          placeholder="Ask Anything..."
+          placeholder={getPlaceholder()}
           style={{
             flex: 1,
             resize: "none",
@@ -350,47 +211,80 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
             maxHeight: "200px",
             overflowY: "hidden",
             fontFamily: "inherit",
+            cursor: isBusy ? "not-allowed" : "text",
           }}
         />
 
         {/* Send / Stop */}
-        {isStreaming ? (
-          <button
-            type="button"
-            onClick={onStop}
-            style={{
-              width: "40px",
-              height: "40px",
-              borderRadius: "50%",
-              backgroundColor: "#ef4444",
-              border: "none",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#ffffff",
-            }}
-          >
-            <StopCircle size={18} />
-          </button>
+        {isBusy ? (
+          isStreaming ? (
+            <button
+              type="button"
+              onClick={onStop}
+              style={{
+                width: "40px",
+                height: "40px",
+                borderRadius: "50%",
+                backgroundColor: "#ef4444",
+                border: "none",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#ffffff",
+              }}
+            >
+              <StopCircle size={18} />
+            </button>
+          ) : (
+            /* Doc processing spinner */
+            <div
+              style={{
+                width: "40px",
+                height: "40px",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                style={{ animation: "spin 1s linear infinite" }}
+              >
+                <circle
+                  cx="12" cy="12" r="10"
+                  stroke={isDark ? "#4b5563" : "#d1d5db"}
+                  strokeWidth="3"
+                />
+                <path
+                  d="M12 2a10 10 0 0 1 10 10"
+                  stroke="#3B82F6"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                />
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+              </svg>
+            </div>
+          )
         ) : (
           <button
             type="button"
             onClick={sendMessage}
-            disabled={disabled || (!message.trim() && !file)}
+            disabled={!canSend}
             style={{
               width: "40px",
               height: "40px",
               borderRadius: "50%",
-              backgroundColor:
-                (!disabled && (message.trim() || file))
-                  ? "#3B82F6"
-                  : "rgba(59, 130, 246, 0.4)",
+              backgroundColor: canSend
+                ? "#3B82F6"
+                : "rgba(59, 130, 246, 0.4)",
               border: "none",
-              cursor:
-                (!disabled && (message.trim() || file))
-                  ? "pointer"
-                  : "not-allowed",
+              cursor: canSend ? "pointer" : "not-allowed",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",

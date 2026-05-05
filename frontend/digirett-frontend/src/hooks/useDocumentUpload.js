@@ -1,16 +1,15 @@
 import { useState, useCallback } from "react";
-import { DEFAULT_USER_ID } from "../utils/constants";
-
-const BASE_URL = "http://localhost:8000";
+import { DEFAULT_USER_ID, API_BASE_URL } from "../utils/constants";
 
 /**
  * useDocumentUpload
  *
  * Handles document upload and session status for Digirett.
  *
- * NOTE: The backend hardcodes DEFAULT_USER_ID for all requests.
- * The userId param is kept for API compatibility but the backend
- * validates against its own DEFAULT_USER_ID constant regardless.
+ * NOTE: addMessage is intentionally NOT called here for the summary.
+ * The summary text is returned to useChat, which controls message ordering:
+ *   1. File bubble (user)
+ *   2. Summary (assistant)  ← correct GPT-style order
  */
 const useDocumentUpload = (conversationId, userId, addMessage) => {
   const [isUploading, setIsUploading] = useState(false);
@@ -24,7 +23,7 @@ const useDocumentUpload = (conversationId, userId, addMessage) => {
     if (!id) return;
 
     try {
-      const res = await fetch(`${BASE_URL}/api/v1/documents/session/${id}`);
+      const res = await fetch(`${API_BASE_URL}/api/v1/documents/session/${id}`);
       if (!res.ok) return;
       const data = await res.json();
       setSessionStatus(data);
@@ -34,25 +33,20 @@ const useDocumentUpload = (conversationId, userId, addMessage) => {
   }, [conversationId]);
 
   // ── Upload a document ─────────────────────────────────────────────────────
-  const uploadDocument = useCallback(async (file, convId) => {
+  const uploadDocument = useCallback(async (file, convId, skipSummary = false) => {
     const id = convId || conversationId;
 
-    // ── Client-side file type guard ───────────────────────────────────────
     const ext = file.name.split(".").pop()?.toLowerCase();
     if (!["pdf", "docx", "doc"].includes(ext)) {
       setUploadError("Only PDF or Word documents (.pdf, .docx, .doc) are accepted.");
       return null;
     }
 
-    // ── Client-side file size guard (20MB) ────────────────────────────────
     if (file.size > 20 * 1024 * 1024) {
       setUploadError("File is too large. Maximum size is 20 MB.");
       return null;
     }
 
-    // ── Must have a conversation ID ───────────────────────────────────────
-    // NOTE: removed the !userId guard — the backend uses its own DEFAULT_USER_ID
-    // and does not depend on the userId passed from the frontend being valid.
     if (!id) {
       setUploadError("No active conversation. Please try again.");
       return null;
@@ -64,43 +58,48 @@ const useDocumentUpload = (conversationId, userId, addMessage) => {
     try {
       const form = new FormData();
       form.append("conversation_id", id);
-      // Use DEFAULT_USER_ID — backend validates against this exact value
       form.append("user_id", userId || DEFAULT_USER_ID);
       form.append("file", file);
-      // ⚠️ Do NOT set Content-Type — browser sets it with the multipart boundary
 
-      const res = await fetch(`${BASE_URL}/api/v1/documents/upload`, {
+      const res = await fetch(`${API_BASE_URL}/api/v1/documents/upload`, {
         method: "POST",
         body: form,
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
-        setUploadError(data.detail ?? data.message ?? "Upload failed.");
+        const errData = await res.json();
+        setUploadError(errData.detail ?? errData.message ?? "Upload failed.");
         return null;
       }
-      
-      if (addMessage) {
-        addMessage({
-          id: Date.now(),
-          type: "file",
-          fileName: data.file_name || file.name,
-          role: "user",
-        });
+
+      // ✅ Read file_name and document_id from response header BEFORE consuming the stream
+      const returnedFileName = res.headers.get("X-File-Name") || file.name;
+      const documentId       = res.headers.get("X-Document-Id");
+
+      // Stream the summary
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let summaryText = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        summaryText += decoder.decode(value, { stream: true });
       }
 
-      setUploadedDocs(prev => [
-        ...prev,
-        {
-          document_id:  data.document_id,
-          file_name:    data.file_name,
-          upload_order: data.upload_order,
-        },
-      ]);
+      // ✅ NOTE: We do NOT call addMessage here anymore.
+      // useChat controls the order: file bubble first, then summary below it.
 
+      setUploadError(null);
+      setUploadedDocs(prev => [...prev, { file_name: returnedFileName, document_id: documentId }]);
       await fetchSessionStatus(id);
-      return data;
+
+      // ✅ Return everything needed by useChat
+      return {
+        file_name: returnedFileName,
+        document_id: documentId,
+        summary_text: summaryText.trim()
+      };
 
     } catch (err) {
       console.error("[useDocumentUpload] uploadDocument error:", err);

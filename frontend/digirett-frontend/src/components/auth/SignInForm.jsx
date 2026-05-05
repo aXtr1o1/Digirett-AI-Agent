@@ -229,8 +229,7 @@ export default function SignInPage() {
 
     if (found) {
       localStorage.setItem("user", username);
-      // after successful login
-      localStorage.removeItem("conversationId");   // ⭐ clear previous chat
+      localStorage.removeItem("conversationId");
       navigate("/chat");
     } else {
       alert("Invalid credentials");
@@ -238,15 +237,15 @@ export default function SignInPage() {
   };
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center">
+    <div className="min-h-screen bg-white flex items-center justify-center">
       <form
         onSubmit={(e) => {
           e.preventDefault();
           handleLogin();
         }}
-        className="bg-[#111] p-10 rounded-2xl shadow-lg w-full max-w-md space-y-6"
+        className="bg-white p-10 rounded-2xl shadow-lg border border-gray-200 w-full max-w-md space-y-6"
       >
-        <h2 className="text-3xl font-bold text-white text-center">
+        <h2 className="text-3xl font-bold text-gray-900 text-center">
           Login
         </h2>
 
@@ -254,7 +253,7 @@ export default function SignInPage() {
           placeholder="Username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          className="w-full p-3 rounded-lg bg-[#1a1a1a] border border-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full p-3 rounded-lg bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
 
         <input
@@ -262,7 +261,7 @@ export default function SignInPage() {
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full p-3 rounded-lg bg-[#1a1a1a] border border-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full p-3 rounded-lg bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
 
         <button

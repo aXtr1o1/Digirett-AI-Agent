@@ -1,27 +1,5 @@
 import { API_BASE_URL, DEFAULT_USER_ID } from "../utils/constants";
 
-/**
- * Chat Service — WebSocket streaming
- *
- * Connects to ws://host/api/v1/chat/ws
- * Streams tokens back exactly like ChatGPT (character by character via onChunk)
- *
- * Backend message format:
- *   { type: "intent",   data: { intent: "LEGAL", language: "norwegian" } }
- *   { type: "sources",  data: ["url1", "url2"] }
- *   { type: "token",    data: "partial text" }          ← streamed word by word
- *   { type: "complete", metadata: { conversation_id, message_id, ... } }
- *   { type: "error",    message: "..." }
- */
-
-// ── Derive WebSocket URL from API_BASE_URL ────────────────────────────────
-// Strips any trailing /api/v1 or trailing slash so we can append the full path cleanly.
-// Example:
-//   API_BASE_URL = "http://localhost:8000"       → ws://localhost:8000/api/v1/chat/ws
-//   API_BASE_URL = "http://localhost:8000/api/v1" → ws://localhost:8000/api/v1/chat/ws
-
-// FIX: use SAFE_API_BASE_URL for cleanBase — previously API_BASE_URL was used
-// directly which crashes when process.env.REACT_APP_API_URL is undefined (CI).
 const SAFE_API_BASE_URL =
   typeof API_BASE_URL === "string" && API_BASE_URL.length > 0
     ? API_BASE_URL
@@ -48,17 +26,18 @@ const chatService = {
    * @param {Function}    onError         - called with an Error object on failure
    * @returns {Function}                  - cancel() function — same API as the old SSE version
    */
-  sendMessage: (conversationId, message, onChunk, onComplete, onError) => {
+  sendMessage: (conversationId, message, onChunk, onComplete, onError, options = {}) => {
     let ws        = null;
     let cancelled = false;
 
     (async () => {
       try {
         const requestBody = {
-          query:       message,
-          user_id:     DEFAULT_USER_ID,
-          top_k:       3,
-          temperature: 0.7,
+          query:          message,
+          user_id:        DEFAULT_USER_ID,
+          top_k:          3,
+          temperature:    0.7,
+          skip_save_user: !!options.skipSaveUser,
         };
 
         if (conversationId) {
@@ -121,11 +100,18 @@ const chatService = {
               resolvedConversationId = finalMetadata.conversation_id || resolvedConversationId;
 
               if (onComplete) {
+                // ✅ FIX: prefer finalMetadata.sources — this is the authoritative list
+                // from the backend 'complete' event and already has translated titles.
+                // The `sources` variable (from the earlier 'sources' WS event) is an
+                // intermediate buffer used to show citations while streaming; the
+                // 'complete' event is the final, language-corrected version.
+                const completeSources = Array.isArray(finalMetadata.sources) && finalMetadata.sources.length > 0
+                  ? finalMetadata.sources
+                  : sources.map((url) => typeof url === "string" ? { url, title: url } : url);
+
                 onComplete({
                   message:        finalMetadata.full_answer || fullMessage,
-                  sources:        sources.map((url) =>
-                    typeof url === "string" ? { url, title: url } : url
-                  ),
+                  sources:        completeSources,
                   conversationId: resolvedConversationId,
                   messageId:      finalMetadata.message_id || null,
                   metadata:       finalMetadata,
