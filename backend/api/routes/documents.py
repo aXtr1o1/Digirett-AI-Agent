@@ -12,17 +12,22 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
 
+from core.auth import ClerkUser, get_current_user
+from fastapi import Depends
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _document_service = None
 _llm_service = None
+_user_service = None
 
 
-def set_services(document_service, llm_service=None) -> None:
-    global _document_service, _llm_service
+def set_services(document_service, llm_service=None, user_service=None) -> None:
+    global _document_service, _llm_service, _user_service
     _document_service = document_service
     _llm_service = llm_service
+    _user_service = user_service
 
 
 class DocumentUploadResponse(BaseModel):
@@ -62,10 +67,10 @@ class FileMessageRequest(BaseModel):
 )
 async def upload_document(
     conversation_id: str = Form(...),
-    user_id: str = Form(...),
     file: UploadFile = File(...),
+    user: ClerkUser = Depends(get_current_user),
 ):
-    if _document_service is None:
+    if _document_service is None or _user_service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Document service not available.",
@@ -101,10 +106,17 @@ async def upload_document(
             ),
         )
 
+    internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id)
+    if not internal_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User profile not found in database.",
+        )
+
     try:
         doc_meta = _document_service.store_document(
             conversation_id=conversation_id,
-            user_id=user_id,
+            user_id=internal_user_id,
             file_bytes=file_bytes,
             filename=filename,
         )
@@ -166,7 +178,11 @@ async def upload_document(
     tags=["Documents"],
     summary="Persist a file-upload event as a chat message for history",
 )
-async def save_file_message(conversation_id: str, body: FileMessageRequest):
+async def save_file_message(
+    conversation_id: str,
+    body: FileMessageRequest,
+    user: ClerkUser = Depends(get_current_user),
+):
     if _document_service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -203,7 +219,11 @@ class SummaryMessageRequest(BaseModel):
     tags=["Documents"],
     summary="Persist an AI document summary as an assistant message for history",
 )
-async def save_summary_message(conversation_id: str, body: SummaryMessageRequest):
+async def save_summary_message(
+    conversation_id: str,
+    body: SummaryMessageRequest,
+    user: ClerkUser = Depends(get_current_user),
+):
     """
     Called by frontend after a document upload + summary generation.
     Saves the AI summary as an assistant message so it reappears
@@ -239,7 +259,10 @@ async def save_summary_message(conversation_id: str, body: SummaryMessageRequest
     tags=["Documents"],
     summary="Get document session status for a conversation",
 )
-async def get_session_status(conversation_id: str):
+async def get_session_status(
+    conversation_id: str,
+    user: ClerkUser = Depends(get_current_user),
+):
     if _document_service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -271,7 +294,10 @@ async def get_session_status(conversation_id: str):
     tags=["Documents"],
     summary="View or download the original uploaded document",
 )
-async def get_document_view(document_id: str):
+async def get_document_view(
+    document_id: str,
+    user: ClerkUser = Depends(get_current_user),
+):
     if _document_service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

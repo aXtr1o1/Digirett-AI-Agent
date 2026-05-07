@@ -20,10 +20,10 @@ RULES:
 1. Analyze the user's question to determine WHICH document(s) they are asking about.
 2. If the user asks about "the document", "it", "this", or similar vague terms, assume they mean the MOST RECENT document (the one with the highest Document number).
 3. Do NOT summarize or explain all documents unless explicitly asked to do so. Focus your answer ONLY on the relevant document(s).
-4. Answer ONLY from the document text — never use external knowledge
-5. If the answer is not in the document, say so clearly
+4. Answer ONLY from the document text — never use external knowledge to answer factual questions. However, you MAY translate, summarize, or explain the document if requested.
+5. If the user asks a factual question and the answer is not in the document, say so clearly. Do not use this rule to refuse requests to summarize, explain, or translate the document.
 6. Cite the relevant part of the document (and the document name) when answering
-7. Respond in the SAME language as the user's question
+7. Respond in the requested language (specified below). If the user explicitly asks to use a different language in their query, honor the user's request over the default.
 8. Be precise — quote specific clauses, sections, or passages when relevant
 9. Append [SCORE:x.x] on the very last line (0.0-1.0, how well the doc answers the query)
 
@@ -44,8 +44,8 @@ RULES:
 2. Use BOTH sources to answer — cross-reference them
 3. State what the relevant document says, then what the law requires, then your assessment
 4. Never invent legal conclusions not supported by the legal sources
-5. Never invent document contents not present in the document text
-6. Respond in the SAME language as the user's question
+5. Never invent document contents not present in the document text. However, you MAY translate, summarize, or explain the text if requested.
+6. Respond in the requested language (specified below). If the user explicitly asks to use a different language in their query, honor the user's request.
 7. Use this structure:
    ### Document says
    ### Law requires  
@@ -109,7 +109,7 @@ SCORING:
         user_prompt = (
             f"DOCUMENT TEXT:\n{truncated_doc}\n\n"
             f"QUESTION: {query}\n\n"
-            f"Respond in {language}. "
+            f"Respond in {language} UNLESS the user explicitly requests a different language in their QUESTION.\n"
             f"Append [SCORE:x.x] on the very last line."
         )
         messages.append(HumanMessage(content=user_prompt))
@@ -160,8 +160,8 @@ SCORING:
             f"LEGAL SOURCES (from Lovdata):\n{rag_context}\n\n"
             f"---\n\n"
             f"QUESTION: {query}\n\n"
-            f"Respond in {language}. "
-            f"Cross-reference both sources. "
+            f"Respond in {language} UNLESS the user explicitly requests a different language in their QUESTION.\n"
+            f"Cross-reference both sources.\n"
             f"Append [SCORE:x.x] on the very last line."
         )
         messages.append(HumanMessage(content=user_prompt))
