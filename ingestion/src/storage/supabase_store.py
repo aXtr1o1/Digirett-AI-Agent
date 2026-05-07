@@ -13,6 +13,7 @@ from ingestion.src.config import (
     SUPABASE_SOURCE_TABLE_PREDEFINED,
     SUPABASE_TABLE,
     SUPABASE_URL,
+    SUPABASE_RAW_METADATA_TABLE,
 )
 
 
@@ -173,4 +174,53 @@ class SupabaseStore:
                 exc,
             )
 
+            return False
+
+    def upload_raw_content(
+        self,
+        content: bytes,
+        file_name: str,
+        bucket: str = None,
+    ) -> str | None:
+        """Uploads raw content to Supabase Storage and returns the path."""
+        self._ensure_connection()
+        target_bucket = bucket or SUPABASE_BUCKET
+
+        try:
+            # We use the file_name as the path in the bucket
+            response = self.supabase.storage.from_(target_bucket).upload(
+                path=file_name,
+                file=content,
+                file_options={"upsert": "true"}
+            )
+            # Supabase return might vary depending on version, usually it's a dict with 'path'
+            if isinstance(response, dict):
+                return response.get("path")
+            return file_name # Fallback to file_name as path
+        except Exception as exc:
+            logger.error("upload_raw_content failed | file=%s | error=%s", file_name, exc)
+            return None
+
+    def upsert_raw_metadata(
+        self,
+        metadata: dict,
+    ) -> bool:
+        """Upserts metadata into the raw ingestion tracking table."""
+        self._ensure_connection()
+        now = datetime.now(timezone.utc).isoformat()
+        
+        metadata["updated_at"] = now
+        if "created_at" not in metadata:
+            metadata["created_at"] = now
+
+        try:
+            (
+                self.supabase.table(SUPABASE_RAW_METADATA_TABLE)
+                .upsert(metadata, on_conflict="file_name")
+                .execute()
+            )
+            logger.info("Raw metadata upserted | file_name=%s", metadata.get("file_name"))
+            return True
+        except Exception as exc:
+            logger.error("upsert_raw_metadata failed | file_name=%s | error=%s", metadata.get("file_name"), exc)
             return False
