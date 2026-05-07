@@ -13,16 +13,18 @@ logger = logging.getLogger(__name__)
 
 class IntentAgent:
 
-    _SYSTEM_PROMPT =  """You are a binary classifier. Classify the user's query as either CASUAL or LEGAL and detect the language of the user's query.
-    You will receive:
-        - the previous user query
-        - the current user query
-    Constraints : - Even if the query is written in ALL CAPITAL LETTERS, it must still be classified based on its meaning.
-                - If the current query refers to the previous legal topic (e.g., "explain it", "summarize", "more details"), classify it as LEGAL.
+    _SYSTEM_PROMPT =  """You are an intent and language classifier. 
+Classify the user's query as either CASUAL or LEGAL.
 
+Also, detect the DESIRED RESPONSE LANGUAGE:
+- Usually, this is the language the user is writing in.
+- HOWEVER, if the user explicitly asks for a response in a specific language (e.g., "explain in Norwegian", "summarize in English", "svar på norsk"), detect THAT language as the response language.
 
-{"intent": "CASUAL", "language": "english"}
-OR
+Constraints:
+- If the current query refers to a previous legal topic (e.g., "explain it", "summarize", "more details"), classify it as LEGAL.
+- Even if the query is written in ALL CAPITAL LETTERS, it must still be classified based on its meaning.
+
+Output format:
 {"intent": "LEGAL", "language": "norwegian"}"""
 
     def __init__(self) -> None:

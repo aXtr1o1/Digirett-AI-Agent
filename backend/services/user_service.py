@@ -1,0 +1,421 @@
+"""
+services/user_service.py — User CRUD operations against Supabase
+
+This service handles:
+- Creating user + profile rows when Clerk webhook fires
+- Looking up users by clerk_user_id (for resolving JWT → Supabase user_id)
+- Role checks against the DB (supplement to JWT role)
+
+The Supabase `users` table is the source of truth for role data.
+Clerk publicMetadata is kept in sync but the DB is authoritative.
+"""
+
+import logging
+import httpx
+from datetime import datetime
+from typing import Any, Dict, Optional, List
+from uuid import uuid4
+from config import settings
+
+from db.supabase_client import SupabaseClient
+
+logger = logging.getLogger(__name__)
+
+
+class UserService:
+
+    def __init__(self, supabase_client: SupabaseClient) -> None:
+        self._supabase = supabase_client
+        logger.info("✅ UserService initialized")
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # CREATE (called by Clerk webhook handler)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    def create_user_from_webhook(
+        self,
+        clerk_user_id: str,
+        email: str,
+        tenant_id: str,
+        display_name: Optional[str] = None,
+        phone: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Create a new user + user_profiles row from Clerk webhook data.
+        Called when Clerk fires `user.created`.
+
+        Returns the created user dict.
+        """
+        try:
+            now = datetime.utcnow().isoformat()
+            user_id = str(uuid4())
+
+            # ── Check for pending invitation ─────────────────────────────
+            assigned_role = "user"
+            invite_data = None
+            try:
+                invite_resp = self._supabase.table("role_invites").select("*").eq("email", email).eq("status", "pending").execute()
+                if invite_resp.data:
+                    invite_data = invite_resp.data[0]
+                    assigned_role = invite_data["role"]
+                    logger.info(f"🎁 Found invitation for {email} | role={assigned_role}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to check role_invites for {email} | {e}")
+
+            # ── Insert into users table ──────────────────────────────────
+            # NOTE: tenant_id is kept as None for now — multi-tenancy is
+            # scoped to a future phase. The column + FK stays in the schema
+            # but we don't enforce a real tenant row yet.
+            _PLACEHOLDER_TENANT = "00000000-0000-0000-0000-000000000000"
+            safe_tenant_id = None if (not tenant_id or tenant_id == _PLACEHOLDER_TENANT) else tenant_id
+
+            user_data = {
+                "user_id": user_id,
+                "clerk_user_id": clerk_user_id,
+                "email": email,
+                "mail_id": email,
+                "user_name": display_name or email.split("@")[0],
+                "role": assigned_role,
+                "status": "active",
+                "tenant_id": safe_tenant_id,
+                "created_at": now,
+                "updated_at": now,
+            }
+
+            response = self._supabase.table("users").insert(user_data).execute()
+            user_row = response.data[0] if response.data else user_data
+
+            # ── Insert into user_profiles table ──────────────────────────
+            profile_data = {
+                "user_id": user_id,
+                "display_name": display_name or email.split("@")[0],
+                "phone_number": phone,
+                "created_at": now,
+                "updated_at": now,
+            }
+            self._supabase.table("user_profiles").insert(profile_data).execute()
+
+            # ── Handle Role-Specific Profiles & Invitations ──────────────
+            if assigned_role == "lawyer":
+                self._supabase.table("lawyer_profiles").insert({
+                    "lawyer_id": user_id,
+                    "verification_status": "approved",
+                    "created_at": now,
+                    "updated_at": now
+                }).execute()
+            elif assigned_role == "admin":
+                self._supabase.table("admin_profiles").insert({
+                    "admin_id": user_id,
+                    "created_at": now,
+                    "updated_at": now
+                }).execute()
+
+            if invite_data:
+                # Mark invite as accepted
+                self._supabase.table("role_invites").update({"status": "accepted"}).eq("invite_id", invite_data["invite_id"]).execute()
+                # Log audit
+                self._log_audit("user.signup_from_invite", user_id, {"role": assigned_role, "invite_id": invite_data["invite_id"]})
+                # Sync Clerk Metadata (important: webhook happens AFTER clerk user creation)
+                self._sync_clerk_role(clerk_user_id, assigned_role)
+
+            logger.info(
+                f"✅ Created user | user_id={user_id} | "
+                f"clerk_id={clerk_user_id} | email={email} | role={assigned_role}"
+            )
+            return user_row
+
+        except Exception as exc:
+            logger.error(
+                f"❌ create_user_from_webhook failed | clerk_id={clerk_user_id} | {exc}",
+                exc_info=True,
+            )
+            raise ValueError(f"Failed to create user: {exc}") from exc
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # READ
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    def get_user_by_clerk_id(self, clerk_user_id: str) -> Optional[Dict[str, Any]]:
+        """Look up a user by their Clerk user ID."""
+        try:
+            response = (
+                self._supabase.table("users")
+                .select("*")
+                .eq("clerk_user_id", clerk_user_id)
+                .limit(1)
+                .execute()
+            )
+            if response.data:
+                return response.data[0]
+            return None
+        except Exception as exc:
+            logger.error(f"❌ get_user_by_clerk_id failed | {exc}")
+            return None
+
+    def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Look up a user by their Supabase user_id (UUID)."""
+        try:
+            response = (
+                self._supabase.table("users")
+                .select("*")
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
+            if response.data:
+                return response.data[0]
+            return None
+        except Exception as exc:
+            logger.error(f"❌ get_user_by_id failed | {exc}")
+            return None
+
+    def get_user_id_from_clerk_id(self, clerk_user_id: str, email: str = None) -> Optional[str]:
+        """
+        Quick lookup: Clerk user ID → Supabase user_id.
+        Used on every authenticated request to resolve the internal user_id.
+        Auto-creates the user in Supabase if missing and email is provided.
+        """
+        user = self.get_user_by_clerk_id(clerk_user_id)
+        if user:
+            return user["user_id"]
+
+        # If user not found, auto-create them (fallback for missing webhook)
+        try:
+            real_email = email
+            display_name = None
+            
+            from config import settings
+            import httpx
+            if not real_email and settings.CLERK_SECRET_KEY:
+                clerk_url = f"https://api.clerk.com/v1/users/{clerk_user_id}"
+                resp = httpx.get(clerk_url, headers={"Authorization": f"Bearer {settings.CLERK_SECRET_KEY}"})
+                if resp.status_code == 200:
+                    data = resp.json()
+                    email_addresses = data.get("email_addresses", [])
+                    if email_addresses:
+                        real_email = email_addresses[0].get("email_address")
+                    
+                    first_name = data.get("first_name") or ""
+                    last_name = data.get("last_name") or ""
+                    username = data.get("username")
+                    display_name = username or f"{first_name} {last_name}".strip() or None
+
+            fallback_email = real_email or f"{clerk_user_id}@placeholder.com"
+            new_user = self.create_user_from_webhook(
+                clerk_user_id=clerk_user_id,
+                email=fallback_email,
+                tenant_id=None,
+                display_name=display_name
+            )
+            logger.info(f"✅ Auto-created missing user during lookup | clerk_id={clerk_user_id} | fetched_email={real_email}")
+            return new_user["user_id"]
+        except Exception as exc:
+            logger.error(f"❌ Failed to auto-create user in get_user_id_from_clerk_id | {exc}")
+
+        return None
+
+    def user_exists(self, clerk_user_id: str) -> bool:
+        """Check if a user already exists (prevent duplicate webhook processing)."""
+        return self.get_user_by_clerk_id(clerk_user_id) is not None
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # UPDATE
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    def update_role(
+        self,
+        user_id: str,
+        new_role: str,
+    ) -> bool:
+        """Update a user's role in Supabase. Called by admin promotion endpoints."""
+        try:
+            self._supabase.table("users").update({
+                "role": new_role,
+                "updated_at": datetime.utcnow().isoformat(),
+            }).eq("user_id", user_id).execute()
+
+            logger.info(f"✅ Updated role | user_id={user_id} → {new_role}")
+            return True
+        except Exception as exc:
+            logger.error(f"❌ update_role failed | user_id={user_id} | {exc}")
+            return False
+
+    def suspend_user(self, user_id: str) -> bool:
+        """Set user status to 'suspended'."""
+        try:
+            self._supabase.table("users").update({
+                "status": "suspended",
+                "updated_at": datetime.utcnow().isoformat(),
+            }).eq("user_id", user_id).execute()
+
+            logger.info(f"✅ Suspended user | user_id={user_id}")
+            return True
+        except Exception as exc:
+            logger.error(f"❌ suspend_user failed | {exc}")
+            return False
+
+    def reactivate_user(self, user_id: str) -> bool:
+        """Set user status back to 'active'."""
+        try:
+            self._supabase.table("users").update({
+                "status": "active",
+                "updated_at": datetime.utcnow().isoformat(),
+            }).eq("user_id", user_id).execute()
+
+            logger.info(f"✅ Reactivated user | user_id={user_id}")
+            return True
+        except Exception as exc:
+            logger.error(f"❌ reactivate_user failed | {exc}")
+            return False
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # ROLE MANAGEMENT (PHASE 2)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    async def invite_user(self, email: str, role: str, admin_id: str, email_service: Any, admin_email: Optional[str] = None) -> bool:
+        """
+        Generates an invitation token, saves it to role_invites, and sends an email.
+        """
+        try:
+            token = str(uuid4())
+            invite_data = {
+                "email": email,
+                "role": role,
+                "token": token,
+                "status": "pending",
+                "created_at": datetime.utcnow().isoformat()
+            }
+            
+            # Upsert (allow re-inviting or updating role)
+            self._supabase.table("role_invites").upsert(invite_data, on_conflict="email").execute()
+            
+            # Send email (await async call)
+            success = await email_service.send_invitation_email(email, role, token, admin_email=admin_email)
+            
+            if success:
+                self._log_audit("admin.user_invited", admin_id, {"target_email": email, "role": role})
+                logger.info(f"📨 Invited user | email={email} | role={role}")
+                return True
+            return False
+        except Exception as exc:
+            logger.error(f"❌ invite_user failed | {email} | {exc}")
+            return False
+
+    def promote_to_lawyer(self, user_id: str, admin_id: str, bar_license: str = None, bar_council: str = None) -> bool:
+        """Promotes a user to Lawyer role and creates their profile."""
+        try:
+            user = self.get_user_by_id(user_id)
+            if not user: return False
+            
+            now = datetime.utcnow().isoformat()
+            
+            # 1. Update users table
+            self._supabase.table("users").update({
+                "role": "lawyer",
+                "updated_at": now
+            }).eq("user_id", user_id).execute()
+            
+            # 2. Insert into lawyer_profiles
+            self._supabase.table("lawyer_profiles").upsert({
+                "lawyer_id": user_id,
+                "bar_license_number": bar_license,
+                "bar_council": bar_council,
+                "verification_status": "approved",
+                "verified_by": admin_id,
+                "verified_at": now,
+                "updated_at": now
+            }).execute()
+            
+            # 3. Sync Clerk
+            self._sync_clerk_role(user["clerk_user_id"], "lawyer")
+            
+            # 4. Audit
+            self._log_audit("admin.user_promoted", admin_id, {"target_user_id": user_id, "new_role": "lawyer"})
+            
+            return True
+        except Exception as exc:
+            logger.error(f"❌ promote_to_lawyer failed | {user_id} | {exc}")
+            return False
+
+    def promote_to_admin(self, user_id: str, admin_id: str, full_name: str = None) -> bool:
+        """Promotes a user to Admin role."""
+        try:
+            user = self.get_user_by_id(user_id)
+            if not user: return False
+            
+            now = datetime.utcnow().isoformat()
+            
+            # 1. Update users table
+            self._supabase.table("users").update({
+                "role": "admin",
+                "updated_at": now
+            }).eq("user_id", user_id).execute()
+            
+            # 2. Insert into admin_profiles
+            self._supabase.table("admin_profiles").upsert({
+                "admin_id": user_id,
+                "full_name": full_name or user.get("user_name"),
+                "created_by": admin_id,
+                "updated_at": now
+            }).execute()
+            
+            # 3. Sync Clerk
+            self._sync_clerk_role(user["clerk_user_id"], "admin")
+            
+            # 4. Audit
+            self._log_audit("admin.user_promoted", admin_id, {"target_user_id": user_id, "new_role": "admin"})
+            
+            return True
+        except Exception as exc:
+            logger.error(f"❌ promote_to_admin failed | {user_id} | {exc}")
+            return False
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # HELPERS
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    def _sync_clerk_role(self, clerk_user_id: str, role: str) -> None:
+        """Updates the publicMetadata.role for a user in Clerk."""
+        if not settings.CLERK_SECRET_KEY or not clerk_user_id:
+            return
+        try:
+            url = f"https://api.clerk.com/v1/users/{clerk_user_id}/metadata"
+            payload = {"public_metadata": {"role": role}}
+            headers = {"Authorization": f"Bearer {settings.CLERK_SECRET_KEY}", "Content-Type": "application/json"}
+            
+            resp = httpx.patch(url, json=payload, headers=headers)
+            if resp.status_code == 200:
+                logger.info(f"🔑 Clerk role synced | {clerk_user_id} → {role}")
+            else:
+                logger.warning(f"⚠️ Clerk role sync failed | {clerk_user_id} | status={resp.status_code} | {resp.text}")
+        except Exception as exc:
+            logger.error(f"❌ Clerk role sync error | {clerk_user_id} | {exc}")
+
+    def _log_audit(self, action: str, performer_id: Optional[str], payload: Dict[str, Any]) -> None:
+        """Saves an entry to the audit_logs table."""
+        try:
+            self._supabase.table("audit_logs").insert({
+                "action": action,
+                "performer_id": performer_id,
+                "payload": payload,
+                "created_at": datetime.utcnow().isoformat()
+            }).execute()
+        except Exception as exc:
+            logger.warning(f"⚠️ Audit logging failed | {action} | {exc}")
+
+    def get_audit_logs(self, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        """
+        Fetches global audit logs for administrative oversight.
+        Returns logs sorted by newest first.
+        """
+        try:
+            response = self._supabase.table("audit_logs") \
+                .select("*, users!audit_logs_performer_id_fkey(user_name, email)") \
+                .order("created_at", desc=True) \
+                .range(offset, offset + limit - 1) \
+                .execute()
+            
+            return response.data or []
+        except Exception as exc:
+            logger.error(f"❌ Failed to fetch audit logs | {exc}")
+            return []

@@ -2,7 +2,7 @@ import logging
 import re
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -12,13 +12,13 @@ from schemas.responses import (
     ConversationResponse,
     MessageResponse,
 )
+from core.auth import ClerkUser, get_current_user
 
 logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
 
-# The one and only valid user in the system
-DEFAULT_USER_ID = "2a06144d-4675-4c38-b7f8-13c02da91af5"
+router = APIRouter()
 
 # UUID v4 pattern
 _UUID_RE = re.compile(
@@ -28,16 +28,18 @@ _UUID_RE = re.compile(
 
 _conversation_service = None
 _message_service = None
+_user_service = None
 
 
 def _is_valid_uuid(value: str) -> bool:
     return bool(_UUID_RE.match(value.strip())) if value else False
 
 
-def set_services(conversation_service, message_service) -> None:
-    global _conversation_service, _message_service
+def set_services(conversation_service, message_service, user_service) -> None:
+    global _conversation_service, _message_service, _user_service
     _conversation_service = conversation_service
     _message_service = message_service
+    _user_service = user_service
 
 
 
@@ -52,6 +54,7 @@ def set_services(conversation_service, message_service) -> None:
 async def create_conversation(
     request: Request,
     body: ConversationCreate,
+    user: ClerkUser = Depends(get_current_user),
 ):
     
     try:
@@ -59,31 +62,17 @@ async def create_conversation(
     except Exception:
         raw_json = {}
 
-    if "user_id" not in raw_json:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=[{"loc": ["body", "user_id"], "msg": "field required", "type": "missing"}],
-        )
-
-    user_id = raw_json["user_id"]
-
-    # API-3: user_id key present but value is empty string
-    if not isinstance(user_id, str) or not user_id.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="user_id must not be empty.",
-        )
-
-    # API-4: user_id is a real value but not the known user
-    if user_id.strip() != DEFAULT_USER_ID:
+    # Optional: we can ignore body.user_id and just use the authenticated user
+    internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
+    if not internal_user_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User not found: {user_id}",
+            detail="User profile not found in database.",
         )
 
     try:
         conversation = _conversation_service.create_conversation(
-            user_id=user_id.strip(),
+            user_id=internal_user_id,
             title=body.title,
         )
         return ConversationResponse(**conversation)
@@ -91,7 +80,7 @@ async def create_conversation(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error(f"create_conversation failed | user={user_id} | {exc}", exc_info=True)
+        logger.error(f"create_conversation failed | user={internal_user_id} | {exc}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create conversation: {exc}",
@@ -101,13 +90,58 @@ async def create_conversation(
 
 
 @router.get(
+    "/conversations/me",
+    response_model=List[ConversationResponse],
+    tags=["Conversations"],
+    summary="List all conversations for the current user",
+)
+@limiter.limit("100/minute")
+async def get_my_conversations(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    user: ClerkUser = Depends(get_current_user),
+):
+    """Return all non-deleted conversations for the current authenticated user, newest first."""
+
+    internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
+    if not internal_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User profile not found in database.",
+        )
+
+    try:
+        conversations = _conversation_service.get_user_conversations(
+            user_id=internal_user_id,
+            limit=limit,
+            offset=offset,
+        )
+        # API-4: user exists but zero conversations → 200 []
+        return [ConversationResponse(**c) for c in conversations]
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"get_user_conversations failed | user={internal_user_id} | {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch conversations: {exc}",
+        )
+
+
+@router.get(
     "/conversations/{conversation_id}",
     response_model=ConversationHistoryResponse,
     tags=["Conversations"],
     summary="Get conversation with all messages",
 )
 @limiter.limit("100/minute")
-async def get_conversation(request: Request, conversation_id: str):
+async def get_conversation(
+    request: Request,
+    conversation_id: str,
+    user: ClerkUser = Depends(get_current_user),
+):
 
     # API-2: not a valid UUID → 400
     if not _is_valid_uuid(conversation_id):
@@ -122,6 +156,13 @@ async def get_conversation(request: Request, conversation_id: str):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Conversation not found.",
+            )
+
+        internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
+        if conversation.get("user_id") != internal_user_id and user.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this conversation.",
             )
 
         messages = _message_service.get_conversation_messages(conversation_id)
@@ -143,64 +184,17 @@ async def get_conversation(request: Request, conversation_id: str):
 
 
 
-@router.get(
-    "/conversations/user/{user_id}",
-    response_model=List[ConversationResponse],
-    tags=["Conversations"],
-    summary="List all conversations for a user",
-)
-@limiter.limit("100/minute")
-async def get_user_conversations(
-    request: Request,
-    user_id: str,
-    limit: int = 50,
-    offset: int = 0,
-):
-    """Return all non-deleted conversations for a user, newest first."""
-
-    # API-2: contains special chars like @, spaces → 400
-    if not re.match(r"^[a-zA-Z0-9_\-]+$", user_id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid user_id format. Only alphanumeric characters, "
-                   "hyphens, and underscores are allowed.",
-        )
-
-    # API-3: valid format but not a known user → 404
-    if user_id != DEFAULT_USER_ID:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User not found: {user_id}",
-        )
-
-    try:
-        conversations = _conversation_service.get_user_conversations(
-            user_id=user_id,
-            limit=limit,
-            offset=offset,
-        )
-        # API-4: user exists but zero conversations → 200 []
-        return [ConversationResponse(**c) for c in conversations]
-
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error(f"get_user_conversations failed | user={user_id} | {exc}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch conversations: {exc}",
-        )
-
-
-
-
 @router.delete(
     "/conversations/{conversation_id}",
     tags=["Conversations"],
     summary="Delete a conversation (soft delete)",
 )
 @limiter.limit("100/minute")
-async def delete_conversation(request: Request, conversation_id: str):
+async def delete_conversation(
+    request: Request,
+    conversation_id: str,
+    user: ClerkUser = Depends(get_current_user),
+):
     """Soft-delete a conversation and all its messages."""
 
     # API-2 & API-4: not a valid UUID → 400
@@ -218,6 +212,13 @@ async def delete_conversation(request: Request, conversation_id: str):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Conversation not found or already deleted.",
+            )
+
+        internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
+        if existing.get("user_id") != internal_user_id and user.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to delete this conversation.",
             )
 
         _conversation_service.delete_conversation(conversation_id)

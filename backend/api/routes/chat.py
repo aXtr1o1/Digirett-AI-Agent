@@ -21,8 +21,11 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from langchain_core.messages import HumanMessage, SystemMessage
+
+from core.auth import verify_ws_token
+from schemas.requests import ChatRequest
 
 from schemas.requests import ChatRequest
 
@@ -36,12 +39,24 @@ _message_service      = None
 _llm_service          = None
 
 
-def set_services(rag_service, conversation_service, message_service, llm_service) -> None:
-    global _rag_service, _conversation_service, _message_service, _llm_service
+_message_service      = None
+_llm_service          = None
+_user_service         = None
+
+
+def set_services(rag_service, conversation_service, message_service, llm_service, user_service=None) -> None:
+    global _rag_service, _conversation_service, _message_service, _llm_service, _user_service
     _rag_service          = rag_service
     _conversation_service = conversation_service
     _message_service      = message_service
     _llm_service          = llm_service
+    
+    # We load user_service to get the internal user ID. 
+    # Optional parameter because of circular init ordering in main.py, but it will be set.
+    from services.user_service import UserService
+    from main import app
+    # We can also get it from global imports if injected properly.
+    _user_service = user_service
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -228,10 +243,43 @@ async def chat_websocket(websocket: WebSocket):
     client_ip = websocket.client.host if websocket.client else "unknown"
     logger.info(f"🔌 WS connected | ip={client_ip}")
 
+    # 1. Check Rate Limit
     if not _rate_limiter.is_allowed(client_ip):
         logger.warning(f"⛔ WS rate limit exceeded | ip={client_ip}")
         await websocket.send_json({"type": "error", "message": "Rate limit exceeded"})
         await websocket.close(code=1008, reason="Rate limit exceeded")
+        return
+
+    # 2. Extract Token and Verify
+    token = websocket.query_params.get("token")
+    if not token:
+        logger.warning(f"⛔ WS connection rejected (Missing token) | ip={client_ip}")
+        await websocket.send_json({"type": "error", "message": "Authentication token is required"})
+        await websocket.close(code=1008, reason="Authentication failed")
+        return
+
+    clerk_user = await verify_ws_token(token)
+    if not clerk_user:
+        logger.warning(f"⛔ WS connection rejected (Invalid token) | ip={client_ip}")
+        await websocket.send_json({"type": "error", "message": "Invalid authentication token"})
+        await websocket.close(code=1008, reason="Authentication failed")
+        return
+    
+    # 3. Resolve Internal User ID
+    # Import _user_service dynamically if not set
+    global _user_service
+    if not _user_service:
+        # Fallback if not injected properly
+        pass
+    
+    internal_user_id = None
+    if _user_service:
+        internal_user_id = _user_service.get_user_id_from_clerk_id(clerk_user.clerk_user_id, email=clerk_user.email)
+        
+    if not internal_user_id:
+        logger.warning(f"⛔ WS connection rejected (User not found) | clerk_id={clerk_user.clerk_user_id}")
+        await websocket.send_json({"type": "error", "message": "User profile not found"})
+        await websocket.close(code=1008, reason="Authentication failed")
         return
 
     try:
@@ -255,7 +303,7 @@ async def chat_websocket(websocket: WebSocket):
                 continue   # keep connection open, wait for next message
 
             # Process one full query and stream all events back
-            await _handle_query(websocket, chat_request)
+            await _handle_query(websocket, chat_request, internal_user_id, clerk_user)
 
     except WebSocketDisconnect:
         pass  # clean disconnect
@@ -270,7 +318,7 @@ async def chat_websocket(websocket: WebSocket):
 
 
 
-async def _handle_query(websocket: WebSocket, chat_request: ChatRequest) -> None:
+async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id: str, clerk_user) -> None:
     start_time        = datetime.utcnow()
     conversation_id   = None
     full_answer       = ""
@@ -288,7 +336,6 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest) -> None
 
         # ── Step 1: Get or create conversation ────────────────
         conversation_id = chat_request.conversation_id
-        user_id = chat_request.user_id or "2a06144d-4675-4c38-b7f8-13c02da91af5"
 
         if not conversation_id:
             conversation      = _conversation_service.create_conversation(
@@ -298,6 +345,15 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest) -> None
             is_first_exchange = True
             logger.info(f"✅ Auto-created conversation: {conversation_id}")
         else:
+            # Add authorization check for existing conversation
+            existing_conv = _conversation_service.get_conversation(conversation_id)
+            if not existing_conv:
+                await websocket.send_json({"type": "error", "message": "Conversation not found"})
+                return
+            if existing_conv.get("user_id") != user_id and clerk_user.role != "admin":
+                await websocket.send_json({"type": "error", "message": "Not authorized to access this conversation"})
+                return
+
             existing          = _message_service.get_conversation_messages(
                 conversation_id=conversation_id, limit=1,
             )

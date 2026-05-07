@@ -219,18 +219,11 @@ class RAGService:
             language = intent_result["language"]
             logger.info(f"🎯 Intent: {intent} | Language: {language}")
 
-            # ── Override language with document language if documents exist ────
-            if (
-                self._document_service
-                and self._document_service.has_documents(conversation_id)
-            ):
-                doc_language = self._document_service.get_document_language(conversation_id)
-                if doc_language:
-                    logger.info(
-                        f"🌐 Using document language '{doc_language}' "
-                        f"instead of query language '{language}'"
-                    )
-                    language = doc_language
+            # ── [Removed] Language override with document language ────────────
+            # We no longer override query language with document language. 
+            # This ensures that if a user asks in English about a Norwegian doc, 
+            # they get an English response (and vice-versa), and explicit 
+            # language requests in the query are honored correctly.
 
             yield {"type": "intent", "data": {"intent": intent, "language": language}}
 
@@ -708,6 +701,7 @@ class RAGService:
         full_answer = ""
         token_count = 0
 
+        buffer = ""
         async for token in self._doc_qa_agent.stream_docqa(
             query=query,
             doc_text=doc_text,
@@ -716,10 +710,23 @@ class RAGService:
         ):
             token_count += 1
             full_answer += token
-            yield {"type": "token", "data": token}
+            
+            buffer += token
+            if "[SCORE:" in buffer:
+                parts = buffer.split("[SCORE:", 1)
+                if parts[0]:
+                    yield {"type": "token", "data": parts[0]}
+                buffer = "[SCORE:" + parts[1]
+            else:
+                if len(buffer) > 15:
+                    yield {"type": "token", "data": buffer[:-15]}
+                    buffer = buffer[-15:]
+
+        if "[SCORE:" not in buffer and buffer:
+            yield {"type": "token", "data": buffer}
 
         # Strip [SCORE:x.x] from docqa answer
-        score_pattern = re.compile(r"\[SCORE:([0-9.]+)\]")
+        score_pattern = re.compile(r"\[SCORE:\s*([0-9.]+)\]")
         score_match = score_pattern.search(full_answer)
         score = float(score_match.group(1)) if score_match else 0.7
         clean_answer = score_pattern.sub("", full_answer).strip()
@@ -782,11 +789,35 @@ class RAGService:
 
         rag_context = self._build_context(search_results) if search_results else ""
 
-        yield {"type": "sources", "data": []}
+        seen_urls: set = set()
+        visible_sources: List[Dict[str, Any]] = []
+        for chunk in (search_results or []):
+            base_url    = chunk.get("source_doc_url") or chunk.get("url") or ""
+            section_ref = (chunk.get("section_ref") or "").strip()
+            doc_title   = chunk.get("doc_title") or ""
+            # Full URL with section anchor: "https://lovdata.no/.../lov/YYYY-MM-DD-N/§6-1"
+            full_url = f"{base_url}/{section_ref}" if section_ref else base_url
+            if full_url and full_url not in seen_urls:
+                seen_urls.add(full_url)
+                visible_sources.append({
+                    "url": full_url, 
+                    "doc_title": doc_title,
+                    "section_ref": section_ref
+                })
+            # Also emit base URL so frontend shows the law itself
+            if base_url and base_url not in seen_urls:
+                seen_urls.add(base_url)
+                visible_sources.append({
+                    "url": base_url, 
+                    "doc_title": doc_title
+                })
+
+        yield {"type": "sources", "data": visible_sources}
 
         full_answer = ""
         token_count = 0
 
+        buffer = ""
         async for token in self._doc_qa_agent.stream_hybrid(
             query=query,
             doc_text=doc_text,
@@ -796,9 +827,22 @@ class RAGService:
         ):
             token_count += 1
             full_answer += token
-            yield {"type": "token", "data": token}
+            
+            buffer += token
+            if "[SCORE:" in buffer:
+                parts = buffer.split("[SCORE:", 1)
+                if parts[0]:
+                    yield {"type": "token", "data": parts[0]}
+                buffer = "[SCORE:" + parts[1]
+            else:
+                if len(buffer) > 15:
+                    yield {"type": "token", "data": buffer[:-15]}
+                    buffer = buffer[-15:]
 
-        score_pattern = re.compile(r"\[SCORE:([0-9.]+)\]")
+        if "[SCORE:" not in buffer and buffer:
+            yield {"type": "token", "data": buffer}
+
+        score_pattern = re.compile(r"\[SCORE:\s*([0-9.]+)\]")
         score_match = score_pattern.search(full_answer)
         score = float(score_match.group(1)) if score_match else 0.7
         clean_answer = score_pattern.sub("", full_answer).strip()
