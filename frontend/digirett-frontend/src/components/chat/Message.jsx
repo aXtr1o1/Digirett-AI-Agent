@@ -10,6 +10,39 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
   const { isCopied, copyToClipboard } = useCopyToClipboard();
   const isUser = message.role === "user";
   const isDark = theme === "dark";
+  // ✅ FILE MESSAGE HANDLING (ADD THIS BLOCK)
+  if (message.type === "file") {
+    return (
+      <div className="flex gap-4 mb-6 justify-end">
+
+        {/* FILE MESSAGE UI */}
+        <div className="flex flex-col items-end max-w-[85%]">
+          <div
+            className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-sm ${
+              isDark
+                ? "bg-[#2f2f2f] text-white"
+                : "bg-gray-100 text-gray-900"
+            }`}
+          >
+            <span>📄</span>
+            <span className="truncate max-w-[200px]">
+              {message.fileName}
+            </span>
+          </div>
+        </div>
+
+        {/* USER AVATAR */}
+        <div
+          className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center mt-1 ${
+            isDark ? "bg-gray-600" : "bg-gray-300"
+          }`}
+        >
+          <User className={`h-4 w-4 ${isDark ? "text-gray-200" : "text-gray-600"}`} />
+        </div>
+
+      </div>
+    );
+  }
 
   // ── File message (doc only or doc + text) ──────────────────────────────
   if (

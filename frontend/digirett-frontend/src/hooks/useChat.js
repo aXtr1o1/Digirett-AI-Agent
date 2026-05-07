@@ -52,7 +52,6 @@ const useChat = (
       const data =
         await conversationService.getConversationWithMessages(conversationId);
       const msgs = Array.isArray(data.messages) ? data.messages : [];
-
       const normalized = msgs.map((m) => ({
         id: m.message_id,
         role: m.role,
@@ -64,7 +63,6 @@ const useChat = (
         fileName: m.file_name || null,
         documentId: m.metadata?.document_id || null,
       }));
-
       setMessages(normalized);
     } catch (err) {
       console.error("[useChat] loadMessages error:", err);

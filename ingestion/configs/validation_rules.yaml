@@ -1,0 +1,93 @@
+# =============================================================================
+# validation_rules.yaml — Pluggable validation framework
+# =============================================================================
+# Three levels of validation, each config-driven:
+#   1. schema_rules  — required fields and types
+#   2. field_rules   — per-field format/length checks
+#   3. business_rules — domain-specific logic
+#
+# Severity levels:
+#   critical — blocks ingestion (document marked FAIL)
+#   warning  — logged but document proceeds (marked PARTIAL)
+#   info     — informational only
+# =============================================================================
+
+schema_rules:
+  required_fields:
+    - doc_id
+    - source
+    - content
+
+  field_types:
+    doc_id: str
+    source: str
+    content: str
+    title: str
+    domain: str
+    subdomain: str
+    tier: str
+    jurisdiction: str
+
+field_rules:
+  title:
+    min_length: 3
+    max_length: 500
+    severity: warning
+
+  content:
+    min_length: 50
+    severity: critical
+
+  domain:
+    allowed_values:
+      - arbeidsrett
+      - arsregnskap_og_selskapsrapportering
+      - avtalerett
+      - inkasso_og_tvangsfullbyrdelse
+      - konkursrett_og_insolvens
+      - manda_fusjon_fisjon
+      - obligasjonsrett
+      - panterett_og_sikkerhetsrett
+      - pengekravsrett_fordringer
+      - personvern_gdpr_business_compliance
+      - selskapsrett
+      - tvistelosning_smb
+      - unknown
+      - ""
+    required: false
+    severity: warning
+
+  version_date:
+    pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+    required: false
+    severity: warning
+
+  jurisdiction:
+    allowed_values: ["NO", "EU", "INTL", ""]
+    required: false
+    severity: warning
+
+business_rules:
+  - name: "content_not_error_page"
+    description: "Reject documents that are actually error pages"
+    field: content
+    must_not_contain:
+      - "404 Not Found"
+      - "403 Forbidden"
+      - "Access Denied"
+    severity: critical
+
+  - name: "title_not_placeholder"
+    description: "Reject placeholder titles"
+    field: title
+    must_not_contain:
+      - "Untitled"
+      - "TODO"
+      - "PLACEHOLDER"
+    severity: warning
+
+  - name: "valid_tier"
+    description: "Tier must be 1, 2, or 3"
+    field: tier
+    allowed_values: ["1", "2", "3", ""]
+    severity: warning
