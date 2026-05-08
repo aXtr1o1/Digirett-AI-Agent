@@ -272,6 +272,58 @@ class UserService:
     # ROLE MANAGEMENT (PHASE 2)
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+    def accept_invite(self, token: str, clerk_user_id: str, email: str) -> bool:
+        """
+        Accepts a pending invitation. Validates the token and email, 
+        promotes the user, and marks the invite as accepted.
+        """
+        try:
+            # 1. Look up the invite
+            resp = self._supabase.table("role_invites").select("*").eq("token", token).eq("status", "pending").execute()
+            if not resp.data:
+                logger.warning(f"⚠️ Invalid or expired invite token: {token}")
+                return False
+                
+            invite = resp.data[0]
+            
+            # 2. Validate email matches
+            if invite["email"].lower() != email.lower():
+                logger.warning(f"⚠️ Invite email mismatch. Token email: {invite['email']}, User email: {email}")
+                return False
+                
+            role = invite["role"]
+            
+            # 3. Get user_id from clerk_id
+            user_id = self.get_user_id_from_clerk_id(clerk_user_id)
+            if not user_id:
+                logger.error(f"❌ Could not find internal user_id for clerk_id: {clerk_user_id}")
+                return False
+                
+            # 4. Promote user
+            success = False
+            if role == "lawyer":
+                success = self.promote_to_lawyer(user_id=user_id, admin_id="system", bar_license="PENDING", bar_council="PENDING")
+            elif role == "admin":
+                user_info = self.get_user_by_id(user_id)
+                full_name = user_info.get("user_name") if user_info else "Admin"
+                success = self.promote_to_admin(user_id=user_id, admin_id="system", full_name=full_name)
+                
+            if not success:
+                return False
+                
+            # 5. Mark invite as accepted
+            self._supabase.table("role_invites").update({"status": "accepted"}).eq("invite_id", invite["invite_id"]).execute()
+            
+            # 6. Audit log
+            self._log_audit("user.invite_accepted", user_id, {"role": role, "invite_id": invite["invite_id"]})
+            
+            logger.info(f"✅ Invite accepted for {email} -> {role}")
+            return True
+            
+        except Exception as exc:
+            logger.error(f"❌ accept_invite failed | {exc}")
+            return False
+
     async def invite_user(self, email: str, role: str, admin_id: str, email_service: Any, admin_email: Optional[str] = None) -> bool:
         """
         Generates an invitation token, saves it to role_invites, and sends an email.

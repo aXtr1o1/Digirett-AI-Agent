@@ -61,11 +61,13 @@ class HitlService:
         Returns all tickets in 'open' status for the queue.
         """
         try:
-            # Join via users table to get profile info
+            # Join via users table to get profile info, and conversations to get AI summary
             query = self._supabase.table("hitl_tickets").select(
                 "*, "
+                "conversations!hitl_tickets_conversation_id_fkey(conversation_summary), "
                 "users!hitl_tickets_user_id_fkey("
-                "  user_profiles(display_name)"
+                "  email, "
+                "  user_profiles(display_name, phone_number)"
                 ")"
             ).eq("status", "open")
             
@@ -74,9 +76,17 @@ class HitlService:
             
             # Flatten
             for ticket in data:
+                # Extract conversation summary
+                conv_data = ticket.pop("conversations", {}) or {}
+                ticket["conversation_summary"] = conv_data.get("conversation_summary")
+
+                # Extract user details
                 raw_user = ticket.pop("users", {}) or {}
+                ticket["user_email"] = raw_user.get("email")
+                
                 raw_profile = raw_user.get("user_profiles", {}) or {}
                 ticket["user_display_name"] = raw_profile.get("display_name")
+                ticket["user_phone_number"] = raw_profile.get("phone_number")
 
             return data
         except Exception as exc:
