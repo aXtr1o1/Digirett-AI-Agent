@@ -6,8 +6,8 @@ logger = logging.getLogger(__name__)
 
 class MemoryAgent:
 
-    # Generate/refresh summary after every 10 messages
-    SUMMARY_EVERY_N = 10
+    # Generate/refresh summary after every 2 messages
+    SUMMARY_EVERY_N = 2
 
     def __init__(self, redis_client: Any, supabase_client: Any) -> None:
         self._redis = redis_client
