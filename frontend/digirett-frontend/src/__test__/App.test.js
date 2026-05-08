@@ -2,6 +2,25 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import ChatPage from "../pages/ChatPage";
 
+// ── Mock Supabase ─────────────────────────────────────────────────────────────
+// supabase.js calls createClient() at module level using env vars that are
+// undefined in CI, causing "supabaseUrl is required" before any test runs.
+jest.mock("../lib/supabase", () => ({
+  __esModule: true,
+  supabase: {
+    from: jest.fn(() => ({
+      select: jest.fn().mockResolvedValue({ data: [], error: null }),
+      insert: jest.fn().mockResolvedValue({ data: [], error: null }),
+      update: jest.fn().mockResolvedValue({ data: [], error: null }),
+      delete: jest.fn().mockResolvedValue({ data: [], error: null }),
+    })),
+    auth: {
+      getSession: jest.fn().mockResolvedValue({ data: { session: null }, error: null }),
+      onAuthStateChange: jest.fn(() => ({ data: { subscription: { unsubscribe: jest.fn() } } })),
+    },
+  },
+}));
+
 const renderChatPage = () =>
   render(
     <MemoryRouter>
