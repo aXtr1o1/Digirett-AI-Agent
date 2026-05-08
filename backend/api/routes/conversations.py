@@ -117,6 +117,14 @@ async def get_my_conversations(
             limit=limit,
             offset=offset,
         )
+        
+        # Inject is_escalated status efficiently
+        from main import hitl_service
+        conv_ids = [c["conversation_id"] for c in conversations]
+        escalated_ids = hitl_service.get_escalated_conversation_ids(conv_ids)
+        for c in conversations:
+            c["is_escalated"] = c["conversation_id"] in escalated_ids
+
         # API-4: user exists but zero conversations → 200 []
         return [ConversationResponse(**c) for c in conversations]
 
@@ -164,6 +172,9 @@ async def get_conversation(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to access this conversation.",
             )
+
+        from main import hitl_service
+        conversation["is_escalated"] = hitl_service.is_conversation_escalated(conversation_id)
 
         messages = _message_service.get_conversation_messages(conversation_id)
 
