@@ -39,6 +39,13 @@ async def escalate_conversation(
     """
     user_id = _user_service.get_user_id_from_clerk_id(current_user.clerk_user_id)
     
+    # 1. Prevent duplicate escalations for the same conversation
+    if _hitl_service.is_conversation_escalated(req.conversation_id):
+        raise HTTPException(
+            status_code=400, 
+            detail="This conversation is already booked/escalated."
+        )
+    
     ticket = _hitl_service.create_ticket(
         conversation_id=req.conversation_id,
         user_id=user_id,

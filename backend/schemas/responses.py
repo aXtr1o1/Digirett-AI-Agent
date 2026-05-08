@@ -41,6 +41,7 @@ class ConversationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     is_deleted: bool = False
+    is_escalated: bool = False
 
 
 class MessageResponse(BaseModel):

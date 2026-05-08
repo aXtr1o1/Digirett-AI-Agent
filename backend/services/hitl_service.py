@@ -52,6 +52,36 @@ class HitlService:
             logger.error(f"❌ Failed to create HITL ticket | {exc}", exc_info=True)
             raise ValueError(f"Failed to create ticket: {exc}")
 
+    def is_conversation_escalated(self, conversation_id: str) -> bool:
+        """
+        Checks if a conversation already has an active (open or assigned) ticket.
+        """
+        try:
+            response = self._supabase.table("hitl_tickets").select("ticket_id") \
+                .eq("conversation_id", conversation_id) \
+                .in_("status", ["open", "assigned"]) \
+                .execute()
+            return len(response.data or []) > 0
+        except Exception as exc:
+            logger.error(f"❌ Failed to check escalation status | {exc}")
+            return False
+
+    def get_escalated_conversation_ids(self, conversation_ids: List[str]) -> set:
+        """
+        Given a list of conversation IDs, returns a set of those that are currently escalated.
+        """
+        if not conversation_ids:
+            return set()
+        try:
+            response = self._supabase.table("hitl_tickets").select("conversation_id") \
+                .in_("conversation_id", conversation_ids) \
+                .in_("status", ["open", "assigned"]) \
+                .execute()
+            return {row["conversation_id"] for row in (response.data or [])}
+        except Exception as exc:
+            logger.error(f"❌ Failed to fetch escalated IDs | {exc}")
+            return set()
+
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # LAWYER ACTIONS
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
