@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { StopCircle, Paperclip, ArrowUp, X, Scale, CheckCircle, Loader2 } from "lucide-react";
+import { StopCircle, Paperclip, ArrowUp, X, Scale, Check, CheckCircle, Loader2 } from "lucide-react";
 
 const MessageComposer = ({
   onSend,
@@ -17,6 +17,7 @@ const MessageComposer = ({
   const [showEscalateConfirm, setShowEscalateConfirm] = useState(false);
   const [isEscalating, setIsEscalating] = useState(false);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [localEscalated, setLocalEscalated] = useState(false);
 
   const isBusy = disabled || isProcessingDoc || isStreaming;
 
@@ -189,7 +190,9 @@ const MessageComposer = ({
             animation: "toastIn 0.3s ease-out forwards",
           }}>
             <CheckCircle size={16} />
-            <span style={{ fontSize: "14px", fontWeight: "600" }}>Request submitted successfully!</span>
+            <span style={{ fontSize: "14px", fontWeight: "600" }}>
+              {isEscalated || localEscalated ? "Already booked" : "Request submitted successfully!"}
+            </span>
             <style>{`
               @keyframes toastIn {
                 from { opacity: 0; transform: translateX(-50%) translateY(10px); }
@@ -252,6 +255,7 @@ const MessageComposer = ({
                           setIsEscalating(true);
                           try {
                             await onEscalate();
+                            setLocalEscalated(true);
                             setShowEscalateConfirm(false);
                             setShowSuccessToast(true);
                             setTimeout(() => setShowSuccessToast(false), 3000);
@@ -304,7 +308,12 @@ const MessageComposer = ({
             <button
               type="button"
               onClick={() => {
-                setShowEscalateConfirm(!showEscalateConfirm);
+                if (isEscalated || localEscalated) {
+                  setShowSuccessToast(true);
+                  setTimeout(() => setShowSuccessToast(false), 3000);
+                } else {
+                  setShowEscalateConfirm(!showEscalateConfirm);
+                }
               }}
               style={{
                 width: "36px",
@@ -315,14 +324,18 @@ const MessageComposer = ({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: isEscalated ? "rgba(59, 130, 246, 0.1)" : "transparent",
-                color: isEscalated ? "#3B82F6" : (isDark ? "#9ca3af" : "#6b7280"),
+                backgroundColor: (isEscalated || localEscalated) ? "rgba(59, 130, 246, 0.1)" : "transparent",
+                color: (isEscalated || localEscalated) ? "#3B82F6" : (isDark ? "#9ca3af" : "#6b7280"),
                 flexShrink: 0,
                 opacity: isBusy ? 0.4 : 1,
               }}
-              title={isEscalated ? "Lawyer Already Requested" : "Talk to Lawyer"}
+              title={(isEscalated || localEscalated) ? "" : "Talk to Lawyer"}
             >
-              {isEscalated ? <CheckCircle size={18} /> : <Scale size={18} />}
+              {(isEscalated || localEscalated) ? (
+                <CheckCircle size={22} style={{ color: "#2563eb" }} />
+              ) : (
+                <Scale size={18} />
+              )}
             </button>
           </div>
         )}

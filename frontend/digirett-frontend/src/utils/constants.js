@@ -39,10 +39,14 @@ export const API_ENDPOINTS = {
     PROMOTE_ADMIN: "/admin/promote/admin",
     USERS: "/admin/users",
     AUDIT_LOGS: "/admin/audit-logs",
+    ASSIGN_TICKET: (ticketId, lawyerId) => `/admin/tickets/${ticketId}/assign/${lawyerId}`,
+    CLOSE_TICKET: (ticketId) => `/admin/tickets/${ticketId}/close`,
+    DEMOTE_USER: (userId) => `/admin/users/${userId}/demote`,
+    SUSPEND_USER: (userId) => `/admin/users/${userId}/suspend`,
   },
   INVITE: {
     VERIFY: "/invite/verify",
-    ACCEPT: "/invite/accept",
+    ACCEPT: "/auth/accept-invite",
   },
   HEALTH: "/health",
 };
@@ -50,6 +54,7 @@ export const API_ENDPOINTS = {
 export const MESSAGE_ROLES = {
   USER: "user",
   ASSISTANT: "assistant",
+  SYSTEM: "system",
 };
 
 export const ERROR_MESSAGES = {

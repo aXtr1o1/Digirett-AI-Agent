@@ -44,6 +44,38 @@ const adminService = {
   },
 
   /**
+   * Force-assign a ticket to a lawyer (Admin only)
+   */
+  assignTicket: async (ticketId, lawyerId) => {
+    const response = await api.patch(API_ENDPOINTS.ADMIN.ASSIGN_TICKET(ticketId, lawyerId));
+    return response.data;
+  },
+
+  /**
+   * Close a ticket forcefully (Admin only)
+   */
+  closeTicket: async (ticketId) => {
+    const response = await api.patch(API_ENDPOINTS.ADMIN.CLOSE_TICKET(ticketId));
+    return response.data;
+  },
+
+  /**
+   * Demote a user back to 'user' role
+   */
+  demoteUser: async (userId) => {
+    const response = await api.patch(API_ENDPOINTS.ADMIN.DEMOTE_USER(userId));
+    return response.data;
+  },
+
+  /**
+   * Suspend a user account (status = inactive)
+   */
+  suspendUser: async (userId) => {
+    const response = await api.patch(API_ENDPOINTS.ADMIN.SUSPEND_USER(userId));
+    return response.data;
+  },
+
+  /**
    * Get system audit logs
    */
   getAuditLogs: async (limit = 50, offset = 0) => {

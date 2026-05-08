@@ -52,7 +52,8 @@ export default function ProvisioningPage() {
         const role = user.publicMetadata?.role;
         
         if (role && (role === finalTarget || (finalTarget === 'lawyer' && role === 'admin'))) {
-          navigate(`/${role}`, { replace: true });
+          const redirectPath = role === 'lawyer' ? '/lawyer' : `/${role}`;
+          navigate(redirectPath, { replace: true });
         } else if (attempts < maxAttempts) {
           attempts++;
           setTimeout(checkRole, 1000);

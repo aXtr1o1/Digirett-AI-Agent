@@ -64,7 +64,14 @@ const Sidebar = ({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [menuOpen]);
-
+  
+  const handleEscalate = () => {
+    // This is a placeholder for now to avoid the crash.
+    // In a real scenario, this would trigger the HITL escalation.
+    // Since escalation is per-conversation, we might want to just navigate to chat
+    // or show a toast if no conversation is active.
+    alert("To talk to a lawyer, please open a conversation and click the 'Talk to Lawyer' icon in the chat box.");
+  };
 
   const role = user?.publicMetadata?.role || "user";
 

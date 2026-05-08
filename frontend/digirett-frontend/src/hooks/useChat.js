@@ -44,6 +44,7 @@ const useChat = (
 
   useEffect(() => {
     activeConversationIdRef.current = conversationId;
+    setIsEscalated(false);
   }, [conversationId]);
 
   // ── Load messages for an existing conversation directly from Supabase ──────
@@ -378,31 +379,15 @@ const useChat = (
   useEffect(() => {
     if (conversationId) {
       fetchSessionStatus(conversationId);
-
-      // Check if any existing message is a system escalation message
-      const checkEscalated = async () => {
-        try {
-          const authClient = await getSupabaseClient(getToken);
-          const { data: tickets } = await authClient
-            .from("hitl_tickets")
-            .select("ticket_id")
-            .eq("conversation_id", conversationId)
-            .limit(1);
-
-          if (tickets && tickets.length > 0) {
-            setIsEscalated(true);
-          } else {
-            setIsEscalated(false);
-          }
-        } catch (err) {
-          console.error("Error checking escalation status:", err);
-        }
-      };
-      checkEscalated();
-    } else {
-      setIsEscalated(false);
     }
   }, [conversationId, fetchSessionStatus]);
+
+  // Sync escalation status from backend sessionStatus
+  useEffect(() => {
+    if (sessionStatus && sessionStatus.is_escalated !== undefined) {
+      setIsEscalated(sessionStatus.is_escalated);
+    }
+  }, [sessionStatus]);
 
   const isEscalatingRef = useRef(false);
 
@@ -434,18 +419,6 @@ const useChat = (
       try {
         const result = await hitlService.escalateConversation(conversationId, triggerId, userNote);
         setIsEscalated(true);
-
-        // Add a local system message to confirm escalation to the user
-        const systemMsg = {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: "⚖️ **Lawyer Requested**: A legal professional has been notified. They will review this conversation and respond as soon as possible.",
-          type: "text",
-          timestamp: new Date().toISOString(),
-          isSystem: true
-        };
-        setMessages((prev) => [...prev, systemMsg]);
-
         return result;
       } catch (err) {
         isEscalatingRef.current = false;

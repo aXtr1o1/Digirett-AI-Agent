@@ -1,5 +1,6 @@
 import React from "react";
 import { User, Bot, Copy, Check } from "lucide-react";
+import { useUser } from "@clerk/clerk-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import SourceLinks from "./SourceLinks";
@@ -7,6 +8,7 @@ import useCopyToClipboard from "../../hooks/useCopyToClipboard";
 import { API_BASE_URL } from "../../utils/constants";
 
 const Message = ({ message, isStreaming = false, theme = "dark" }) => {
+  const { user } = useUser();
   const { isCopied, copyToClipboard } = useCopyToClipboard();
   const isUser = message.role === "user";
   const isDark = theme === "dark";
@@ -99,6 +101,20 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
   }
 
   // ── Regular message ────────────────────────────────────────────────────
+  if (message.role === "system") {
+    return (
+      <div className="flex justify-center my-6">
+        <div className={`px-4 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-widest border shadow-sm ${
+          isDark 
+            ? "bg-blue-900/20 text-blue-400 border-blue-800/30 shadow-blue-900/10" 
+            : "bg-blue-50 text-blue-600 border-blue-100 shadow-blue-100/50"
+        }`}>
+          {message.content}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`flex gap-4 mb-6 ${isUser ? "justify-end" : "justify-start"}`}>
 
@@ -113,6 +129,9 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
       )}
 
       <div className={`flex flex-col min-w-0 ${isUser ? "items-end max-w-[85%]" : "flex-1"}`}>
+        <p className={`text-[10px] font-bold uppercase tracking-wider opacity-50 mb-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+          {isUser ? (user?.fullName || user?.firstName || 'User') : (message.metadata?.is_lawyer ? "Personal Lawyer" : "AI Agent")}
+        </p>
         {isUser ? (
           <div
             className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${

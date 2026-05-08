@@ -16,6 +16,7 @@ import TicketDetailsPage from "./pages/TicketDetailsPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ProvisioningPage from "./pages/ProvisioningPage";
 import { useUser, useAuth } from "@clerk/clerk-react";
+import { ThemeProvider } from "./providers/ThemeProvider";
 
 const HomeRedirect = () => {
   const { user, isLoaded: userLoaded } = useUser();
@@ -29,23 +30,24 @@ const HomeRedirect = () => {
     );
   }
 
-  if (!isSignedIn) return <Navigate to="/sign-in" replace />;
+  // 1. If not signed in, always show sign-in page first
+  if (!isSignedIn) {
+    return <Navigate to="/sign-in" replace />;
+  }
 
-  const role = user?.publicMetadata?.role;
+  // 2. After sign in, send everyone to the Chat page
+  console.log("LOGIN_SUCCESS: Starting fresh session...");
+  localStorage.removeItem("conversationId");
 
-  // 🧭 Route users to their specific dashboards based on role
-  if (role === 'admin') return <Navigate to="/admin" replace />;
-  if (role === 'lawyer') return <Navigate to="/lawyer" replace />;
-
-  // Default to chat for standard users
   return <Navigate to="/chat" replace />;
 };
 
 function App() {
   return (
-    <BrowserRouter>
-      <ClerkWithRouter>
-        <Routes>
+    <ThemeProvider>
+      <BrowserRouter>
+        <ClerkWithRouter>
+          <Routes>
 
           {/* ================= PUBLIC PAGES ================= */}
 
@@ -153,6 +155,7 @@ function App() {
         </Routes>
       </ClerkWithRouter>
     </BrowserRouter>
+  </ThemeProvider>
   );
 }
 

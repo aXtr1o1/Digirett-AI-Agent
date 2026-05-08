@@ -61,6 +61,9 @@ const useConversations = () => {
           localStorage.removeItem("conversationId");
           setCurrentConversationId(null);
         }
+      } else {
+        // Always start fresh if no specific conversation is saved
+        setCurrentConversationId(null);
       }
     } catch (err) {
       console.error("[useConversations] Supabase load failed:", err);
