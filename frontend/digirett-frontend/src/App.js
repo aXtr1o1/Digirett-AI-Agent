@@ -14,22 +14,30 @@ import AdminDashboard from "./pages/AdminDashboard";
 import LawyerDashboard from "./pages/LawyerDashboard";
 import TicketDetailsPage from "./pages/TicketDetailsPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ProvisioningPage from "./pages/ProvisioningPage";
 import { useUser, useAuth } from "@clerk/clerk-react";
 
 const HomeRedirect = () => {
+  const { user, isLoaded: userLoaded } = useUser();
   const { isSignedIn, isLoaded: authLoaded } = useAuth();
 
-  if (!authLoaded) {
+  if (!authLoaded || !userLoaded) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-white"></div>
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-600"></div>
       </div>
     );
   }
 
   if (!isSignedIn) return <Navigate to="/sign-in" replace />;
-  
-  // 🧭 Default all users to the chat page after login
+
+  const role = user?.publicMetadata?.role;
+
+  // 🧭 Route users to their specific dashboards based on role
+  if (role === 'admin') return <Navigate to="/admin" replace />;
+  if (role === 'lawyer') return <Navigate to="/lawyer" replace />;
+
+  // Default to chat for standard users
   return <Navigate to="/chat" replace />;
 };
 
@@ -40,8 +48,9 @@ function App() {
         <Routes>
 
           {/* ================= PUBLIC PAGES ================= */}
-          
+
           <Route path="/invite" element={<InvitePage />} />
+          <Route path="/provisioning" element={<ProvisioningPage />} />
 
           {/* ================= AUTH PAGES ================= */}
 
@@ -101,7 +110,7 @@ function App() {
           />
 
           {/* ================= ADMIN ================= */}
-          
+
           <Route
             path="/admin"
             element={
@@ -112,7 +121,7 @@ function App() {
           />
 
           {/* ================= LAWYER ================= */}
-          
+
           <Route
             path="/lawyer"
             element={
@@ -121,7 +130,7 @@ function App() {
               </RoleGuard>
             }
           />
-          
+
           <Route
             path="/lawyer/tickets/:id"
             element={

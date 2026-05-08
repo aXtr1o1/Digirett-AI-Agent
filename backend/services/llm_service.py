@@ -76,6 +76,7 @@ class LLMService:
         query: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
+        language: Optional[str] = None,
     ) -> AsyncIterator[str]:
         """Stream casual response tokens. No RAG context involved."""
         async with llm_span("casual_generation"):
@@ -83,6 +84,7 @@ class LLMService:
                 query=query,
                 conversation_history=conversation_history,
                 temperature=temperature,
+                language=language,
             ):
                 yield token
 
@@ -278,10 +280,10 @@ class LLMService:
         messages = [
             SystemMessage(content=(
                 "You are a document summarizer. "
-                "Identify the language of the document and respond ONLY in that language. "
+                "Identify the language of the document and Strictly respond ONLY in that language. "
                 "English document → English summary. "
                 "Norwegian document → Norwegian summary. "
-                "Never translate. Never switch languages."
+                "Never translate. Never switch languages. and Never mix languages in your response."
             )),
             HumanMessage(content=(
                 f"Summarize the following document in 3-5 sentences. "

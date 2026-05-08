@@ -1,11 +1,12 @@
 import api from "./api";
+import { API_ENDPOINTS } from "../utils/constants";
 
 const adminService = {
   /**
    * List all users in the system
    */
   listUsers: async () => {
-    const response = await api.get("/admin/users");
+    const response = await api.get(API_ENDPOINTS.ADMIN.USERS);
     return response.data;
   },
 
@@ -15,7 +16,7 @@ const adminService = {
    * @param {string} role - 'lawyer' | 'admin'
    */
   inviteUser: async (email, role) => {
-    const response = await api.post("/admin/invite", { email, role });
+    const response = await api.post(API_ENDPOINTS.ADMIN.INVITE, { email, role });
     return response.data;
   },
 
@@ -23,7 +24,7 @@ const adminService = {
    * Promote a user to Lawyer
    */
   promoteToLawyer: async (userId, barLicense = "", barCouncil = "") => {
-    const response = await api.post("/admin/promote/lawyer", {
+    const response = await api.post(API_ENDPOINTS.ADMIN.PROMOTE_LAWYER, {
       user_id: userId,
       bar_license: barLicense,
       bar_council: barCouncil,
@@ -35,9 +36,19 @@ const adminService = {
    * Promote a user to Admin
    */
   promoteToAdmin: async (userId, fullName = "") => {
-    const response = await api.post("/admin/promote/admin", {
+    const response = await api.post(API_ENDPOINTS.ADMIN.PROMOTE_ADMIN, {
       user_id: userId,
       full_name: fullName,
+    });
+    return response.data;
+  },
+
+  /**
+   * Get system audit logs
+   */
+  getAuditLogs: async (limit = 50, offset = 0) => {
+    const response = await api.get(API_ENDPOINTS.ADMIN.AUDIT_LOGS, {
+      params: { limit, offset }
     });
     return response.data;
   },

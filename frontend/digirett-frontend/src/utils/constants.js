@@ -15,7 +15,34 @@ export const API_ENDPOINTS = {
     LIST: (conversationId) => `/messages/${conversationId}`,
   },
   CHAT: {
-    STREAM: "/chat/stream",
+    WS: "/chat/ws",
+  },
+  DOCUMENTS: {
+    UPLOAD: "/documents/upload",
+    SESSION: (conversationId) => `/documents/session/${conversationId}`,
+    SAVE_MESSAGE: (conversationId) => `/documents/message/${conversationId}`,
+    SAVE_SUMMARY: (conversationId) => `/documents/summary-message/${conversationId}`,
+    VIEW: (documentId) => `/documents/view/${documentId}`,
+  },
+  HITL: {
+    ESCALATE: "/hitl/escalate",
+    QUEUE: "/hitl/queue",
+    ASSIGN: (ticketId) => `/hitl/tickets/${ticketId}/assign`,
+    DETAILS: (ticketId) => `/hitl/tickets/${ticketId}/details`,
+    RESPOND: (ticketId) => `/hitl/tickets/${ticketId}/respond`,
+    MY_TICKETS: "/hitl/my-tickets",
+    MY_RESOLVED: "/hitl/my-resolved-tickets",
+  },
+  ADMIN: {
+    INVITE: "/admin/invite",
+    PROMOTE_LAWYER: "/admin/promote/lawyer",
+    PROMOTE_ADMIN: "/admin/promote/admin",
+    USERS: "/admin/users",
+    AUDIT_LOGS: "/admin/audit-logs",
+  },
+  INVITE: {
+    VERIFY: "/invite/verify",
+    ACCEPT: "/invite/accept",
   },
   HEALTH: "/health",
 };

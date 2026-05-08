@@ -69,6 +69,30 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
 
+    # ── Clerk Auth ────────────────────────────────────────────────────────
+    # Secret key for Clerk SDK (update user metadata, admin API calls)
+    CLERK_SECRET_KEY: str = ""
+    # JWKS endpoint — verify Clerk JWTs (RS256 asymmetric signing)
+    # Format: https://<clerk-instance>.clerk.accounts.dev/.well-known/jwks.json
+    CLERK_JWKS_URL: str = ""
+    # Svix webhook signing secret — from Clerk Dashboard → Webhooks
+    # Required to validate incoming webhook payloads (prevents spoofing)
+    CLERK_WEBHOOK_SECRET: str = ""
+    # Default tenant UUID — the single tenant row in the tenants table.
+    # Every new user is assigned this tenant on signup (webhook handler).
+    DEFAULT_TENANT_ID: str = ""
+    # ── SMTP (Phase 2 Migration from Resend) ──────────────────────────────
+    SMTP_HOST: str = "smtp.resend.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = "resend"
+    SMTP_PASS: str = ""
+    RESEND_API_KEY: Optional[str] = None
+    # From-address for invitation emails
+    INVITE_FROM_EMAIL: str = "sabari@axtr.in"
+    # Frontend base URL — used to build the invite link in emails
+    # Set to http://localhost:3000 in development, https://digirett.no in production
+    FRONTEND_URL: str = "http://localhost:3000"
+
     # ── Conversation ─────────────────────────────────────────────────────
     AUTO_SUMMARY_THRESHOLD: int = 50
     DEFAULT_USER_ID: str = "2a06144d-4675-4c38-b7f8-13c02da91af5"

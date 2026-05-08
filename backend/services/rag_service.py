@@ -220,6 +220,12 @@ class RAGService:
             language = intent_result["language"]
             logger.info(f"🎯 Intent: {intent} | Language: {language}")
 
+            # ── [Removed] Language override with document language ────────────
+            # We no longer override query language with document language. 
+            # This ensures that if a user asks in English about a Norwegian doc, 
+            # they get an English response (and vice-versa), and explicit 
+            # language requests in the query are honored correctly.
+
             yield {"type": "intent", "data": {"intent": intent, "language": language}}
 
             if intent == "LEGAL":
@@ -382,6 +388,7 @@ class RAGService:
         async for token in self._llm.generate_casual_stream(
             query=query,
             conversation_history=history,
+            language=language,
         ):
             token_count += 1
             full_answer += token
@@ -593,21 +600,31 @@ class RAGService:
  
         # ── [8] Emit sources (score ≥ 0.5 only) with section_ref ──────────
         # Build URLs with section anchor so frontend shows exact paragraph links
+        # 🔥 CHANGED: emit {url, doc_title} dicts so message_service can
+        # display the document title (korttittel) instead of raw URLs.
         seen_urls: set = set()
-        visible_sources: List[str] = []
+        visible_sources: List[Dict[str, Any]] = []
         for chunk in search_results:
             base_url    = chunk.get("source_doc_url") or chunk.get("url") or ""
             section_ref = (chunk.get("section_ref") or "").strip()
+            doc_title   = chunk.get("doc_title") or ""
             # Full URL with section anchor: "https://lovdata.no/.../lov/YYYY-MM-DD-N/§6-1"
             full_url = f"{base_url}/{section_ref}" if section_ref else base_url
             if full_url and full_url not in seen_urls:
                 seen_urls.add(full_url)
-                visible_sources.append(full_url)
+                visible_sources.append({
+                    "url": full_url, 
+                    "doc_title": doc_title,
+                    "section_ref": section_ref
+                })
             # Also emit base URL so frontend shows the law itself
             if base_url and base_url not in seen_urls:
                 seen_urls.add(base_url)
-                visible_sources.append(base_url)
- 
+                visible_sources.append({
+                    "url": base_url, 
+                    "doc_title": doc_title
+                })
+
         yield {"type": "sources", "data": visible_sources}
         logger.info(f"✅ Emitted {len(visible_sources)} source URLs (section_ref included)")
  
@@ -687,6 +704,7 @@ class RAGService:
         full_answer = ""
         token_count = 0
 
+        buffer = ""
         async for token in self._doc_qa_agent.stream_docqa(
             query=query,
             doc_text=doc_text,
@@ -695,10 +713,23 @@ class RAGService:
         ):
             token_count += 1
             full_answer += token
-            yield {"type": "token", "data": token}
+            
+            buffer += token
+            if "[SCORE:" in buffer:
+                parts = buffer.split("[SCORE:", 1)
+                if parts[0]:
+                    yield {"type": "token", "data": parts[0]}
+                buffer = "[SCORE:" + parts[1]
+            else:
+                if len(buffer) > 15:
+                    yield {"type": "token", "data": buffer[:-15]}
+                    buffer = buffer[-15:]
+
+        if "[SCORE:" not in buffer and buffer:
+            yield {"type": "token", "data": buffer}
 
         # Strip [SCORE:x.x] from docqa answer
-        score_pattern = re.compile(r"\[SCORE:([0-9.]+)\]")
+        score_pattern = re.compile(r"\[SCORE:\s*([0-9.]+)\]")
         score_match = score_pattern.search(full_answer)
         score = float(score_match.group(1)) if score_match else 0.7
         clean_answer = score_pattern.sub("", full_answer).strip()
@@ -763,11 +794,35 @@ class RAGService:
 
         rag_context = self._build_context(search_results) if search_results else ""
 
-        yield {"type": "sources", "data": []}
+        seen_urls: set = set()
+        visible_sources: List[Dict[str, Any]] = []
+        for chunk in (search_results or []):
+            base_url    = chunk.get("source_doc_url") or chunk.get("url") or ""
+            section_ref = (chunk.get("section_ref") or "").strip()
+            doc_title   = chunk.get("doc_title") or ""
+            # Full URL with section anchor: "https://lovdata.no/.../lov/YYYY-MM-DD-N/§6-1"
+            full_url = f"{base_url}/{section_ref}" if section_ref else base_url
+            if full_url and full_url not in seen_urls:
+                seen_urls.add(full_url)
+                visible_sources.append({
+                    "url": full_url, 
+                    "doc_title": doc_title,
+                    "section_ref": section_ref
+                })
+            # Also emit base URL so frontend shows the law itself
+            if base_url and base_url not in seen_urls:
+                seen_urls.add(base_url)
+                visible_sources.append({
+                    "url": base_url, 
+                    "doc_title": doc_title
+                })
+
+        yield {"type": "sources", "data": visible_sources}
 
         full_answer = ""
         token_count = 0
 
+        buffer = ""
         async for token in self._doc_qa_agent.stream_hybrid(
             query=query,
             doc_text=doc_text,
@@ -777,9 +832,22 @@ class RAGService:
         ):
             token_count += 1
             full_answer += token
-            yield {"type": "token", "data": token}
+            
+            buffer += token
+            if "[SCORE:" in buffer:
+                parts = buffer.split("[SCORE:", 1)
+                if parts[0]:
+                    yield {"type": "token", "data": parts[0]}
+                buffer = "[SCORE:" + parts[1]
+            else:
+                if len(buffer) > 15:
+                    yield {"type": "token", "data": buffer[:-15]}
+                    buffer = buffer[-15:]
 
-        score_pattern = re.compile(r"\[SCORE:([0-9.]+)\]")
+        if "[SCORE:" not in buffer and buffer:
+            yield {"type": "token", "data": buffer}
+
+        score_pattern = re.compile(r"\[SCORE:\s*([0-9.]+)\]")
         score_match = score_pattern.search(full_answer)
         score = float(score_match.group(1)) if score_match else 0.7
         clean_answer = score_pattern.sub("", full_answer).strip()
@@ -828,27 +896,36 @@ class RAGService:
     # CONTEXT BUILDER — section_ref used for human-readable citation anchor
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+    
     @staticmethod
     def _build_context(chunks: List[Dict[str, Any]]) -> str:
         """
         Build the RAG context string passed to the generator.
-
+    
+        🔥 UPDATED: Excludes doc_title from the context to prevent LLM from 
+        generating inline source citations like "Source: [doc_title]"
+        
+        The doc_title is still preserved in the chunk dict for frontend display.
+    
         Uses:
-          - section_ref  → human-readable citation anchor (e.g. "§ 6-1")
-          - source_doc_url → full Lovdata URL for attribution header
-          - text         → chunk content
+        - section_ref  → human-readable citation anchor (e.g. "§ 6-1")
+        - source_doc_url → full Lovdata URL for attribution header
+        - text         → chunk content
         """
         parts = []
         for i, chunk in enumerate(chunks, 1):
             text = chunk.get("text", "").strip()
             if not text:
                 continue
-
+    
             section_ref = chunk.get("section_ref") or ""
             source_url = chunk.get("source_doc_url") or chunk.get("url") or ""
             domain = chunk.get("domain") or ""
             subdomain = chunk.get("subdomain") or ""
-
+            
+            # 🔥 REMOVED: doc_title from header to prevent LLM inline citations
+            # The title is still in the chunk dict for save_exchange() to use
+    
             header_parts = []
             if source_url:
                 header_parts.append(source_url)
@@ -858,11 +935,12 @@ class RAGService:
                 header_parts.append(domain)
             if subdomain:
                 header_parts.append(subdomain)
-
+    
             header = " | ".join(header_parts) if header_parts else f"Source {i}"
             parts.append(f"[{i}] {header}\n{text}")
-
+    
         return "\n\n---\n\n".join(parts)
+    
 
     async def _extract_document_summary(self, doc_text: str) -> str:
         doc_excerpt = doc_text[:2000]

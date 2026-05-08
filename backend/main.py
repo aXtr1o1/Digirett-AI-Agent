@@ -7,7 +7,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from api.routes import chat, conversations, health, messages, documents, webhooks
+from api.routes import admin, chat, conversations, documents, health, hitl, invite, messages, webhooks
 from config import settings
 from db.milvus_client import get_milvus
 from db.redis_client import get_redis
@@ -18,6 +18,11 @@ from services.embedding_service import EmbeddingService
 from services.llm_service import LLMService
 from services.message_service import MessageService
 from services.rag_service import RAGService
+from services.lovdata_title_fetcher import LovdataTitleFetcher
+from services.user_service import UserService
+from services.email_service import EmailService
+from services.hitl_service import HitlService
+
 from telemetry.tracing import setup_tracing
 from utils.logger import setup_logger
 
@@ -91,10 +96,40 @@ async def lifespan(app: FastAPI):
             redis_client=redis_client,
         )
 
+        logger.info("Initializing User service...")
+        user_service = UserService(
+            supabase_client=supabase_client,
+        )
+
+        logger.info("Initializing Email service...")
+        email_service = EmailService(
+            smtp_host=settings.SMTP_HOST,
+            smtp_port=settings.SMTP_PORT,
+            smtp_user=settings.SMTP_USER,
+            smtp_pass=settings.SMTP_PASS,
+            from_email=settings.INVITE_FROM_EMAIL,
+        )
+
+        logger.info("Initializing HITL service...")
+        hitl_service = HitlService(
+            supabase_client=supabase_client,
+        )
+
+        # ── Title fetcher must be created BEFORE MessageService ──────────
+        # It resolves Lovdata URLs to human-readable Norwegian titles using
+        # a 3-layer cache: Redis (L1) → Supabase lovdata_url_titles (L2)
+        # → httpx fetch (L3). MessageService calls it inside save_exchange.
+        logger.info("Initializing Lovdata title fetcher...")
+        title_fetcher = LovdataTitleFetcher(
+            redis_client=redis_client,
+            supabase_client=supabase_client,
+        )
+
         logger.info("Initializing Message service...")
         message_service = MessageService(
             supabase_client=supabase_client,
             redis_client=redis_client,
+            title_fetcher=title_fetcher,          # ← wired in
         )
 
         logger.info("Injecting services into route modules...")
@@ -110,10 +145,12 @@ async def lifespan(app: FastAPI):
             conversation_service=conversation_service,
             message_service=message_service,
             llm_service=llm_service,
+            user_service=user_service,
         )
         conversations.set_services(
             conversation_service=conversation_service,
             message_service=message_service,
+            user_service=user_service,
         )
         messages.set_services(
             message_service=message_service,
@@ -122,9 +159,20 @@ async def lifespan(app: FastAPI):
         documents.set_services(
             document_service=document_service,
             llm_service=llm_service,
-
+            user_service=user_service,
         )
         webhooks.set_services(
+            user_service=user_service,
+        )
+        admin.set_services(
+            user_svc=user_service,
+            email_svc=email_service,
+        )
+        hitl.set_services(
+            hitl_svc=hitl_service,
+            user_svc=user_service,
+        )
+        invite.set_services(
             supabase_client=supabase_client,
         )
 
@@ -216,7 +264,10 @@ app.include_router(chat.router,          prefix="/api/v1")
 app.include_router(conversations.router, prefix="/api/v1")
 app.include_router(messages.router,      prefix="/api/v1")
 app.include_router(documents.router,     prefix="/api/v1")
-app.include_router(webhooks.router,      prefix="/api/v1")
+app.include_router(webhooks.router,      prefix="/api/v1/webhooks")
+app.include_router(admin.router,         prefix="/api/v1")
+app.include_router(hitl.router,          prefix="/api/v1")
+app.include_router(invite.router,        prefix="/api/v1")
 
 logger.info("FastAPI app created")
 

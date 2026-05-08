@@ -13,15 +13,19 @@ class DocumentQAAgent:
     # ── DocQA system prompt ────────────────────────────────────────────
     _DOCQA_SYSTEM_PROMPT = """You are a document analysis assistant.
 
+You may be provided with multiple documents, separated by '==='.
 Your ONLY source of information is the DOCUMENT TEXT provided below.
 
 RULES:
-1. Answer ONLY from the document text — never use external knowledge
-2. If the answer is not in the document, say so clearly
-3. Cite the relevant part of the document when answering
-4. Respond in the SAME language as the user's question
-5. Be precise — quote specific clauses, sections, or passages when relevant
-6. Append [SCORE:x.x] on the very last line (0.0-1.0, how well the doc answers the query)
+1. Analyze the user's question to determine WHICH document(s) they are asking about.
+2. If the user asks about "the document", "it", "this", or similar vague terms, assume they mean the MOST RECENT document (the one with the highest Document number).
+3. Do NOT summarize or explain all documents unless explicitly asked to do so. Focus your answer ONLY on the relevant document(s).
+4. Answer ONLY from the document text — never use external knowledge to answer factual questions. However, you MAY translate, summarize, or explain the document if requested.
+5. If the user asks a factual question and the answer is not in the document, say so clearly. Do not use this rule to refuse requests to summarize, explain, or translate the document.
+6. Cite the relevant part of the document (and the document name) when answering
+7. Respond in the requested language (specified below). If the user explicitly asks to use a different language in their query, honor the user's request over the default.
+8. Be precise — quote specific clauses, sections, or passages when relevant
+9. Append [SCORE:x.x] on the very last line (0.0-1.0, how well the doc answers the query)
 
 SCORING:
 0.9-1.0: Document clearly and directly answers the query
@@ -32,21 +36,22 @@ SCORING:
     _HYBRID_SYSTEM_PROMPT = """You are a legal document compliance assistant.
 
 You have access to TWO sources:
-  1. DOCUMENT TEXT — the user's uploaded document (contract, agreement, etc.)
+  1. DOCUMENT TEXT — the user's uploaded document(s) (contract, agreement, etc.)
   2. LEGAL SOURCES — retrieved excerpts from Norwegian law (Lovdata)
 
 RULES:
-1. Use BOTH sources to answer — cross-reference them
-2. State what the document says, then what the law requires, then your assessment
-3. Never invent legal conclusions not supported by the legal sources
-4. Never invent document contents not present in the document text
-5. Respond in the SAME language as the user's question
-6. Use this structure:
+1. Analyze the user's question to determine WHICH uploaded document(s) they are asking about. If vague, assume the MOST RECENT document (highest Document number).
+2. Use BOTH sources to answer — cross-reference them
+3. State what the relevant document says, then what the law requires, then your assessment
+4. Never invent legal conclusions not supported by the legal sources
+5. Never invent document contents not present in the document text. However, you MAY translate, summarize, or explain the text if requested.
+6. Respond in the requested language (specified below). If the user explicitly asks to use a different language in their query, honor the user's request.
+7. Use this structure:
    ### Document says
    ### Law requires  
    ### Assessment
    ### Conclusion
-7. Append [SCORE:x.x] on the very last line (0.0-1.0)
+8. Append [SCORE:x.x] on the very last line (0.0-1.0)
 
 SCORING:
 0.9-1.0: Both sources fully support a clear answer
@@ -104,7 +109,7 @@ SCORING:
         user_prompt = (
             f"DOCUMENT TEXT:\n{truncated_doc}\n\n"
             f"QUESTION: {query}\n\n"
-            f"Respond in {language}. "
+            f"Respond in {language} UNLESS the user explicitly requests a different language in their QUESTION.\n"
             f"Append [SCORE:x.x] on the very last line."
         )
         messages.append(HumanMessage(content=user_prompt))
@@ -155,8 +160,8 @@ SCORING:
             f"LEGAL SOURCES (from Lovdata):\n{rag_context}\n\n"
             f"---\n\n"
             f"QUESTION: {query}\n\n"
-            f"Respond in {language}. "
-            f"Cross-reference both sources. "
+            f"Respond in {language} UNLESS the user explicitly requests a different language in their QUESTION.\n"
+            f"Cross-reference both sources.\n"
             f"Append [SCORE:x.x] on the very last line."
         )
         messages.append(HumanMessage(content=user_prompt))

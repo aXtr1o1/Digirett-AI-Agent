@@ -5,7 +5,8 @@ import hitlService from "../services/hitlService";
 import { supabase, getSupabaseClient } from "../lib/supabase";
 import { useAuth } from "@clerk/clerk-react";
 import useDocumentUpload from "./useDocumentUpload";
-import { MESSAGE_ROLES, API_BASE_URL } from "../utils/constants";
+import documentService from "../services/documentService";
+import { MESSAGE_ROLES } from "../utils/constants";
 
 const useChat = (
   conversationId,
@@ -77,7 +78,6 @@ const useChat = (
         fileName: m.file_name || null,
         documentId: m.metadata?.document_id || null,
       }));
-
       setMessages(normalized);
     } catch (err) {
       console.error("[useChat] loadMessages error from Supabase:", err);
@@ -188,20 +188,12 @@ const useChat = (
         // ── Save to DB (sequence matters for correct reload order) ────────
         // 1. Save file message FIRST
         try {
-          const token = await window.Clerk?.session?.getToken();
-          const headers = { "Content-Type": "application/json" };
-          if (token) headers["Authorization"] = `Bearer ${token}`;
-
-          await fetch(`${API_BASE_URL}/api/v1/documents/message/${convId}`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              role: "user",
-              content: messageText.trim() || null,
-              type: "file-with-text",
-              file_name: uploadResult.file_name || file.name,
-              document_id: uploadResult.document_id,
-            }),
+          await documentService.saveFileMessage(convId, {
+            role: "user",
+            content: messageText.trim() || null,
+            type: "file-with-text",
+            file_name: uploadResult.file_name || file.name,
+            document_id: uploadResult.document_id,
           });
 
           // For new conversations, trigger creation AFTER first message is in DB
@@ -213,19 +205,12 @@ const useChat = (
         }
 
         // 2. Save summary message SECOND (so it appears after file on reload)
-        if (uploadResult.summary_text) {
+        // Only save when there is NO query — with a query, doc_qa handles the response
+        if (!hasQuery && uploadResult.summary_text) {
           try {
-            const token = await window.Clerk?.session?.getToken();
-            const headers = { "Content-Type": "application/json" };
-            if (token) headers["Authorization"] = `Bearer ${token}`;
-
-            await fetch(`${API_BASE_URL}/api/v1/documents/summary-message/${convId}`, {
-              method: "POST",
-              headers,
-              body: JSON.stringify({
-                content: uploadResult.summary_text,
-                document_id: uploadResult.document_id,
-              }),
+            await documentService.saveSummaryMessage(convId, {
+              content: uploadResult.summary_text,
+              document_id: uploadResult.document_id,
             });
           } catch (err) {
             console.error("[useChat] ❌ save_summary_message call failed:", err);
@@ -239,21 +224,7 @@ const useChat = (
         }
 
         // ── File + query: stream the RAG response ─────────────────────────
-        // Show summary inline first if available
-        if (uploadResult.summary_text) {
-          const summaryMsgId = crypto.randomUUID();
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: summaryMsgId,
-              role: MESSAGE_ROLES.ASSISTANT,
-              type: "text",
-              content: uploadResult.summary_text,
-              sources: [],
-              timestamp: new Date().toISOString(),
-            },
-          ]);
-        }
+        // Do NOT show summary here — doc_qa / legal / hybrid will stream the answer
 
         setIsProcessingDoc(false);
         setIsStreaming(true);

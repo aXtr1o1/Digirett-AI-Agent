@@ -1,11 +1,12 @@
 import api from "./api";
+import { API_ENDPOINTS } from "../utils/constants";
 
 const hitlService = {
   /**
    * Get the queue of open HITL tickets
    */
   getQueue: async () => {
-    const response = await api.get("/hitl/queue");
+    const response = await api.get(API_ENDPOINTS.HITL.QUEUE);
     return response.data;
   },
 
@@ -13,7 +14,7 @@ const hitlService = {
    * Claim a ticket by assigning it to the current lawyer
    */
   claimTicket: async (ticketId) => {
-    const response = await api.patch(`/hitl/tickets/${ticketId}/assign`);
+    const response = await api.patch(API_ENDPOINTS.HITL.ASSIGN(ticketId));
     return response.data;
   },
 
@@ -21,7 +22,7 @@ const hitlService = {
    * Get detailed info for a specific ticket (including user info)
    */
   getTicketDetails: async (ticketId) => {
-    const response = await api.get(`/hitl/tickets/${ticketId}/details`);
+    const response = await api.get(API_ENDPOINTS.HITL.DETAILS(ticketId));
     return response.data;
   },
 
@@ -29,7 +30,7 @@ const hitlService = {
    * Submit a lawyer response and resolve the ticket
    */
   respondToTicket: async (ticketId, content) => {
-    const response = await api.post(`/hitl/tickets/${ticketId}/respond`, { content });
+    const response = await api.post(API_ENDPOINTS.HITL.RESPOND(ticketId), { content });
     return response.data;
   },
 
@@ -37,11 +38,27 @@ const hitlService = {
    * Escalate a conversation to a lawyer (called by user)
    */
   escalateConversation: async (conversationId, triggerMessageId, userNote = "") => {
-    const response = await api.post("/hitl/escalate", {
+    const response = await api.post(API_ENDPOINTS.HITL.ESCALATE, {
       conversation_id: conversationId,
       trigger_message_id: triggerMessageId,
       user_note: userNote,
     });
+    return response.data;
+  },
+
+  /**
+   * Get user's own escalation tickets
+   */
+  getMyTickets: async () => {
+    const response = await api.get(API_ENDPOINTS.HITL.MY_TICKETS);
+    return response.data;
+  },
+
+  /**
+   * Get lawyer's resolved history
+   */
+  getResolvedHistory: async () => {
+    const response = await api.get(API_ENDPOINTS.HITL.MY_RESOLVED);
     return response.data;
   },
 };

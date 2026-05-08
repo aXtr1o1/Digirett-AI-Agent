@@ -77,7 +77,7 @@ const Sidebar = ({
   if (role === "admin") {
     features.push({ id: "admin", label: "Admin Panel", icon: Shield, path: "/admin" });
   }
-  if (role === "lawyer" || role === "admin") {
+  if (role === "lawyer") {
     features.push({ id: "lawyer", label: "Case Queue", icon: FileText, path: "/lawyer" });
   }
 

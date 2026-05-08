@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
-from core.auth import ClerkUser, require_role
+from core.auth import ClerkUser, require_role, require_db_role
 from services.hitl_service import HitlService
 from services.user_service import UserService
 
@@ -32,7 +32,7 @@ class RespondRequest(BaseModel):
 @router.post("/escalate")
 async def escalate_conversation(
     req: EscalateRequest,
-    current_user: ClerkUser = Depends(require_role("user", "lawyer", "admin"))
+    current_user: ClerkUser = Depends(require_db_role("user", "lawyer", "admin"))
 ):
     """
     User triggers an escalation for a specific conversation.
@@ -50,7 +50,7 @@ async def escalate_conversation(
 
 @router.get("/queue")
 async def get_ticket_queue(
-    current_lawyer: ClerkUser = Depends(require_role("lawyer", "admin"))
+    current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin"))
 ):
     """
     Lawyers view the shared queue of 'open' tickets.
@@ -61,7 +61,7 @@ async def get_ticket_queue(
 @router.patch("/tickets/{ticket_id}/assign")
 async def assign_ticket(
     ticket_id: str,
-    current_lawyer: ClerkUser = Depends(require_role("lawyer", "admin"))
+    current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin"))
 ):
     """
     Lawyer self-assigns a ticket from the queue.
@@ -77,7 +77,7 @@ async def assign_ticket(
 @router.get("/tickets/{ticket_id}/details")
 async def get_ticket_details(
     ticket_id: str,
-    current_lawyer: ClerkUser = Depends(require_role("lawyer", "admin"))
+    current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin"))
 ):
     """
     Lawyer views full ticket details including user info.
@@ -95,7 +95,7 @@ async def get_ticket_details(
 async def respond_to_ticket(
     ticket_id: str,
     req: RespondRequest,
-    current_lawyer: ClerkUser = Depends(require_role("lawyer", "admin"))
+    current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin"))
 ):
     """
     Lawyer submits a written response to the user's escalation.
@@ -112,3 +112,25 @@ async def respond_to_ticket(
         raise HTTPException(status_code=500, detail="Failed to save response.")
         
     return {"message": "Response submitted and ticket resolved."}
+
+@router.get("/my-tickets")
+async def get_my_tickets(
+    current_user: ClerkUser = Depends(require_db_role("user", "lawyer", "admin"))
+):
+    """
+    User views their own escalation tickets and their status.
+    """
+    user_id = _user_service.get_user_id_from_clerk_id(current_user.clerk_user_id)
+    tickets = _hitl_service.get_user_tickets(user_id)
+    return tickets
+
+@router.get("/my-resolved-tickets")
+async def get_my_resolved_history(
+    current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin"))
+):
+    """
+    Lawyer views their own history of resolved tickets.
+    """
+    lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
+    tickets = _hitl_service.get_lawyer_resolved_history(lawyer_id)
+    return tickets

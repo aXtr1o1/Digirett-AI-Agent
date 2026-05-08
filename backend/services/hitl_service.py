@@ -61,13 +61,24 @@ class HitlService:
         Returns all tickets in 'open' status for the queue.
         """
         try:
-            query = self._supabase.table("hitl_tickets").select("*, user_profiles(display_name)").eq("status", "open")
-            # Placeholder tenant guard: if we eventually require multi-tenancy, uncomment below:
-            # if tenant_id:
-            #     query = query.eq("tenant_id", tenant_id)
+            # Join via users table to get profile info
+            query = self._supabase.table("hitl_tickets").select(
+                "*, "
+                "users!hitl_tickets_user_id_fkey("
+                "  user_profiles(display_name)"
+                ")"
+            ).eq("status", "open")
             
             response = query.order("created_at", desc=False).execute()
-            return response.data or []
+            data = response.data or []
+            
+            # Flatten
+            for ticket in data:
+                raw_user = ticket.pop("users", {}) or {}
+                raw_profile = raw_user.get("user_profiles", {}) or {}
+                ticket["user_display_name"] = raw_profile.get("display_name")
+
+            return data
         except Exception as exc:
             logger.error(f"❌ Failed to fetch open tickets | {exc}")
             return []
@@ -172,3 +183,65 @@ class HitlService:
         except Exception as exc:
             logger.error(f"Failed to fetch ticket details {ticket_id} | {exc}")
             return None
+
+    def get_lawyer_resolved_history(self, lawyer_id: str) -> List[Dict[str, Any]]:
+        """
+        Returns all tickets resolved by a specific lawyer.
+        """
+        try:
+            response = self._supabase.table("hitl_tickets") \
+                .select(
+                    "*, "
+                    "users!hitl_tickets_user_id_fkey("
+                    "  user_profiles(display_name)"
+                    ")"
+                ) \
+                .eq("assigned_lawyer_id", lawyer_id) \
+                .eq("status", "resolved") \
+                .order("resolved_at", desc=True) \
+                .execute()
+            
+            data = response.data or []
+            # Flatten for cleaner consumption
+            for ticket in data:
+                raw_user = ticket.pop("users", {}) or {}
+                raw_profile = raw_user.get("user_profiles", {}) or {}
+                ticket["user_display_name"] = raw_profile.get("display_name")
+                
+            return data
+        except Exception as exc:
+            logger.error(f"❌ Failed to fetch lawyer history | {exc}")
+            return []
+
+    def get_user_tickets(self, user_id: str) -> List[Dict[str, Any]]:
+        """
+        Returns all tickets created by a specific user.
+        Includes the assigned lawyer's name if the ticket is claimed.
+        """
+        try:
+            response = self._supabase.table("hitl_tickets") \
+                .select(
+                    "*, "
+                    "lawyer:users!hitl_tickets_assigned_lawyer_id_fkey("
+                    "  user_name, "
+                    "  user_profiles(display_name)"
+                    ")"
+                ) \
+                .eq("user_id", user_id) \
+                .order("created_at", desc=True) \
+                .execute()
+            
+            # Clean up the lawyer name for easier frontend consumption
+            data = response.data or []
+            for ticket in data:
+                lawyer = ticket.pop("lawyer", {}) or {}
+                if lawyer:
+                    profile = lawyer.get("user_profiles", {}) or {}
+                    ticket["assigned_lawyer_name"] = profile.get("display_name") or lawyer.get("user_name")
+                else:
+                    ticket["assigned_lawyer_name"] = None
+                    
+            return data
+        except Exception as exc:
+            logger.error(f"❌ Failed to fetch user tickets | {exc}")
+            return []

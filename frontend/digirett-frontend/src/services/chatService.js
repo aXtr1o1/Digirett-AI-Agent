@@ -1,17 +1,17 @@
-import { API_BASE_URL } from "../utils/constants";
+import { API_BASE_URL, API_ENDPOINTS } from "../utils/constants";
 
 const SAFE_API_BASE_URL =
   typeof API_BASE_URL === "string" && API_BASE_URL.length > 0
     ? API_BASE_URL
     : "http://localhost:8000";
 
-const cleanBase = SAFE_API_BASE_URL.replace(/\/+$/, "");  // ← was API_BASE_URL
+const cleanBase = SAFE_API_BASE_URL.replace(/\/+$/, "");
 
 const WS_URL =
   cleanBase
     .replace(/^https/, "wss")
     .replace(/^http/, "ws") +
-  "/api/v1/chat/ws";
+  "/api/v1" + API_ENDPOINTS.CHAT.WS;
 
 // ─────────────────────────────────────────────────────────────────────────────
 console.log("[chatService] Initialized with WS_URL:", WS_URL);
@@ -104,11 +104,18 @@ const chatService = {
               resolvedConversationId = finalMetadata.conversation_id || resolvedConversationId;
 
               if (onComplete) {
+                // ✅ FIX: prefer finalMetadata.sources — this is the authoritative list
+                // from the backend 'complete' event and already has translated titles.
+                // The `sources` variable (from the earlier 'sources' WS event) is an
+                // intermediate buffer used to show citations while streaming; the
+                // 'complete' event is the final, language-corrected version.
+                const completeSources = Array.isArray(finalMetadata.sources) && finalMetadata.sources.length > 0
+                  ? finalMetadata.sources
+                  : sources.map((url) => typeof url === "string" ? { url, title: url } : url);
+
                 onComplete({
                   message:        finalMetadata.full_answer || fullMessage,
-                  sources:        sources.map((url) =>
-                    typeof url === "string" ? { url, title: url } : url
-                  ),
+                  sources:        completeSources,
                   conversationId: resolvedConversationId,
                   messageId:      finalMetadata.message_id || null,
                   metadata:       finalMetadata,

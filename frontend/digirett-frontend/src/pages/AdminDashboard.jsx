@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import adminService from "../services/adminService";
-import { Users, Mail, Shield, ArrowUpCircle, Loader2, Search, UserPlus } from "lucide-react";
+import { Users, Mail, Shield, ArrowUpCircle, Loader2, Search, UserPlus, CheckCircle } from "lucide-react";
 
 export default function AdminDashboard() {
   const [users, setUsers] = useState([]);
@@ -14,7 +14,9 @@ export default function AdminDashboard() {
   const fetchUsers = async () => {
     try {
       const data = await adminService.listUsers();
-      setUsers(data);
+      // Only include users who have a valid email (filter out incomplete/orphaned records)
+      const validUsers = data.filter(u => u.email);
+      setUsers(validUsers);
     } catch (err) {
       console.error("Failed to fetch users:", err);
     } finally {
@@ -43,6 +45,7 @@ export default function AdminDashboard() {
   };
 
   const handlePromote = async (userId, role) => {
+    console.log(`Promoting user ${userId} to ${role}...`);
     try {
       if (role === "lawyer") {
         await adminService.promoteToLawyer(userId);
@@ -50,20 +53,38 @@ export default function AdminDashboard() {
         await adminService.promoteToAdmin(userId);
       }
       setMessage({ type: "success", text: `User promoted to ${role} successfully` });
+      console.log("Promotion successful, refreshing user list...");
       fetchUsers();
     } catch (err) {
+      console.error("Promotion failed:", err);
       setMessage({ type: "error", text: err.message || "Promotion failed" });
     }
   };
 
-  const filteredUsers = users.filter(u => 
-    u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.user_profiles?.display_name?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredUsers = users.filter(u => {
+    const email = (u.email || "").toLowerCase();
+    const displayName = (u.user_profiles?.display_name || "").toLowerCase();
+    const query = searchQuery.toLowerCase();
+    return email.includes(query) || displayName.includes(query);
+  });
 
   return (
     <div className="min-h-screen bg-gray-50 p-6 md:p-10">
       <div className="max-w-7xl mx-auto">
+        {/* Notifications */}
+        {message && (
+          <div className={`mb-6 p-4 rounded-2xl flex items-center justify-between ${message.type === 'success' ? 'bg-green-50 text-green-800 border border-green-100' : 'bg-red-50 text-red-800 border border-red-100'
+            }`}>
+            <div className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5" />
+              <span className="font-semibold">{message.text}</span>
+            </div>
+            <button onClick={() => setMessage(null)} className="text-current opacity-50 hover:opacity-100">
+              &times;
+            </button>
+          </div>
+        )}
+
         <header className="mb-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Admin Dashboard</h1>
@@ -75,6 +96,46 @@ export default function AdminDashboard() {
           </div>
         </header>
 
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex items-center gap-5">
+            <div className="h-14 w-14 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600">
+              <Users className="h-7 w-7" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Total Users</p>
+              <h3 className="text-2xl font-black text-gray-900">{users.length}</h3>
+            </div>
+          </div>
+          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex items-center gap-5">
+            <div className="h-14 w-14 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+              <ArrowUpCircle className="h-7 w-7" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Lawyers</p>
+              <h3 className="text-2xl font-black text-gray-900">{users.filter(u => u.role === 'lawyer').length}</h3>
+            </div>
+          </div>
+          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex items-center gap-5">
+            <div className="h-14 w-14 rounded-2xl bg-purple-50 flex items-center justify-center text-purple-600">
+              <Shield className="h-7 w-7" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Admins</p>
+              <h3 className="text-2xl font-black text-gray-900">{users.filter(u => u.role === 'admin').length}</h3>
+            </div>
+          </div>
+          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex items-center gap-5">
+            <div className="h-14 w-14 rounded-2xl bg-gray-50 flex items-center justify-center text-gray-400">
+              <Users className="h-7 w-7" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Users</p>
+              <h3 className="text-2xl font-black text-gray-900">{users.filter(u => u.role === 'user' || !u.role).length}</h3>
+            </div>
+          </div>
+        </div>
+
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Invite Form */}
           <section className="lg:col-span-1">
@@ -85,7 +146,7 @@ export default function AdminDashboard() {
                 </div>
                 <h2 className="text-xl font-bold text-gray-900">Invite Member</h2>
               </div>
-              
+
               <form onSubmit={handleInvite} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
@@ -175,7 +236,7 @@ export default function AdminDashboard() {
                           <td className="px-6 py-4">
                             <div className="flex items-center space-x-3">
                               <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold">
-                                {user.user_profiles?.display_name?.charAt(0) || user.email?.charAt(0).toUpperCase()}
+                                {(user.user_profiles?.display_name || user.email || "?").charAt(0).toUpperCase()}
                               </div>
                               <div>
                                 <p className="font-semibold text-gray-900">{user.user_profiles?.display_name || "New User"}</p>
@@ -184,29 +245,30 @@ export default function AdminDashboard() {
                             </div>
                           </td>
                           <td className="px-6 py-4">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              user.role === 'admin' ? 'bg-purple-100 text-purple-700' :
-                              user.role === 'lawyer' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'
-                            }`}>
-                              {user.role.toUpperCase()}
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${user.role === 'admin' ? 'bg-purple-100 text-purple-700' :
+                                user.role === 'lawyer' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'
+                              }`}>
+                              {(user.role || 'user').toUpperCase()}
                             </span>
                           </td>
                           <td className="px-6 py-4 text-right">
-                            <div className="flex items-center justify-end space-x-2">
-                              {user.role !== 'lawyer' && user.role !== 'admin' && (
+                            <div className="flex flex-col sm:flex-row items-center justify-end gap-2">
+                              {user.role !== 'lawyer' && (
                                 <button
                                   onClick={() => handlePromote(user.user_id, 'lawyer')}
-                                  className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors title='Promote to Lawyer'"
+                                  className="whitespace-nowrap px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-all text-xs font-bold border border-blue-100 flex items-center gap-1.5"
                                 >
-                                  <ArrowUpCircle className="h-5 w-5" />
+                                  <ArrowUpCircle className="h-3.5 w-3.5" />
+                                  <span>Promote to Lawyer</span>
                                 </button>
                               )}
                               {user.role !== 'admin' && (
                                 <button
                                   onClick={() => handlePromote(user.user_id, 'admin')}
-                                  className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors title='Promote to Admin'"
+                                  className="whitespace-nowrap px-3 py-1.5 bg-purple-50 text-purple-600 hover:bg-purple-600 hover:text-white rounded-lg transition-all text-xs font-bold border border-purple-100 flex items-center gap-1.5"
                                 >
-                                  <Shield className="h-5 w-5" />
+                                  <Shield className="h-3.5 w-3.5" />
+                                  <span>Promote to Admin</span>
                                 </button>
                               )}
                             </div>

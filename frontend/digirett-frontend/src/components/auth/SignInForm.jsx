@@ -82,15 +82,13 @@ const SignInForm = () => {
         await setActive({ session: result.createdSessionId });
         
         //  Force immediate redirect to the role-based dashboard
-        navigate('/'); 
+        navigate('/', { replace: true }); 
 
         if (rememberMe) {
           localStorage.setItem('rememberedIdentifier', identifier);
         } else {
           localStorage.removeItem('rememberedIdentifier');
         }
-
-        navigate('/chat', { replace: true });
       } else {
         setError('Sign in incomplete. Please try again.');
       }

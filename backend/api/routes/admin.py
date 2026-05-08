@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, EmailStr
 
-from core.auth import ClerkUser, require_role
+from core.auth import ClerkUser, require_db_role
 from services.user_service import UserService
 from services.email_service import EmailService
 
@@ -37,7 +37,7 @@ class PromoteAdminRequest(BaseModel):
 @router.post("/invite")
 async def invite_user(
     req: InviteRequest,
-    current_admin: ClerkUser = Depends(require_role("admin"))
+    current_admin: ClerkUser = Depends(require_db_role("admin"))
 ):
     """
     Admin invites a new user via email. 
@@ -46,14 +46,16 @@ async def invite_user(
     if req.role not in ["lawyer", "admin"]:
         raise HTTPException(status_code=400, detail="Invalid role. Must be 'lawyer' or 'admin'.")
     
-    # Get internal admin ID
+    # Get internal admin ID and email
     admin_id = _user_service.get_user_id_from_clerk_id(current_admin.clerk_user_id)
+    admin_email = current_admin.email
     
-    success = _user_service.invite_user(
+    success = await _user_service.invite_user(
         email=req.email,
         role=req.role,
         admin_id=admin_id,
-        email_service=_email_service
+        email_service=_email_service,
+        admin_email=admin_email
     )
     
     if not success:
@@ -64,7 +66,7 @@ async def invite_user(
 @router.post("/promote/lawyer")
 async def promote_to_lawyer(
     req: PromoteLawyerRequest,
-    current_admin: ClerkUser = Depends(require_role("admin"))
+    current_admin: ClerkUser = Depends(require_db_role("admin"))
 ):
     """Promotes an existing user to the Lawyer role."""
     admin_id = _user_service.get_user_id_from_clerk_id(current_admin.clerk_user_id)
@@ -84,7 +86,7 @@ async def promote_to_lawyer(
 @router.post("/promote/admin")
 async def promote_to_admin(
     req: PromoteAdminRequest,
-    current_admin: ClerkUser = Depends(require_role("admin"))
+    current_admin: ClerkUser = Depends(require_db_role("admin"))
 ):
     """Promotes an existing user to the Admin role."""
     admin_id = _user_service.get_user_id_from_clerk_id(current_admin.clerk_user_id)
@@ -102,7 +104,7 @@ async def promote_to_admin(
 
 @router.get("/users")
 async def list_users(
-    current_admin: ClerkUser = Depends(require_role("admin"))
+    current_admin: ClerkUser = Depends(require_db_role("admin"))
 ):
     """Lists all users in the system."""
     try:
@@ -111,3 +113,13 @@ async def list_users(
         return response.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/audit-logs")
+async def get_audit_logs(
+    limit: int = 50,
+    offset: int = 0,
+    current_admin: ClerkUser = Depends(require_db_role("admin"))
+):
+    """Fetches global audit logs for administrative oversight."""
+    logs = _user_service.get_audit_logs(limit=limit, offset=offset)
+    return logs

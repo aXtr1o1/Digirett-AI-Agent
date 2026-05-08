@@ -2,7 +2,7 @@ from pymilvus import connections, utility
 
 MILVUS_HOST = "20.86.37.141"
 MILVUS_PORT = "19530"
-COLLECTION_NAME = "classified_data"
+COLLECTION_NAME = "demo_data"
 
 connections.connect(
     alias="default",

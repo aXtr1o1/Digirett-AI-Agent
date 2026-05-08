@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import hitlService from "../services/hitlService";
-import { Ticket, Clock, CheckCircle2, ChevronRight, Loader2, RefreshCw, Filter, User as UserIcon, Mail, Shield } from "lucide-react";
+import { Ticket, Clock, CheckCircle2, ChevronRight, Loader2, RefreshCw, Filter, User as UserIcon, Mail, Shield, Phone } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
 
 export default function LawyerDashboard() {
@@ -63,9 +63,9 @@ export default function LawyerDashboard() {
               <p className="text-gray-500 text-sm mt-0.5">Manage legal escalations</p>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-6">
-            <button 
+            <button
               onClick={() => fetchQueue(true)}
               className="p-2.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
               disabled={refreshing}
@@ -78,7 +78,7 @@ export default function LawyerDashboard() {
 
             {/* Top-Right Profile Section */}
             <div className="relative">
-              <button 
+              <button
                 onClick={() => setShowProfileDetails(!showProfileDetails)}
                 className="flex items-center gap-3 hover:bg-gray-50 p-1.5 rounded-2xl transition-all border border-transparent hover:border-gray-100"
               >
@@ -99,8 +99,8 @@ export default function LawyerDashboard() {
               {/* Profile Dropdown */}
               {showProfileDetails && (
                 <>
-                  <div 
-                    className="fixed inset-0 z-20" 
+                  <div
+                    className="fixed inset-0 z-20"
                     onClick={() => setShowProfileDetails(false)}
                   ></div>
                   <div className="absolute right-0 mt-3 w-64 bg-white rounded-3xl shadow-2xl border border-gray-100 p-5 z-30 animate-in fade-in zoom-in duration-200">
@@ -149,7 +149,7 @@ export default function LawyerDashboard() {
               </div>
             ) : (
               tickets.map((ticket) => (
-                <div 
+                <div
                   key={ticket.ticket_id}
                   className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-all group flex flex-col md:flex-row md:items-center justify-between gap-6"
                 >
@@ -158,18 +158,29 @@ export default function LawyerDashboard() {
                       {(ticket.user_info?.display_name || ticket.user_info?.user_name || ticket.user_profiles?.display_name || "U").charAt(0)}
                     </div>
                     <div>
-                      <h3 className="font-bold text-gray-900 text-lg">{ticket.user_info?.display_name || ticket.user_info?.user_name || ticket.user_profiles?.display_name || "Anonymous User"}</h3>
-                      <div className="flex items-center text-sm text-gray-500 mt-1 space-x-3">
+                      <h3 className="font-bold text-gray-900 text-lg">{ticket.user_info?.display_name || ticket.user_info?.user_name || "Anonymous User"}</h3>
+                      <div className="flex flex-wrap items-center text-sm text-gray-500 mt-1 gap-x-4 gap-y-1">
+                        <span className="flex items-center text-blue-600 font-medium">
+                          <Mail className="h-3.5 w-3.5 mr-1.5" />
+                          {ticket.user_info?.email || "No email provided"}
+                        </span>
+                        {ticket.user_info?.phone_number && (
+                          <span className="flex items-center text-gray-500">
+                            <Phone className="h-3.5 w-3.5 mr-1.5" />
+                            {ticket.user_info.phone_number}
+                          </span>
+                        )}
                         <span className="flex items-center">
-                          <Clock className="h-3.5 w-3.5 mr-1" />
+                          <Clock className="h-3.5 w-3.5 mr-1.5" />
                           {formatDate(ticket.created_at)}
                         </span>
-                        <span className="w-1 h-1 rounded-full bg-gray-300"></span>
-                        <span className="font-medium text-blue-600">ID: ...{ticket.ticket_id.slice(-6)}</span>
+                        <span className="flex items-center font-medium text-gray-400">
+                          ID: ...{ticket.ticket_id.slice(-6)}
+                        </span>
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center gap-4">
                     <div className="hidden md:block text-right mr-4">
                       <p className="text-xs uppercase tracking-wider font-bold text-gray-400 mb-1">Status</p>

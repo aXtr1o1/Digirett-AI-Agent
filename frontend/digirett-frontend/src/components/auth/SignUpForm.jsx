@@ -74,7 +74,7 @@ const SignUpForm = () => {
           session: result.createdSessionId,
         });
 
-        navigate('/chat', { replace: true });
+        navigate('/', { replace: true });
       } else if (result.status === 'missing_requirements') {
         console.log('Missing fields:', result.missingFields);
         setError(`Verification successful, but missing required fields: ${result.missingFields?.join(', ')}`);
