@@ -12,11 +12,10 @@ const api = axios.create({
 api.interceptors.request.use(
   async (config) => {
     try {
-      // Enable when backend auth is ready
-      // const clerkToken = await window.Clerk?.session?.getToken();
-      // if (clerkToken) {
-      //   config.headers.Authorization = `Bearer ${clerkToken}`;
-      // }
+      const clerkToken = await window.Clerk?.session?.getToken();
+      if (clerkToken) {
+        config.headers.Authorization = `Bearer ${clerkToken}`;
+      }
     } catch (error) {
       console.error("Error adding auth token:", error);
     }

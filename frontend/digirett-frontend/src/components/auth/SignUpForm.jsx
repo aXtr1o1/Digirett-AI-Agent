@@ -56,18 +56,28 @@ const SignUpForm = () => {
     setError('');
 
     try {
+      // Check if already verified in this session to prevent double submission error
+      if (signUp.status === 'missing_requirements' && signUp.verifications.emailAddress.status === 'verified') {
+        setError(`Missing requirements: ${signUp.missingFields?.join(', ')}`);
+        setLoading(false);
+        return;
+      }
+
       const result = await signUp.attemptEmailAddressVerification({
         code,
       });
 
       console.log('Verification result:', result);
 
-      if (result.createdSessionId) {
+      if (result.status === 'complete') {
         await setActive({
           session: result.createdSessionId,
         });
 
         navigate('/chat', { replace: true });
+      } else if (result.status === 'missing_requirements') {
+        console.log('Missing fields:', result.missingFields);
+        setError(`Verification successful, but missing required fields: ${result.missingFields?.join(', ')}`);
       } else {
         setError('Verification failed. Try again.');
       }
@@ -85,6 +95,7 @@ const SignUpForm = () => {
         {!needsVerification ? (
           <form onSubmit={handleSignUp} className="space-y-4">
             <h1 className="text-3xl font-bold text-center">Sign Up</h1>
+            <div id="clerk-captcha"></div>
 
             {error && <p className="text-red-400 text-center">{error}</p>}
 
@@ -132,6 +143,7 @@ const SignUpForm = () => {
         ) : (
           <form onSubmit={handleVerify} className="space-y-4">
             <h1 className="text-2xl font-bold text-center">Verify Email</h1>
+            <div id="clerk-captcha"></div>
 
             {error && <p className="text-red-400 text-center">{error}</p>}
 

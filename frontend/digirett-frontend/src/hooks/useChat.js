@@ -1,6 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import chatService from "../services/chatService";
 import conversationService from "../services/conversationService";
+import hitlService from "../services/hitlService";
+import { supabase, getSupabaseClient } from "../lib/supabase";
+import { useAuth } from "@clerk/clerk-react";
 import useDocumentUpload from "./useDocumentUpload";
 import { MESSAGE_ROLES, API_BASE_URL } from "../utils/constants";
 
@@ -10,6 +13,7 @@ const useChat = (
   moveConversationToTop,
   userId
 ) => {
+  const { getToken } = useAuth();
   const [messages, setMessages] = useState([]);
   const addMessage = useCallback((msg) => {
     setMessages((prev) => [...prev, msg]);
@@ -20,6 +24,7 @@ const useChat = (
   const [isStreaming, setIsStreaming] = useState(false);
   // ✅ NEW: tracks whether we're processing/uploading a document (shows loading indicator)
   const [isProcessingDoc, setIsProcessingDoc] = useState(false);
+  const [isEscalated, setIsEscalated] = useState(false);
 
   const activeConversationIdRef = useRef(conversationId);
   const abortRef = useRef(null);
@@ -40,20 +45,28 @@ const useChat = (
     activeConversationIdRef.current = conversationId;
   }, [conversationId]);
 
-  // ── Load messages for an existing conversation ────────────────────────────
+  // ── Load messages for an existing conversation directly from Supabase ──────
   const loadMessages = useCallback(async () => {
     if (!conversationId) {
       setMessages([]);
+      setError(null);
       return;
     }
     setIsLoading(true);
     setError(null);
     try {
-      const data =
-        await conversationService.getConversationWithMessages(conversationId);
-      const msgs = Array.isArray(data.messages) ? data.messages : [];
+      const authClient = await getSupabaseClient(getToken);
+      const { data: msgs, error: sbError } = await authClient
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", conversationId)
+        .eq("is_deleted", false)
+        .order("created_at", { ascending: true })
+        .limit(100);
 
-      const normalized = msgs.map((m) => ({
+      if (sbError) throw sbError;
+
+      const normalized = (msgs || []).map((m) => ({
         id: m.message_id,
         role: m.role,
         content: m.content || "",
@@ -67,7 +80,7 @@ const useChat = (
 
       setMessages(normalized);
     } catch (err) {
-      console.error("[useChat] loadMessages error:", err);
+      console.error("[useChat] loadMessages error from Supabase:", err);
       setError("Failed to load messages");
     } finally {
       setIsLoading(false);
@@ -175,9 +188,13 @@ const useChat = (
         // ── Save to DB (sequence matters for correct reload order) ────────
         // 1. Save file message FIRST
         try {
+          const token = await window.Clerk?.session?.getToken();
+          const headers = { "Content-Type": "application/json" };
+          if (token) headers["Authorization"] = `Bearer ${token}`;
+
           await fetch(`${API_BASE_URL}/api/v1/documents/message/${convId}`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers,
             body: JSON.stringify({
               role: "user",
               content: messageText.trim() || null,
@@ -198,9 +215,13 @@ const useChat = (
         // 2. Save summary message SECOND (so it appears after file on reload)
         if (uploadResult.summary_text) {
           try {
+            const token = await window.Clerk?.session?.getToken();
+            const headers = { "Content-Type": "application/json" };
+            if (token) headers["Authorization"] = `Bearer ${token}`;
+
             await fetch(`${API_BASE_URL}/api/v1/documents/summary-message/${convId}`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers,
               body: JSON.stringify({
                 content: uploadResult.summary_text,
                 document_id: uploadResult.document_id,
@@ -384,8 +405,35 @@ const useChat = (
   }, [loadMessages]);
 
   useEffect(() => {
-    if (conversationId) fetchSessionStatus(conversationId);
+    if (conversationId) {
+      fetchSessionStatus(conversationId);
+
+      // Check if any existing message is a system escalation message
+      const checkEscalated = async () => {
+        try {
+          const authClient = await getSupabaseClient(getToken);
+          const { data: tickets } = await authClient
+            .from("hitl_tickets")
+            .select("ticket_id")
+            .eq("conversation_id", conversationId)
+            .limit(1);
+
+          if (tickets && tickets.length > 0) {
+            setIsEscalated(true);
+          } else {
+            setIsEscalated(false);
+          }
+        } catch (err) {
+          console.error("Error checking escalation status:", err);
+        }
+      };
+      checkEscalated();
+    } else {
+      setIsEscalated(false);
+    }
   }, [conversationId, fetchSessionStatus]);
+
+  const isEscalatingRef = useRef(false);
 
   return {
     messages,
@@ -405,6 +453,35 @@ const useChat = (
     sessionStatus,
     isUploadDisabled,
     isChatDisabled,
+    isEscalated,
+    escalate: async (userNote) => {
+      if (!conversationId || isEscalated || isEscalatingRef.current) return;
+
+      isEscalatingRef.current = true;
+      const lastMessage = messages[messages.length - 1];
+      const triggerId = lastMessage?.id;
+      try {
+        const result = await hitlService.escalateConversation(conversationId, triggerId, userNote);
+        setIsEscalated(true);
+
+        // Add a local system message to confirm escalation to the user
+        const systemMsg = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "⚖️ **Lawyer Requested**: A legal professional has been notified. They will review this conversation and respond as soon as possible.",
+          type: "text",
+          timestamp: new Date().toISOString(),
+          isSystem: true
+        };
+        setMessages((prev) => [...prev, systemMsg]);
+
+        return result;
+      } catch (err) {
+        isEscalatingRef.current = false;
+        console.error("Escalation failed:", err);
+        throw err;
+      }
+    }
   };
 };
 

@@ -157,6 +157,7 @@ class RAGService:
         self,
         query: str,
         conversation_id: str,
+        user_role: str = "user",
         top_k: int = 50,
         min_score: float = 0.0,
     ) -> AsyncIterator[Dict[str, Any]]:
@@ -296,6 +297,7 @@ class RAGService:
                         min_score=min_score,
                         history=history,
                         conversation_id=conversation_id,
+                        user_role=user_role,
                     ):
                         yield event
             else:
@@ -501,6 +503,7 @@ class RAGService:
             subdomain_candidates=subdomain_candidates,
             b2b_b2c=b2b_b2c,
             statute_from_registry=statute_from_registry,
+            user_role=user_role,
         )
  
         # ── [5] Handle empty retrieval ─────────────────────────────────────
@@ -739,6 +742,7 @@ class RAGService:
                 min_score=min_score,
                 history=history,
                 conversation_id=conversation_id,
+                user_role=user_role,
             ):
                 yield event
             return
@@ -754,6 +758,7 @@ class RAGService:
             subdomain_candidates=[],
             b2b_b2c="BOTH",
             statute_from_registry=False,
+            user_role=user_role,
         )
 
         rag_context = self._build_context(search_results) if search_results else ""

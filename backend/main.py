@@ -7,7 +7,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from api.routes import chat, conversations, health, messages, documents
+from api.routes import chat, conversations, health, messages, documents, webhooks
 from config import settings
 from db.milvus_client import get_milvus
 from db.redis_client import get_redis
@@ -124,6 +124,9 @@ async def lifespan(app: FastAPI):
             llm_service=llm_service,
 
         )
+        webhooks.set_services(
+            supabase_client=supabase_client,
+        )
 
         logger.info("All services ready — server is live")
 
@@ -213,6 +216,7 @@ app.include_router(chat.router,          prefix="/api/v1")
 app.include_router(conversations.router, prefix="/api/v1")
 app.include_router(messages.router,      prefix="/api/v1")
 app.include_router(documents.router,     prefix="/api/v1")
+app.include_router(webhooks.router,      prefix="/api/v1")
 
 logger.info("FastAPI app created")
 

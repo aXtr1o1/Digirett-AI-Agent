@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { DEFAULT_USER_ID, API_BASE_URL } from "../utils/constants";
+import { API_BASE_URL } from "../utils/constants";
 
 /**
  * useDocumentUpload
@@ -23,7 +23,10 @@ const useDocumentUpload = (conversationId, userId, addMessage) => {
     if (!id) return;
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/documents/session/${id}`);
+      const token = await window.Clerk?.session?.getToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      const res = await fetch(`${API_BASE_URL}/api/v1/documents/session/${id}`, { headers });
       if (!res.ok) return;
       const data = await res.json();
       setSessionStatus(data);
@@ -58,11 +61,14 @@ const useDocumentUpload = (conversationId, userId, addMessage) => {
     try {
       const form = new FormData();
       form.append("conversation_id", id);
-      form.append("user_id", userId || DEFAULT_USER_ID);
       form.append("file", file);
+
+      const token = await window.Clerk?.session?.getToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
       const res = await fetch(`${API_BASE_URL}/api/v1/documents/upload`, {
         method: "POST",
+        headers,
         body: form,
       });
 

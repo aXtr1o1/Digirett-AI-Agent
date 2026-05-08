@@ -2,13 +2,12 @@
 export const API_BASE_URL =
   process.env.REACT_APP_API_BASE_URL;
 
-// Default user ID for MVP (single user — replace with auth later)
-export const DEFAULT_USER_ID = "2a06144d-4675-4c38-b7f8-13c02da91af5";
+// User ID is resolved from Clerk JWTs now.
 
 export const API_ENDPOINTS = {
   CONVERSATIONS: {
     CREATE: "/conversations",
-    LIST: (userId) => `/conversations/user/${userId}`,
+    LIST: "/conversations/me",
     GET: (conversationId) => `/conversations/${conversationId}`,
     DELETE: (conversationId) => `/conversations/${conversationId}`,
   },

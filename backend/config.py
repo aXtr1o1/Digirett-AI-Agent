@@ -113,6 +113,17 @@ class Settings(BaseSettings):
     MAX_RETRIES: int = 3
     RETRY_DELAY: float = 1.0
 
+    # ── Clerk Auth ───────────────────────────────────────────────────────
+    CLERK_SECRET_KEY: str | None = None
+    CLERK_JWKS_URL: str | None = None
+    CLERK_WEBHOOK_SECRET: str | None = None
+    DEFAULT_TENANT_ID: str = "00000000-0000-0000-0000-000000000000"
+
+    # ── Email (Resend) ───────────────────────────────────────────────────
+    RESEND_API_KEY: str | None = None
+    INVITE_FROM_EMAIL: str = "onboarding@resend.dev"
+    FRONTEND_URL: str = "http://localhost:3000"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

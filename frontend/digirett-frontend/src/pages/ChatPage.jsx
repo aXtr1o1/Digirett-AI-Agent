@@ -28,12 +28,18 @@ const ChatPage = () => {
       onDeleteConversation={deleteConversation}
       isLoadingConversations={isLoading}
     >
-      <ChatContainer
-        conversationId={currentConversationId}
-        onConversationCreated={handleAutoCreatedConversation}
-        moveConversationToTop={moveConversationToTop}
-        userId={null}
-      />
+      {isLoading ? (
+        <div className="flex-1 flex items-center justify-center h-full text-gray-500">
+          Loading...
+        </div>
+      ) : (
+        <ChatContainer
+          conversationId={currentConversationId}
+          onConversationCreated={handleAutoCreatedConversation}
+          moveConversationToTop={moveConversationToTop}
+          userId={null}
+        />
+      )}
     </MainLayout>
   );
 };

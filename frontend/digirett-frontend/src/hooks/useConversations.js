@@ -1,59 +1,80 @@
 import { useState, useCallback, useEffect } from "react";
 import conversationService from "../services/conversationService";
+import { supabase, getSupabaseClient } from "../lib/supabase";
+import { useAuth } from "@clerk/clerk-react";
 
 const useConversations = () => {
+  const { getToken, userId: clerkId } = useAuth();
   const [conversations, setConversations] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentConversationId, setCurrentConversationId] = useState(() => {
     return localStorage.getItem("conversationId") || null;
   });
-  /**
-   * Load all conversations for the default user
-   * GET /conversations/user/{user_id}
-   */
-const loadConversations = useCallback(async () => {
 
-  setIsLoading(true);
-  setError(null);
+  const loadConversations = useCallback(async () => {
+    if (!clerkId) return;
+    setIsLoading(true);
+    setError(null);
 
-  try {
+    try {
+      // 1. Get authenticated Supabase client
+      const authClient = await getSupabaseClient(getToken);
 
-    const data =
-      await conversationService.listConversations();
+      // 2. Resolve internal user_id
+      console.log("[useConversations] Resolving user_id for:", clerkId);
+      const { data: userData, error: userError } = await authClient
+        .from("users")
+        .select("user_id")
+        .eq("clerk_user_id", clerkId)
+        .single();
 
-    const list =
-      Array.isArray(data) ? data : [];
+      if (userError || !userData) {
+        console.warn("[useConversations] Resolution failed:", userError || "No data");
+        const data = await conversationService.listConversations();
+        setConversations(Array.isArray(data) ? data : []);
+        return;
+      }
 
-    // Sort latest first
-    const sorted =
-      list.sort(
-        (a,b)=>
-          new Date(b.updated_at) -
-          new Date(a.updated_at)
-      );
+      const internalUserId = userData.user_id;
 
-    setConversations(sorted);
+      // 3. Fetch conversations
+      const { data, error: sbError } = await authClient
+                .from("conversations")
+        .select("*")
+        .eq("user_id", internalUserId)
+        .eq("is_deleted", false)
+        .order("updated_at", { ascending: false })
+        .limit(50);
 
-  } catch(err){
+      if (sbError) throw sbError;
+      
+      const list = data || [];
+      setConversations(list);
 
-    setError(
-      err.message ||
-      "Failed to load conversations"
-    );
-
-    console.error(
-      "Error loading conversations:",
-      err
-    );
-
-  } finally {
-
-    setIsLoading(false);
-
-  }
-
-}, []);
+      // 4. Verify if the saved conversation belongs to this user
+      const savedId = localStorage.getItem("conversationId");
+      if (savedId) {
+        const exists = list.some(c => c.conversation_id === savedId);
+        if (!exists) {
+          console.warn(`[useConversations] Invalid/Forbidden conversationId found (${savedId}). Clearing it.`);
+          localStorage.removeItem("conversationId");
+          setCurrentConversationId(null);
+        }
+      }
+    } catch (err) {
+      console.error("[useConversations] Supabase load failed:", err);
+      // Final fallback to API
+      try {
+        const data = await conversationService.listConversations();
+        setConversations(Array.isArray(data) ? data : []);
+      } catch (e) {
+        setError("Failed to load conversations");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [clerkId, getToken]);
 
   /**
    * Create a new conversation
