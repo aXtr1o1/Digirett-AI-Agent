@@ -88,22 +88,6 @@ export default function AdminDashboard() {
             </Link>
           </div>
 
-          {/* Notifications */}
-          {message && (
-            <div className={`mb-6 p-4 rounded-2xl flex items-center justify-between ${
-              message.type === 'success' 
-                ? isDark ? 'bg-green-900/30 text-green-400 border border-green-800' : 'bg-green-50 text-green-800 border border-green-100'
-                : isDark ? 'bg-red-900/30 text-red-400 border border-red-800' : 'bg-red-50 text-red-800 border border-red-100'
-            }`}>
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-5 w-5" />
-                <span className="font-semibold">{message.text}</span>
-              </div>
-              <button onClick={() => setMessage(null)} className="text-current opacity-50 hover:opacity-100">
-                &times;
-              </button>
-            </div>
-          )}
 
           <header className="mb-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
@@ -142,9 +126,9 @@ export default function AdminDashboard() {
             ))}
           </div>
 
-          <div className="grid lg:grid-cols-3 gap-8">
+          <div className="flex flex-col gap-10">
             {/* Invite Form */}
-            <section className="lg:col-span-1">
+            <section className="w-full">
               <div className={`rounded-3xl shadow-sm border p-8 ${
                 isDark ? "bg-gray-800/40 border-gray-700" : "bg-white border-gray-100"
               }`}>
@@ -191,11 +175,28 @@ export default function AdminDashboard() {
                     <span>Send Professional Invitation</span>
                   </button>
                 </form>
+
+                {/* Notifications */}
+                {message && (
+                  <div className={`mt-6 p-4 rounded-2xl flex items-center justify-between ${
+                    message.type === 'success' 
+                      ? isDark ? 'bg-green-900/30 text-green-400 border border-green-800' : 'bg-green-50 text-green-800 border border-green-100'
+                      : isDark ? 'bg-red-900/30 text-red-400 border border-red-800' : 'bg-red-50 text-red-800 border border-red-100'
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-5 w-5" />
+                      <span className="font-semibold">{message.text}</span>
+                    </div>
+                    <button onClick={() => setMessage(null)} className="text-current opacity-50 hover:opacity-100">
+                      &times;
+                    </button>
+                  </div>
+                )}
               </div>
             </section>
 
             {/* User Table */}
-            <section className="lg:col-span-2">
+            <section className="w-full">
               <div className={`rounded-3xl shadow-sm border overflow-hidden ${
                 isDark ? "bg-gray-800/40 border-gray-700" : "bg-white border-gray-100"
               }`}>

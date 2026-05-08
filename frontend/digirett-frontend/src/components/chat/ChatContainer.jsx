@@ -88,7 +88,7 @@ const ChatContainer = ({
             onClearUploadError={clearUploadError}
             onEscalate={escalate}
             isEscalated={isEscalated}
-            showEscalate={true}
+            showEscalate={role === "user" || !role}
           />
         </div>
         <p className={`text-center text-xs pb-3 ${isDark ? "text-gray-500" : "text-gray-400"}`}>

@@ -61,6 +61,14 @@ const hitlService = {
     const response = await api.get(API_ENDPOINTS.HITL.MY_RESOLVED);
     return response.data;
   },
+
+  /**
+   * Check if a conversation is already escalated
+   */
+  getEscalationStatus: async (conversationId) => {
+    const response = await api.get(`/hitl/status/${conversationId}`);
+    return response.data;
+  },
 };
 
 export default hitlService;

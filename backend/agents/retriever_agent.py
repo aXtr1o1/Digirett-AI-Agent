@@ -94,7 +94,6 @@ class RetrieverAgent:
         b2b_b2c: Optional[str] = None,
         # ── NEW parameter ───────────────────────────────────────────────
         statute_from_registry: bool = False,
-        user_role: str = "user",
         # ── KEPT for backward compat but no longer controls hard-block ──
         statute_explicit: bool = False,
     ) -> List[Dict[str, Any]]:
@@ -137,18 +136,8 @@ class RetrieverAgent:
         candidates: List[Dict[str, Any]] = []
         fallback_level = 0
 
-        # ── Map User Role to Tiers ───────────────────────────────────────
-        # User: public
-        # Lawyer: public + legal-full
-        # Admin: public + legal-full + admin
-        tier_filter = ["public"]
-        if user_role == "lawyer":
-            tier_filter.append("legal-full")
-        elif user_role == "admin":
-            tier_filter.extend(["legal-full", "admin"])
-
         # ── L0: statute + domain + subdomain + jurisdiction + b2b ──────────
-        logger.info(f"[Fallback] Starting L0 (role={user_role})…")
+        logger.info("[Fallback] Starting L0…")
         candidates = self._milvus_search(
             query_embedding=query_embedding,
             top_k=fetch_k,
@@ -157,7 +146,6 @@ class RetrieverAgent:
             jurisdiction=jurisdiction,
             subdomain_candidates=subdomain_candidates,
             b2b_b2c=b2b_b2c,
-            tier_filter=tier_filter,
             fallback_level=0,
         )
         logger.info(f"  L0 → {len(candidates)} candidates")
@@ -173,7 +161,6 @@ class RetrieverAgent:
                 jurisdiction=None,
                 subdomain_candidates=None,
                 b2b_b2c=None,
-                tier_filter=tier_filter,
                 fallback_level=1,
             )
             logger.info(f"  L1 → {len(candidates)} candidates")
@@ -189,7 +176,6 @@ class RetrieverAgent:
                 jurisdiction=None,
                 subdomain_candidates=None,
                 b2b_b2c=None,
-                tier_filter=tier_filter,
                 fallback_level=2,
             )
             logger.info(f"  L2 → {len(candidates)} candidates")
@@ -227,7 +213,6 @@ class RetrieverAgent:
                 jurisdiction=jurisdiction,
                 subdomain_candidates=subdomain_candidates,
                 b2b_b2c=b2b_b2c,
-                tier_filter=tier_filter,
                 fallback_level=3,
             )
             logger.info(f"  L3 → {len(candidates)} candidates")
@@ -243,7 +228,6 @@ class RetrieverAgent:
                 jurisdiction=None,
                 subdomain_candidates=None,
                 b2b_b2c=None,
-                tier_filter=tier_filter,
                 fallback_level=4,
             )
             logger.info(f"  L4 → {len(candidates)} candidates")
@@ -286,7 +270,6 @@ class RetrieverAgent:
         jurisdiction: Optional[str],
         subdomain_candidates: Optional[List[str]],
         b2b_b2c: Optional[str],
-        tier_filter: Optional[List[str]],
         fallback_level: int,
     ) -> List[Dict[str, Any]]:
         try:
@@ -299,7 +282,6 @@ class RetrieverAgent:
                 jurisdiction=jurisdiction,
                 subdomain_candidates=subdomain_candidates,
                 b2b_b2c=b2b_b2c,
-                tier_filter=tier_filter,
                 fallback_level=fallback_level,
             )
         except Exception as exc:

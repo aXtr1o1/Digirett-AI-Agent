@@ -146,7 +146,7 @@ class HitlService:
         Saves a lawyer's written response and marks the ticket as resolved.
         """
         try:
-            # 1. Save response to hitl_responses
+            # 1. Save response
             response_data = {
                 "response_id": str(uuid4()),
                 "ticket_id": ticket_id,
@@ -156,23 +156,7 @@ class HitlService:
             }
             self._supabase.table("hitl_responses").insert(response_data).execute()
 
-            # 2. ALSO save to the main messages table so it appears in the chat
-            try:
-                # We need the conversation_id from the ticket
-                ticket_res = self._supabase.table("hitl_tickets").select("conversation_id").eq("ticket_id", ticket_id).execute()
-                if ticket_res.data:
-                    conv_id = ticket_res.data[0]["conversation_id"]
-                    self._supabase.save_message(
-                        conversation_id=conv_id,
-                        role="assistant",
-                        content=content,
-                        metadata={"is_lawyer": True, "lawyer_id": lawyer_id}
-                    )
-                    logger.info(f"💬 Lawyer response mirrored to chat | conv={conv_id}")
-            except Exception as msg_exc:
-                logger.error(f"⚠️ Failed to mirror lawyer response to chat (non-fatal) | {msg_exc}")
-
-            # 3. Update ticket status
+            # 2. Update ticket status
             now = datetime.utcnow().isoformat()
             self._supabase.table("hitl_tickets").update({
                 "status": "resolved",

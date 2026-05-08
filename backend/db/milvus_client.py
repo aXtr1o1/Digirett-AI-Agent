@@ -172,7 +172,6 @@ class MilvusClient:
         jurisdiction: Optional[str],
         subdomain_candidates: Optional[List[str]] = None,
         b2b_b2c: Optional[str] = None,
-        tier_filter: Optional[List[str]] = None,
         level: int = 0,
     ) -> Optional[str]:
         """
@@ -230,15 +229,6 @@ class MilvusClient:
                     f'(b2b_b2c == "{safe_b}" or b2b_b2c == "BOTH")'
                 )
 
-        # tier (access control) - always applied regardless of fallback level
-        if tier_filter and self._has("tier"):
-            tiers = [t for t in tier_filter if t]
-            if len(tiers) == 1:
-                parts.append(f'tier == "{tiers[0]}"')
-            elif len(tiers) > 1:
-                tier_expr = " or ".join(f'tier == "{t}"' for t in tiers)
-                parts.append(f"({tier_expr})")
-
         if not parts:
             return None
 
@@ -273,7 +263,6 @@ class MilvusClient:
         jurisdiction: Optional[str] = None,      # e.g. "NO"
         subdomain_candidates: Optional[List[str]] = None,
         b2b_b2c: Optional[str] = None,
-        tier_filter: Optional[List[str]] = None,
         fallback_level: int = 0,                 # 0=tight, 1=domain, 2=statute, 3=none
         source_type: Optional[str] = None,       # not filtered — not stored consistently
     ) -> List[Dict[str, Any]]:
@@ -308,7 +297,6 @@ class MilvusClient:
             jurisdiction=jurisdiction,
             subdomain_candidates=subdomain_candidates,
             b2b_b2c=b2b_b2c,
-            tier_filter=tier_filter,
             level=fallback_level,
         )
 

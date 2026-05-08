@@ -191,7 +191,9 @@ const MessageComposer = ({
           }}>
             <CheckCircle size={16} />
             <span style={{ fontSize: "14px", fontWeight: "600" }}>
-              {isEscalated || localEscalated ? "Already booked" : "Request submitted successfully!"}
+              {isEscalated || localEscalated 
+                ? "Already booked for this case" 
+                : "Request submitted. Lawyer will contact you shortly."}
             </span>
             <style>{`
               @keyframes toastIn {
@@ -218,7 +220,7 @@ const MessageComposer = ({
                 border: isDark ? "1px solid rgba(42, 42, 42, 0.5)" : "1px solid rgba(229, 231, 235, 0.5)",
                 zIndex: 50,
               }}>
-                {isEscalated ? (
+                {isEscalated || localEscalated ? (
                   <div style={{ textAlign: "center" }}>
                     <CheckCircle size={24} style={{ color: "#2563eb", marginBottom: "8px" }} />
                     <p style={{ fontSize: "14px", fontWeight: "600", color: isDark ? "#ffffff" : "#111827", marginBottom: "4px" }}>
@@ -308,12 +310,7 @@ const MessageComposer = ({
             <button
               type="button"
               onClick={() => {
-                if (isEscalated || localEscalated) {
-                  setShowSuccessToast(true);
-                  setTimeout(() => setShowSuccessToast(false), 3000);
-                } else {
-                  setShowEscalateConfirm(!showEscalateConfirm);
-                }
+                setShowEscalateConfirm(!showEscalateConfirm);
               }}
               style={{
                 width: "36px",

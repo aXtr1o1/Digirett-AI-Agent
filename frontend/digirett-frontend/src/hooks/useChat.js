@@ -44,7 +44,6 @@ const useChat = (
 
   useEffect(() => {
     activeConversationIdRef.current = conversationId;
-    setIsEscalated(false);
   }, [conversationId]);
 
   // ── Load messages for an existing conversation directly from Supabase ──────
@@ -52,12 +51,14 @@ const useChat = (
     if (!conversationId) {
       setMessages([]);
       setError(null);
+      setIsEscalated(false);
       return;
     }
     setIsLoading(true);
     setError(null);
     try {
       const authClient = await getSupabaseClient(getToken);
+
       const { data: msgs, error: sbError } = await authClient
         .from("messages")
         .select("*")
@@ -80,6 +81,14 @@ const useChat = (
         documentId: m.metadata?.document_id || null,
       }));
       setMessages(normalized);
+
+      // ✅ Fetch escalation status via dedicated API (Sync on load)
+      try {
+        const statusData = await hitlService.getEscalationStatus(conversationId);
+        setIsEscalated(!!statusData.is_escalated);
+      } catch (err) {
+        console.warn("[useChat] Failed to fetch escalation status on load:", err);
+      }
     } catch (err) {
       console.error("[useChat] loadMessages error from Supabase:", err);
       setError("Failed to load messages");
@@ -382,12 +391,24 @@ const useChat = (
     }
   }, [conversationId, fetchSessionStatus]);
 
-  // Sync escalation status from backend sessionStatus
+  // Sync escalation status from backend sessionStatus or dedicated check
   useEffect(() => {
+    const checkEscalation = async () => {
+      if (!conversationId) return;
+      try {
+        const data = await hitlService.getEscalationStatus(conversationId);
+        setIsEscalated(!!data.is_escalated);
+      } catch (err) {
+        console.error("Failed to check escalation status:", err);
+      }
+    };
+
+    checkEscalation();
+
     if (sessionStatus && sessionStatus.is_escalated !== undefined) {
       setIsEscalated(sessionStatus.is_escalated);
     }
-  }, [sessionStatus]);
+  }, [sessionStatus, conversationId]);
 
   const isEscalatingRef = useRef(false);
 
