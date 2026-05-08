@@ -7,7 +7,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from api.routes import admin, chat, conversations, documents, health, hitl, invite, messages, webhooks
+from api.routes import admin, auth, chat, conversations, documents, health, hitl, invite, messages, webhooks
 from config import settings
 from db.milvus_client import get_milvus
 from db.redis_client import get_redis
@@ -268,6 +268,7 @@ app.include_router(webhooks.router,      prefix="/api/v1/webhooks")
 app.include_router(admin.router,         prefix="/api/v1")
 app.include_router(hitl.router,          prefix="/api/v1")
 app.include_router(invite.router,        prefix="/api/v1")
+app.include_router(auth.router,          prefix="/api/v1")
 
 logger.info("FastAPI app created")
 

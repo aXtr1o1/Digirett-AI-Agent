@@ -146,4 +146,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-print(f">>> DEFAULT_USER_ID loaded as: {settings.DEFAULT_USER_ID}")

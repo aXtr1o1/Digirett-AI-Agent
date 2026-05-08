@@ -108,8 +108,8 @@ async def list_users(
 ):
     """Lists all users in the system."""
     try:
-        # Fetch directly from user_service or supabase
-        response = _user_service._supabase.table("users").select("*, user_profiles(display_name)").execute()
+        # Fetch directly from user_service or supabase, ordered by newest first
+        response = _user_service._supabase.table("users").select("*, user_profiles(display_name)").order("created_at", desc=True).execute()
         return response.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -123,3 +123,67 @@ async def get_audit_logs(
     """Fetches global audit logs for administrative oversight."""
     logs = _user_service.get_audit_logs(limit=limit, offset=offset)
     return logs
+
+@router.patch("/tickets/{ticket_id}/assign/{lawyer_id}")
+async def admin_assign_ticket(
+    ticket_id: str,
+    lawyer_id: str,
+    current_admin: ClerkUser = Depends(require_db_role("admin"))
+):
+    """Admin assigns an open ticket to a specific lawyer."""
+    from main import hitl_service
+    success = hitl_service.assign_ticket(ticket_id, lawyer_id)
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to assign ticket. Make sure it is open.")
+    return {"status": "success", "message": f"Ticket {ticket_id} assigned to lawyer {lawyer_id}"}
+
+@router.patch("/tickets/{ticket_id}/close")
+async def admin_close_ticket(
+    ticket_id: str,
+    current_admin: ClerkUser = Depends(require_db_role("admin"))
+):
+    """Admin closes a resolved ticket."""
+    from main import hitl_service
+    from datetime import datetime
+    try:
+        hitl_service._supabase.table("hitl_tickets").update({
+            "status": "closed",
+            "closed_at": datetime.utcnow().isoformat()
+        }).eq("ticket_id", ticket_id).execute()
+        return {"status": "success", "message": "Ticket closed."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.patch("/users/{user_id}/demote")
+async def admin_demote_user(
+    user_id: str,
+    current_admin: ClerkUser = Depends(require_db_role("admin"))
+):
+    """Admin demotes a lawyer back to a standard user."""
+    from main import user_service
+    try:
+        user_info = user_service.get_user_by_id(user_id)
+        if not user_info:
+            raise HTTPException(status_code=404, detail="User not found.")
+            
+        user_service._supabase.table("users").update({"role": "user"}).eq("user_id", user_id).execute()
+        user_service._sync_clerk_role(user_info["clerk_user_id"], "user")
+        
+        # Optionally remove from lawyer_profiles, but keeping it is fine (they just lose the role)
+        
+        return {"status": "success", "message": "User demoted to standard user."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.patch("/users/{user_id}/suspend")
+async def admin_suspend_user(
+    user_id: str,
+    current_admin: ClerkUser = Depends(require_db_role("admin"))
+):
+    """Admin suspends an account."""
+    from main import user_service
+    try:
+        user_service._supabase.table("users").update({"status": "inactive"}).eq("user_id", user_id).execute()
+        return {"status": "success", "message": "User suspended."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
