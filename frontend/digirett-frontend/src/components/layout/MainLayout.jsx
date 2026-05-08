@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React from "react";
 import Sidebar from "./Sidebar";
 import BackgroundLayer from "../common/BackgroundLayer";
+import { useTheme } from "../../providers/ThemeProvider";
 
-// AFTER
 const MainLayout = ({
   children,
   conversations,
@@ -10,14 +10,9 @@ const MainLayout = ({
   onSelectConversation,
   onNewChat,
   onDeleteConversation,
-  theme: initialTheme = "light",            // ← accept prop, default light
 }) => {
-  const [theme, setTheme] = useState(initialTheme);  // ← use prop as initial value
-  const isDark = theme === "dark";
+  const { theme, toggleTheme, isDark } = useTheme();
 
-  const handleToggleTheme = () => {
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
-  };
 
   return (
     <div className="relative flex h-screen w-screen overflow-hidden">
@@ -39,7 +34,7 @@ const MainLayout = ({
             onNewChat={onNewChat}
             onDeleteConversation={onDeleteConversation}
             theme={theme}
-            onToggleTheme={handleToggleTheme}
+            onToggleTheme={toggleTheme}
           />
         </div>
 

@@ -1,19 +1,20 @@
-import { API_BASE_URL, DEFAULT_USER_ID } from "../utils/constants";
+import { API_BASE_URL, API_ENDPOINTS } from "../utils/constants";
 
 const SAFE_API_BASE_URL =
   typeof API_BASE_URL === "string" && API_BASE_URL.length > 0
     ? API_BASE_URL
     : "http://localhost:8000";
 
-const cleanBase = SAFE_API_BASE_URL.replace(/\/+$/, "");  // ← was API_BASE_URL
+const cleanBase = SAFE_API_BASE_URL.replace(/\/+$/, "");
 
 const WS_URL =
   cleanBase
     .replace(/^https/, "wss")
     .replace(/^http/, "ws") +
-  "/api/v1/chat/ws";
+  "/api/v1" + API_ENDPOINTS.CHAT.WS;
 
 // ─────────────────────────────────────────────────────────────────────────────
+console.log("[chatService] Initialized with WS_URL:", WS_URL);
 
 const chatService = {
   /**
@@ -34,7 +35,6 @@ const chatService = {
       try {
         const requestBody = {
           query:          message,
-          user_id:        DEFAULT_USER_ID,
           top_k:          3,
           temperature:    0.7,
           skip_save_user: !!options.skipSaveUser,
@@ -44,10 +44,14 @@ const chatService = {
           requestBody.conversation_id = conversationId;
         }
 
-        console.log("[chatService] Connecting to:", WS_URL);
+        // Attach Clerk token for WS authentication
+        const clerkToken = await window.Clerk?.session?.getToken();
+        const finalWsUrl = clerkToken ? `${WS_URL}?token=${clerkToken}` : WS_URL;
+
+        console.log("[chatService] Connecting to:", finalWsUrl);
         console.log("[chatService] Payload:", requestBody);
 
-        ws = new WebSocket(WS_URL);
+        ws = new WebSocket(finalWsUrl);
 
         // Per-query state — same variables as the old SSE version
         let fullMessage            = "";

@@ -1,4 +1,5 @@
 import React from "react";
+import { useUser } from "@clerk/clerk-react";
 import MessageList from "./MessageList";
 import MessageComposer from "./MessageComposer";
 import ErrorMessage from "../common/ErrorMessage";
@@ -12,9 +13,11 @@ const ChatContainer = ({
   theme = "dark",
 }) => {
   const isDark = theme === "dark";
+  const { user } = useUser();
+  const role = user?.publicMetadata?.role || "user";
+  const isLawyerView = role === "lawyer" || role === "admin";
 
   const {
-    // ── chat state ──────────────────────────────────────────────────────────
     messages,
     isLoading,
     error,
@@ -25,7 +28,6 @@ const ChatContainer = ({
     loadMessages,
     stopStreaming,
     clearMessages,
-    // ── document upload state ───────────────────────────────────────────────
     isUploading,
     uploadError,
     clearUploadError,
@@ -33,6 +35,8 @@ const ChatContainer = ({
     sessionStatus,
     isUploadDisabled,
     isChatDisabled,
+    isEscalated,
+    escalate,
   } = useChat(
     conversationId,
     onConversationCreated,
@@ -42,8 +46,6 @@ const ChatContainer = ({
 
   return (
     <div className="flex flex-col h-full w-full bg-transparent">
-
-      {/* ── Error banner ───────────────────────────────────────────────────── */}
       {(error || uploadError) && (
         <div className="px-6 pt-4">
           <ErrorMessage
@@ -53,7 +55,6 @@ const ChatContainer = ({
         </div>
       )}
 
-      {/* ── Scrollable message area ─────────────────────────────────────────── */}
       <div
         className="flex-1 overflow-y-auto overflow-x-hidden"
         style={{ overscrollBehavior: "none" }}
@@ -70,7 +71,6 @@ const ChatContainer = ({
         </div>
       </div>
 
-      {/* ── Input bar ──────────────────────────────────────────────────────── */}
       <div className="flex-shrink-0 bg-transparent">
         <div className="max-w-2xl mx-auto w-full px-4 py-4">
           <MessageComposer
@@ -80,25 +80,23 @@ const ChatContainer = ({
             isProcessingDoc={isProcessingDoc}
             onStop={stopStreaming}
             theme={theme}
-            // ── document upload props ────────────────────────────────────────
             isUploading={isUploading}
             uploadedDocs={uploadedDocs}
             sessionStatus={sessionStatus}
             isUploadDisabled={isUploadDisabled}
             uploadError={uploadError}
             onClearUploadError={clearUploadError}
+            onEscalate={escalate}
+            isEscalated={isEscalated}
+            showEscalate={role === "user" || !role}
           />
         </div>
-        <p
-          className={`text-center text-xs pb-3 ${isDark ? "text-gray-500" : "text-gray-400"
-            }`}
-        >
+        <p className={`text-center text-xs pb-3 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
           DigiRett can make mistakes. Verify important legal information.
         </p>
       </div>
-
     </div>
   );
 };
 
-export default ChatContainer;
+export default ChatContainer;

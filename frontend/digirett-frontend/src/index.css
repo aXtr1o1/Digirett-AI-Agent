@@ -205,24 +205,7 @@
   }
 }
 
-/* Clerk component customization */
-.cl-internal-b3fm6y {
-  background-color: #0a0a0a !important;
-}
-
-.cl-card {
-  background-color: #1a1a1a !important;
-  border-color: #374151 !important;
-}
-
-.cl-formButtonPrimary {
-  background-color: white !important;
-  color: black !important;
-}
-
-.cl-formButtonPrimary:hover {
-  background-color: #f3f4f6 !important;
-}
+/* Clerk component customization removed to allow dynamic theming via React props */
 
 /* Scrollbar — visible in both light and dark mode */
 ::-webkit-scrollbar {

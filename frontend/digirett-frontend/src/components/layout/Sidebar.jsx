@@ -1,19 +1,25 @@
 import React, { useState, useEffect, useRef } from "react";
-import { 
-  Plus, 
-  MessageSquare, 
-  Archive, 
-  Menu, 
-  FolderPlus, 
-  Image as ImageIcon, 
-  FileText, 
+import {
+  Plus,
+  MessageSquare,
+  Archive,
+  Menu,
+  FolderPlus,
+  Image as ImageIcon,
+  FileText,
   Search,
   Trash2,
   Sun,
   Moon,
-  LogOut,
-  User
+    LogOut,
+  User,
+  Shield,
+  Gavel
 } from "lucide-react";
+import { useUser, useClerk } from "@clerk/clerk-react";
+import { useNavigate } from "react-router-dom";
+import hitlService from "../../services/hitlService";
+import conversationService from "../../services/conversationService";
 import UpgradeCard from "../common/UpgradeCard";
 
 const Sidebar = ({
@@ -31,10 +37,16 @@ const Sidebar = ({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    window.location.href = "/sign-in";
+  const { user } = useUser();
+  const { signOut } = useClerk();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate("/sign-in");
   };
+
+  const displayName = user?.username || user?.primaryEmailAddress?.emailAddress || "User";
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -52,12 +64,40 @@ const Sidebar = ({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [menuOpen]);
+  
+  const handleEscalate = () => {
+    // This is a placeholder for now to avoid the crash.
+    // In a real scenario, this would trigger the HITL escalation.
+    // Since escalation is per-conversation, we might want to just navigate to chat
+    // or show a toast if no conversation is active.
+    alert("To talk to a lawyer, please open a conversation and click the 'Talk to Lawyer' icon in the chat box.");
+  };
+
+  const role = user?.publicMetadata?.role || "user";
 
   const features = [
-    { id: "chat", label: "Chat", icon: MessageSquare },
-    { id: "archived", label: "Archived", icon: Archive },
-    { id: "library", label: "Library", icon: Menu },
+    { id: "chat", label: "Chat", icon: MessageSquare, path: "/chat" },
+    { id: "archived", label: "Archived", icon: Archive, path: "/archived" },
+    { id: "library", label: "Library", icon: Menu, path: "/library" },
   ];
+
+  if (role === "admin") {
+    features.push({ id: "admin", label: "Admin Panel", icon: Shield, path: "/admin" });
+  }
+  if (role === "lawyer") {
+    features.push({ id: "lawyer", label: "Case Queue", icon: FileText, path: "/lawyer" });
+  }
+
+  const handleFeatureClick = (feature) => {
+    if (feature.id === "escalate") {
+      handleEscalate();
+      return;
+    }
+    setActiveFeature(feature.id);
+    if (feature.path) {
+      navigate(feature.path);
+    }
+  };
 
   const workspaces = [
     { id: "new-project", label: "New Project", icon: FolderPlus },
@@ -75,11 +115,11 @@ const Sidebar = ({
         display: "flex",
         flexDirection: "column",
         height: "100%",
-        backgroundColor: isDark 
-          ? "rgba(17, 17, 17, 0.5)" 
+        backgroundColor: isDark
+          ? "rgba(17, 17, 17, 0.5)"
           : "rgba(250, 250, 250, 0.6)",
-        borderRight: isDark 
-          ? "1px solid rgba(42, 42, 42, 0.4)" 
+        borderRight: isDark
+          ? "1px solid rgba(42, 42, 42, 0.4)"
           : "1px solid rgba(229, 231, 235, 0.4)",
         borderTopLeftRadius: "16px",
         borderTopRightRadius: "16px",
@@ -147,8 +187,8 @@ const Sidebar = ({
               transition: "all 0.2s",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = isDark 
-                ? "rgba(42, 42, 42, 0.5)" 
+              e.currentTarget.style.backgroundColor = isDark
+                ? "rgba(42, 42, 42, 0.5)"
                 : "rgba(243, 244, 246, 0.8)";
             }}
             onMouseLeave={(e) => {
@@ -168,11 +208,11 @@ const Sidebar = ({
                 marginTop: "8px",
                 width: "180px",
                 borderRadius: "12px",
-                backgroundColor: isDark 
-                  ? "rgba(26, 26, 26, 0.95)" 
+                backgroundColor: isDark
+                  ? "rgba(26, 26, 26, 0.95)"
                   : "rgba(255, 255, 255, 0.95)",
-                border: isDark 
-                  ? "1px solid rgba(42, 42, 42, 0.5)" 
+                border: isDark
+                  ? "1px solid rgba(42, 42, 42, 0.5)"
                   : "1px solid rgba(229, 231, 235, 0.5)",
                 backdropFilter: "blur(20px)",
                 WebkitBackdropFilter: "blur(20px)",
@@ -185,8 +225,8 @@ const Sidebar = ({
               <div
                 style={{
                   padding: "16px",
-                  borderBottom: isDark 
-                    ? "1px solid rgba(42, 42, 42, 0.5)" 
+                  borderBottom: isDark
+                    ? "1px solid rgba(42, 42, 42, 0.5)"
                     : "1px solid rgba(229, 231, 235, 0.5)",
                   display: "flex",
                   alignItems: "center",
@@ -198,28 +238,36 @@ const Sidebar = ({
                     width: "40px",
                     height: "40px",
                     borderRadius: "50%",
-                    backgroundColor: isDark 
-                      ? "rgba(59, 130, 246, 0.2)" 
+                    backgroundColor: isDark
+                      ? "rgba(59, 130, 246, 0.2)"
                       : "rgba(59, 130, 246, 0.15)",
-                    border: isDark 
-                      ? "2px solid rgba(59, 130, 246, 0.4)" 
+                    border: isDark
+                      ? "2px solid rgba(59, 130, 246, 0.4)"
                       : "2px solid rgba(59, 130, 246, 0.3)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     color: isDark ? "#3B82F6" : "#2563EB",
                     flexShrink: 0,
+                    overflow: "hidden",
                   }}
                 >
-                  <User size={20} />
+                  {user?.imageUrl ? (
+                    <img src={user.imageUrl} alt="Profile" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <User size={20} />
+                  )}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
                     fontSize: "14px",
                     fontWeight: "600",
                     color: isDark ? "#ffffff" : "#111827",
-                  }}>
-                    Admin
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }} title={displayName}>
+                    {displayName}
                   </div>
                 </div>
               </div>
@@ -227,8 +275,8 @@ const Sidebar = ({
               {/* Divider */}
               <div style={{
                 height: "1px",
-                backgroundColor: isDark 
-                  ? "rgba(42, 42, 42, 0.5)" 
+                backgroundColor: isDark
+                  ? "rgba(42, 42, 42, 0.5)"
                   : "rgba(229, 231, 235, 0.5)",
                 margin: " 0",
               }} />
@@ -254,8 +302,8 @@ const Sidebar = ({
                   textAlign: "left",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark 
-                    ? "rgba(42, 42, 42, 0.5)" 
+                  e.currentTarget.style.backgroundColor = isDark
+                    ? "rgba(42, 42, 42, 0.5)"
                     : "rgba(243, 244, 246, 0.8)";
                 }}
                 onMouseLeave={(e) => {
@@ -278,8 +326,8 @@ const Sidebar = ({
               {/* Divider */}
               <div style={{
                 height: "1px",
-                backgroundColor: isDark 
-                  ? "rgba(42, 42, 42, 0.5)" 
+                backgroundColor: isDark
+                  ? "rgba(42, 42, 42, 0.5)"
                   : "rgba(229, 231, 235, 0.5)",
                 margin: "4px 0",
               }} />
@@ -302,8 +350,8 @@ const Sidebar = ({
                   textAlign: "left",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark 
-                    ? "rgba(239, 68, 68, 0.1)" 
+                  e.currentTarget.style.backgroundColor = isDark
+                    ? "rgba(239, 68, 68, 0.1)"
                     : "rgba(239, 68, 68, 0.05)";
                 }}
                 onMouseLeave={(e) => {
@@ -331,12 +379,12 @@ const Sidebar = ({
             borderRadius: "12px",
             fontSize: "14px",
             fontWeight: "500",
-            backgroundColor: isDark 
-              ? "rgba(26, 26, 26, 0.8)" 
+            backgroundColor: isDark
+              ? "rgba(26, 26, 26, 0.8)"
               : "rgba(255, 255, 255, 0.8)",
             color: isDark ? "#ffffff" : "#111827",
-            border: isDark 
-              ? "1px solid rgba(42, 42, 42, 0.5)" 
+            border: isDark
+              ? "1px solid rgba(42, 42, 42, 0.5)"
               : "1px solid rgba(229, 231, 235, 0.5)",
             cursor: "pointer",
             transition: "all 0.2s",
@@ -344,19 +392,19 @@ const Sidebar = ({
             WebkitBackdropFilter: "blur(16px)",
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = isDark 
-              ? "rgba(59, 130, 246, 0.2)" 
+            e.currentTarget.style.backgroundColor = isDark
+              ? "rgba(59, 130, 246, 0.2)"
               : "rgba(59, 130, 246, 0.1)";
-            e.currentTarget.style.borderColor = isDark 
-                  ? "rgba(59, 130, 246, 0.5)"
+            e.currentTarget.style.borderColor = isDark
+              ? "rgba(59, 130, 246, 0.5)"
               : "rgba(59, 130, 246, 0.3)";
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = isDark 
-              ? "rgba(26, 26, 26, 0.8)" 
+            e.currentTarget.style.backgroundColor = isDark
+              ? "rgba(26, 26, 26, 0.8)"
               : "rgba(255, 255, 255, 0.8)";
-            e.currentTarget.style.borderColor = isDark 
-              ? "rgba(42, 42, 42, 0.5)" 
+            e.currentTarget.style.borderColor = isDark
+              ? "rgba(42, 42, 42, 0.5)"
               : "rgba(229, 231, 235, 0.5)";
           }}
         >
@@ -368,13 +416,13 @@ const Sidebar = ({
 
       {/* FEATURES SECTION */}
       <div style={{ flexShrink: 0, marginBottom: "8px" }}>
-      <div style={{
+        <div style={{
           padding: "0 16px 8px",
-        fontSize: "11px",
-        fontWeight: "600",
-        textTransform: "uppercase",
-        letterSpacing: "0.08em",
-        color: isDark ? "#6b7280" : "#9ca3af",
+          fontSize: "11px",
+          fontWeight: "600",
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+          color: isDark ? "#6b7280" : "#9ca3af",
         }}>
           Features
         </div>
@@ -385,8 +433,8 @@ const Sidebar = ({
             return (
               <button
                 key={feature.id}
-                onClick={() => {
-                  setActiveFeature(feature.id);
+                                onClick={() => {
+                  handleFeatureClick(feature);
                 }}
                 style={{
                   width: "100%",
@@ -398,13 +446,13 @@ const Sidebar = ({
                   fontSize: "13px",
                   fontWeight: "500",
                   backgroundColor: isActive
-                    ? isDark 
-                      ? "rgba(59, 130, 246, 0.15)" 
-                      : "rgba(59, 130, 246, 0.1)"
-                    : "transparent",
+                      ? isDark
+                        ? "rgba(59, 130, 246, 0.15)"
+                        : "rgba(59, 130, 246, 0.1)"
+                      : "transparent",
                   color: isActive
-                    ? isDark ? "#3B82F6" : "#2563EB"
-                    : isDark ? "#d1d5db" : "#374151",
+                      ? isDark ? "#3B82F6" : "#2563EB"
+                      : isDark ? "#d1d5db" : "#374151",
                   border: "none",
                   cursor: "pointer",
                   transition: "all 0.15s",
@@ -412,8 +460,8 @@ const Sidebar = ({
                 }}
                 onMouseEnter={(e) => {
                   if (!isActive) {
-                    e.currentTarget.style.backgroundColor = isDark 
-                      ? "rgba(42, 42, 42, 0.5)" 
+                    e.currentTarget.style.backgroundColor = isDark
+                      ? "rgba(42, 42, 42, 0.5)"
                       : "rgba(243, 244, 246, 0.8)";
                   }
                 }}
@@ -423,17 +471,17 @@ const Sidebar = ({
                   }
                 }}
               >
-                <Icon 
-                  size={16} 
-                  style={{ 
-                    flexShrink: 0,
-                    color: isActive
-                      ? (isDark ? "#3B82F6" : "#2563EB")
-                      : (isDark ? "#d1d5db" : "#374151")
-                  }} 
-                />
-                <span>{feature.label}</span>
-              </button>
+                  <Icon
+                    size={16}
+                    style={{
+                      flexShrink: 0,
+                      color: isActive
+                        ? (isDark ? "#3B82F6" : "#2563EB")
+                        : (isDark ? "#d1d5db" : "#374151")
+                    }}
+                  />
+                  <span>{feature.label}</span>
+                </button>
             );
           })}
         </div>
@@ -441,7 +489,7 @@ const Sidebar = ({
 
       {/* CHAT HISTORY (when Chat feature is active) */}
       {activeFeature === "chat" && (
-        <div 
+        <div
           className="sidebar-scrollbar-hidden"
           style={{
             flex: conversations.length > 0 ? 1 : "none",
@@ -456,87 +504,88 @@ const Sidebar = ({
             <div style={{
               padding: "16px 12px",
               textAlign: "center",
-            fontSize: "12px",
+              fontSize: "12px",
               color: isDark ? "#6b7280" : "#9ca3af",
-          }}>
-            No conversations yet
+            }}>
+              No conversations yet
             </div>
           ) : (
             conversations.map((c) => (
-          <div
-            key={c.conversation_id}
-            onClick={() => onSelectConversation(c.conversation_id)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "8px",
-              padding: "10px 12px",
-              borderRadius: "10px",
-              cursor: "pointer",
-              marginBottom: "2px",
-              backgroundColor:
-                c.conversation_id === currentConversationId
-                    ? isDark 
-                      ? "rgba(59, 130, 246, 0.15)" 
-                      : "rgba(59, 130, 246, 0.1)"
-                  : "transparent",
-                color: c.conversation_id === currentConversationId
-                  ? isDark ? "#3B82F6" : "#2563EB"
-                  : isDark ? "#d1d5db" : "#374151",
-                transition: "all 0.15s",
-              }}
-              onMouseEnter={(e) => {
-              if (c.conversation_id !== currentConversationId) {
-                  e.currentTarget.style.backgroundColor = isDark 
-                    ? "rgba(42, 42, 42, 0.5)" 
-                    : "rgba(243, 244, 246, 0.8)";
-              }
-              const trash = e.currentTarget.querySelector(".trash-icon");
-              if (trash) trash.style.opacity = "1";
-            }}
-              onMouseLeave={(e) => {
-              if (c.conversation_id !== currentConversationId) {
-                e.currentTarget.style.backgroundColor = "transparent";
-              }
-              const trash = e.currentTarget.querySelector(".trash-icon");
-              if (trash) trash.style.opacity = "0";
-            }}
-          >
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0, flex: 1 }}>
-                <MessageSquare size={13} style={{ flexShrink: 0, color: c.conversation_id === currentConversationId 
-                  ? (isDark ? "#3B82F6" : "#2563EB")
-                  : (isDark ? "#6b7280" : "#9ca3af")
-                }} />
-              <span style={{
-                fontSize: "13px",
-                lineHeight: "1.4",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}>
-                {c.title || "New Conversation"}
-              </span>
-            </div>
+              <div
+                key={c.conversation_id}
+                onClick={() => onSelectConversation(c.conversation_id)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "8px",
+                  padding: "10px 12px",
+                  borderRadius: "10px",
+                  cursor: "pointer",
+                  marginBottom: "2px",
+                  backgroundColor:
+                    c.conversation_id === currentConversationId
+                      ? isDark
+                        ? "rgba(59, 130, 246, 0.15)"
+                        : "rgba(59, 130, 246, 0.1)"
+                      : "transparent",
+                  color: c.conversation_id === currentConversationId
+                    ? isDark ? "#3B82F6" : "#2563EB"
+                    : isDark ? "#d1d5db" : "#374151",
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={(e) => {
+                  if (c.conversation_id !== currentConversationId) {
+                    e.currentTarget.style.backgroundColor = isDark
+                      ? "rgba(42, 42, 42, 0.5)"
+                      : "rgba(243, 244, 246, 0.8)";
+                  }
+                  const trash = e.currentTarget.querySelector(".trash-icon");
+                  if (trash) trash.style.opacity = "1";
+                }}
+                onMouseLeave={(e) => {
+                  if (c.conversation_id !== currentConversationId) {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                  }
+                  const trash = e.currentTarget.querySelector(".trash-icon");
+                  if (trash) trash.style.opacity = "0";
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0, flex: 1 }}>
+                  <MessageSquare size={13} style={{
+                    flexShrink: 0, color: c.conversation_id === currentConversationId
+                      ? (isDark ? "#3B82F6" : "#2563EB")
+                      : (isDark ? "#6b7280" : "#9ca3af")
+                  }} />
+                  <span style={{
+                    fontSize: "13px",
+                    lineHeight: "1.4",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {c.title || "New Conversation"}
+                  </span>
+                </div>
 
-            <Trash2
-              size={13}
-              className="trash-icon"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDeleteConversation(c.conversation_id);
-              }}
-              style={{
-                flexShrink: 0,
-                opacity: 0,
-                cursor: "pointer",
-                color: isDark ? "#6b7280" : "#9ca3af",
-                transition: "opacity 0.15s, color 0.15s",
-              }}
-                onMouseEnter={(e) => e.currentTarget.style.color = "#ef4444"}
-                onMouseLeave={(e) => e.currentTarget.style.color = isDark ? "#6b7280" : "#9ca3af"}
-              />
-            </div>
+                <Trash2
+                  size={13}
+                  className="trash-icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteConversation(c.conversation_id);
+                  }}
+                  style={{
+                    flexShrink: 0,
+                    opacity: 0,
+                    cursor: "pointer",
+                    color: isDark ? "#6b7280" : "#9ca3af",
+                    transition: "opacity 0.15s, color 0.15s",
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = "#ef4444"}
+                  onMouseLeave={(e) => e.currentTarget.style.color = isDark ? "#6b7280" : "#9ca3af"}
+                />
+              </div>
             ))
           )}
         </div>
@@ -555,11 +604,11 @@ const Sidebar = ({
             textAlign: "center",
             padding: "24px",
             borderRadius: "12px",
-            backgroundColor: isDark 
-              ? "rgba(26, 26, 26, 0.6)" 
+            backgroundColor: isDark
+              ? "rgba(26, 26, 26, 0.6)"
               : "rgba(255, 255, 255, 0.6)",
-            border: isDark 
-              ? "1px solid rgba(42, 42, 42, 0.5)" 
+            border: isDark
+              ? "1px solid rgba(42, 42, 42, 0.5)"
               : "1px solid rgba(229, 231, 235, 0.5)",
             backdropFilter: "blur(16px)",
             WebkitBackdropFilter: "blur(16px)",

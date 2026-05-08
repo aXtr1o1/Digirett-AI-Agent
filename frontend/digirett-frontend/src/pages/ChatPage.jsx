@@ -2,13 +2,10 @@ import React from "react";
 import MainLayout from "../components/layout/MainLayout";
 import ChatContainer from "../components/chat/ChatContainer";
 import useConversations from "../hooks/useConversations";
-
-// TODO: once you know your auth file, replace userId={null} with userId={user?.id}
-// and add the import, e.g:
-//   import { useAuth } from "../providers/AuthProvider";
-//   const { user } = useAuth();
+import { useUser } from "@clerk/clerk-react";
 
 const ChatPage = () => {
+  const { user } = useUser();
   const {
     conversations,
     isLoading,
@@ -22,7 +19,6 @@ const ChatPage = () => {
 
   return (
     <MainLayout
-      theme="light"
       conversations={conversations}
       currentConversationId={currentConversationId}
       onNewChat={() => {
@@ -33,12 +29,18 @@ const ChatPage = () => {
       onDeleteConversation={deleteConversation}
       isLoadingConversations={isLoading}
     >
-      <ChatContainer
-        conversationId={currentConversationId}
-        onConversationCreated={handleAutoCreatedConversation}
-        moveConversationToTop={moveConversationToTop}
-        userId={null}
-      />
+      {isLoading ? (
+        <div className="flex-1 flex items-center justify-center h-full text-gray-500">
+          Loading...
+        </div>
+      ) : (
+        <ChatContainer
+          conversationId={currentConversationId}
+          onConversationCreated={handleAutoCreatedConversation}
+          moveConversationToTop={moveConversationToTop}
+          userId={user?.id}
+        />
+      )}
     </MainLayout>
   );
 };

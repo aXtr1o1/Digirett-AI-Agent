@@ -1,8 +1,12 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import chatService from "../services/chatService";
 import conversationService from "../services/conversationService";
+import hitlService from "../services/hitlService";
+import { supabase, getSupabaseClient } from "../lib/supabase";
+import { useAuth } from "@clerk/clerk-react";
 import useDocumentUpload from "./useDocumentUpload";
-import { MESSAGE_ROLES, API_BASE_URL } from "../utils/constants";
+import documentService from "../services/documentService";
+import { MESSAGE_ROLES } from "../utils/constants";
 
 const useChat = (
   conversationId,
@@ -10,6 +14,7 @@ const useChat = (
   moveConversationToTop,
   userId
 ) => {
+  const { getToken } = useAuth();
   const [messages, setMessages] = useState([]);
   const addMessage = useCallback((msg) => {
     setMessages((prev) => [...prev, msg]);
@@ -20,6 +25,7 @@ const useChat = (
   const [isStreaming, setIsStreaming] = useState(false);
   // ✅ NEW: tracks whether we're processing/uploading a document (shows loading indicator)
   const [isProcessingDoc, setIsProcessingDoc] = useState(false);
+  const [isEscalated, setIsEscalated] = useState(false);
 
   const activeConversationIdRef = useRef(conversationId);
   const abortRef = useRef(null);
@@ -40,19 +46,30 @@ const useChat = (
     activeConversationIdRef.current = conversationId;
   }, [conversationId]);
 
-  // ── Load messages for an existing conversation ────────────────────────────
+  // ── Load messages for an existing conversation directly from Supabase ──────
   const loadMessages = useCallback(async () => {
     if (!conversationId) {
       setMessages([]);
+      setError(null);
+      setIsEscalated(false);
       return;
     }
     setIsLoading(true);
     setError(null);
     try {
-      const data =
-        await conversationService.getConversationWithMessages(conversationId);
-      const msgs = Array.isArray(data.messages) ? data.messages : [];
-      const normalized = msgs.map((m) => ({
+      const authClient = await getSupabaseClient(getToken);
+
+      const { data: msgs, error: sbError } = await authClient
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", conversationId)
+        .eq("is_deleted", false)
+        .order("created_at", { ascending: true })
+        .limit(100);
+
+      if (sbError) throw sbError;
+
+      const normalized = (msgs || []).map((m) => ({
         id: m.message_id,
         role: m.role,
         content: m.content || "",
@@ -64,8 +81,16 @@ const useChat = (
         documentId: m.metadata?.document_id || null,
       }));
       setMessages(normalized);
+
+      // ✅ Fetch escalation status via dedicated API (Sync on load)
+      try {
+        const statusData = await hitlService.getEscalationStatus(conversationId);
+        setIsEscalated(!!statusData.is_escalated);
+      } catch (err) {
+        console.warn("[useChat] Failed to fetch escalation status on load:", err);
+      }
     } catch (err) {
-      console.error("[useChat] loadMessages error:", err);
+      console.error("[useChat] loadMessages error from Supabase:", err);
       setError("Failed to load messages");
     } finally {
       setIsLoading(false);
@@ -173,16 +198,12 @@ const useChat = (
         // ── Save to DB (sequence matters for correct reload order) ────────
         // 1. Save file message FIRST
         try {
-          await fetch(`${API_BASE_URL}/api/v1/documents/message/${convId}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              role: "user",
-              content: messageText.trim() || null,
-              type: "file-with-text",
-              file_name: uploadResult.file_name || file.name,
-              document_id: uploadResult.document_id,
-            }),
+          await documentService.saveFileMessage(convId, {
+            role: "user",
+            content: messageText.trim() || null,
+            type: "file-with-text",
+            file_name: uploadResult.file_name || file.name,
+            document_id: uploadResult.document_id,
           });
 
           // For new conversations, trigger creation AFTER first message is in DB
@@ -197,13 +218,9 @@ const useChat = (
         // Only save when there is NO query — with a query, doc_qa handles the response
         if (!hasQuery && uploadResult.summary_text) {
           try {
-            await fetch(`${API_BASE_URL}/api/v1/documents/summary-message/${convId}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                content: uploadResult.summary_text,
-                document_id: uploadResult.document_id,
-              }),
+            await documentService.saveSummaryMessage(convId, {
+              content: uploadResult.summary_text,
+              document_id: uploadResult.document_id,
             });
           } catch (err) {
             console.error("[useChat] ❌ save_summary_message call failed:", err);
@@ -369,8 +386,31 @@ const useChat = (
   }, [loadMessages]);
 
   useEffect(() => {
-    if (conversationId) fetchSessionStatus(conversationId);
+    if (conversationId) {
+      fetchSessionStatus(conversationId);
+    }
   }, [conversationId, fetchSessionStatus]);
+
+  // Sync escalation status from backend sessionStatus or dedicated check
+  useEffect(() => {
+    const checkEscalation = async () => {
+      if (!conversationId) return;
+      try {
+        const data = await hitlService.getEscalationStatus(conversationId);
+        setIsEscalated(!!data.is_escalated);
+      } catch (err) {
+        console.error("Failed to check escalation status:", err);
+      }
+    };
+
+    checkEscalation();
+
+    if (sessionStatus && sessionStatus.is_escalated !== undefined) {
+      setIsEscalated(sessionStatus.is_escalated);
+    }
+  }, [sessionStatus, conversationId]);
+
+  const isEscalatingRef = useRef(false);
 
   return {
     messages,
@@ -390,6 +430,23 @@ const useChat = (
     sessionStatus,
     isUploadDisabled,
     isChatDisabled,
+    isEscalated,
+    escalate: async (userNote) => {
+      if (!conversationId || isEscalated || isEscalatingRef.current) return;
+
+      isEscalatingRef.current = true;
+      const lastMessage = messages[messages.length - 1];
+      const triggerId = lastMessage?.id;
+      try {
+        const result = await hitlService.escalateConversation(conversationId, triggerId, userNote);
+        setIsEscalated(true);
+        return result;
+      } catch (err) {
+        isEscalatingRef.current = false;
+        console.error("Escalation failed:", err);
+        throw err;
+      }
+    }
   };
 };
 

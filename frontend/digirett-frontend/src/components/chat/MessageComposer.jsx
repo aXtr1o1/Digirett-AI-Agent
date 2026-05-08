@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { StopCircle, Paperclip, ArrowUp, X } from "lucide-react";
+import { StopCircle, Paperclip, ArrowUp, X, Scale, Check, CheckCircle, Loader2 } from "lucide-react";
 
 const MessageComposer = ({
   onSend,
@@ -7,17 +7,25 @@ const MessageComposer = ({
   isStreaming,
   isProcessingDoc,
   onStop,
+  onEscalate,
+  isEscalated,
+  showEscalate = true,
   theme = "dark",
 }) => {
   const [message, setMessage] = useState("");
   const [file, setFile] = useState(null);
+  const [showEscalateConfirm, setShowEscalateConfirm] = useState(false);
+  const [isEscalating, setIsEscalating] = useState(false);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [localEscalated, setLocalEscalated] = useState(false);
+
+  const isBusy = disabled || isProcessingDoc || isStreaming;
 
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
 
   const isDark = theme === "dark";
   // treat doc processing same as streaming — block all input
-  const isBusy = isStreaming || isProcessingDoc;
 
   // Auto resize textarea
   useEffect(() => {
@@ -158,8 +166,177 @@ const MessageComposer = ({
           backdropFilter: "blur(16px)",
           opacity: isBusy ? 0.7 : 1,
           transition: "opacity 0.2s",
+          position: "relative",
         }}
       >
+        {/* Success Toast */}
+        {showSuccessToast && (
+          <div style={{
+            position: "absolute",
+            top: "-60px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            padding: "10px 24px",
+            borderRadius: "99px",
+            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.3)",
+            backgroundColor: isDark ? "#1e293b" : "#ffffff",
+            border: isDark ? "1px solid rgba(59, 130, 246, 0.2)" : "1px solid rgba(59, 130, 246, 0.1)",
+            color: isDark ? "#60a5fa" : "#2563eb",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            whiteSpace: "nowrap",
+            zIndex: 100,
+            animation: "toastIn 0.3s ease-out forwards",
+          }}>
+            <CheckCircle size={16} />
+            <span style={{ fontSize: "14px", fontWeight: "600" }}>
+              {isEscalated || localEscalated 
+                ? "Already booked for this case" 
+                : "Request submitted. Lawyer will contact you shortly."}
+            </span>
+            <style>{`
+              @keyframes toastIn {
+                from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+                to { opacity: 1; transform: translateX(-50%) translateY(0); }
+              }
+            `}</style>
+          </div>
+        )}
+
+        {/* Lawyer Escalation Button (Only for Users) */}
+        {showEscalate && (
+          <div className="relative">
+            {showEscalateConfirm && (
+              <div style={{
+                position: "absolute",
+                bottom: "calc(100% + 12px)",
+                right: "0",
+                width: "256px",
+                padding: "16px",
+                borderRadius: "16px",
+                boxShadow: "0 10px 30px rgba(0, 0, 0, 0.3)",
+                backgroundColor: isDark ? "#1a1a1a" : "#ffffff",
+                border: isDark ? "1px solid rgba(42, 42, 42, 0.5)" : "1px solid rgba(229, 231, 235, 0.5)",
+                zIndex: 50,
+              }}>
+                {isEscalated || localEscalated ? (
+                  <div style={{ textAlign: "center" }}>
+                    <CheckCircle size={24} style={{ color: "#2563eb", marginBottom: "8px" }} />
+                    <p style={{ fontSize: "14px", fontWeight: "600", color: isDark ? "#ffffff" : "#111827", marginBottom: "4px" }}>
+                      Already Booked
+                    </p>
+                    <p style={{ fontSize: "12px", color: isDark ? "#9ca3af" : "#6b7280", marginBottom: "12px" }}>
+                      You have already requested a lawyer for this case.
+                    </p>
+                    <button
+                      onClick={() => setShowEscalateConfirm(false)}
+                      style={{
+                        width: "100%",
+                        padding: "8px",
+                        backgroundColor: isDark ? "#2a2a2a" : "#f3f4f6",
+                        color: isDark ? "#9ca3af" : "#6b7280",
+                        fontSize: "12px",
+                        fontWeight: "700",
+                        borderRadius: "8px",
+                        border: "none",
+                        cursor: "pointer"
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <p style={{ fontSize: "14px", marginBottom: "12px", fontWeight: "500", color: isDark ? "#d1d5db" : "#374151" }}>
+                      Talk to a real lawyer about this case?
+                    </p>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button
+                        onClick={async () => {
+                          setIsEscalating(true);
+                          try {
+                            await onEscalate();
+                            setLocalEscalated(true);
+                            setShowEscalateConfirm(false);
+                            setShowSuccessToast(true);
+                            setTimeout(() => setShowSuccessToast(false), 3000);
+                          } catch (err) {
+                            console.error("Escalation failed:", err);
+                          } finally {
+                            setIsEscalating(false);
+                          }
+                        }}
+                        disabled={isEscalating}
+                        style={{
+                          flex: 1,
+                          padding: "8px",
+                          backgroundColor: "#2563eb",
+                          color: "#ffffff",
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          borderRadius: "8px",
+                          border: "none",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center"
+                        }}
+                      >
+                        {isEscalating ? <Loader2 className="h-3 w-3 animate-spin" /> : "Confirm"}
+                      </button>
+                      <button
+                        onClick={() => setShowEscalateConfirm(false)}
+                        style={{
+                          flex: 1,
+                          padding: "8px",
+                          backgroundColor: isDark ? "#2a2a2a" : "#f3f4f6",
+                          color: isDark ? "#9ca3af" : "#6b7280",
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          borderRadius: "8px",
+                          border: "none",
+                          cursor: "pointer"
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowEscalateConfirm(!showEscalateConfirm);
+              }}
+              style={{
+                width: "36px",
+                height: "36px",
+                borderRadius: "50%",
+                border: "none",
+                cursor: isBusy ? "not-allowed" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: (isEscalated || localEscalated) ? "rgba(59, 130, 246, 0.1)" : "transparent",
+                color: (isEscalated || localEscalated) ? "#3B82F6" : (isDark ? "#9ca3af" : "#6b7280"),
+                flexShrink: 0,
+                opacity: isBusy ? 0.4 : 1,
+              }}
+              title={(isEscalated || localEscalated) ? "" : "Talk to Lawyer"}
+            >
+              {(isEscalated || localEscalated) ? (
+                <CheckCircle size={22} style={{ color: "#2563eb" }} />
+              ) : (
+                <Scale size={18} />
+              )}
+            </button>
+          </div>
+        )}
+
         {/* Upload Button */}
         <button
           type="button"
