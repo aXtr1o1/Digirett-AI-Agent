@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -8,21 +9,27 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from api.routes import admin, auth, chat, conversations, documents, health, hitl, invite, messages, webhooks
+from api.routes import cal as cal_routes
+from api.routes import cal_webhooks
 from config import settings
 from db.milvus_client import get_milvus
 from db.redis_client import get_redis
 from db.supabase_client import get_supabase
+from services.cal_service import CalService
 from services.conversation_service import ConversationService
 from services.document_service import DocumentService
 from services.embedding_service import EmbeddingService
-from services.llm_service import LLMService
-from services.message_service import MessageService
-from services.rag_service import RAGService
-from services.lovdata_title_fetcher import LovdataTitleFetcher
-from services.user_service import UserService
 from services.email_service import EmailService
 from services.hitl_service import HitlService
-
+from services.llm_service import LLMService
+from services.lovdata_title_fetcher import LovdataTitleFetcher
+from services.message_service import MessageService
+from services.rag_service import RAGService
+from services.user_service import UserService
+from config import settings
+from db.milvus_client import get_milvus
+from db.redis_client import get_redis
+from db.supabase_client import get_supabase
 from telemetry.tracing import setup_tracing
 from utils.logger import setup_logger
 
@@ -115,6 +122,9 @@ async def lifespan(app: FastAPI):
             supabase_client=supabase_client,
         )
 
+        logger.info("Initializing Cal.com service...")
+        cal_service = CalService()
+
         # ── Title fetcher must be created BEFORE MessageService ──────────
         # It resolves Lovdata URLs to human-readable Norwegian titles using
         # a 3-layer cache: Redis (L1) → Supabase lovdata_url_titles (L2)
@@ -151,6 +161,7 @@ async def lifespan(app: FastAPI):
             conversation_service=conversation_service,
             message_service=message_service,
             user_service=user_service,
+            hitl_service=hitl_service,
         )
         messages.set_services(
             message_service=message_service,
@@ -167,16 +178,59 @@ async def lifespan(app: FastAPI):
         admin.set_services(
             user_svc=user_service,
             email_svc=email_service,
+            hitl_svc=hitl_service,
         )
         hitl.set_services(
             hitl_svc=hitl_service,
             user_svc=user_service,
+            email_svc=email_service,
+        )
+        cal_routes.set_services(
+            cal_svc=cal_service,
+            hitl_svc=hitl_service,
+            user_svc=user_service,
+        )
+        cal_webhooks.set_services(
+            hitl_svc=hitl_service,
+            email_svc=email_service,
         )
         invite.set_services(
             supabase_client=supabase_client,
         )
 
         logger.info("All services ready — server is live")
+
+        # ── 30-minute background alert task ──────────────────────────────────
+        # Fires every 30 minutes. Finds open tickets older than 30 minutes
+        # that haven't had an alert sent yet, emails admin, marks alert_sent_at.
+        async def _unassigned_ticket_alert_task():
+            INTERVAL_SECONDS = 30 * 60  # 30 minutes
+            await asyncio.sleep(60)  # short initial delay to let startup finish
+            while True:
+                try:
+                    admin_email = settings.ADMIN_ALERT_EMAIL
+                    if not admin_email:
+                        logger.debug("⏰ ADMIN_ALERT_EMAIL not set — skipping unassigned ticket check")
+                    else:
+                        stale = hitl_service.get_unassigned_tickets_older_than_minutes(minutes=30)
+                        if stale:
+                            logger.info(
+                                f"⚠️ Background task: {len(stale)} unassigned tickets older than 30min — alerting admin"
+                            )
+                            await email_service.send_admin_unassigned_alert(
+                                admin_email=admin_email,
+                                unassigned_tickets=stale,
+                            )
+                            hitl_service.mark_alert_sent([t["ticket_id"] for t in stale])
+                        else:
+                            logger.debug("⏰ Background task: no stale unassigned tickets")
+                except Exception as bg_exc:
+                    logger.warning(f"⚠️ Alert background task error (non-fatal) | {bg_exc}")
+
+                await asyncio.sleep(INTERVAL_SECONDS)
+
+        asyncio.create_task(_unassigned_ticket_alert_task())
+        logger.info("⏰ 30-min unassigned ticket alert task started")
 
         yield
 
@@ -259,16 +313,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(health.router,        prefix="/api/v1")
-app.include_router(chat.router,          prefix="/api/v1")
-app.include_router(conversations.router, prefix="/api/v1")
-app.include_router(messages.router,      prefix="/api/v1")
-app.include_router(documents.router,     prefix="/api/v1")
-app.include_router(webhooks.router,      prefix="/api/v1/webhooks")
-app.include_router(admin.router,         prefix="/api/v1")
-app.include_router(hitl.router,          prefix="/api/v1")
-app.include_router(invite.router,        prefix="/api/v1")
-app.include_router(auth.router,          prefix="/api/v1")
+app.include_router(health.router,          prefix="/api/v1")
+app.include_router(chat.router,            prefix="/api/v1")
+app.include_router(conversations.router,   prefix="/api/v1")
+app.include_router(messages.router,        prefix="/api/v1")
+app.include_router(documents.router,       prefix="/api/v1")
+app.include_router(webhooks.router,        prefix="/api/v1/webhooks")
+app.include_router(cal_webhooks.router,    prefix="/api/v1/webhooks")
+app.include_router(admin.router,           prefix="/api/v1")
+app.include_router(hitl.router,            prefix="/api/v1")
+app.include_router(cal_routes.router,      prefix="/api/v1")
+app.include_router(invite.router,          prefix="/api/v1")
+app.include_router(auth.router,            prefix="/api/v1")
 
 logger.info("FastAPI app created")
 
