@@ -46,37 +46,37 @@ api.interceptors.response.use(
 
     let message = "Something went wrong";
 
-if (error.response) {
+    if (error.response) {
 
-  if (error.response.status === 500) {
-    message = "Server error. Please try again.";
-  }
+      if (error.response.status === 500) {
+        message = "Server error. Please try again.";
+      }
 
-  else if (error.response.status === 404) {
-    message = "Data not found.";
-  }
+      else if (error.response.status === 404) {
+        message = "Data not found.";
+      }
 
-  else if (error.response.status === 401) {
-    message = "Please login again.";
-  }
+      else if (error.response.status === 401) {
+        message = "Please login again.";
+      }
 
-  else {
-    message =
-      error.response.data?.detail ||
-      "Something went wrong";
-  }
+      else {
+        message =
+          error.response.data?.detail ||
+          "Something went wrong";
+      }
 
-}
+    }
 
-else if (error.request) {
+    else if (error.request) {
 
-  message = "Server not reachable";
+      message = "Server not reachable";
 
-}
+    }
 
-return Promise.reject(
-  new Error(message)
-);
+    return Promise.reject(
+      new Error(message)
+    );
   }
 );
 
