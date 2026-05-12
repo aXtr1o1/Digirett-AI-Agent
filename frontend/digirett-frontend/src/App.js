@@ -35,9 +35,18 @@ const HomeRedirect = () => {
     return <Navigate to="/sign-in" replace />;
   }
 
-  // 2. After sign in, send everyone to the Chat page
-  console.log("LOGIN_SUCCESS: Starting fresh session...");
+  // 2. Fresh session cleanup
   localStorage.removeItem("conversationId");
+
+  // 3. Dynamic Redirect based on Role
+  const role = user?.publicMetadata?.role || "user";
+  console.log(`LOGIN_SUCCESS: Redirecting ${role} to home dashboard...`);
+
+  if (role === "admin") {
+    return <Navigate to="/admin" replace />;
+  } else if (role === "lawyer") {
+    return <Navigate to="/lawyer" replace />;
+  }
 
   return <Navigate to="/chat" replace />;
 };

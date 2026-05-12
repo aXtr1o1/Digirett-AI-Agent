@@ -35,14 +35,15 @@ export const API_ENDPOINTS = {
   },
   ADMIN: {
     INVITE: "/admin/invite",
-    PROMOTE_LAWYER: "/admin/promote/lawyer",
-    PROMOTE_ADMIN: "/admin/promote/admin",
+    INVITATIONS: "/admin/invitations",
     USERS: "/admin/users",
     AUDIT_LOGS: "/admin/audit-logs",
     ASSIGN_TICKET: (ticketId, lawyerId) => `/admin/tickets/${ticketId}/assign/${lawyerId}`,
     CLOSE_TICKET: (ticketId) => `/admin/tickets/${ticketId}/close`,
     DEMOTE_USER: (userId) => `/admin/users/${userId}/demote`,
     SUSPEND_USER: (userId) => `/admin/users/${userId}/suspend`,
+    ACTIVATE_USER: (userId) => `/admin/users/${userId}/activate`,
+    REVOKE_INVITATION: (inviteId) => `/admin/invitations/${inviteId}`,
   },
   INVITE: {
     VERIFY: "/invite/verify",

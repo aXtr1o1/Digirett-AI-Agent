@@ -471,3 +471,18 @@ class UserService:
         except Exception as exc:
             logger.error(f"❌ Failed to fetch audit logs | {exc}")
             return []
+
+    def get_invitations(self) -> List[Dict[str, Any]]:
+        """
+        Fetches all role invitations for admin tracking.
+        Returns invitations sorted by newest first.
+        """
+        try:
+            response = self._supabase.table("role_invites") \
+                .select("*") \
+                .order("created_at", desc=True) \
+                .execute()
+            return response.data or []
+        except Exception as exc:
+            logger.error(f"❌ Failed to fetch invitations | {exc}")
+            return []

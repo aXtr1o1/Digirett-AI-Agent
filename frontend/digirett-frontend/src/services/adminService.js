@@ -21,27 +21,21 @@ const adminService = {
   },
 
   /**
-   * Promote a user to Lawyer
+   * List all pending and accepted invitations
    */
-  promoteToLawyer: async (userId, barLicense = "", barCouncil = "") => {
-    const response = await api.post(API_ENDPOINTS.ADMIN.PROMOTE_LAWYER, {
-      user_id: userId,
-      bar_license: barLicense,
-      bar_council: barCouncil,
-    });
+  listInvitations: async () => {
+    const response = await api.get(API_ENDPOINTS.ADMIN.INVITATIONS);
     return response.data;
   },
 
   /**
-   * Promote a user to Admin
+   * Revoke a pending invitation
    */
-  promoteToAdmin: async (userId, fullName = "") => {
-    const response = await api.post(API_ENDPOINTS.ADMIN.PROMOTE_ADMIN, {
-      user_id: userId,
-      full_name: fullName,
-    });
+  revokeInvitation: async (inviteId) => {
+    const response = await api.delete(API_ENDPOINTS.ADMIN.REVOKE_INVITATION(inviteId));
     return response.data;
   },
+
 
   /**
    * Force-assign a ticket to a lawyer (Admin only)
@@ -76,12 +70,27 @@ const adminService = {
   },
 
   /**
+   * Activate a suspended user
+   */
+  activateUser: async (userId) => {
+    const response = await api.patch(API_ENDPOINTS.ADMIN.ACTIVATE_USER(userId));
+    return response.data;
+  },
+
+  /**
    * Get system audit logs
    */
   getAuditLogs: async (limit = 50, offset = 0) => {
     const response = await api.get(API_ENDPOINTS.ADMIN.AUDIT_LOGS, {
       params: { limit, offset }
     });
+    return response.data;
+  },
+  /**
+   * Get system health status
+   */
+  getHealthStatus: async () => {
+    const response = await api.get(API_ENDPOINTS.HEALTH);
     return response.data;
   },
 };

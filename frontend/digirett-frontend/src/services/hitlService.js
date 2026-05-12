@@ -54,6 +54,11 @@ const hitlService = {
     return response.data;
   },
 
+  getMyAssignedTickets: async () => {
+    const response = await api.get("/hitl/my-assigned");
+    return response.data;
+  },
+
   /**
    * Get lawyer's resolved history
    */

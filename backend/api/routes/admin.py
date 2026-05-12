@@ -114,6 +114,14 @@ async def list_users(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/invitations")
+async def list_invitations(
+    current_admin: ClerkUser = Depends(require_db_role("admin"))
+):
+    """Lists all team invitations."""
+    invites = _user_service.get_invitations()
+    return invites
+
 @router.get("/audit-logs")
 async def get_audit_logs(
     limit: int = 50,
