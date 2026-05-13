@@ -143,8 +143,9 @@ class Settings(BaseSettings):
     CAL_COM_WEBHOOK_SECRET: Optional[str] = None
 
     # ── Admin Notifications ───────────────────────────────────────────────────
-    # Email address to receive 30-min unassigned ticket alerts
-    ADMIN_ALERT_EMAIL: Optional[str] = None
+    # Email to receive alerts about unassigned HITL tickets
+    ADMIN_ALERT_EMAIL: Optional[str] = "admin@digirett.com"
+
 
     model_config = SettingsConfigDict(
         env_file=".env",

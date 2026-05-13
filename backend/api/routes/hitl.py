@@ -300,6 +300,22 @@ async def get_my_tickets(
 
 
 @router.get(
+    "/my-active-tickets",
+    summary="Lawyer views their own active (assigned/booked) tickets",
+)
+async def get_my_active_tickets(
+    current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
+):
+    """
+    Lawyer views their own cases that are currently 'assigned' or 'booked'.
+    Returns flattened data including user info and conversation summary.
+    """
+    lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
+    tickets = _hitl_service.get_lawyer_active_tickets(lawyer_id)
+    return tickets
+
+
+@router.get(
     "/my-resolved-tickets",
     summary="Lawyer views their resolved ticket history",
 )

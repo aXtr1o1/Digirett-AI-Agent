@@ -144,7 +144,7 @@ async def cal_webhook(
     ticket_id = metadata.get("ticketId")
     if not ticket_id:
         logger.warning(f"⚠️ Cal.com booking {cal_booking_id} has no ticketId metadata — cannot link to HITL ticket")
-        return {"status": "ignored", "reason": "No ticketId in booking metadata"}
+        return {"status": "ignored", "reason": "No ticketId in booking metadata", "extracted_metadata": metadata}
 
     # ── Extract Google Meet link from references ─────────────────────
     from services.cal_service import CalService

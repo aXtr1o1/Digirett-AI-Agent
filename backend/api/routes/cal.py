@@ -161,13 +161,20 @@ async def get_lawyer_slots(
     api_key, event_type_id = _get_lawyer_cal_credentials(ticket)
 
     # Fetch slots
-    slots = await _cal_service.get_available_slots(
-        cal_api_key=api_key,
-        event_type_id=event_type_id,
-        start_date=start_date,
-        end_date=end_date,
-        timezone=timezone,
-    )
+    try:
+        slots = await _cal_service.get_available_slots(
+            cal_api_key=api_key,
+            event_type_id=event_type_id,
+            start_date=start_date,
+            end_date=end_date,
+            timezone=timezone,
+        )
+    except ValueError as exc:
+        logger.warning(f"⚠️ CalService error: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
 
     return {
         "ticket_id": ticket_id,
