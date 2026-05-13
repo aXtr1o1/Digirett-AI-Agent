@@ -4,6 +4,7 @@ import MessageList from "./MessageList";
 import MessageComposer from "./MessageComposer";
 import ErrorMessage from "../common/ErrorMessage";
 import useChat from "../../hooks/useChat";
+import EscalationStatusCard from "./EscalationStatusCard";
 
 const ChatContainer = ({
   conversationId,
@@ -68,6 +69,11 @@ const ChatContainer = ({
             isProcessingDoc={isProcessingDoc}
             theme={theme}
           />
+          
+          {/* ✅ HITL Escalation & Booking Flow */}
+          {conversationId && isEscalated && (
+            <EscalationStatusCard conversationId={conversationId} theme={theme} />
+          )}
         </div>
       </div>
 

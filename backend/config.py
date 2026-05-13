@@ -137,6 +137,15 @@ class Settings(BaseSettings):
     MAX_RETRIES: int = 3
     RETRY_DELAY: float = 1.0
 
+    # ── Cal.com Integration ────────────────────────────────────────────────
+    # Shared webhook secret from Cal.com dashboard → Webhooks → Secret
+    # Used to verify X-Cal-Signature-256 header on incoming booking events
+    CAL_COM_WEBHOOK_SECRET: Optional[str] = None
+
+    # ── Admin Notifications ───────────────────────────────────────────────────
+    # Email address to receive 30-min unassigned ticket alerts
+    ADMIN_ALERT_EMAIL: Optional[str] = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

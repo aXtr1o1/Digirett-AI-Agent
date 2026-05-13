@@ -54,11 +54,6 @@ const hitlService = {
     return response.data;
   },
 
-  getMyAssignedTickets: async () => {
-    const response = await api.get("/hitl/my-assigned");
-    return response.data;
-  },
-
   /**
    * Get lawyer's resolved history
    */
@@ -68,10 +63,18 @@ const hitlService = {
   },
 
   /**
+   * Get lawyer's active (assigned/booked) tickets
+   */
+  getActiveTickets: async () => {
+    const response = await api.get("/hitl/my-active-tickets");
+    return response.data;
+  },
+
+  /**
    * Check if a conversation is already escalated
    */
   getEscalationStatus: async (conversationId) => {
-    const response = await api.get(`/hitl/status/${conversationId}`);
+    const response = await api.get(API_ENDPOINTS.HITL.STATUS(conversationId));
     return response.data;
   },
 };

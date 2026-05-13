@@ -2,14 +2,14 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import hitlService from "../services/hitlService";
 import conversationService from "../services/conversationService";
-import {
-  ArrowLeft,
-  User,
-  Mail,
-  Phone,
-  MessageSquare,
-  Send,
-  Loader2,
+import { 
+  ArrowLeft, 
+  User, 
+  Mail, 
+  Phone, 
+  MessageSquare, 
+  Send, 
+  Loader2, 
   CheckCircle,
   Clock,
   ExternalLink,
@@ -62,7 +62,7 @@ export default function TicketDetailsPage() {
     setSubmitting(true);
     try {
       let finalResponse = response;
-
+      
       if (file) {
         const uploadResult = await uploadDocument(file, ticket.conversation_id);
         if (uploadResult) {
@@ -109,14 +109,16 @@ export default function TicketDetailsPage() {
     <div className={`min-h-screen flex flex-col relative overflow-hidden ${isDark ? "bg-gray-950 text-white" : "bg-gray-50 text-gray-900"}`}>
       <BackgroundLayer theme={theme} />
       {/* Header */}
-      <header className={`px-6 py-4 sticky top-0 z-20 border-b shadow-sm backdrop-blur-md ${isDark ? "bg-gray-900/80 border-gray-800" : "bg-white/80 border-gray-100"
-        }`}>
+      <header className={`px-6 py-4 sticky top-0 z-20 border-b shadow-sm backdrop-blur-md ${
+        isDark ? "bg-gray-900/80 border-gray-800" : "bg-white/80 border-gray-100"
+      }`}>
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => navigate("/lawyer")}
-              className={`p-2 rounded-full transition-colors ${isDark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"
-                }`}
+            <button 
+              onClick={() => navigate(-1)}
+              className={`p-2 rounded-full transition-colors ${
+                isDark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"
+              }`}
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
@@ -130,8 +132,9 @@ export default function TicketDetailsPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${isDark ? "bg-blue-900/30 text-blue-400 border-blue-800" : "bg-blue-50 text-blue-700 border-blue-100"
-              }`}>
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${
+              isDark ? "bg-blue-900/30 text-blue-400 border-blue-800" : "bg-blue-50 text-blue-700 border-blue-100"
+            }`}>
               {ticket.status}
             </span>
           </div>
@@ -142,13 +145,15 @@ export default function TicketDetailsPage() {
         {/* Left Col: User Info & Case Context */}
         <div className="lg:col-span-4 space-y-6 overflow-y-auto pr-2 custom-scrollbar">
           {/* User Card */}
-          <div className={`rounded-3xl shadow-sm border p-6 ${isDark ? "bg-gray-900/40 border-gray-800" : "bg-white border-gray-100"
-            }`}>
+          <div className={`rounded-3xl shadow-sm border p-6 ${
+            isDark ? "bg-gray-900/40 border-gray-800" : "bg-white border-gray-100"
+          }`}>
             <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">User Information</h2>
             <div className="space-y-5">
               <div className="flex items-center gap-4">
-                <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${isDark ? "bg-gray-800 text-blue-400" : "bg-gray-50 text-blue-600"
-                  }`}>
+                <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${
+                  isDark ? "bg-gray-800 text-blue-400" : "bg-gray-50 text-blue-600"
+                }`}>
                   <User className="h-6 w-6" />
                 </div>
                 <div>
@@ -157,8 +162,9 @@ export default function TicketDetailsPage() {
                 </div>
               </div>
               <div className="flex items-center gap-4">
-                <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${isDark ? "bg-gray-800 text-blue-400" : "bg-gray-50 text-blue-600"
-                  }`}>
+                <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${
+                  isDark ? "bg-gray-800 text-blue-400" : "bg-gray-50 text-blue-600"
+                }`}>
                   <Mail className="h-6 w-6" />
                 </div>
                 <div>
@@ -167,8 +173,9 @@ export default function TicketDetailsPage() {
                 </div>
               </div>
               <div className="flex items-center gap-4">
-                <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${isDark ? "bg-gray-800 text-blue-400" : "bg-gray-50 text-blue-600"
-                  }`}>
+                <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${
+                  isDark ? "bg-gray-800 text-blue-400" : "bg-gray-50 text-blue-600"
+                }`}>
                   <Phone className="h-6 w-6" />
                 </div>
                 <div>
@@ -177,8 +184,9 @@ export default function TicketDetailsPage() {
                 </div>
               </div>
               <div className="flex items-center gap-4 pt-2">
-                <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${isDark ? "bg-gray-800 text-blue-400" : "bg-gray-50 text-blue-600"
-                  }`}>
+                <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${
+                  isDark ? "bg-gray-800 text-blue-400" : "bg-gray-50 text-blue-600"
+                }`}>
                   <Clock className="h-6 w-6" />
                 </div>
                 <div>
@@ -188,8 +196,9 @@ export default function TicketDetailsPage() {
               </div>
             </div>
             <div className={`mt-8 pt-8 border-t ${isDark ? "border-gray-800" : "border-gray-50"}`}>
-              <button className={`w-full flex items-center justify-center gap-2 py-3 border rounded-xl text-sm font-bold transition-all ${isDark ? "border-gray-700 text-gray-300 hover:bg-gray-800" : "border-gray-200 text-gray-600 hover:bg-gray-50"
-                }`}>
+              <button className={`w-full flex items-center justify-center gap-2 py-3 border rounded-xl text-sm font-bold transition-all ${
+                isDark ? "border-gray-700 text-gray-300 hover:bg-gray-800" : "border-gray-200 text-gray-600 hover:bg-gray-50"
+              }`}>
                 <ExternalLink className="h-4 w-4" />
                 View Full User Profile
               </button>
@@ -211,8 +220,9 @@ export default function TicketDetailsPage() {
         {/* Right Col: Conversation & Response */}
         <div className="lg:col-span-8 flex flex-col gap-6 h-full min-h-[500px]">
           {/* Conversation History */}
-          <div className={`rounded-3xl shadow-sm border flex-1 flex flex-col overflow-hidden ${isDark ? "bg-gray-900/40 border-gray-800" : "bg-white border-gray-100"
-            }`}>
+          <div className={`rounded-3xl shadow-sm border flex-1 flex flex-col overflow-hidden ${
+            isDark ? "bg-gray-900/40 border-gray-800" : "bg-white border-gray-100"
+          }`}>
             <div className={`p-4 border-b flex items-center gap-2 ${isDark ? "border-gray-800 bg-gray-800/50" : "border-gray-50 bg-white"}`}>
               <MessageSquare className="h-5 w-5 text-gray-400" />
               <h2 className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`}>Conversation Context</h2>
@@ -223,10 +233,11 @@ export default function TicketDetailsPage() {
               ) : (
                 messages.map((m) => (
                   <div key={m.message_id || Math.random()} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[85%] rounded-2xl p-4 shadow-sm ${m.role === 'user'
-                        ? (isDark ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-blue-600 text-white rounded-tr-none')
-                        : (isDark ? 'bg-gray-800 border border-gray-700 text-gray-100 rounded-tl-none' : 'bg-white border border-gray-100 text-gray-800 rounded-tl-none')
-                      } ${m.message_id === ticket.trigger_message_id ? 'ring-4 ring-amber-400 ring-offset-2' : ''}`}>
+                    <div className={`max-w-[85%] rounded-2xl p-4 shadow-sm ${
+                      m.role === 'user' 
+                      ? (isDark ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-blue-600 text-white rounded-tr-none')
+                      : (isDark ? 'bg-gray-800 border border-gray-700 text-gray-100 rounded-tl-none' : 'bg-white border border-gray-100 text-gray-800 rounded-tl-none')
+                    } ${m.message_id === ticket.trigger_message_id ? 'ring-4 ring-amber-400 ring-offset-2' : ''}`}>
                       {m.message_id === ticket.trigger_message_id && (
                         <div className="flex items-center gap-1.5 mb-2 text-amber-500 font-bold text-[10px] uppercase tracking-widest">
                           <div className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></div>
@@ -247,8 +258,9 @@ export default function TicketDetailsPage() {
           </div>
 
           {/* Response Form */}
-          <div className={`rounded-3xl shadow-sm border p-6 ${isDark ? "bg-gray-900/40 border-gray-800" : "bg-white border-gray-100"
-            }`}>
+          <div className={`rounded-3xl shadow-sm border p-6 ${
+            isDark ? "bg-gray-900/40 border-gray-800" : "bg-white border-gray-100"
+          }`}>
             <h2 className={`font-bold mb-4 flex items-center gap-2 ${isDark ? "text-white" : "text-gray-900"}`}>
               <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse"></div>
               Your Professional Response
@@ -256,14 +268,15 @@ export default function TicketDetailsPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* File Preview */}
               {file && (
-                <div className={`flex items-center justify-between p-3 border rounded-xl text-sm ${isDark ? "bg-blue-900/20 border-blue-800 text-blue-400" : "bg-blue-50 border-blue-100 text-blue-700"
-                  }`}>
+                <div className={`flex items-center justify-between p-3 border rounded-xl text-sm ${
+                  isDark ? "bg-blue-900/20 border-blue-800 text-blue-400" : "bg-blue-50 border-blue-100 text-blue-700"
+                }`}>
                   <span className="flex items-center gap-2">
                     <Paperclip className="h-4 w-4" />
                     {file.name}
                   </span>
-                  <button
-                    type="button"
+                  <button 
+                    type="button" 
                     onClick={() => setFile(null)}
                     className={`p-1 rounded-full transition-colors ${isDark ? "hover:bg-blue-900/40" : "hover:bg-blue-100"}`}
                   >
@@ -285,25 +298,27 @@ export default function TicketDetailsPage() {
                   onChange={(e) => setResponse(e.target.value)}
                   placeholder="Enter your legal advice here..."
                   rows={5}
-                  className={`w-full px-4 py-3 rounded-2xl border outline-none transition-all resize-none ${isDark
-                      ? "bg-gray-800/50 border-gray-700 text-white focus:ring-2 focus:ring-blue-500/50"
-                      : "bg-white border-gray-200 focus:ring-2 focus:ring-blue-500"
-                    }`}
+                  className={`w-full px-4 py-3 rounded-2xl border outline-none transition-all resize-none ${
+                    isDark 
+                    ? "bg-gray-800/50 border-gray-700 text-white focus:ring-2 focus:ring-blue-500/50" 
+                    : "bg-white border-gray-200 focus:ring-2 focus:ring-blue-500"
+                  }`}
                   required={!file}
                 />
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isUploading || submitting}
-                  className={`absolute bottom-4 left-4 p-2 rounded-lg transition-all ${isDark ? "text-gray-500 hover:text-blue-400 hover:bg-gray-700" : "text-gray-400 hover:text-blue-600 hover:bg-blue-50"
-                    }`}
+                  className={`absolute bottom-4 left-4 p-2 rounded-lg transition-all ${
+                    isDark ? "text-gray-500 hover:text-blue-400 hover:bg-gray-700" : "text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                  }`}
                   title="Attach a document"
                 >
                   <Paperclip className="h-5 w-5" />
                 </button>
-                <input
-                  type="file"
-                  ref={fileInputRef}
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
                   onChange={(e) => setFile(e.target.files?.[0])}
                   className="hidden"
                   accept=".pdf,.doc,.docx"
@@ -314,8 +329,9 @@ export default function TicketDetailsPage() {
                 <button
                   type="submit"
                   disabled={submitting || isUploading || (!response.trim() && !file)}
-                  className={`px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold rounded-2xl transition-all shadow-lg flex items-center gap-2 ${isDark ? "shadow-blue-900/20" : "shadow-blue-100"
-                    }`}
+                  className={`px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold rounded-2xl transition-all shadow-lg flex items-center gap-2 ${
+                    isDark ? "shadow-blue-900/20" : "shadow-blue-100"
+                  }`}
                 >
                   {submitting || isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
                   <span>{isUploading ? "Uploading Document..." : "Resolve & Notify User"}</span>

@@ -96,9 +96,14 @@ class UserService:
             self._supabase.table("user_profiles").insert(profile_data).execute()
 
             # ── Handle Role-Specific Profiles & Invitations ──────────────
+            # Fetch Clerk details if possible to get full name
+            clerk_details = self._get_clerk_user_details(clerk_user_id)
+            full_name = clerk_details.get("full_name") if clerk_details else display_name
+
             if assigned_role == "lawyer":
                 self._supabase.table("lawyer_profiles").insert({
                     "lawyer_id": user_id,
+                    "full_name": full_name,
                     "verification_status": "approved",
                     "created_at": now,
                     "updated_at": now
@@ -106,6 +111,8 @@ class UserService:
             elif assigned_role == "admin":
                 self._supabase.table("admin_profiles").insert({
                     "admin_id": user_id,
+                    "full_name": full_name,
+                    "created_by": invite_data.get("invited_by") if invite_data else None,
                     "created_at": now,
                     "updated_at": now
                 }).execute()
@@ -329,12 +336,21 @@ class UserService:
         Generates an invitation token, saves it to role_invites, and sends an email.
         """
         try:
+            # 1. Check if user already exists with a privileged role
+            existing_user_resp = self._supabase.table("users").select("role").eq("email", email).execute()
+            if existing_user_resp.data:
+                existing_role = existing_user_resp.data[0].get("role", "user")
+                if existing_role in ["admin", "lawyer"]:
+                    logger.warning(f"⚠️ User {email} already has role {existing_role}. Invitation blocked.")
+                    return False
+
             token = str(uuid4())
             invite_data = {
                 "email": email,
                 "role": role,
                 "token": token,
                 "status": "pending",
+                "invited_by": admin_id,
                 "created_at": datetime.utcnow().isoformat()
             }
             
@@ -368,8 +384,12 @@ class UserService:
             }).eq("user_id", user_id).execute()
             
             # 2. Insert into lawyer_profiles
+            clerk_details = self._get_clerk_user_details(user["clerk_user_id"])
+            full_name = clerk_details.get("full_name") if clerk_details else user.get("user_name")
+
             self._supabase.table("lawyer_profiles").upsert({
                 "lawyer_id": user_id,
+                "full_name": full_name,
                 "bar_license_number": bar_license,
                 "bar_council": bar_council,
                 "verification_status": "approved",
@@ -404,9 +424,13 @@ class UserService:
             }).eq("user_id", user_id).execute()
             
             # 2. Insert into admin_profiles
+            if not full_name:
+                clerk_details = self._get_clerk_user_details(user["clerk_user_id"])
+                full_name = clerk_details.get("full_name") if clerk_details else user.get("user_name")
+
             self._supabase.table("admin_profiles").upsert({
                 "admin_id": user_id,
-                "full_name": full_name or user.get("user_name"),
+                "full_name": full_name,
                 "created_by": admin_id,
                 "updated_at": now
             }).execute()
@@ -423,8 +447,29 @@ class UserService:
             return False
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # HELPERS
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    def _get_clerk_user_details(self, clerk_user_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch user details from Clerk API."""
+        if not settings.CLERK_SECRET_KEY or not clerk_user_id:
+            return None
+        try:
+            clerk_url = f"https://api.clerk.com/v1/users/{clerk_user_id}"
+            resp = httpx.get(clerk_url, headers={"Authorization": f"Bearer {settings.CLERK_SECRET_KEY}"})
+            if resp.status_code == 200:
+                data = resp.json()
+                first_name = data.get("first_name") or ""
+                last_name = data.get("last_name") or ""
+                email_addresses = data.get("email_addresses", [])
+                email = email_addresses[0].get("email_address") if email_addresses else None
+                return {
+                    "full_name": f"{first_name} {last_name}".strip() or data.get("username"),
+                    "email": email,
+                    "first_name": first_name,
+                    "last_name": last_name
+                }
+        except Exception as exc:
+            logger.error(f"❌ Failed to fetch Clerk details for {clerk_user_id} | {exc}")
+        return None
+
 
     def _sync_clerk_role(self, clerk_user_id: str, role: str) -> None:
         """Updates the publicMetadata.role for a user in Clerk."""

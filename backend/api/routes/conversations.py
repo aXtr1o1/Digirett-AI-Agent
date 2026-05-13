@@ -29,17 +29,19 @@ _UUID_RE = re.compile(
 _conversation_service = None
 _message_service = None
 _user_service = None
+_hitl_service = None
 
 
 def _is_valid_uuid(value: str) -> bool:
     return bool(_UUID_RE.match(value.strip())) if value else False
 
 
-def set_services(conversation_service, message_service, user_service) -> None:
-    global _conversation_service, _message_service, _user_service
+def set_services(conversation_service, message_service, user_service, hitl_service) -> None:
+    global _conversation_service, _message_service, _user_service, _hitl_service
     _conversation_service = conversation_service
     _message_service = message_service
     _user_service = user_service
+    _hitl_service = hitl_service
 
 
 
@@ -119,9 +121,8 @@ async def get_my_conversations(
         )
         
         # Inject is_escalated status efficiently
-        from main import hitl_service
         conv_ids = [c["conversation_id"] for c in conversations]
-        escalated_ids = hitl_service.get_escalated_conversation_ids(conv_ids)
+        escalated_ids = _hitl_service.get_escalated_conversation_ids(conv_ids)
         for c in conversations:
             c["is_escalated"] = c["conversation_id"] in escalated_ids
 
@@ -167,14 +168,19 @@ async def get_conversation(
             )
 
         internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
-        if conversation.get("user_id") != internal_user_id and user.role != "admin":
+        
+        # Access control: Owner, Admin, or the Assigned Lawyer for an active escalation
+        is_owner = conversation.get("user_id") == internal_user_id
+        is_admin = user.role == "admin"
+        is_assigned_lawyer = _hitl_service.is_assigned_lawyer_for_conversation(conversation_id, internal_user_id)
+
+        if not (is_owner or is_admin or is_assigned_lawyer):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to access this conversation.",
             )
 
-        from main import hitl_service
-        conversation["is_escalated"] = hitl_service.is_conversation_escalated(conversation_id)
+        conversation["is_escalated"] = _hitl_service.is_conversation_escalated(conversation_id)
 
         messages = _message_service.get_conversation_messages(conversation_id)
 

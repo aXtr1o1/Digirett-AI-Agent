@@ -1,19 +1,19 @@
 import React, { useEffect, useState } from "react";
 import adminService from "../services/adminService";
-import { 
-  Users, Mail, Shield, Loader2, Search, 
-  UserPlus, CheckCircle, ArrowLeft, LogOut, 
+import {
+  Users, Mail, Shield, Loader2, Search,
+  UserPlus, CheckCircle, ArrowLeft, LogOut,
   LayoutDashboard, Menu, Plus, X, Calendar, User,
   ShieldCheck, Scale, Crown, Clock, AlertTriangle, Send,
   UserX, UserCheck, Trash2
 } from "lucide-react";
 import { useTheme } from "../providers/ThemeProvider";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useClerk, useUser } from "@clerk/clerk-react";
 import hitlService from "../services/hitlService";
-import { 
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, 
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
+import {
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 
 export default function AdminDashboard() {
@@ -27,9 +27,12 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
-  
-  // Local sub-navigation state
-  const [activeView, setActiveView] = useState("dashboard"); // dashboard, invite, users, calendar
+
+  // Local sub-navigation state (Synced with URL for refresh persistence & back-button support)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeView = searchParams.get("view") || "dashboard";
+  const setActiveView = (view) => setSearchParams({ view });
+
   const [invitations, setInvitations] = useState([]);
   const [invitesLoading, setInvitesLoading] = useState(true);
   const [tickets, setTickets] = useState([]);
@@ -42,7 +45,7 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const [confirmModal, setConfirmModal] = useState({ show: false, user: null });
   const [viewUser, setViewUser] = useState(null);
-  
+
   // Scoped Messages
   const [inviteMsg, setInviteMsg] = useState(null);
   const [queueMsg, setQueueMsg] = useState(null);
@@ -60,11 +63,11 @@ export default function AdminDashboard() {
       const [usersData, invitesData, ticketsData, logsData, healthData] = await Promise.all([
         adminService.listUsers(),
         adminService.listInvitations(),
-        hitlService.getQueue(),
+        adminService.getAllTickets(),
         adminService.getAuditLogs(100),
         adminService.getHealthStatus()
       ]);
-      
+
       setUsers(usersData.filter(u => u.email));
       setInvitations(invitesData);
       setTickets(ticketsData);
@@ -165,12 +168,20 @@ export default function AdminDashboard() {
   };
 
   const handleAssignTicket = async (ticketId, lawyerId) => {
+    if (!lawyerId) return;
     try {
+      const lawyer = users.find(u => u.user_id === lawyerId);
+      const lawyerName = lawyer?.user_profiles?.display_name || lawyer?.email || "the professional";
       await adminService.assignTicket(ticketId, lawyerId);
-      setQueueMsg({ type: "success", text: "Ticket assigned successfully" });
+      setQueueMsg({ 
+        type: "success", 
+        text: `You have assigned this case to ${lawyerName}. They are now linked to this case.` 
+      });
       fetchDashboardData();
+      // Auto-clear message after 8 seconds
+      setTimeout(() => setQueueMsg(null), 8000);
     } catch (err) {
-      setQueueMsg({ type: "error", text: "Failed to assign ticket" });
+      setQueueMsg({ type: "error", text: "Failed to link the lawyer to this case. Please try again." });
     }
   };
 
@@ -191,7 +202,7 @@ export default function AdminDashboard() {
   const totalInvites = invitations.length;
 
   // ── Chart Data Processors ──────────────────────────────────────────
-  
+
   const roleData = [
     { name: 'Admins', value: adminCount, color: '#a855f7' },
     { name: 'Lawyers', value: lawyerCount, color: '#3b82f6' },
@@ -232,10 +243,10 @@ export default function AdminDashboard() {
     auditLogs.forEach(log => {
       counts[log.action] = (counts[log.action] || 0) + 1;
     });
-    return Object.keys(counts).map(action => ({ 
-      action: action.replace('admin.', '').replace('user.', ''), 
-      count: counts[action] 
-    })).sort((a,b) => b.count - a.count).slice(0, 5);
+    return Object.keys(counts).map(action => ({
+      action: action.replace('admin.', '').replace('user.', ''),
+      count: counts[action]
+    })).sort((a, b) => b.count - a.count).slice(0, 5);
   };
 
   const lawyerWorkloadData = () => {
@@ -247,22 +258,21 @@ export default function AdminDashboard() {
     });
     return Object.keys(counts).map(id => {
       const lawyer = users.find(u => u.user_id === id);
-      return { 
-        name: lawyer?.user_profiles?.display_name || lawyer?.email || id.substring(0, 8), 
-        tickets: counts[id] 
+      return {
+        name: lawyer?.user_profiles?.display_name || lawyer?.email || id.substring(0, 8),
+        tickets: counts[id]
       };
-    }).sort((a,b) => b.tickets - a.tickets);
+    }).sort((a, b) => b.tickets - a.tickets);
   };
 
   const selectedRole = roleInfo[inviteRole] || roleInfo.lawyer;
 
   return (
     <div className={`flex min-h-screen ${isDark ? "bg-[#0f172a] text-slate-200" : "bg-[#f3f4f6] text-slate-900"}`}>
-      
+
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 transition-transform duration-300 transform bg-[#0f172a] text-white flex flex-col ${
-        isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-      } lg:translate-x-0 lg:static lg:inset-0 shadow-2xl`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 transition-transform duration-300 transform bg-[#0f172a] text-white flex flex-col ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        } lg:translate-x-0 lg:static lg:inset-0 shadow-2xl`}>
         <div className="p-6 flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-3">
             <div className="bg-indigo-600 p-2 rounded-lg">
@@ -277,57 +287,52 @@ export default function AdminDashboard() {
 
         <nav className="flex-1 p-4 space-y-1">
           <p className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Navigation</p>
-          
-          <button 
+
+          <button
             onClick={() => setActiveView("dashboard")}
-            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${
-              activeView === "dashboard" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
+            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "dashboard" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
+              }`}
           >
             <LayoutDashboard size={18} />
             <span className="text-sm font-semibold">Dashboard</span>
           </button>
 
-          <button 
+          <button
             onClick={() => setActiveView("invite")}
-            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${
-              activeView === "invite" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
+            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "invite" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
+              }`}
           >
             <UserPlus size={18} />
             <span className="text-sm font-semibold">Invite Team</span>
           </button>
 
-          <button 
+          <button
             onClick={() => setActiveView("users")}
-            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${
-              activeView === "users" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
+            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "users" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
+              }`}
           >
             <Users size={18} />
             <span className="text-sm font-semibold">System Users</span>
           </button>
 
-          <button 
+          <button
             onClick={() => setActiveView("queue")}
-            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${
-              activeView === "queue" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
+            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "queue" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
+              }`}
           >
             <Mail size={18} />
-            <span className="text-sm font-semibold">Support Queue</span>
+            <span className="text-sm font-semibold">Case Queue</span>
           </button>
 
-          <button 
+          <button
             onClick={() => setActiveView("calendar")}
-            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${
-              activeView === "calendar" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
+            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "calendar" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
+              }`}
           >
             <Calendar size={18} />
             <span className="text-sm font-semibold">Calendar</span>
           </button>
-          
+
           <Link to="/chat" className="px-3 py-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg flex items-center gap-3 transition-colors group mt-6 border-t border-slate-800 pt-6">
             <ArrowLeft size={18} />
             <span className="text-sm font-semibold">Go to Chat</span>
@@ -335,7 +340,7 @@ export default function AdminDashboard() {
         </nav>
 
         <div className="p-4 border-t border-slate-800">
-          <button 
+          <button
             onClick={handleLogout}
             className="w-full px-4 py-2.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg flex items-center gap-3 transition-colors text-sm font-bold"
           >
@@ -347,11 +352,10 @@ export default function AdminDashboard() {
 
       {/* Main Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        
+
         {/* Header */}
-        <header className={`h-16 flex items-center justify-between px-6 border-b sticky top-0 z-40 ${
-          isDark ? "bg-slate-900/80 border-slate-800 backdrop-blur-md" : "bg-white/80 border-slate-200 backdrop-blur-md"
-        }`}>
+        <header className={`h-16 flex items-center justify-between px-6 border-b sticky top-0 z-40 ${isDark ? "bg-slate-900/80 border-slate-800 backdrop-blur-md" : "bg-white/80 border-slate-200 backdrop-blur-md"
+          }`}>
           <div className="flex items-center gap-4 flex-1">
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden text-slate-500">
               <Menu size={24} />
@@ -362,13 +366,12 @@ export default function AdminDashboard() {
           </div>
 
           <div className="relative">
-            <div 
+            <div
               onClick={() => setShowProfileDropdown(!showProfileDropdown)}
               className="flex items-center gap-3 pl-2 cursor-pointer group"
             >
-              <div className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-xs transition-transform group-hover:scale-105 ${
-                isDark ? "bg-indigo-500/20 text-indigo-400" : "bg-indigo-100 text-indigo-700"
-              }`}>
+              <div className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-xs transition-transform group-hover:scale-105 ${isDark ? "bg-indigo-500/20 text-indigo-400" : "bg-indigo-100 text-indigo-700"
+                }`}>
                 {clerkUser?.firstName?.charAt(0) || "A"}
               </div>
               <div className="hidden sm:block text-left">
@@ -378,24 +381,21 @@ export default function AdminDashboard() {
             </div>
 
             {showProfileDropdown && (
-              <div className={`absolute top-full right-0 mt-2 w-48 rounded-xl border shadow-2xl z-[100] overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
-                isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
-              }`}>
+              <div className={`absolute top-full right-0 mt-2 w-48 rounded-xl border shadow-2xl z-[100] overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                }`}>
                 <div className="p-2 space-y-1">
-                  <button 
+                  <button
                     onClick={() => { openUserProfile(); setShowProfileDropdown(false); }}
-                    className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${
-                      isDark ? "text-slate-300 hover:bg-slate-800" : "text-slate-600 hover:bg-slate-50"
-                    }`}
+                    className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-slate-300 hover:bg-slate-800" : "text-slate-600 hover:bg-slate-50"
+                      }`}
                   >
                     <User size={14} />
                     Account
                   </button>
-                  <button 
+                  <button
                     onClick={handleLogout}
-                    className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${
-                      isDark ? "text-red-400 hover:bg-red-500/10" : "text-red-600 hover:bg-red-50"
-                    }`}
+                    className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-red-400 hover:bg-red-500/10" : "text-red-600 hover:bg-red-50"
+                      }`}
                   >
                     <LogOut size={14} />
                     Log out
@@ -408,11 +408,11 @@ export default function AdminDashboard() {
 
         {/* Content Section */}
         <main className="flex-1 overflow-y-auto p-6 md:p-8">
-          
+
           {/* VIEW: DASHBOARD */}
           {activeView === "dashboard" && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300 pb-10">
-              
+
               {/* KPI Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-6">
                 {[
@@ -423,9 +423,8 @@ export default function AdminDashboard() {
                   { label: "Pending Invitations", value: pendingInvites, color: "amber" },
                   { label: "Total Platform Users", value: totalUsers, color: "indigo" },
                 ].map((stat, idx) => (
-                  <div key={idx} className={`p-6 rounded-2xl border shadow-sm flex flex-col gap-2 ${
-                    isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
-                  }`}>
+                  <div key={idx} className={`p-6 rounded-2xl border shadow-sm flex flex-col gap-2 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                    }`}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{stat.label}</span>
                     </div>
@@ -481,8 +480,8 @@ export default function AdminDashboard() {
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={getOnboardingTrend()}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#1e293b" : "#f1f5f9"} />
-                        <XAxis dataKey="date" tick={{fontSize: 10}} axisLine={false} tickLine={false} />
-                        <YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false} />
+                        <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                         <Tooltip />
                         <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={3} dot={{ r: 4 }} />
                       </LineChart>
@@ -500,7 +499,7 @@ export default function AdminDashboard() {
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={ticketStatusData} layout="vertical">
                         <XAxis type="number" hide />
-                        <YAxis dataKey="name" type="category" tick={{fontSize: 10}} axisLine={false} tickLine={false} />
+                        <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                         <Tooltip />
                         <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
                           {ticketStatusData.map((entry, index) => (
@@ -519,8 +518,8 @@ export default function AdminDashboard() {
                     {lawyerWorkloadData().length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={lawyerWorkloadData()}>
-                          <XAxis dataKey="name" tick={{fontSize: 10}} axisLine={false} tickLine={false} />
-                          <YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false} />
+                          <XAxis dataKey="name" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                           <Tooltip />
                           <Bar dataKey="tickets" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
                         </BarChart>
@@ -542,8 +541,8 @@ export default function AdminDashboard() {
                   <div className="h-[300px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={auditTrendData()}>
-                        <XAxis dataKey="date" tick={{fontSize: 10}} axisLine={false} tickLine={false} />
-                        <YAxis tick={{fontSize: 10}} axisLine={false} tickLine={false} />
+                        <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                         <Tooltip />
                         <Line type="stepAfter" dataKey="count" stroke="#a855f7" strokeWidth={2} dot={false} />
                       </LineChart>
@@ -558,7 +557,7 @@ export default function AdminDashboard() {
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={auditTypeData()} layout="vertical">
                         <XAxis type="number" hide />
-                        <YAxis dataKey="action" type="category" tick={{fontSize: 9}} width={100} axisLine={false} tickLine={false} />
+                        <YAxis dataKey="action" type="category" tick={{ fontSize: 9 }} width={100} axisLine={false} tickLine={false} />
                         <Tooltip />
                         <Bar dataKey="count" fill="#a855f7" radius={[0, 4, 4, 0]} barSize={15} />
                       </BarChart>
@@ -610,9 +609,8 @@ export default function AdminDashboard() {
                           value={inviteEmail}
                           onChange={(e) => setInviteEmail(e.target.value)}
                           placeholder="professional@company.com"
-                          className={`w-full h-14 pl-12 pr-4 rounded-xl border text-sm outline-none transition-all focus:ring-2 focus:ring-indigo-500 ${
-                            isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-white border-slate-300 text-slate-950"
-                          }`}
+                          className={`w-full h-14 pl-12 pr-4 rounded-xl border text-sm outline-none transition-all focus:ring-2 focus:ring-indigo-500 ${isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-white border-slate-300 text-slate-950"
+                            }`}
                           required
                         />
                       </div>
@@ -625,18 +623,16 @@ export default function AdminDashboard() {
                       <select
                         value={inviteRole}
                         onChange={(e) => setInviteRole(e.target.value)}
-                        className={`w-full h-14 px-4 rounded-xl border text-sm outline-none appearance-none transition-all focus:ring-2 focus:ring-indigo-500 ${
-                          isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-white border-slate-300 text-slate-950"
-                        }`}
+                        className={`w-full h-14 px-4 rounded-xl border text-sm outline-none appearance-none transition-all focus:ring-2 focus:ring-indigo-500 ${isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-white border-slate-300 text-slate-950"
+                          }`}
                       >
                         <option value="lawyer">Lawyer</option>
                         <option value="admin">Administrator</option>
                       </select>
                     </div>
                     {/* Security Box */}
-                    <div className={`rounded-xl border px-4 py-4 flex items-start gap-3 ${
-                      isDark ? "bg-amber-900/10 border-amber-900/20" : "bg-amber-50 border-amber-200"
-                    }`}>
+                    <div className={`rounded-xl border px-4 py-4 flex items-start gap-3 ${isDark ? "bg-amber-900/10 border-amber-900/20" : "bg-amber-50 border-amber-200"
+                      }`}>
                       <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5" />
                       <div>
                         <p className={`text-sm font-semibold ${isDark ? "text-amber-400" : "text-amber-900"}`}>
@@ -666,17 +662,17 @@ export default function AdminDashboard() {
                           <div className="flex-1">
                             <h4 className="text-sm font-bold">Duplicate Invitation</h4>
                             <p className="text-xs text-slate-500 mt-1 leading-5">
-                              This user already has a pending invite for <strong>{inviteRole}</strong>. 
+                              This user already has a pending invite for <strong>{inviteRole}</strong>.
                               Are you sure you want to send another one?
                             </p>
                             <div className="mt-4 flex items-center gap-3">
-                              <button 
+                              <button
                                 onClick={() => handleInvite(null, true)}
                                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-colors"
                               >
                                 Yes, Send Again
                               </button>
-                              <button 
+                              <button
                                 onClick={() => setShowConfirmInvite(false)}
                                 className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${isDark ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
                               >
@@ -689,14 +685,13 @@ export default function AdminDashboard() {
                     )}
 
                     {inviteMsg && (
-                      <div className={`mt-4 p-4 rounded-xl flex items-center justify-between text-sm font-bold animate-in fade-in zoom-in-95 ${
-                        inviteMsg.type === 'success' 
-                          ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' 
-                          : 'bg-red-500/10 text-red-500 border border-red-500/20'
-                      }`}>
+                      <div className={`mt-4 p-4 rounded-xl flex items-center justify-between text-sm font-bold animate-in fade-in zoom-in-95 ${inviteMsg.type === 'success'
+                        ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                        : 'bg-red-500/10 text-red-500 border border-red-500/20'
+                        }`}>
                         <div className="flex items-center gap-3">
-                           {inviteMsg.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
-                           {inviteMsg.text}
+                          {inviteMsg.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
+                          {inviteMsg.text}
                         </div>
                         <button onClick={() => setInviteMsg(null)} className="text-lg opacity-50 hover:opacity-100">&times;</button>
                       </div>
@@ -742,42 +737,41 @@ export default function AdminDashboard() {
                             <td className="px-7 py-4 font-medium">{invite.email}</td>
                             <td className="px-7 py-4 capitalize">{invite.role}</td>
                             <td className="px-7 py-4">
-                              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
-                                invite.status === 'pending' 
-                                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
-                                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                              }`}>
+                              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${invite.status === 'pending'
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                }`}>
                                 {invite.status}
                               </span>
                             </td>
                             <td className="px-7 py-4 text-slate-500">
                               {new Date(invite.created_at).toLocaleDateString()}
                             </td>
-                             <td className="px-7 py-4 text-right">
-                               {invite.status === 'pending' ? (
-                                 <div className="flex items-center justify-end gap-3">
-                                   <button 
-                                     onClick={async () => {
-                                       setInviteEmail(invite.email);
-                                       setInviteRole(invite.role);
-                                       window.scrollTo({ top: 0, behavior: 'smooth' });
-                                     }}
-                                     className="text-indigo-500 hover:text-indigo-400 font-bold"
-                                   >
-                                     Resend
-                                   </button>
-                                   <button 
-                                     onClick={() => handleRevokeInvite(invite.invite_id)}
-                                     className="text-red-500 hover:text-red-400 p-1"
-                                     title="Revoke Invitation"
-                                   >
-                                     <Trash2 size={16} />
-                                   </button>
-                                 </div>
-                               ) : (
-                                 <span className="text-[10px] text-slate-600 font-bold uppercase">Accepted</span>
-                               )}
-                             </td>
+                            <td className="px-7 py-4 text-right">
+                              {invite.status === 'pending' ? (
+                                <div className="flex items-center justify-end gap-3">
+                                  <button
+                                    onClick={async () => {
+                                      setInviteEmail(invite.email);
+                                      setInviteRole(invite.role);
+                                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    }}
+                                    className="text-indigo-500 hover:text-indigo-400 font-bold"
+                                  >
+                                    Resend
+                                  </button>
+                                  <button
+                                    onClick={() => handleRevokeInvite(invite.invite_id)}
+                                    className="text-red-500 hover:text-red-400 p-1"
+                                    title="Revoke Invitation"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-slate-600 font-bold uppercase">Accepted</span>
+                              )}
+                            </td>
                           </tr>
                         ))
                       )}
@@ -791,12 +785,10 @@ export default function AdminDashboard() {
           {/* VIEW: SYSTEM USERS */}
           {activeView === "users" && (
             <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-              <div className={`rounded-xl border shadow-sm overflow-hidden ${
-                isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
-              }`}>
-                <div className={`p-6 border-b flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-                  isDark ? "border-slate-800" : "border-slate-100"
+              <div className={`rounded-xl border shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
                 }`}>
+                <div className={`p-6 border-b flex flex-col md:flex-row md:items-center justify-between gap-4 ${isDark ? "border-slate-800" : "border-slate-100"
+                  }`}>
                   <h3 className="font-bold text-lg flex items-center gap-3">
                     <Users size={22} className="text-slate-400" />
                     System Members Directory
@@ -808,9 +800,8 @@ export default function AdminDashboard() {
                       placeholder="Search by name or email..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className={`pl-9 pr-4 py-2 rounded-lg border text-sm outline-none w-full md:w-80 transition-all ${
-                        isDark ? "bg-slate-950 border-slate-800 focus:border-indigo-500" : "bg-slate-50 border-slate-200 focus:border-indigo-500"
-                      }`}
+                      className={`pl-9 pr-4 py-2 rounded-lg border text-sm outline-none w-full md:w-80 transition-all ${isDark ? "bg-slate-950 border-slate-800 focus:border-indigo-500" : "bg-slate-50 border-slate-200 focus:border-indigo-500"
+                        }`}
                     />
                   </div>
                 </div>
@@ -835,14 +826,12 @@ export default function AdminDashboard() {
                         </tr>
                       ) : (
                         filteredUsers.map((user) => (
-                          <tr key={user.user_id} className={`group transition-colors ${
-                            isDark ? "hover:bg-slate-800/30" : "hover:bg-slate-50/50"
-                          }`}>
+                          <tr key={user.user_id} className={`group transition-colors ${isDark ? "hover:bg-slate-800/30" : "hover:bg-slate-50/50"
+                            }`}>
                             <td className="px-8 py-6">
                               <div className="flex items-center gap-5">
-                                <div className={`h-11 w-11 rounded-xl flex items-center justify-center font-bold text-sm ${
-                                  isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"
-                                }`}>
+                                <div className={`h-11 w-11 rounded-xl flex items-center justify-center font-bold text-sm ${isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"
+                                  }`}>
                                   {(user.user_profiles?.display_name || user.email || "?").charAt(0).toUpperCase()}
                                 </div>
                                 <div className="min-w-0">
@@ -852,13 +841,12 @@ export default function AdminDashboard() {
                               </div>
                             </td>
                             <td className="px-8 py-6">
-                              <span className={`inline-flex items-center px-4 py-1.5 rounded-full text-[10px] font-black tracking-widest uppercase border ${
-                                user.role === 'admin' 
-                                  ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
-                                user.role === 'lawyer' 
-                                  ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
+                              <span className={`inline-flex items-center px-4 py-1.5 rounded-full text-[10px] font-black tracking-widest uppercase border ${user.role === 'admin'
+                                ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
+                                user.role === 'lawyer'
+                                  ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
                                   'bg-slate-800 text-slate-400 border-slate-700'
-                              }`}>
+                                }`}>
                                 {user.role || 'user'}
                               </span>
                             </td>
@@ -871,7 +859,7 @@ export default function AdminDashboard() {
                               </div>
                             </td>
                             <td className="px-8 py-6 text-right">
-                              <button 
+                              <button
                                 onClick={() => setViewUser(user)}
                                 className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all ${isDark ? "border-slate-800 text-slate-400 hover:bg-slate-800" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
                               >
@@ -889,7 +877,7 @@ export default function AdminDashboard() {
                                     Suspended
                                   </button>
                                 ) : (
-                                  <button 
+                                  <button
                                     onClick={() => setConfirmModal({ show: true, user: user })}
                                     className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all text-red-500 border-red-500/20 hover:bg-red-500/5`}
                                   >
@@ -911,15 +899,13 @@ export default function AdminDashboard() {
           {/* VIEW: TICKETS (QUEUE) */}
           {activeView === "queue" && (
             <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-              <div className={`rounded-xl border shadow-sm overflow-hidden ${
-                isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
-              }`}>
-                <div className={`p-6 border-b flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-                  isDark ? "border-slate-800" : "border-slate-100"
+              <div className={`rounded-xl border shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
                 }`}>
+                <div className={`p-6 border-b flex flex-col md:flex-row md:items-center justify-between gap-4 ${isDark ? "border-slate-800" : "border-slate-100"
+                  }`}>
                   <div>
-                    <h3 className="font-bold text-lg">Active Escalation Queue</h3>
-                    <p className="text-sm text-slate-500 mt-1">Review and assign tickets to available legal professionals.</p>
+                    <h3 className="font-bold text-lg">Case Queue</h3>
+                    <p className="text-sm text-slate-500 mt-1">Review and manage legal matters escalated by users.</p>
                   </div>
                 </div>
 
@@ -928,9 +914,9 @@ export default function AdminDashboard() {
                     <thead>
                       <tr className={`text-left ${isDark ? "bg-slate-950/50" : "bg-slate-50/50"}`}>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Ticket ID</th>
-                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Topic</th>
-                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Status</th>
-                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Assignment</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity Details</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Matter Summary</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Assignment Status</th>
                       </tr>
                     </thead>
                     <tbody className={`divide-y ${isDark ? "divide-slate-800" : "divide-slate-100"}`}>
@@ -942,40 +928,50 @@ export default function AdminDashboard() {
                         </tr>
                       ) : (
                         tickets.map((ticket) => (
-                          <tr key={ticket.ticket_id} className={`group transition-colors ${
-                            isDark ? "hover:bg-slate-800/30" : "hover:bg-slate-50/50"
-                          }`}>
+                          <tr key={ticket.ticket_id} className={`group transition-colors ${isDark ? "hover:bg-slate-800/30" : "hover:bg-slate-50/50"
+                            }`}>
                             <td className="px-8 py-6">
                               <span className="font-mono text-xs text-slate-500">#{ticket.ticket_id.substring(0, 8)}</span>
                             </td>
                             <td className="px-8 py-6">
-                              <p className="text-sm font-bold">{ticket.legal_topic || "General Inquiry"}</p>
-                              <p className="text-[10px] text-slate-500 mt-1 uppercase font-black">Level {ticket.priority_score || 1}</p>
+                              <div className="flex items-center gap-4">
+                                <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold text-sm ${isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"
+                                  }`}>
+                                  {(ticket.user_display_name || ticket.user_email || "U").charAt(0).toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-bold truncate">{ticket.user_display_name || "Anonymous"}</p>
+                                  <p className="text-[10px] text-slate-500 truncate font-medium">{ticket.user_email}</p>
+                                </div>
+                              </div>
                             </td>
                             <td className="px-8 py-6">
-                              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
-                                !ticket.assigned_lawyer_id 
-                                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
-                                  : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                              }`}>
-                                {!ticket.assigned_lawyer_id ? 'Unassigned' : 'Assigned'}
-                              </span>
+                              {!ticket.assigned_lawyer_id && ticket.conversation_summary ? (
+                                <div className="max-w-xs">
+                                  <p className="text-[11px] text-slate-500 italic leading-relaxed line-clamp-2">
+                                    "{ticket.conversation_summary}"
+                                  </p>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest opacity-30">
+                                  {ticket.assigned_lawyer_id ? "Case in Progress" : "No Summary"}
+                                </span>
+                              )}
                             </td>
                             <td className="px-8 py-6 text-right">
                               {ticket.assigned_lawyer_id ? (
                                 <div className="flex items-center justify-end gap-2 text-xs font-bold text-slate-400">
                                   <User size={14} />
-                                  {users.find(u => u.user_id === ticket.assigned_lawyer_id)?.user_profiles?.display_name || "Lawyer Assigned"}
+                                  {users.find(u => u.user_id === ticket.assigned_lawyer_id)?.user_profiles?.display_name || "Legal Team"}
                                 </div>
                               ) : (
-                                <select 
+                                <select
                                   onChange={(e) => handleAssignTicket(ticket.ticket_id, e.target.value)}
-                                  className={`text-xs font-bold py-2 px-3 rounded-lg border outline-none ${
-                                    isDark ? "bg-slate-950 border-slate-800 text-slate-300" : "bg-white border-slate-200 text-slate-600"
-                                  }`}
+                                  className={`text-xs font-bold py-2 px-3 rounded-lg border outline-none ${isDark ? "bg-slate-950 border-slate-800 text-slate-300" : "bg-white border-slate-200 text-slate-600"
+                                    }`}
                                 >
                                   <option value="">Assign Lawyer...</option>
-                                  {users.filter(u => u.role === 'lawyer').map(lawyer => (
+                                  {users.filter(u => u.role?.toLowerCase() === 'lawyer').map(lawyer => (
                                     <option key={lawyer.user_id} value={lawyer.user_id}>
                                       {lawyer.user_profiles?.display_name || lawyer.email}
                                     </option>
@@ -996,65 +992,65 @@ export default function AdminDashboard() {
           {/* VIEW: CALENDAR */}
           {activeView === "calendar" && (
             <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
-               <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                 <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-                    <div>
-                      <h1 className="text-2xl font-bold">Legal Schedule</h1>
-                      <p className="text-sm text-slate-500 mt-1">Manage court dates, client consultations, and team meetings.</p>
+              <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+                  <div>
+                    <h1 className="text-2xl font-bold">Legal Schedule</h1>
+                    <p className="text-sm text-slate-500 mt-1">Manage court dates, client consultations, and team meetings.</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button className={`p-2 rounded-lg border ${isDark ? "border-slate-800 hover:bg-slate-800" : "border-slate-200 hover:bg-slate-50"}`}>
+                      <ArrowLeft size={16} />
+                    </button>
+                    <span className="font-bold text-sm px-4">May 2026</span>
+                    <button className={`p-2 rounded-lg border ${isDark ? "border-slate-800 hover:bg-slate-800" : "border-slate-200 hover:bg-slate-50"}`}>
+                      <Plus size={16} className="rotate-45" />
+                    </button>
+                    <button className="ml-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2">
+                      <Plus size={16} />
+                      Add Event
+                    </button>
+                  </div>
+                </div>
+
+                {/* Calendar Grid */}
+                <div className="grid grid-cols-7 gap-px bg-slate-200 dark:bg-slate-800 rounded-xl overflow-hidden border dark:border-slate-800">
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                    <div key={day} className={`py-3 text-center text-[10px] font-black uppercase tracking-widest ${isDark ? "bg-slate-950 text-slate-500" : "bg-slate-50 text-slate-400"}`}>
+                      {day}
                     </div>
-                    <div className="flex items-center gap-3">
-                      <button className={`p-2 rounded-lg border ${isDark ? "border-slate-800 hover:bg-slate-800" : "border-slate-200 hover:bg-slate-50"}`}>
-                        <ArrowLeft size={16} />
-                      </button>
-                      <span className="font-bold text-sm px-4">May 2026</span>
-                      <button className={`p-2 rounded-lg border ${isDark ? "border-slate-800 hover:bg-slate-800" : "border-slate-200 hover:bg-slate-50"}`}>
-                        <Plus size={16} className="rotate-45" />
-                      </button>
-                      <button className="ml-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2">
-                        <Plus size={16} />
-                        Add Event
-                      </button>
-                    </div>
-                 </div>
+                  ))}
 
-                 {/* Calendar Grid */}
-                 <div className="grid grid-cols-7 gap-px bg-slate-200 dark:bg-slate-800 rounded-xl overflow-hidden border dark:border-slate-800">
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                      <div key={day} className={`py-3 text-center text-[10px] font-black uppercase tracking-widest ${isDark ? "bg-slate-950 text-slate-500" : "bg-slate-50 text-slate-400"}`}>
-                        {day}
-                      </div>
-                    ))}
-                    
-                    {/* Empty slots for start of month (May 2026 starts on Friday) */}
-                    {[...Array(5)].map((_, i) => (
-                      <div key={`empty-${i}`} className={`h-32 p-4 ${isDark ? "bg-slate-900/50" : "bg-slate-50/50"}`} />
-                    ))}
+                  {/* Empty slots for start of month (May 2026 starts on Friday) */}
+                  {[...Array(5)].map((_, i) => (
+                    <div key={`empty-${i}`} className={`h-32 p-4 ${isDark ? "bg-slate-900/50" : "bg-slate-50/50"}`} />
+                  ))}
 
-                    {/* Days of Month */}
-                    {[...Array(31)].map((_, i) => {
-                      const day = i + 1;
-                      const isToday = day === 12;
+                  {/* Days of Month */}
+                  {[...Array(31)].map((_, i) => {
+                    const day = i + 1;
+                    const isToday = day === 12;
 
-                      return (
-                        <div key={day} className={`h-32 p-4 transition-colors relative group ${isDark ? "bg-slate-900 hover:bg-slate-800/50" : "bg-white hover:bg-slate-50"}`}>
-                          <div className="flex items-center justify-between">
-                            <span className={`text-sm font-bold ${isToday ? "h-7 w-7 rounded-full bg-indigo-600 text-white flex items-center justify-center -mt-1 -ml-1" : "text-slate-500"}`}>
-                              {day}
-                            </span>
-                          </div>
-                          <button className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg bg-indigo-600 text-white shadow-lg">
-                            <Plus size={12} />
-                          </button>
+                    return (
+                      <div key={day} className={`h-32 p-4 transition-colors relative group ${isDark ? "bg-slate-900 hover:bg-slate-800/50" : "bg-white hover:bg-slate-50"}`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-sm font-bold ${isToday ? "h-7 w-7 rounded-full bg-indigo-600 text-white flex items-center justify-center -mt-1 -ml-1" : "text-slate-500"}`}>
+                            {day}
+                          </span>
                         </div>
-                      );
-                    })}
-                    
-                    {/* Empty slots for end of month */}
-                    {[...Array(6)].map((_, i) => (
-                      <div key={`end-${i}`} className={`h-32 p-4 ${isDark ? "bg-slate-900/50" : "bg-slate-50/50"}`} />
-                    ))}
-                 </div>
-               </div>
+                        <button className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg bg-indigo-600 text-white shadow-lg">
+                          <Plus size={12} />
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  {/* Empty slots for end of month */}
+                  {[...Array(6)].map((_, i) => (
+                    <div key={`end-${i}`} className={`h-32 p-4 ${isDark ? "bg-slate-900/50" : "bg-slate-50/50"}`} />
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
@@ -1074,15 +1070,15 @@ export default function AdminDashboard() {
                 This will deactivate the user account and prevent access to the system immediately.
               </p>
             </div>
-            
+
             <div className="p-6 bg-slate-50/50 dark:bg-slate-950/20 space-y-4">
               <div className="grid grid-cols-3 gap-2 text-xs">
                 <span className="text-slate-500 font-bold uppercase tracking-wider">User:</span>
                 <span className="col-span-2 font-bold">{confirmModal.user?.user_profiles?.display_name || "Active Member"}</span>
-                
+
                 <span className="text-slate-500 font-bold uppercase tracking-wider">Email:</span>
                 <span className="col-span-2 font-bold truncate">{confirmModal.user?.email}</span>
-                
+
                 <span className="text-slate-500 font-bold uppercase tracking-wider">Role:</span>
                 <span className="col-span-2">
                   <span className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 font-black uppercase text-[9px] tracking-widest border border-blue-500/20">
@@ -1093,13 +1089,13 @@ export default function AdminDashboard() {
             </div>
 
             <div className="p-6 flex items-center justify-end gap-3 border-t border-slate-800/10">
-              <button 
+              <button
                 onClick={() => setConfirmModal({ show: false, user: null })}
                 className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${isDark ? "text-slate-400 hover:bg-slate-800" : "text-slate-600 hover:bg-slate-100"}`}
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={() => handleToggleUserStatus(confirmModal.user?.user_id)}
                 className="px-6 py-2 bg-red-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-500/20 hover:bg-red-600 transition-colors"
               >
@@ -1113,13 +1109,12 @@ export default function AdminDashboard() {
       {/* USER DETAILS SIDE DRAWER */}
       {viewUser && (
         <>
-          <div 
+          <div
             onClick={() => setViewUser(null)}
-            className="fixed inset-0 z-[110] bg-slate-950/40 backdrop-blur-[2px] animate-in fade-in duration-300" 
+            className="fixed inset-0 z-[110] bg-slate-950/40 backdrop-blur-[2px] animate-in fade-in duration-300"
           />
-          <div className={`fixed inset-y-0 right-0 z-[120] w-full max-w-md shadow-2xl transform transition-transform duration-500 ease-out animate-in slide-in-from-right duration-500 border-l ${
-            isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"
-          }`}>
+          <div className={`fixed inset-y-0 right-0 z-[120] w-full max-w-md shadow-2xl transform transition-transform duration-500 ease-out animate-in slide-in-from-right duration-500 border-l ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"
+            }`}>
             <div className="flex flex-col h-full">
               {/* Drawer Header */}
               <div className="p-6 border-b border-slate-800/10 flex items-center justify-between">
@@ -1127,7 +1122,7 @@ export default function AdminDashboard() {
                   <h3 className="text-xl font-bold">User Details</h3>
                   <p className="text-[10px] text-slate-500 mt-1 uppercase font-black tracking-widest">Management Profile</p>
                 </div>
-                <button 
+                <button
                   onClick={() => setViewUser(null)}
                   className={`p-2 rounded-lg transition-colors ${isDark ? "hover:bg-slate-800 text-slate-400" : "hover:bg-slate-50 text-slate-500"}`}
                 >
@@ -1139,30 +1134,27 @@ export default function AdminDashboard() {
               <div className="flex-1 overflow-y-auto p-8 space-y-10">
                 {/* Profile Header */}
                 <div className="flex flex-col items-center text-center">
-                  <div className={`h-24 w-24 rounded-3xl flex items-center justify-center font-black text-3xl mb-4 shadow-xl ${
-                    isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"
-                  }`}>
+                  <div className={`h-24 w-24 rounded-3xl flex items-center justify-center font-black text-3xl mb-4 shadow-xl ${isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"
+                    }`}>
                     {(viewUser.user_profiles?.display_name || viewUser.email || "?").charAt(0).toUpperCase()}
                   </div>
                   <h4 className="text-xl font-bold">{viewUser.user_profiles?.display_name || "Active Member"}</h4>
                   <p className="text-sm text-slate-500">{viewUser.email}</p>
-                  
+
                   <div className="flex gap-2 mt-4">
-                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${
-                      viewUser.role === 'admin' 
-                        ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
-                      viewUser.role === 'lawyer' 
-                        ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
+                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${viewUser.role === 'admin'
+                      ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
+                      viewUser.role === 'lawyer'
+                        ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
                         'bg-slate-800 text-slate-400 border-slate-700'
-                    }`}>
+                      }`}>
                       {viewUser.role || 'user'}
                     </span>
-                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${
-                      viewUser.status !== 'inactive' 
-                        ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' 
-                        : 'bg-slate-100 text-slate-400 border-slate-200'
-                    }`}>
-                      {viewUser.status === 'inactive' ? 'Suspended' : 'Active'}
+                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${viewUser.status !== 'suspended' && viewUser.status !== 'inactive'
+                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                      : 'bg-slate-100 text-slate-400 border-slate-200'
+                      }`}>
+                      {viewUser.status === 'suspended' || viewUser.status === 'inactive' ? 'Suspended' : 'Active'}
                     </span>
                   </div>
                 </div>
@@ -1202,7 +1194,7 @@ export default function AdminDashboard() {
 
               {/* Drawer Footer */}
               <div className="p-6 border-t border-slate-800/10 bg-slate-50/50 dark:bg-slate-950/20">
-                <button 
+                <button
                   onClick={() => setViewUser(null)}
                   className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-center gap-2"
                 >
@@ -1212,6 +1204,31 @@ export default function AdminDashboard() {
             </div>
           </div>
         </>
+      )}
+      {/* Floating Notifications */}
+      {queueMsg && (
+        <div className="fixed bottom-8 right-8 z-[200] w-full max-w-md animate-in slide-in-from-bottom-4 duration-500">
+          <div className={`p-5 rounded-2xl flex items-center justify-between text-sm font-bold shadow-2xl backdrop-blur-md border ${queueMsg.type === 'success'
+            ? 'bg-emerald-600/90 text-white border-emerald-400'
+            : 'bg-red-600/90 text-white border-red-400'
+            }`}>
+            <div className="flex items-center gap-4">
+              <div className="h-10 w-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                {queueMsg.type === 'success' ? <CheckCircle size={20} /> : <AlertTriangle size={20} />}
+              </div>
+              <div>
+                <p className="text-[10px] opacity-70 uppercase tracking-widest font-black mb-0.5">System Notification</p>
+                <p className="leading-tight">{queueMsg.text}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setQueueMsg(null)}
+              className="ml-4 p-2 hover:bg-white/10 rounded-lg transition-colors flex-shrink-0"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
