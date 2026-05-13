@@ -70,9 +70,12 @@ async def lifespan(app: FastAPI):
 
         logger.info("Connecting to Supabase...")
         supabase_client = get_supabase()
+        
+        # Use SERVICE_ROLE_KEY if available (for backend God Mode), otherwise fallback to ANON_KEY
+        sb_key = settings.SUPABASE_SERVICE_ROLE_KEY or settings.SUPABASE_KEY
         supabase_client.connect(
             url=settings.SUPABASE_URL,
-            key=settings.SUPABASE_KEY,
+            key=sb_key,
         )
 
         logger.info("Initializing LLM service...")
