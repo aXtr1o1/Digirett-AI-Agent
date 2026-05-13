@@ -168,13 +168,7 @@ async def get_conversation(
             )
 
         internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
-        
-        # Access control: Owner, Admin, or the Assigned Lawyer for an active escalation
-        is_owner = conversation.get("user_id") == internal_user_id
-        is_admin = user.role == "admin"
-        is_assigned_lawyer = _hitl_service.is_assigned_lawyer_for_conversation(conversation_id, internal_user_id)
-
-        if not (is_owner or is_admin or is_assigned_lawyer):
+        if conversation.get("user_id") != internal_user_id and user.role != "admin":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to access this conversation.",

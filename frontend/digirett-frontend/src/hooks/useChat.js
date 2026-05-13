@@ -90,6 +90,33 @@ const useChat = (
         console.warn("[useChat] Failed to fetch escalation status on load:", err);
       }
     } catch (err) {
+      // ✅ Fallback: If Supabase direct fetch fails (common for new users or type mismatches),
+      // use the backend API which handles ID mapping securely.
+      if (err.code === "22P02" || err.status === 400) {
+        try {
+          console.log("[useChat] Supabase direct fetch failed (ID mismatch), falling back to API...");
+          const data = await conversationService.getConversationWithMessages(conversationId);
+          const msgs = data.messages || [];
+          const normalized = msgs.map((m) => ({
+            id: m.message_id,
+            role: m.role,
+            content: m.content || "",
+            sources: m.sources || [],
+            timestamp: m.created_at || new Date().toISOString(),
+            type: m.type || "text",
+            fileName: m.file_name || null,
+            documentId: m.metadata?.document_id || null,
+          }));
+          setMessages(normalized);
+          if (data.conversation?.is_escalated !== undefined) {
+            setIsEscalated(data.conversation.is_escalated);
+          }
+          return; // Success via fallback
+        } catch (fallbackErr) {
+          console.error("[useChat] Fallback fetch also failed:", fallbackErr);
+        }
+      }
+      
       console.error("[useChat] loadMessages error from Supabase:", err);
       setError("Failed to load messages");
     } finally {

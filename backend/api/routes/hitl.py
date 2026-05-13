@@ -216,9 +216,8 @@ async def get_ticket_details(
     Access: Only the assigned lawyer or admin can call this.
     """
     lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
-    is_admin = current_lawyer.role == "admin"
 
-    details = _hitl_service.get_ticket_with_user_details(ticket_id, lawyer_id, is_admin=is_admin)
+    details = _hitl_service.get_ticket_with_user_details(ticket_id, lawyer_id)
     if not details:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -342,12 +341,5 @@ async def get_escalation_status(
     Check if this conversation already has an active escalation ticket.
     Used by the chat UI to show the correct icon state (Scale vs CheckCircle).
     """
-    ticket = _hitl_service.get_conversation_ticket(conversation_id)
-    if not ticket:
-        return {"conversation_id": conversation_id, "is_escalated": False}
-
-    return {
-        "conversation_id": conversation_id,
-        "is_escalated": True,
-        "ticket": ticket
-    }
+    is_escalated = _hitl_service.is_conversation_escalated(conversation_id)
+    return {"conversation_id": conversation_id, "is_escalated": is_escalated}

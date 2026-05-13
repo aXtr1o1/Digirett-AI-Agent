@@ -369,6 +369,28 @@ class UserService:
             logger.error(f"❌ invite_user failed | {email} | {exc}")
             return False
 
+    def get_all_invitations(self) -> List[Dict[str, Any]]:
+        """
+        Fetches all rows from the role_invites table.
+        """
+        try:
+            resp = self._supabase.table("role_invites").select("*").order("created_at", desc=True).execute()
+            return resp.data or []
+        except Exception as exc:
+            logger.error(f"❌ get_all_invitations failed | {exc}")
+            return []
+
+    def revoke_invitation(self, invite_id: str) -> bool:
+        """
+        Deletes a pending invitation from the role_invites table.
+        """
+        try:
+            resp = self._supabase.table("role_invites").delete().eq("invite_id", invite_id).execute()
+            return len(resp.data or []) > 0
+        except Exception as exc:
+            logger.error(f"❌ revoke_invitation failed | {invite_id} | {exc}")
+            return False
+
     def promote_to_lawyer(self, user_id: str, admin_id: str, bar_license: str = None, bar_council: str = None) -> bool:
         """Promotes a user to Lawyer role and creates their profile."""
         try:

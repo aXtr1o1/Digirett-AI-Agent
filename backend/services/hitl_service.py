@@ -233,10 +233,10 @@ class HitlService:
             logger.error(f"❌ Failed to respond to ticket {ticket_id} | {exc}")
             return False
 
-    def get_ticket_with_user_details(self, ticket_id: str, lawyer_id: str, is_admin: bool = False) -> Optional[Dict[str, Any]]:
+    def get_ticket_with_user_details(self, ticket_id: str, lawyer_id: str) -> Optional[Dict[str, Any]]:
         """
         Fetches full ticket details including the user's profile info.
-        Enforces that ONLY the assigned lawyer (or an Admin) can see this.
+        Enforces that ONLY the assigned lawyer can see this.
 
         Returns the ticket with a 'user_info' key containing:
           - email, user_name (from users table)
@@ -263,11 +263,11 @@ class HitlService:
 
             ticket = response.data[0]
 
-            # Security check: only the assigned lawyer or admin can view details
-            if not is_admin and ticket.get("assigned_lawyer_id") != lawyer_id:
+            # Security check: only the assigned lawyer can view details
+            if ticket.get("assigned_lawyer_id") != lawyer_id:
                 logger.warning(
                     f"Unauthorized access to ticket details | "
-                    f"performer={lawyer_id} | ticket={ticket_id} | is_admin={is_admin}"
+                    f"lawyer={lawyer_id} | ticket={ticket_id}"
                 )
                 return None
 
@@ -664,40 +664,3 @@ class HitlService:
             logger.info(f"✅ Alert marked sent for {len(ticket_ids)} tickets")
         except Exception as exc:
             logger.warning(f"⚠️ mark_alert_sent failed | {exc}")
-
-    def is_assigned_lawyer_for_conversation(self, conversation_id: str, lawyer_id: str) -> bool:
-        """
-        Checks if the given lawyer is currently assigned to this conversation's ticket.
-        Used for conversation access control.
-        """
-        try:
-            resp = (
-                self._supabase.table("hitl_tickets")
-                .select("ticket_id")
-                .eq("conversation_id", conversation_id)
-                .eq("assigned_lawyer_id", lawyer_id)
-                .neq("status", "closed")
-                .execute()
-            )
-            return len(resp.data) > 0
-        except Exception:
-            return False
-
-    def get_conversation_ticket(self, conversation_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Returns the most recent active escalation ticket for a conversation.
-        """
-        try:
-            resp = (
-                self._supabase.table("hitl_tickets")
-                .select("*, hitl_responses(content, created_at)")
-                .eq("conversation_id", conversation_id)
-                .neq("status", "closed")
-                .order("created_at", { "ascending": False })
-                .limit(1)
-                .execute()
-            )
-            return resp.data[0] if resp.data else None
-        except Exception as exc:
-            logger.error(f"❌ get_conversation_ticket failed | {conversation_id} | {exc}")
-            return None

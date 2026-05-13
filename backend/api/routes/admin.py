@@ -99,6 +99,34 @@ async def invite_user(
     return {"message": f"Invitation sent to {req.email}"}
 
 
+@router.get("/invitations", summary="List all pending/active role invitations")
+async def list_invitations(
+    current_admin: ClerkUser = Depends(require_db_role("admin")),
+):
+    """
+    Fetches all invitation records from the role_invites table.
+    """
+    invites = _user_service.get_all_invitations()
+    return invites
+
+
+@router.delete("/invitations/{invite_id}", summary="Revoke a sent invitation")
+async def revoke_invitation(
+    invite_id: str,
+    current_admin: ClerkUser = Depends(require_db_role("admin")),
+):
+    """
+    Deletes a pending invitation record from the database.
+    """
+    success = _user_service.revoke_invitation(invite_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invitation not found or already accepted.",
+        )
+    return {"message": "Invitation revoked successfully."}
+
+
 @router.get("/users", summary="List all users in the system")
 async def list_users(
     current_admin: ClerkUser = Depends(require_db_role("admin")),
@@ -182,7 +210,7 @@ async def admin_suspend_user(
     current_admin: ClerkUser = Depends(require_db_role("admin")),
 ):
     try:
-        _user_service._supabase.table("users").update({"status": "inactive"}).eq("user_id", user_id).execute()
+        _user_service._supabase.table("users").update({"status": "suspended"}).eq("user_id", user_id).execute()
         return {"status": "success", "message": "User suspended."}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
