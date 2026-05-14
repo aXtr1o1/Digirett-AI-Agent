@@ -15,7 +15,7 @@ Endpoints:
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel
 
 from core.auth import ClerkUser, require_db_role
@@ -55,6 +55,41 @@ class EscalateRequest(BaseModel):
 class RespondRequest(BaseModel):
     content: str
     outcome_notes: Optional[str] = None  # Phase 8: optional outcome notes
+
+
+class NoShowRequest(BaseModel):
+    outcome_notes: Optional[str] = None
+    no_show_type: str = "user" # "user" or "both"
+
+
+@router.get(
+    "/check-status",
+    summary="Publicly check if a user is suspended (before login)",
+)
+async def check_user_status(identifier: str):
+    """
+    Checks if a user is suspended based on email or username.
+    Publicly accessible to allow the login form to block restricted users.
+    """
+    try:
+        from db.supabase_client import get_supabase
+        supabase = get_supabase()
+        
+        # Check by email or username
+        resp = supabase.table("users") \
+            .select("status") \
+            .or_(f"email.eq.{identifier},user_name.eq.{identifier}") \
+            .limit(1) \
+            .execute()
+            
+        if resp.data:
+            user_status = resp.data[0].get("status")
+            return {"status": user_status, "is_suspended": user_status == "suspended"}
+        
+        return {"status": "not_found", "is_suspended": false}
+    except Exception as exc:
+        logger.error(f"❌ check_user_status failed | {exc}")
+        return {"status": "error", "is_suspended": false}
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -139,6 +174,7 @@ async def get_ticket_queue(
 )
 async def assign_ticket(
     ticket_id: str,
+    background_tasks: BackgroundTasks,
     current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
 ):
     """
@@ -160,7 +196,15 @@ async def assign_ticket(
             detail="This ticket was already claimed by another lawyer.",
         )
 
-    # ── Notify user that a lawyer has accepted their case ────────────
+    # ── Notify user in the background ────────────────────────────────
+    background_tasks.add_task(_send_assignment_notification, ticket_id, lawyer_id)
+
+    logger.info(f"✅ Ticket claimed | ticket={ticket_id} | lawyer={lawyer_id}")
+    return {"message": "Ticket assigned successfully.", "ticket_id": ticket_id}
+
+
+async def _send_assignment_notification(ticket_id: str, lawyer_id: str):
+    """Internal helper to send email without blocking the API response."""
     try:
         ticket = _hitl_service.get_ticket_by_id(ticket_id)
         if ticket and _email_service:
@@ -276,6 +320,31 @@ async def respond_to_ticket(
     return {"message": "Response submitted and ticket resolved.", "ticket_id": ticket_id}
 
 
+@router.post(
+    "/tickets/{ticket_id}/no-show",
+    summary="Lawyer marks the user as a no-show",
+)
+async def mark_no_show(
+    ticket_id: str,
+    req: NoShowRequest = NoShowRequest(),
+    current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
+):
+    """
+    Lawyer reporting that the user did not show up for the meeting.
+    Status moves to 'no_show'.
+    """
+    lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
+    success = _hitl_service.mark_no_show(
+        ticket_id, 
+        notes=req.outcome_notes,
+        no_show_type=req.no_show_type
+    )
+    if not success:
+        raise HTTPException(status_code=400, detail="Ticket not found, not scheduled, or update failed.")
+    
+    return {"message": f"Case marked as {req.no_show_type} no-show. Rescheduling enabled."}
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # USER TICKET STATUS
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -340,7 +409,13 @@ async def get_escalation_status(
 ):
     """
     Check if this conversation already has an active escalation ticket.
-    Used by the chat UI to show the correct icon state (Scale vs CheckCircle).
+    Used by the chat UI to show the correct status and details.
     """
-    is_escalated = _hitl_service.is_conversation_escalated(conversation_id)
-    return {"conversation_id": conversation_id, "is_escalated": is_escalated}
+    ticket = _hitl_service.get_ticket_by_conversation(conversation_id)
+    is_escalated = ticket is not None and ticket.get("status") in ["open", "assigned", "booked", "resolved"]
+    
+    return {
+        "conversation_id": conversation_id, 
+        "is_escalated": is_escalated,
+        "ticket": ticket
+    }
