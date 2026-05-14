@@ -144,7 +144,7 @@ class Settings(BaseSettings):
 
     # ── Admin Notifications ───────────────────────────────────────────────────
     # Email to receive alerts about unassigned HITL tickets
-    ADMIN_ALERT_EMAIL: Optional[str] = "admin@digirett.com"
+    ADMIN_ALERT_EMAIL: Optional[str]
 
 
     model_config = SettingsConfigDict(

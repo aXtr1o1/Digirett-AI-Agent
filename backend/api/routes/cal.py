@@ -70,6 +70,7 @@ def _get_lawyer_cal_credentials(ticket: Dict[str, Any]):
     """
     lawyer_id = ticket.get("assigned_lawyer_id")
     if not lawyer_id:
+        logger.warning(f"⚠️ Cal.com credentials lookup failed: No lawyer assigned to ticket {ticket.get('ticket_id')}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No lawyer assigned to this ticket yet.",
@@ -87,9 +88,10 @@ def _get_lawyer_cal_credentials(ticket: Dict[str, Any]):
     )
 
     if not resp.data:
+        logger.error(f"❌ Cal.com credentials lookup failed: No profile found in lawyer_profiles for lawyer_id {lawyer_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Lawyer profile not found.",
+            detail="Lawyer profile not found. Please ensure the lawyer has configured their Cal.com settings.",
         )
 
     profile = resp.data[0]
@@ -97,11 +99,13 @@ def _get_lawyer_cal_credentials(ticket: Dict[str, Any]):
     event_type_id = profile.get("cal_event_type_id")
 
     if not api_key or not event_type_id:
+        logger.error(f"❌ Cal.com credentials lookup failed: Profile found for {lawyer_id} but api_key or event_type_id is missing")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Lawyer has not configured their Cal.com credentials. Please contact admin.",
+            detail="Lawyer has not fully configured their Cal.com credentials.",
         )
 
+    logger.info(f"✅ Cal.com credentials found for lawyer {lawyer_id}")
     return api_key, int(event_type_id)
 
 
@@ -267,6 +271,15 @@ async def create_booking(
         conversation_id=ticket.get("conversation_id", ""),
         ticket_id=ticket_id,
         timezone=req.timezone,
+    )
+
+    # ✅ Update ticket status IMMEDIATELY so UI updates without waiting for webhook
+    meet_link = _cal_service.extract_meet_link(booking_result)
+    _hitl_service.update_booking(
+        ticket_id=ticket_id,
+        cal_booking_id=str(booking_result.get("id") or ""),
+        booking_url=meet_link,
+        meeting_time=req.start_time
     )
 
     logger.info(

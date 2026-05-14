@@ -161,10 +161,12 @@ async def cal_webhook(
         )
 
     # ── Update hitl_ticket ───────────────────────────────────────────
+    start_time = booking.get("startTime") or booking.get("start_time")
     success = _hitl_service.update_booking(
         ticket_id=ticket_id,
         cal_booking_id=cal_booking_id,
         booking_url=meet_link,
+        meeting_time=start_time
     )
 
     if not success:
@@ -176,25 +178,40 @@ async def cal_webhook(
         f"cal_id={cal_booking_id} | meet={meet_link}"
     )
 
-    # ── Send confirmation email to user (non-blocking) ───────────────
+    # ── Send confirmation emails (non-blocking) ──────────────────────
     try:
-        # Fetch ticket to get user email
+        # Fetch ticket to get user and lawyer emails (now included in get_ticket_by_id)
         ticket = _hitl_service.get_ticket_by_id(ticket_id)
         if ticket and _email_service:
             user_email = ticket.get("user_email")
             user_name = ticket.get("user_display_name") or "User"
+            lawyer_email = ticket.get("lawyer_email")
+            lawyer_name = ticket.get("lawyer_name") or "Lawyer"
             start_time = booking.get("startTime") or booking.get("start_time") or ""
 
             if user_email and meet_link:
+                # 1. Notify User
                 await _email_service.send_booking_confirmation_email(
                     to_email=user_email,
                     user_name=user_name,
                     meet_link=meet_link,
                     start_time=start_time,
                 )
+                
+                # 2. Notify Lawyer
+                if lawyer_email:
+                    await _email_service.send_booking_confirmation_email(
+                        to_email=lawyer_email,
+                        user_name=lawyer_name,
+                        meet_link=meet_link,
+                        start_time=start_time,
+                    )
+                    logger.info(f"📧 Confirmation emails sent to user ({user_email}) and lawyer ({lawyer_email})")
+                else:
+                    logger.info(f"📧 Confirmation email sent to user ({user_email}) | No lawyer email found")
     except Exception as notify_exc:
         # Non-fatal — webhook still succeeds
-        logger.warning(f"⚠️ Booking confirmation email failed (non-fatal) | {notify_exc}")
+        logger.warning(f"⚠️ Booking confirmation emails failed (non-fatal) | {notify_exc}")
 
     return {
         "status": "success",

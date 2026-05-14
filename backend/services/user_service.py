@@ -178,46 +178,69 @@ class UserService:
 
     def get_user_id_from_clerk_id(self, clerk_user_id: str, email: str = None) -> Optional[str]:
         """
-        Quick lookup: Clerk user ID → Supabase user_id.
-        Used on every authenticated request to resolve the internal user_id.
-        Auto-creates the user in Supabase if missing and email is provided.
+        Quick lookup: Clerk user ID -> Supabase user_id.
+        Auto-creates the user in Supabase if missing.
         """
+        logger.info(f"🔍 DEBUG: get_user_id_from_clerk_id | clerk_id={clerk_user_id} | provided_email={email}")
         user = self.get_user_by_clerk_id(clerk_user_id)
         if user:
+            logger.info(f"✅ Found existing user: {user['user_id']}")
             return user["user_id"]
 
+        logger.info(f"⚡ User {clerk_user_id} not found in Supabase. Attempting auto-creation...")
         # If user not found, auto-create them (fallback for missing webhook)
         try:
             real_email = email
             display_name = None
             
-            from config import settings
-            import httpx
+            # If no email provided, try to fetch from Clerk API
             if not real_email and settings.CLERK_SECRET_KEY:
+                logger.info(f"🌐 Fetching email from Clerk API for {clerk_user_id}...")
                 clerk_url = f"https://api.clerk.com/v1/users/{clerk_user_id}"
-                resp = httpx.get(clerk_url, headers={"Authorization": f"Bearer {settings.CLERK_SECRET_KEY}"})
-                if resp.status_code == 200:
-                    data = resp.json()
-                    email_addresses = data.get("email_addresses", [])
-                    if email_addresses:
-                        real_email = email_addresses[0].get("email_address")
-                    
-                    first_name = data.get("first_name") or ""
-                    last_name = data.get("last_name") or ""
-                    username = data.get("username")
-                    display_name = username or f"{first_name} {last_name}".strip() or None
+                try:
+                    with httpx.Client() as client:
+                        resp = client.get(clerk_url, headers={"Authorization": f"Bearer {settings.CLERK_SECRET_KEY}"})
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            email_addresses = data.get("email_addresses", [])
+                            if email_addresses:
+                                real_email = email_addresses[0].get("email_address")
+                                logger.info(f"📧 Fetched email: {real_email}")
+                            
+                            first_name = data.get("first_name") or ""
+                            last_name = data.get("last_name") or ""
+                            username = data.get("username")
+                            display_name = username or f"{first_name} {last_name}".strip() or None
+                        else:
+                            logger.error(f"❌ Clerk API returned {resp.status_code}: {resp.text}")
+                except Exception as e:
+                    logger.error(f"❌ Clerk API request failed: {e}")
 
             fallback_email = real_email or f"{clerk_user_id}@placeholder.com"
+            logger.info(f"🚀 Calling create_user_from_webhook with email: {fallback_email}")
+            
+            # Final check: Does this email already exist?
+            try:
+                existing_email_resp = self._supabase.table("users").select("user_id, clerk_user_id").eq("email", fallback_email).execute()
+                if existing_email_resp.data:
+                    existing = existing_email_resp.data[0]
+                    logger.error(f"🚨 EMAIL CONFLICT: Email {fallback_email} is already used by Supabase user {existing['user_id']} (Clerk ID: {existing['clerk_user_id']})")
+                    # Optionally: Update the clerk_user_id if it's the same person but different Clerk instance? 
+                    # For now, just return the existing ID to unblock them, or fail clearly.
+                    return existing["user_id"]
+            except Exception as e:
+                logger.warning(f"⚠️ Email uniqueness check failed (non-fatal): {e}")
+
             new_user = self.create_user_from_webhook(
                 clerk_user_id=clerk_user_id,
                 email=fallback_email,
                 tenant_id=None,
                 display_name=display_name
             )
-            logger.info(f"✅ Auto-created missing user during lookup | clerk_id={clerk_user_id} | fetched_email={real_email}")
-            return new_user["user_id"]
+            logger.info(f"🎉 Successfully auto-created user: {new_user.get('user_id')}")
+            return new_user.get("user_id")
         except Exception as exc:
-            logger.error(f"❌ Failed to auto-create user in get_user_id_from_clerk_id | {exc}")
+            logger.error(f"❌ FATAL: Auto-creation failed for {clerk_user_id} | {exc}", exc_info=True)
 
         return None
 
@@ -537,4 +560,19 @@ class UserService:
             return response.data or []
         except Exception as exc:
             logger.error(f"❌ Failed to fetch audit logs | {exc}")
+            return []
+
+    def get_invitations(self) -> List[Dict[str, Any]]:
+        """
+        Fetches all role invitations for admin tracking.
+        Returns invitations sorted by newest first.
+        """
+        try:
+            response = self._supabase.table("role_invites") \
+                .select("*") \
+                .order("created_at", desc=True) \
+                .execute()
+            return response.data or []
+        except Exception as exc:
+            logger.error(f"❌ Failed to fetch invitations | {exc}")
             return []

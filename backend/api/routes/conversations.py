@@ -167,20 +167,19 @@ async def get_conversation(
                 detail="Conversation not found.",
             )
 
-        internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
-        
-        # Check authorization: Owner, Admin, or Assigned Lawyer
-        is_owner = conversation.get("user_id") == internal_user_id
-        is_admin = user.role == "admin"
-        is_assigned_lawyer = False
-        
-        if not is_owner and not is_admin and user.role == "lawyer":
-            # Check if this lawyer is assigned to a ticket for this conversation
-            ticket = _hitl_service.get_ticket_by_conversation(conversation_id)
-            if ticket and ticket.get("assigned_lawyer_id") == internal_user_id:
-                is_assigned_lawyer = True
+        # Resolve authoritative role from DB
+        from db.supabase_client import get_supabase
+        supabase = get_supabase()
+        db_role = "user"
+        try:
+            role_resp = supabase.table("users").select("role").eq("clerk_user_id", user.clerk_user_id).single().execute()
+            if role_resp.data:
+                db_role = role_resp.data.get("role", "user")
+        except Exception:
+            db_role = user.role
 
-        if not (is_owner or is_admin or is_assigned_lawyer):
+        internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
+        if conversation.get("user_id") != internal_user_id and db_role not in ["admin", "lawyer"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to access this conversation.",
