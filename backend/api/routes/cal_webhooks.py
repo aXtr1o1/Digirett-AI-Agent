@@ -125,8 +125,12 @@ async def cal_webhook(
     trigger_event = data.get("triggerEvent") or data.get("type", "")
     logger.info(f"📩 Cal.com webhook received | event={trigger_event}")
 
-    # Only handle booking creation/confirmation events
-    if trigger_event not in ("BOOKING_CREATED", "BOOKING_CONFIRMED", "booking.created", "booking.confirmed"):
+    # Handle different event types
+    is_booking_event = trigger_event in ("BOOKING_CREATED", "BOOKING_CONFIRMED", "booking.created", "booking.confirmed")
+    is_reschedule_event = trigger_event in ("BOOKING_RESCHEDULED", "booking.rescheduled")
+    is_cancelled_event = trigger_event in ("BOOKING_CANCELLED", "booking.cancelled")
+
+    if not (is_booking_event or is_reschedule_event or is_cancelled_event):
         logger.info(f"ℹ️ Cal.com webhook ignored | event={trigger_event}")
         return {"status": "ignored", "reason": f"Unhandled event: {trigger_event}"}
 
@@ -160,7 +164,13 @@ async def cal_webhook(
             f"has no Google Meet link in references"
         )
 
-    # ── Update hitl_ticket ───────────────────────────────────────────
+    # ── Handle Cancellation ──────────────────────────────────────────
+    if is_cancelled_event:
+        _hitl_service.handle_cancellation(ticket_id)
+        logger.info(f"🗑️ Booking cancelled for ticket {ticket_id}. Status reset to 'assigned'.")
+        return {"status": "success", "action": "ticket_reset", "ticket_id": ticket_id}
+
+    # ── Handle Booking/Reschedule ───────────────────────────────────
     start_time = booking.get("startTime") or booking.get("start_time")
     success = _hitl_service.update_booking(
         ticket_id=ticket_id,
@@ -174,7 +184,7 @@ async def cal_webhook(
         raise HTTPException(status_code=500, detail="Failed to update booking record")
 
     logger.info(
-        f"✅ Cal.com booking confirmed | ticket={ticket_id} | "
+        f"✅ Cal.com booking {trigger_event} | ticket={ticket_id} | "
         f"cal_id={cal_booking_id} | meet={meet_link}"
     )
 

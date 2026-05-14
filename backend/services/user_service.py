@@ -271,12 +271,18 @@ class UserService:
             return False
 
     def suspend_user(self, user_id: str) -> bool:
-        """Set user status to 'suspended'."""
+        """Set user status to 'suspended' and sync to Clerk."""
         try:
+            # 1. Update DB
             self._supabase.table("users").update({
                 "status": "suspended",
                 "updated_at": datetime.utcnow().isoformat(),
             }).eq("user_id", user_id).execute()
+
+            # 2. Sync to Clerk (set role to suspended to block frontend)
+            user = self.get_user_by_id(user_id)
+            if user:
+                self._sync_clerk_role(user["clerk_user_id"], "suspended")
 
             logger.info(f"✅ Suspended user | user_id={user_id}")
             return True
@@ -285,12 +291,18 @@ class UserService:
             return False
 
     def reactivate_user(self, user_id: str) -> bool:
-        """Set user status back to 'active'."""
+        """Set user status back to 'active' and restore role in Clerk."""
         try:
+            # 1. Update DB
             self._supabase.table("users").update({
                 "status": "active",
                 "updated_at": datetime.utcnow().isoformat(),
             }).eq("user_id", user_id).execute()
+
+            # 2. Sync to Clerk (restore their actual role)
+            user = self.get_user_by_id(user_id)
+            if user:
+                self._sync_clerk_role(user["clerk_user_id"], user["role"])
 
             logger.info(f"✅ Reactivated user | user_id={user_id}")
             return True

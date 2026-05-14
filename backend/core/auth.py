@@ -84,7 +84,7 @@ async def _get_jwks() -> Dict[str, Any]:
 class ClerkUser(dict):
     """
     A dict subclass returned by get_current_user().
-    Keys: clerk_user_id, email, role
+    Keys: clerk_user_id, email, role, db_user_id, status
     """
     @property
     def clerk_user_id(self) -> str:
@@ -97,6 +97,18 @@ class ClerkUser(dict):
     @property
     def email(self) -> Optional[str]:
         return self.get("email")
+
+    @property
+    def db_user_id(self) -> Optional[str]:
+        return self.get("db_user_id")
+
+    @property
+    def db_role(self) -> Optional[str]:
+        return self.get("db_role")
+
+    @property
+    def is_suspended(self) -> bool:
+        return self.get("status") == "suspended"
 
 
 async def verify_token(token: str) -> ClerkUser:
@@ -213,11 +225,9 @@ async def get_current_user(request: Request) -> ClerkUser:
     """
     FastAPI dependency — extracts and verifies the Clerk JWT from the
     Authorization header. Returns a ClerkUser dict.
-
-    Usage:
-        @router.get("/foo")
-        async def foo(user: ClerkUser = Depends(get_current_user)):
-            print(user.clerk_user_id, user.role)
+    
+    Now also verifies the user's status in the database to enforce 
+    suspensions and role authoritative state.
     """
     auth_header = request.headers.get("Authorization", "")
     if not auth_header:
@@ -225,7 +235,45 @@ async def get_current_user(request: Request) -> ClerkUser:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authorization header is required",
         )
-    return await verify_token(auth_header)
+    
+    # 1. Verify Clerk JWT
+    user = await verify_token(auth_header)
+    
+    # 2. Authoritative check against Supabase
+    from db.supabase_client import get_supabase
+    supabase = get_supabase()
+    try:
+        # Check status and role
+        resp = supabase.table("users") \
+            .select("user_id, role, status") \
+            .eq("clerk_user_id", user.clerk_user_id) \
+            .limit(1) \
+            .execute()
+        
+        if resp.data:
+            db_user = resp.data[0]
+            # ENFORCEMENT: Block suspended users
+            if db_user.get("status") == "suspended":
+                logger.warning(f"🚫 Suspended user attempt | user={user.clerk_user_id}")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your account has been suspended. Please contact support."
+                )
+            
+            # ENRICHMENT: Add DB info to user object
+            user["db_user_id"] = db_user.get("user_id")
+            user["db_role"] = db_user.get("role")
+            user["status"] = db_user.get("status")
+            
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # We don't fail the request if DB is down, but we log it
+        # This allows basic chat/auth to work if Supabase has a blip, 
+        # though role-specific logic might fail later.
+        logger.error(f"⚠️ Global user status check failed | {exc}")
+        
+    return user
 
 
 def require_role(*allowed_roles: str):
@@ -263,15 +311,20 @@ def require_db_role(*allowed_roles: str):
     roles according to the authoritative role stored in the Supabase `users` table.
     """
     async def _db_role_checker(user: ClerkUser = Depends(get_current_user)) -> ClerkUser:
-        # Resolve internal user record to get the DB role
-        from db.supabase_client import get_supabase
-        supabase = get_supabase()
-        try:
-            resp = supabase.table("users").select("role").eq("clerk_user_id", user.clerk_user_id).single().execute()
-            db_role = resp.data.get("role") if resp.data else None
-        except Exception as exc:
-            logger.error(f"❌ DB role check failed for {user.clerk_user_id} | {exc}")
-            db_role = None
+        # Use enriched db_role from get_current_user if available
+        db_role = user.db_role
+        
+        # Fallback in case get_current_user's enrichment failed (unlikely)
+        if not db_role:
+            from db.supabase_client import get_supabase
+            supabase = get_supabase()
+            try:
+                resp = supabase.table("users").select("role").eq("clerk_user_id", user.clerk_user_id).single().execute()
+                db_role = resp.data.get("role") if resp.data else None
+            except Exception as exc:
+                logger.error(f"❌ DB role check fallback failed for {user.clerk_user_id} | {exc}")
+                db_role = None
+
         if db_role not in allowed_roles:
             logger.warning(
                 f"⛔ Access denied (DB role) | user={user.clerk_user_id} role={db_role} required={allowed_roles}"

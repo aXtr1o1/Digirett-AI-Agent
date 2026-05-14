@@ -20,7 +20,7 @@ New endpoints (HITL case management):
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel, EmailStr
 
 from core.auth import ClerkUser, require_db_role
@@ -250,6 +250,7 @@ async def admin_get_all_tickets(
 async def admin_assign_ticket(
     ticket_id: str,
     lawyer_id: str,
+    background_tasks: BackgroundTasks,
     current_admin: ClerkUser = Depends(require_db_role("admin")),
 ):
     """
@@ -268,7 +269,17 @@ async def admin_assign_ticket(
             detail="Ticket not found.",
         )
 
-    # Notify user (non-fatal)
+    # Notify user in the background
+    background_tasks.add_task(_send_admin_assignment_notification, ticket_id, lawyer_id)
+
+    return {
+        "status": "success",
+        "message": f"Ticket {ticket_id[:8]} assigned to lawyer {lawyer_id[:8]}.",
+    }
+
+
+async def _send_admin_assignment_notification(ticket_id: str, lawyer_id: str):
+    """Internal helper to send email notification after admin assignment."""
     try:
         ticket = _hitl_service.get_ticket_by_id(ticket_id)
         if ticket and _email_service:
@@ -297,11 +308,6 @@ async def admin_assign_ticket(
                 )
     except Exception as notify_exc:
         logger.warning(f"⚠️ Admin assign user notification failed (non-fatal) | {notify_exc}")
-
-    return {
-        "status": "success",
-        "message": f"Ticket {ticket_id[:8]} assigned to lawyer {lawyer_id[:8]}.",
-    }
 
 
 @router.patch(
