@@ -61,7 +61,7 @@ const useChat = (
 
       const { data: msgs, error: sbError } = await authClient
         .from("messages")
-        .select("*")
+        .select("message_id, role, content, sources, created_at, type, file_name, metadata")
         .eq("conversation_id", conversationId)
         .eq("is_deleted", false)
         .order("created_at", { ascending: true })
@@ -117,8 +117,8 @@ const useChat = (
         }
       }
       
-      console.error("[useChat] loadMessages error from Supabase:", err);
-      setError("Failed to load messages");
+      console.error("[useChat] loadMessages error:", err);
+      setError(err.message || "Failed to load messages");
     } finally {
       setIsLoading(false);
     }
@@ -413,6 +413,10 @@ const useChat = (
   }, [loadMessages]);
 
   useEffect(() => {
+    setIsEscalated(false);
+  }, [conversationId]);
+
+  useEffect(() => {
     if (conversationId) {
       fetchSessionStatus(conversationId);
     }
@@ -424,6 +428,7 @@ const useChat = (
       if (!conversationId) return;
       try {
         const data = await hitlService.getEscalationStatus(conversationId);
+        console.log("[useChat] checkEscalation result:", data);
         setIsEscalated(!!data.is_escalated);
       } catch (err) {
         console.error("Failed to check escalation status:", err);

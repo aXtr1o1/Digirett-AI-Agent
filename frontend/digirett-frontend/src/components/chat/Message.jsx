@@ -103,11 +103,11 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
   // ── Regular message ────────────────────────────────────────────────────
   if (message.role === "system") {
     return (
-      <div className="flex justify-center my-6">
-        <div className={`px-4 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-widest border shadow-sm ${
+      <div className="flex justify-center my-4 opacity-60">
+        <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
           isDark 
-            ? "bg-blue-900/20 text-blue-400 border-blue-800/30 shadow-blue-900/10" 
-            : "bg-blue-50 text-blue-600 border-blue-100 shadow-blue-100/50"
+            ? "bg-white/5 text-gray-400 border-white/10" 
+            : "bg-gray-50 text-gray-500 border-gray-100 shadow-sm shadow-black/5"
         }`}>
           {message.content}
         </div>

@@ -167,8 +167,19 @@ async def get_conversation(
                 detail="Conversation not found.",
             )
 
+        # Resolve authoritative role from DB
+        from db.supabase_client import get_supabase
+        supabase = get_supabase()
+        db_role = "user"
+        try:
+            role_resp = supabase.table("users").select("role").eq("clerk_user_id", user.clerk_user_id).single().execute()
+            if role_resp.data:
+                db_role = role_resp.data.get("role", "user")
+        except Exception:
+            db_role = user.role
+
         internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
-        if conversation.get("user_id") != internal_user_id and user.role != "admin":
+        if conversation.get("user_id") != internal_user_id and db_role not in ["admin", "lawyer"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to access this conversation.",

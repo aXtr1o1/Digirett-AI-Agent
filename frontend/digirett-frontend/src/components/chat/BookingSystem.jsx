@@ -6,7 +6,8 @@ import { Clock, Calendar, CheckCircle2, ExternalLink, Loader2, ChevronRight, Che
  * BookingSystem component for the User Chat
  * Shows available slots and allows booking with the assigned lawyer.
  */
-export default function BookingSystem({ ticketId, onBookingComplete }) {
+export default function BookingSystem({ ticketId, onBookingComplete, theme = "dark", isSidebar = false }) {
+  const isDark = theme === "dark";
   const [slots, setSlots] = useState({});
   const [loading, setLoading] = useState(true);
   const [bookingLoading, setBookingLoading] = useState(false);
@@ -19,18 +20,24 @@ export default function BookingSystem({ ticketId, onBookingComplete }) {
   }, [ticketId]);
 
   const fetchSlots = async () => {
+    if (!ticketId) return;
     try {
       setLoading(true);
+      setError(null);
       const data = await calService.getAvailableSlots(ticketId);
-      setSlots(data.slots || {});
+      const slotMap = data.slots || {};
+      setSlots(slotMap);
       
-      // Auto-select first date with slots
-      const dates = Object.keys(data.slots || {});
+      const dates = Object.keys(slotMap);
       if (dates.length > 0) {
         setSelectedDate(dates[0]);
+      } else {
+        setError("No available slots found for this lawyer.");
       }
     } catch (err) {
-      setError("Failed to load available time slots.");
+      console.error("❌ Failed to fetch slots:", err);
+      const msg = err.response?.data?.detail || "Failed to load available time slots.";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -54,33 +61,27 @@ export default function BookingSystem({ ticketId, onBookingComplete }) {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center p-8 bg-white/5 rounded-3xl border border-white/10 backdrop-blur-sm">
-        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mb-4" />
-        <p className="text-xs font-black uppercase tracking-widest text-slate-500">Fetching available slots...</p>
+      <div className={`flex flex-col items-center justify-center ${isSidebar ? "p-4" : "p-8"} rounded-2xl border backdrop-blur-sm ${
+        isDark ? "bg-white/5 border-white/10" : "bg-slate-50 border-slate-200"
+      }`}>
+        <Loader2 className="w-6 h-6 text-indigo-500 animate-spin mb-3" />
+        <p className={`text-[10px] font-black uppercase tracking-widest ${isDark ? "text-slate-400" : "text-slate-500"}`}>Fetching slots...</p>
       </div>
     );
   }
 
   if (confirmation) {
     return (
-      <div className="p-8 bg-emerald-500/10 rounded-3xl border border-emerald-500/20 backdrop-blur-sm text-center">
-        <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-500/20">
-          <CheckCircle2 className="text-white w-6 h-6" />
+      <div className={`${isSidebar ? "p-4" : "p-8"} rounded-2xl border backdrop-blur-sm text-center ${
+        isDark ? "bg-emerald-500/10 border-emerald-500/20" : "bg-emerald-50 border-emerald-100"
+      }`}>
+        <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center mx-auto mb-3 shadow-lg shadow-emerald-500/20">
+          <CheckCircle2 className="text-white w-5 h-5" />
         </div>
-        <h3 className="text-lg font-black tracking-tight text-white mb-2">Booking Confirmed!</h3>
-        <p className="text-sm text-emerald-400/80 mb-6 font-medium">
-          Your meeting is scheduled for {new Date(confirmation.start_time).toLocaleString()}.
-          Check your email for the calendar invitation and meeting link.
+        <h3 className={`${isSidebar ? "text-sm" : "text-lg"} font-black tracking-tight mb-2 ${isDark ? "text-white" : "text-slate-900"}`}>Booking Confirmed!</h3>
+        <p className={`${isSidebar ? "text-[10px]" : "text-sm"} mb-4 font-medium ${isDark ? "text-emerald-400/80" : "text-emerald-600/80"}`}>
+          Your meeting is scheduled. Check your email for details.
         </p>
-        <div className="flex flex-col gap-3">
-          <div className="p-4 bg-white/5 rounded-2xl border border-white/10 text-left">
-            <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">
-              <span>Status</span>
-              <span className="text-emerald-500">Confirmed</span>
-            </div>
-            <div className="text-sm font-bold text-white">Legal Consultation</div>
-          </div>
-        </div>
       </div>
     );
   }
@@ -88,25 +89,26 @@ export default function BookingSystem({ ticketId, onBookingComplete }) {
   const dates = Object.keys(slots);
 
   return (
-    <div className="flex flex-col bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden max-w-md mx-auto">
-      <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-8 h-8 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <Calendar className="text-white w-4 h-4" />
+    <div className={`flex flex-col rounded-2xl border shadow-xl overflow-hidden w-full ${
+      isDark ? "bg-slate-900 border-white/10" : "bg-white border-slate-200"
+    }`}>
+      <div className={`${isSidebar ? "p-4" : "p-6"} border-b ${isDark ? "border-white/5 bg-white/5" : "border-slate-100 bg-slate-50/50"}`}>
+        <div className="flex items-center gap-3">
+          <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/20">
+            <Calendar className="text-white w-3.5 h-3.5" />
           </div>
-          <h3 className="font-black tracking-tight text-slate-900">Schedule Consultation</h3>
+          <h3 className={`text-xs font-black tracking-tight ${isDark ? "text-white" : "text-slate-900"}`}>Schedule Consultation</h3>
         </div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Select a convenient time slot</p>
       </div>
 
       {error && (
-        <div className="p-4 bg-red-50 border-b border-red-100 text-red-600 text-xs font-bold text-center">
+        <div className="p-3 bg-red-50 border-b border-red-100 text-red-600 text-[10px] font-bold text-center">
           {error}
         </div>
       )}
 
       {/* Date Selector */}
-      <div className="p-4 border-b border-slate-100 overflow-x-auto flex gap-2 custom-scrollbar">
+      <div className={`p-3 border-b overflow-x-auto flex gap-2 custom-scrollbar ${isDark ? "border-white/5" : "border-slate-100"}`}>
         {dates.map(date => {
           const d = new Date(date);
           const isSelected = selectedDate === date;
@@ -114,17 +116,17 @@ export default function BookingSystem({ ticketId, onBookingComplete }) {
             <button
               key={date}
               onClick={() => setSelectedDate(date)}
-              className={`flex-shrink-0 flex flex-col items-center justify-center w-16 h-20 rounded-2xl border transition-all ${
+              className={`flex-shrink-0 flex flex-col items-center justify-center w-14 h-16 rounded-xl border transition-all ${
                 isSelected 
                   ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-500/30" 
-                  : "bg-white border-slate-200 text-slate-600 hover:border-indigo-300"
+                  : `${isDark ? "bg-slate-800 border-white/10 text-slate-400 hover:border-white/20" : "bg-white border-slate-200 text-slate-600 hover:border-indigo-300"}`
               }`}
             >
-              <span className={`text-[10px] font-black uppercase tracking-tighter ${isSelected ? "text-indigo-100" : "text-slate-400"}`}>
+              <span className={`text-[8px] font-black uppercase tracking-tighter ${isSelected ? "text-indigo-100" : "text-slate-400"}`}>
                 {d.toLocaleDateString('en-GB', { month: 'short' })}
               </span>
-              <span className="text-xl font-black">{d.getDate()}</span>
-              <span className={`text-[9px] font-bold ${isSelected ? "text-indigo-100" : "text-slate-500"}`}>
+              <span className={`text-lg font-black ${isSelected ? "text-white" : (isDark ? "text-slate-200" : "text-slate-900")}`}>{d.getDate()}</span>
+              <span className={`text-[8px] font-bold ${isSelected ? "text-indigo-100" : "text-slate-500"}`}>
                 {d.toLocaleDateString('en-GB', { weekday: 'short' })}
               </span>
             </button>
@@ -133,9 +135,9 @@ export default function BookingSystem({ ticketId, onBookingComplete }) {
       </div>
 
       {/* Time Slots */}
-      <div className="p-6 max-h-[300px] overflow-y-auto custom-scrollbar">
+      <div className={`${isSidebar ? "p-4" : "p-6"} max-h-[250px] overflow-y-auto custom-scrollbar`}>
         {selectedDate && slots[selectedDate] ? (
-          <div className="grid grid-cols-2 gap-3">
+          <div className={`grid ${isSidebar ? "grid-cols-1" : "grid-cols-2"} gap-2`}>
             {slots[selectedDate].map((slot, idx) => {
               const timeStr = new Date(slot.time).toLocaleTimeString('en-GB', {
                 hour: '2-digit',
@@ -147,26 +149,30 @@ export default function BookingSystem({ ticketId, onBookingComplete }) {
                   key={idx}
                   onClick={() => handleBook(slot.time)}
                   disabled={bookingLoading}
-                  className="flex items-center justify-between px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-indigo-50 hover:border-indigo-100 transition-all group disabled:opacity-50"
+                  className={`flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all group disabled:opacity-50 ${
+                    isDark ? "bg-white/5 border-white/5 hover:bg-white/10" : "bg-slate-50 border-slate-100 hover:bg-indigo-50 hover:border-indigo-100"
+                  }`}
                 >
-                  <span className="text-sm font-bold text-slate-700 group-hover:text-indigo-600">{timeStr}</span>
-                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all" />
+                  <span className={`text-xs font-bold ${isDark ? "text-slate-300 group-hover:text-white" : "text-slate-700 group-hover:text-indigo-600"}`}>{timeStr}</span>
+                  <ChevronRight className={`w-3.5 h-3.5 transition-all ${isDark ? "text-slate-600 group-hover:text-slate-400" : "text-slate-300 group-hover:text-indigo-400"} group-hover:translate-x-0.5`} />
                 </button>
               );
             })}
           </div>
         ) : (
-          <div className="text-center py-8">
-            <Clock className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 italic">No slots available for this date</p>
+          <div className="text-center py-6">
+            <Clock className="w-6 h-6 text-slate-200 mx-auto mb-2" />
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 italic">No slots available</p>
           </div>
         )}
       </div>
 
       {bookingLoading && (
-        <div className="absolute inset-0 bg-white/80 backdrop-blur-[2px] flex flex-col items-center justify-center z-10">
-          <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mb-4" />
-          <p className="text-xs font-black uppercase tracking-widest text-indigo-600">Creating your booking...</p>
+        <div className={`absolute inset-0 backdrop-blur-[2px] flex flex-col items-center justify-center z-10 ${
+          isDark ? "bg-slate-900/80" : "bg-white/80"
+        }`}>
+          <Loader2 className="w-6 h-6 text-indigo-600 animate-spin mb-2" />
+          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Booking...</p>
         </div>
       )}
     </div>

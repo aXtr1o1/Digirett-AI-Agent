@@ -46,37 +46,23 @@ api.interceptors.response.use(
 
     let message = "Something went wrong";
 
-if (error.response) {
+    if (error.response) {
+      if (error.response.status === 500) {
+        message = "Server error. Please try again.";
+      } else if (error.response.status === 404) {
+        message = "Data not found.";
+      } else if (error.response.status === 401) {
+        const detail = error.response.data?.detail || "";
+        const isExpired = typeof detail === 'string' && detail.toLowerCase().includes("expired");
+        message = isExpired ? "Session expired. Please log in again." : "Please login again.";
+      } else {
+        message = error.response.data?.detail || "Something went wrong";
+      }
+    } else if (error.request) {
+      message = "Server not reachable";
+    }
 
-  if (error.response.status === 500) {
-    message = "Server error. Please try again.";
-  }
-
-  else if (error.response.status === 404) {
-    message = "Data not found.";
-  }
-
-  else if (error.response.status === 401) {
-    message = "Please login again.";
-  }
-
-  else {
-    message =
-      error.response.data?.detail ||
-      "Something went wrong";
-  }
-
-}
-
-else if (error.request) {
-
-  message = "Server not reachable";
-
-}
-
-return Promise.reject(
-  new Error(message)
-);
+    return Promise.reject(new Error(message));
   }
 );
 

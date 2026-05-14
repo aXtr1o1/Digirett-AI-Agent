@@ -32,7 +32,9 @@ import {
   Layers,
   MoreVertical,
   Activity,
-  ClipboardList
+  ClipboardList,
+  Sun,
+  Moon,
 } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -69,8 +71,11 @@ export default function LawyerDashboard() {
     navigate("/sign-in");
   };
 
+  const [globalError, setGlobalError] = useState(null);
+
   const fetchData = async (isManual = false) => {
     if (isManual) setRefreshing(true);
+    setGlobalError(null);
     try {
       const [queueData, resolvedData, activeData] = await Promise.all([
         hitlService.getQueue(),
@@ -81,6 +86,9 @@ export default function LawyerDashboard() {
       setResolvedTickets(resolvedData || []);
       setActiveTickets(activeData || []);
 
+    } catch (err) {
+      console.error("Dashboard fetch error:", err);
+      setGlobalError(err.message || "Failed to load dashboard data");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -182,17 +190,14 @@ export default function LawyerDashboard() {
 
   const resolutionTrend = getIntakeTrend();
 
-  const workloadData = [
-    { name: 'High Priority', value: allTickets.filter(t => t.priority === 'high').length, color: '#ef4444' },
-    { name: 'Medium Priority', value: allTickets.filter(t => t.priority === 'medium').length, color: '#f59e0b' },
-    { name: 'Low Priority', value: allTickets.filter(t => t.priority === 'low').length, color: '#10b981' },
-  ];
-
-  const stats = [
+  const activeVelocityData = resolutionTrend.map(d => ({
+    ...d,
+    active: activeTickets.length // Simplified for real-time overview
+  }));  const stats = [
     { label: "Resolved", value: resolvedTickets.length, icon: CheckCircle2, color: "emerald" },
     { label: "Active Matters", value: activeTickets.length, icon: Activity, color: "blue" },
     { label: "Queue Load", value: queueTickets.length, icon: Ticket, color: "indigo" },
-    { label: "High Priority", value: queueTickets.filter(t => t.priority === 'high').length, icon: Shield, color: "red" }
+    { label: "Pending Review", value: activeTickets.length, icon: Clock, color: "amber" }
   ];
 
   return (
@@ -305,69 +310,104 @@ export default function LawyerDashboard() {
 
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-w-0 relative h-full">
-
         {/* Header */}
-        <header className={`h-16 flex items-center justify-between px-6 border-b sticky top-0 z-40 ${isDark ? "bg-slate-900/80 border-slate-800 backdrop-blur-md" : "bg-white/80 border-slate-200 backdrop-blur-md"
-          }`}>
-          <div className="flex items-center gap-4 flex-1">
-            <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden text-slate-500">
-              <Menu size={24} />
-            </button>
-            <h2 className="text-sm font-bold capitalize">
-              {activeView.replace('-', ' ')}
-            </h2>
-          </div>
-
-          <div className="flex items-center gap-6">
-            <button
-              onClick={() => fetchData(true)}
-              className="p-2 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-slate-100 transition-all border border-slate-100"
-              title="Refresh Global Data"
-            >
-              <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
-            </button>
-
-            <div className="relative">
-              <div
-                onClick={() => setShowProfileDropdown(!showProfileDropdown)}
-                className="flex items-center gap-3 pl-2 cursor-pointer group"
-              >
-                <div className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-xs transition-transform group-hover:scale-105 ${isDark ? "bg-indigo-500/20 text-indigo-400" : "bg-indigo-100 text-indigo-700 shadow-sm"
-                  }`}>
-                  {clerkUser?.firstName?.charAt(0) || "L"}
+        <header className={`px-6 py-4 sticky top-0 z-40 border-b shadow-sm backdrop-blur-md ${
+          isDark ? "bg-gray-900/80 border-gray-800" : "bg-white/80 border-gray-100"
+        }`}>
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden text-slate-500 p-2 hover:bg-slate-100 rounded-xl">
+                <Menu size={24} />
+              </button>
+              <div className="flex items-center gap-3">
+                <div className={`p-2.5 rounded-2xl ${isDark ? "bg-blue-600/20 text-blue-400" : "bg-blue-600 text-white"}`}>
+                  <Scale className="h-6 w-6" />
                 </div>
-                <div className="hidden sm:block text-left">
-                  <p className="text-xs font-bold leading-none">{clerkUser?.fullName || "Lawyer"}</p>
-                  <p className="text-[10px] text-slate-500 mt-1 tracking-wider uppercase font-black">Logged In</p>
+                <div>
+                  <h1 className={`text-xl font-black tracking-tight ${isDark ? "text-white" : "text-gray-900"}`}>
+                    Legal<span className="text-blue-600">Counsel</span>
+                  </h1>
+                  <p className="text-[10px] uppercase tracking-widest font-bold text-gray-500">Lawyer Workspace</p>
                 </div>
               </div>
+            </div>
 
-              {showProfileDropdown && (
-                <div className={`absolute top-full right-0 mt-2 w-52 rounded-xl border shadow-2xl z-[100] overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${isDark ? "bg-slate-900 border-slate-800 shadow-black/40" : "bg-white border-slate-200"
-                  }`}>
-                  <div className="p-2 space-y-1">
-                    <button
-                      onClick={() => { openUserProfile(); setShowProfileDropdown(false); }}
-                      className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-slate-300 hover:bg-slate-800" : "text-slate-600 hover:bg-slate-50"
-                        }`}
-                    >
-                      <User size={14} />
-                      Profile
-                    </button>
-                    <button
-                      onClick={handleLogout}
-                      className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-red-400 hover:bg-red-500/10" : "text-red-600 hover:bg-red-50"
-                        }`}
-                    >
-                      <LogOut size={14} />
-                      Log out
-                    </button>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => fetchData(true)}
+                className={`p-2 rounded-xl transition-all ${isDark ? "bg-gray-800 text-gray-400 hover:bg-gray-700" : "bg-gray-50 text-gray-500 hover:bg-gray-100"}`}
+                title="Refresh Global Data"
+              >
+                <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
+              </button>
+              <button
+                onClick={toggleTheme}
+                className={`p-2 rounded-xl transition-all ${isDark ? "bg-gray-800 text-blue-400 hover:bg-gray-700" : "bg-gray-50 text-gray-500 hover:bg-gray-100"}`}
+              >
+                {isDark ? <Sun size={18} /> : <Moon size={18} />}
+              </button>
+              <div className="h-8 w-[1px] bg-gray-200 dark:bg-gray-800 mx-1"></div>
+              <div className="relative">
+                <button
+                  onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+                  className={`flex items-center gap-2 p-1.5 rounded-2xl transition-all ${isDark ? "hover:bg-gray-800" : "hover:bg-gray-50"}`}
+                >
+                  <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">
+                    {clerkUser?.firstName?.charAt(0) || "L"}
                   </div>
-                </div>
-              )}
+                  <div className="hidden md:block text-left">
+                    <p className={`text-xs font-bold ${isDark ? "text-white" : "text-gray-900"}`}>{clerkUser?.fullName || "Lawyer"}</p>
+                    <p className="text-[10px] text-gray-500">Professional ID: 8829</p>
+                  </div>
+                </button>
+
+                {showProfileDropdown && (
+                  <div className={`absolute top-full right-0 mt-2 w-52 rounded-xl border shadow-2xl z-[100] overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${isDark ? "bg-slate-900 border-slate-800 shadow-black/40" : "bg-white border-slate-200"
+                    }`}>
+                    <div className="p-2 space-y-1">
+                      <button
+                        onClick={() => { openUserProfile(); setShowProfileDropdown(false); }}
+                        className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-slate-300 hover:bg-slate-800" : "text-slate-600 hover:bg-slate-50"
+                          }`}
+                      >
+                        <User size={14} />
+                        Profile
+                      </button>
+                      <button
+                        onClick={handleLogout}
+                        className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-red-400 hover:bg-red-500/10" : "text-red-600 hover:bg-red-50"
+                          }`}
+                      >
+                        <LogOut size={14} />
+                        Log out
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </header>
+
+        {globalError && (
+          <div className="max-w-7xl mx-auto px-6 mt-6">
+            <div className={`p-4 rounded-2xl flex items-center justify-between border ${isDark ? "bg-red-900/20 border-red-800 text-red-400" : "bg-red-50 border-red-100 text-red-700"
+              }`}>
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5" />
+                <p className="font-bold">{globalError}</p>
+              </div>
+              {globalError.includes("login") && (
+                <button
+                  onClick={() => navigate("/sign-in")}
+                  className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 transition-all"
+                >
+                  Sign In Now
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Content Section */}
         <main className="flex-1 overflow-y-auto p-6 md:p-8">
@@ -399,7 +439,7 @@ export default function LawyerDashboard() {
                 ))}
               </div>
 
-              {/* Row 1: Allocation + Trend + Category Breakdown */}
+              {/* Row 1: Allocation + Trend + Velocity */}
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
                 {/* Allocation */}
                 <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
@@ -434,57 +474,30 @@ export default function LawyerDashboard() {
                     </ResponsiveContainer>
                   </div>
                 </div>
-
-                {/* Status Breakdown (Horizontal Bar) */}
+                {/* Case Processing Velocity */}
                 <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                  <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-6">Matter Priority Overview</h3>
+                  <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-6">Matter Processing Velocity</h3>
                   <div className="h-[200px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={workloadData} layout="vertical">
-                        <XAxis type="number" hide />
-                        <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={80} />
+                      <AreaChart data={activeVelocityData}>
+                        <defs>
+                          <linearGradient id="colorActive" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#1e293b" : "#f1f5f9"} />
+                        <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
                         <Tooltip />
-                        <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
-                          {workloadData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Bar>
-                      </BarChart>
+                        <Area type="monotone" dataKey="count" stroke="#6366f1" fillOpacity={1} fill="url(#colorActive)" strokeWidth={3} />
+                      </AreaChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
               </div>
 
-              {/* Row 2: Resolution Load */}
-              <div className="grid grid-cols-1 gap-8">
-                {/* Resolution Velocity */}
-                <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                  <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-6">Real-Time Matter Processing Velocity</h3>
-                  <div className="h-[250px] w-full">
-                    {allTickets.length > 0 ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={resolutionTrend}>
-                          <defs>
-                            <linearGradient id="colorVelocity" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#10b981" stopOpacity={0.1} />
-                              <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#1e293b" : "#f1f5f9"} />
-                          <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
-                          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
-                          <Tooltip />
-                          <Area type="monotone" dataKey="count" stroke="#10b981" fillOpacity={1} fill="url(#colorVelocity)" strokeWidth={2} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <div className="h-full flex items-center justify-center text-[10px] text-slate-400 font-bold italic opacity-40 uppercase tracking-widest">
-                        Insufficient data for velocity tracking
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+              {/* Row 2: Reserved for future metrics or activity feed */}
             </div>
           )}
 
@@ -620,7 +633,7 @@ export default function LawyerDashboard() {
                     <thead>
                       <tr className="text-left border-b border-slate-100 dark:border-slate-800">
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Matter</th>
-                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Claimed At</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Claimed At</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Actions</th>
                       </tr>
                     </thead>
@@ -636,7 +649,7 @@ export default function LawyerDashboard() {
                               </div>
                             </div>
                           </td>
-                          <td className="px-8 py-6 text-xs font-medium text-slate-500">
+                          <td className="px-8 py-6 text-xs font-medium text-slate-500 text-center">
                             {formatDate(t.assigned_at)}
                           </td>
                           <td className="px-8 py-6 text-right">

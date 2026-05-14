@@ -341,5 +341,11 @@ async def get_escalation_status(
     Check if this conversation already has an active escalation ticket.
     Used by the chat UI to show the correct icon state (Scale vs CheckCircle).
     """
-    is_escalated = _hitl_service.is_conversation_escalated(conversation_id)
-    return {"conversation_id": conversation_id, "is_escalated": is_escalated}
+    ticket = _hitl_service.get_ticket_by_conversation(conversation_id)
+    is_escalated = ticket is not None and ticket.get("status") in ["open", "assigned", "booked"]
+    
+    return {
+        "conversation_id": conversation_id, 
+        "is_escalated": is_escalated,
+        "ticket": ticket
+    }
