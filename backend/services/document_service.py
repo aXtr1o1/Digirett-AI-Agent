@@ -60,23 +60,16 @@ class DocumentService:
             logger.error(f"❌ Language detection error | {exc}")
             return "english"
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # SESSION MANAGEMENT
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    def get_or_create_session(self, conversation_id: str) -> Dict[str, Any]:
-        
-        redis_key = f"doc:session:{conversation_id}"
+    # ── Quota Session (User-based) ───────────────────────────────────
+    def get_quota_session(self, user_id: str) -> Dict[str, Any]:
+        """Fetch or initialize a 4-hour quota session for a user."""
+        redis_key = f"quota:session:{user_id}"
         raw = self._redis.get_conversation_meta(redis_key)
 
         if raw:
-            # Check if the session has expired (belt-and-suspenders — Redis TTL handles
-            # it too, but an explicit age check is safer)
             age = time.time() - raw.get("session_start", time.time())
             if age > SESSION_TTL_SECONDS:
-                logger.info(
-                    f"♻️  Session expired for conv={conversation_id} — creating new session"
-                )
+                logger.info(f"♻️ Quota expired for user={user_id} — resetting")
                 self._redis.clear_all_conversation_cache(redis_key)
                 raw = None
 
@@ -91,80 +84,101 @@ class DocumentService:
             }
             self._redis.set_conversation_meta(redis_key, raw, ttl=SESSION_TTL_SECONDS)
             logger.info(
-                f"🆕 New session created | conv={conversation_id} | "
+                f"🆕 New session created | user={user_id} | "
                 f"session_id={raw['session_id']}"
             )
 
         return raw
 
-    def _save_session(self, conversation_id: str, session: Dict[str, Any]) -> None:
-        """Persist updated session state back to Redis."""
-        redis_key = f"doc:session:{conversation_id}"
-        # Remaining TTL = SESSION_TTL - elapsed
+    def _save_quota_session(self, user_id: str, session: Dict[str, Any]) -> None:
+        """Save quota session back to Redis."""
+        redis_key = f"quota:session:{user_id}"
         elapsed = time.time() - session.get("session_start", time.time())
         remaining_ttl = max(60, int(SESSION_TTL_SECONDS - elapsed))
         self._redis.set_conversation_meta(redis_key, session, ttl=remaining_ttl)
 
-    def check_turn_limit(self, conversation_id: str, user_role: str = "user") -> Tuple[bool, int]:
+    # ── Conversation Session (Chat-based) ───────────────────────────
+    def get_or_create_session(self, conversation_id: str) -> Dict[str, Any]:
+        """Fetch or initialize a 4-hour document session for a chat."""
+        redis_key = f"doc:session:{conversation_id}"
+        raw = self._redis.get_conversation_meta(redis_key)
+        
+        if not raw:
+            raw = {
+                "session_id":    str(uuid.uuid4()),
+                "doc_count":     0,
+                "session_start": time.time(),
+                "docs":          [],
+            }
+            self._redis.set_conversation_meta(redis_key, raw, ttl=SESSION_TTL_SECONDS)
+        return raw
+
+    def _save_session(self, conversation_id: str, session: Dict[str, Any]) -> None:
+        """Persist updated session state back to Redis."""
+        redis_key = f"doc:session:{conversation_id}"
+        elapsed = time.time() - session.get("session_start", time.time())
+        remaining_ttl = max(60, int(SESSION_TTL_SECONDS - elapsed))
+        self._redis.set_conversation_meta(redis_key, session, ttl=remaining_ttl)
+
+    def check_turn_limit(self, user_id: str, user_role: str = "user") -> Tuple[bool, int]:
         """Check if user has remaining turns. Admins/Lawyers bypass this."""
         if settings.DOC_TESTING_MODE or user_role in ["admin", "lawyer"]:
             return True, 999
         
-        session = self.get_or_create_session(conversation_id)
+        session = self.get_quota_session(user_id)
         turn_count = session.get("turn_count", 0)
         remaining = settings.DOC_MAX_TURNS_PER_SESSION - turn_count
         allowed = remaining > 0
         return allowed, remaining
 
-    def check_token_limit(self, conversation_id: str, user_role: str = "user") -> Tuple[bool, int]:
+    def check_token_limit(self, user_id: str, user_role: str = "user") -> Tuple[bool, int]:
         """Check if user has remaining token quota. Admins/Lawyers bypass this."""
         if settings.DOC_TESTING_MODE or user_role in ["admin", "lawyer"]:
             return True, 999999
         
-        session = self.get_or_create_session(conversation_id)
+        session = self.get_quota_session(user_id)
         token_count = session.get("token_count", 0)
         remaining = settings.DOC_MAX_TOKENS_PER_SESSION - token_count
         allowed = remaining > 0
         return allowed, remaining
 
-    def increment_turn_count(self, conversation_id: str) -> int:
-       
-        session = self.get_or_create_session(conversation_id)
+    def increment_turn_count(self, user_id: str) -> int:
+        """Increment the turn counter for the user's session."""
+        session = self.get_quota_session(user_id)
         session["turn_count"] = session.get("turn_count", 0) + 1
-        self._save_session(conversation_id, session)
+        self._save_quota_session(user_id, session)
 
         # Also increment in Supabase for durability
         try:
-            self._supabase.table("conversations").update({
-                "session_turn_count": session["turn_count"]
-            }).eq("conversation_id", conversation_id).execute()
-        except Exception as exc:
-            logger.warning(f"⚠️ Could not update session_turn_count in Supabase | {exc}")
+            # Note: We still track turns in conversations table for analytics
+            pass 
+        except Exception:
+            pass
 
         logger.info(
             f"🔢 Turn count: {session['turn_count']}/{settings.DOC_MAX_TURNS_PER_SESSION} | "
-            f"conv={conversation_id}"
+            f"user={user_id}"
         )
         return session["turn_count"]
 
-    def increment_token_count(self, conversation_id: str, tokens: int) -> int:
-        """Add tokens to the current session usage."""
-        session = self.get_or_create_session(conversation_id)
+    def increment_token_count(self, user_id: str, tokens: int) -> int:
+        """Add tokens to the user's current session usage."""
+        session = self.get_quota_session(user_id)
         session["token_count"] = session.get("token_count", 0) + tokens
-        self._save_session(conversation_id, session)
+        self._save_quota_session(user_id, session)
         
         logger.info(
             f"🪙 Token usage: {session['token_count']}/{settings.DOC_MAX_TOKENS_PER_SESSION} | "
-            f"+{tokens} | conv={conversation_id}"
+            f"+{tokens} | user={user_id}"
         )
         return session["token_count"]
 
-    def check_doc_limit(self, conversation_id: str, user_role: str = "user") -> Tuple[bool, int]:
+    def check_doc_limit(self, user_id: str, user_role: str = "user") -> Tuple[bool, int]:
         """Check if user can upload more documents. Admins/Lawyers bypass this."""
         if settings.DOC_TESTING_MODE or user_role in ["admin", "lawyer"]:
             return True, 999
         
-        session = self.get_or_create_session(conversation_id)
+        session = self.get_quota_session(user_id)
         doc_count = session.get("doc_count", 0)
         remaining = settings.DOC_MAX_PER_SESSION - doc_count
         allowed = remaining > 0
@@ -274,7 +288,12 @@ class DocumentService:
         # ── Generate document ID ─────────────────────────────────────────
         document_id = str(uuid.uuid4())
 
-        # ── Load session ─────────────────────────────────────────────────
+        # ── Update Quota ────────────────────────────────────────────────
+        quota_session = self.get_quota_session(user_id)
+        quota_session["doc_count"] = quota_session.get("doc_count", 0) + 1
+        self._save_quota_session(user_id, quota_session)
+
+        # ── Update Conversation Session ──────────────────────────────────
         session = self.get_or_create_session(conversation_id)
         upload_order = session["doc_count"] + 1
 

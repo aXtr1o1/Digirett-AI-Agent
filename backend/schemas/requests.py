@@ -65,8 +65,8 @@ class ConversationCreate(BaseModel):
     """Body for POST /conversations"""
 
    
-    user_id: str = Field(
-        ...,
+    user_id: Optional[str] = Field(
+        None,
         description="UUID of the user creating the conversation.",
     )
     title: Optional[str] = Field(

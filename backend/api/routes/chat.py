@@ -361,13 +361,13 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
             is_first_exchange = len(existing) == 0
 
         # ── Step 1.5: Enforce Quotas ───────────────────────────
-        # Check turn count and token count from DocumentService session
+        # Check turn count and token count from DocumentService session (Authoritative for User)
         if _document_service:
             role = clerk_user.role
             # 1. Check Turn Limit
-            allowed_turn, turns_rem = _document_service.check_turn_limit(conversation_id, user_role=role)
+            allowed_turn, turns_rem = _document_service.check_turn_limit(user_id, user_role=role)
             if not allowed_turn:
-                logger.warning(f"🚫 Quota exceeded (Turns) | user={user_id} | conv={conversation_id}")
+                logger.warning(f"🚫 Quota exceeded (Turns) | user={user_id}")
                 await websocket.send_json({
                     "type": "error", 
                     "error_type": "quota_exceeded",
@@ -376,9 +376,9 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
                 return
 
             # 2. Check Token Limit
-            allowed_token, tokens_rem = _document_service.check_token_limit(conversation_id, user_role=role)
+            allowed_token, tokens_rem = _document_service.check_token_limit(user_id, user_role=role)
             if not allowed_token:
-                logger.warning(f"🚫 Quota exceeded (Tokens) | user={user_id} | conv={conversation_id}")
+                logger.warning(f"🚫 Quota exceeded (Tokens) | user={user_id}")
                 await websocket.send_json({
                     "type": "error", 
                     "error_type": "quota_exceeded",
@@ -639,13 +639,13 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
 
                 # ── Step 6: Update Quota Counters ─────────────────────
                 if _document_service:
-                    _document_service.increment_turn_count(conversation_id)
+                    _document_service.increment_turn_count(user_id)
                     
                     # Approximate token count (chars / 4 is a common heuristic)
                     # Input tokens (query) + Output tokens (full_answer)
                     input_tokens = len(chat_request.query) // 4
                     output_tokens = len(full_answer) // 4
-                    _document_service.increment_token_count(conversation_id, input_tokens + output_tokens)
+                    _document_service.increment_token_count(user_id, input_tokens + output_tokens)
 
             elif event_type == "error":
                 await websocket.send_json(event)

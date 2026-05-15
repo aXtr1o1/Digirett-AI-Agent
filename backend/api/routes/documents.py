@@ -7,6 +7,7 @@ GET  /api/v1/documents/conversation/{conversation_id}
 """
 
 import logging
+import time
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -92,9 +93,16 @@ async def upload_document(
             detail="File too large. Maximum allowed size is 20MB.",
         )
 
-    allowed, docs_remaining = _document_service.check_doc_limit(conversation_id, user_role=user.role)
+    internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id)
+    if not internal_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User profile not found in database.",
+        )
+
+    allowed, docs_remaining = _document_service.check_doc_limit(internal_user_id, user_role=user.role)
     if not allowed:
-        session = _document_service.get_or_create_session(conversation_id)
+        session = _document_service.get_or_create_session(internal_user_id)
         elapsed = time.time() - session.get("session_start", time.time())
         from config import settings
         remaining_hours = max(0, round((settings.DOC_SESSION_TTL_SECONDS - elapsed) / 3600, 1))
@@ -106,8 +114,6 @@ async def upload_document(
                 f"Your session resets in approximately {remaining_hours} hour(s)."
             ),
         )
-
-    internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id)
     if not internal_user_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -271,22 +277,25 @@ async def get_session_status(
             detail="Document service not available.",
         )
 
-    session = _document_service.get_or_create_session(conversation_id)
-    doc_count  = session.get("doc_count", 0)
-    turn_count = session.get("turn_count", 0)
-    docs       = session.get("docs", [])
-
+    internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id)
+    
+    # 1. Get Quota Stats (User-wide)
+    quota = _document_service.get_quota_session(internal_user_id)
+    
+    # 2. Get Document List (Conversation-specific)
+    conv_session = _document_service.get_or_create_session(conversation_id)
+    
     from config import settings
 
     return SessionStatusResponse(
         conversation_id=conversation_id,
-        doc_count=doc_count,
-        turn_count=turn_count,
-        docs_remaining=max(0, settings.DOC_MAX_PER_SESSION - doc_count),
-        turns_remaining=max(0, settings.DOC_MAX_TURNS_PER_SESSION - turn_count),
+        doc_count=quota.get("doc_count", 0),
+        turn_count=quota.get("turn_count", 0),
+        docs_remaining=max(0, settings.DOC_MAX_PER_SESSION - quota.get("doc_count", 0)),
+        turns_remaining=max(0, settings.DOC_MAX_TURNS_PER_SESSION - quota.get("turn_count", 0)),
         has_documents=_document_service.has_documents(conversation_id),
         session_active=True,
-        docs=docs,
+        docs=conv_session.get("docs", []),
     )
 
 
