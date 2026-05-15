@@ -93,7 +93,6 @@ const MessageComposer = ({
 
   const getPlaceholder = () => {
     if (isProcessingDoc) return "Analysing document…";
-    if (disabled) return "Case is closed";
     if (file) return "Add a question about the document";
     return "Ask Anything...";
   };

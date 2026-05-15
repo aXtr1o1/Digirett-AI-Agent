@@ -217,10 +217,22 @@ export default function AdminDashboard() {
   const getOnboardingTrend = () => {
     const counts = {};
     users.forEach(u => {
-      const date = new Date(u.created_at).toLocaleDateString();
-      counts[date] = (counts[date] || 0) + 1;
+      const sortKey = new Date(u.created_at).toISOString().split('T')[0];
+      counts[sortKey] = (counts[sortKey] || 0) + 1;
     });
-    return Object.keys(counts).map(date => ({ date, count: counts[date] })).slice(-7);
+    
+    const result = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const sKey = d.toISOString().split('T')[0];
+      result.push({
+        sortKey: sKey,
+        count: counts[sKey] || 0,
+        date: d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' })
+      });
+    }
+    return result;
   };
 
   const ticketStatusData = [
@@ -232,10 +244,22 @@ export default function AdminDashboard() {
   const auditTrendData = () => {
     const counts = {};
     auditLogs.forEach(log => {
-      const date = new Date(log.created_at).toLocaleDateString();
-      counts[date] = (counts[date] || 0) + 1;
+      const sortKey = new Date(log.created_at).toISOString().split('T')[0];
+      counts[sortKey] = (counts[sortKey] || 0) + 1;
     });
-    return Object.keys(counts).map(date => ({ date, count: counts[date] })).slice(-7);
+    
+    const result = [];
+    for (let i = 9; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const sKey = d.toISOString().split('T')[0];
+      result.push({
+        sortKey: sKey,
+        count: counts[sKey] || 0,
+        date: d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' })
+      });
+    }
+    return result;
   };
 
   const auditTypeData = () => {
@@ -263,6 +287,31 @@ export default function AdminDashboard() {
         tickets: counts[id]
       };
     }).sort((a, b) => b.tickets - a.tickets);
+  };
+
+  const getThroughputData = () => {
+    const intake = {};
+    const output = {};
+    tickets.forEach(t => {
+      const cKey = new Date(t.created_at).toISOString().split('T')[0];
+      intake[cKey] = (intake[cKey] || 0) + 1;
+      if (t.resolved_at) {
+        const rKey = new Date(t.resolved_at).toISOString().split('T')[0];
+        output[rKey] = (output[rKey] || 0) + 1;
+      }
+    });
+    const result = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const sKey = d.toISOString().split('T')[0];
+      result.push({
+        date: d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }),
+        intake: intake[sKey] || 0,
+        resolved: output[sKey] || 0
+      });
+    }
+    return result;
   };
 
   const selectedRole = roleInfo[inviteRole] || roleInfo.lawyer;
@@ -533,19 +582,29 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Row 3: Audit Activity Trend + Audit Event Breakdown */}
+              {/* Row 3: Audit Event Breakdown + Throughput */}
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                {/* Audit Trend */}
+                {/* Case Throughput */}
                 <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Admin Activity Trend</h3>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Case Throughput Metrics</h3>
                   <div className="h-[300px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={auditTrendData()}>
+                      <BarChart data={getThroughputData()}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#1e293b" : "#f1f5f9"} />
                         <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                         <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <Tooltip />
-                        <Line type="stepAfter" dataKey="count" stroke="#a855f7" strokeWidth={2} dot={false} />
-                      </LineChart>
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: isDark ? '#0f172a' : '#fff', 
+                            border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
+                            borderRadius: '8px',
+                            fontSize: '10px'
+                          }}
+                        />
+                        <Legend iconType="circle" />
+                        <Bar dataKey="intake" name="New Tickets" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="resolved" name="Resolved" fill="#10b981" radius={[4, 4, 0, 0]} />
+                      </BarChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
@@ -558,8 +617,15 @@ export default function AdminDashboard() {
                       <BarChart data={auditTypeData()} layout="vertical">
                         <XAxis type="number" hide />
                         <YAxis dataKey="action" type="category" tick={{ fontSize: 9 }} width={100} axisLine={false} tickLine={false} />
-                        <Tooltip />
-                        <Bar dataKey="count" fill="#a855f7" radius={[0, 4, 4, 0]} barSize={15} />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: isDark ? '#0f172a' : '#fff', 
+                            border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
+                            borderRadius: '8px',
+                            fontSize: '10px'
+                          }}
+                        />
+                        <Bar dataKey="count" fill="#a855f7" radius={[0, 4, 4, 0]} barSize={25} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>

@@ -35,6 +35,7 @@ import {
   ClipboardList,
   Sun,
   Moon,
+  UserX
 } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -56,11 +57,14 @@ export default function LawyerDashboard() {
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [queueMsg, setQueueMsg] = useState(null);
   const [notes, setNotes] = useState("");
-  
+
   // Intake and Pending Matters
   const [activeTickets, setActiveTickets] = useState([]);
   const [intakeTicket, setIntakeTicket] = useState(null);
   const [pendingTickets, setPendingTickets] = useState([]);
+  const [showNoShowConfirm, setShowNoShowConfirm] = useState(false);
+  const [noShowTicketId, setNoShowTicketId] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const navigate = useNavigate();
   const { user: clerkUser } = useUser();
@@ -100,13 +104,13 @@ export default function LawyerDashboard() {
     if (activeTickets && activeTickets.length > 0) {
       const savedIntakeId = localStorage.getItem("lawyer_current_intake_id");
       let intake = activeTickets.find(t => t.ticket_id === savedIntakeId);
-      
+
       if (!intake) {
         // If the saved intake is gone (resolved), pick the first one as new intake
         intake = activeTickets[0];
         localStorage.setItem("lawyer_current_intake_id", intake.ticket_id);
       }
-      
+
       setIntakeTicket(intake);
       setPendingTickets(activeTickets.filter(t => t.ticket_id !== intake.ticket_id));
     } else {
@@ -125,18 +129,18 @@ export default function LawyerDashboard() {
   const handleClaim = async (ticketId) => {
     try {
       await hitlService.claimTicket(ticketId);
-      
+
       // Persistence logic: Only set as intake if nothing is currently being worked on
       const currentIntakeId = localStorage.getItem("lawyer_current_intake_id");
       if (!currentIntakeId) {
         localStorage.setItem("lawyer_current_intake_id", ticketId);
-        setQueueMsg({ type: "success", text: "Matter claimed! Added to your current Intake." });
+        setQueueMsg({ type: "success", text: "You claimed this case! It is now in your Intake." });
         setActiveView("intake");
       } else {
-        setQueueMsg({ type: "success", text: "Matter claimed! Added to your Pending queue." });
+        setQueueMsg({ type: "success", text: "You claimed this case! It is now in your Pending list." });
         setActiveView("pending");
       }
-      
+
       await fetchData();
     } catch (err) {
       setQueueMsg({ type: "error", text: err.message || "Failed to claim ticket" });
@@ -151,6 +155,22 @@ export default function LawyerDashboard() {
       setIntakeTicket(intake);
       setPendingTickets(activeTickets.filter(t => t.ticket_id !== ticketId));
       setActiveView("intake");
+    }
+  };
+
+  const handleMarkNoShow = async () => {
+    if (!noShowTicketId) return;
+    setIsProcessing(true);
+    try {
+      await hitlService.markNoShow(noShowTicketId, "User did not attend the scheduled meeting.");
+      setQueueMsg({ type: "success", text: "Matter marked as No-Show and archived." });
+      setShowNoShowConfirm(false);
+      setNoShowTicketId(null);
+      await fetchData();
+    } catch (err) {
+      setQueueMsg({ type: "error", text: err.message || "Failed to mark as no-show" });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -179,13 +199,22 @@ export default function LawyerDashboard() {
   const getIntakeTrend = () => {
     const counts = {};
     allTickets.forEach(t => {
-      const date = new Date(t.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
-      counts[date] = (counts[date] || 0) + 1;
+      const sortKey = new Date(t.created_at).toISOString().split('T')[0];
+      counts[sortKey] = (counts[sortKey] || 0) + 1;
     });
-    return Object.entries(counts)
-      .map(([date, count]) => ({ date, count }))
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .slice(-7);
+
+    const result = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const sKey = d.toISOString().split('T')[0];
+      result.push({
+        sortKey: sKey,
+        count: counts[sKey] || 0,
+        date: d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' })
+      });
+    }
+    return result;
   };
 
   const resolutionTrend = getIntakeTrend();
@@ -193,7 +222,7 @@ export default function LawyerDashboard() {
   const activeVelocityData = resolutionTrend.map(d => ({
     ...d,
     active: activeTickets.length // Simplified for real-time overview
-  }));  const stats = [
+  })); const stats = [
     { label: "Resolved", value: resolvedTickets.length, icon: CheckCircle2, color: "emerald" },
     { label: "Active Matters", value: activeTickets.length, icon: Activity, color: "blue" },
     { label: "Queue Load", value: queueTickets.length, icon: Ticket, color: "indigo" },
@@ -243,6 +272,12 @@ export default function LawyerDashboard() {
                   Case Queue
                   <span className="ml-auto bg-white/10 text-white px-1.5 py-0.5 rounded text-[10px]">{queueTickets.length}</span>
                 </button>
+              </nav>
+            </div>
+
+            <div>
+              <p className="px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 mb-4 opacity-50 font-bold">Claimed Cases</p>
+              <nav className="space-y-1">
                 <button
                   onClick={() => { setActiveView("intake"); setIsSidebarOpen(false); }}
                   className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-bold transition-all ${activeView === "intake" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
@@ -311,9 +346,8 @@ export default function LawyerDashboard() {
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-w-0 relative h-full">
         {/* Header */}
-        <header className={`px-6 py-4 sticky top-0 z-40 border-b shadow-sm backdrop-blur-md ${
-          isDark ? "bg-gray-900/80 border-gray-800" : "bg-white/80 border-gray-100"
-        }`}>
+        <header className={`px-6 py-4 sticky top-0 z-40 border-b shadow-sm backdrop-blur-md ${isDark ? "bg-gray-900/80 border-gray-800" : "bg-white/80 border-gray-100"
+          }`}>
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-4">
               <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden text-slate-500 p-2 hover:bg-slate-100 rounded-xl">
@@ -439,8 +473,8 @@ export default function LawyerDashboard() {
                 ))}
               </div>
 
-              {/* Row 1: Allocation + Trend + Velocity */}
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+              {/* Row 1: Allocation + Trend */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
                 {/* Allocation */}
                 <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
                   <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-6">Matter Allocation</h3>
@@ -464,34 +498,20 @@ export default function LawyerDashboard() {
                   <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-6">Intake Performance</h3>
                   <div className="h-[200px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={resolutionTrend}>
+                      <BarChart data={resolutionTrend}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#1e293b" : "#f1f5f9"} />
                         <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
                         <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={3} dot={{ r: 4, fill: '#6366f1' }} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-                {/* Case Processing Velocity */}
-                <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                  <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-6">Matter Processing Velocity</h3>
-                  <div className="h-[200px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={activeVelocityData}>
-                        <defs>
-                          <linearGradient id="colorActive" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#1e293b" : "#f1f5f9"} />
-                        <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
-                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
-                        <Tooltip />
-                        <Area type="monotone" dataKey="count" stroke="#6366f1" fillOpacity={1} fill="url(#colorActive)" strokeWidth={3} />
-                      </AreaChart>
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: isDark ? '#0f172a' : '#fff', 
+                            border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
+                            borderRadius: '8px',
+                            fontSize: '10px'
+                          }} 
+                        />
+                        <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={30} />
+                      </BarChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
@@ -512,8 +532,8 @@ export default function LawyerDashboard() {
 
                 {queueMsg && (
                   <div className={`mx-8 mt-6 p-4 rounded-xl flex items-center justify-between text-sm font-bold animate-in fade-in zoom-in-95 ${queueMsg.type === 'success'
-                      ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
-                      : 'bg-red-500/10 text-red-500 border border-red-500/20'
+                    ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                    : 'bg-red-500/10 text-red-500 border border-red-500/20'
                     }`}>
                     <div className="flex items-center gap-3">
                       {queueMsg.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
@@ -603,14 +623,20 @@ export default function LawyerDashboard() {
                           <span className="text-xs font-bold text-slate-500">Claimed On</span>
                           <span className="text-xs font-black">{formatDate(intakeTicket.assigned_at)}</span>
                         </div>
+                        <div className="flex items-center justify-between p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                          <span className="text-xs font-bold text-slate-500">Scheduled For</span>
+                          <span className="text-xs font-black">{intakeTicket.booking_confirmed_at ? formatDate(intakeTicket.booking_confirmed_at) : "Not yet scheduled"}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  <button onClick={() => navigate(`/lawyer/tickets/${intakeTicket.ticket_id}`)} className="mt-12 w-full py-5 bg-indigo-600 text-white rounded-[2rem] text-sm font-black uppercase tracking-widest shadow-2xl shadow-indigo-600/30 hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
-                    Enter Working Chamber
-                    <ChevronRight size={20} />
-                  </button>
+                  <div className="mt-12 flex flex-col sm:flex-row gap-4">
+                    <button onClick={() => navigate(`/lawyer/tickets/${intakeTicket.ticket_id}`)} className="flex-1 py-5 bg-indigo-600 text-white rounded-[2rem] text-sm font-black uppercase tracking-widest shadow-2xl shadow-indigo-600/30 hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
+                      Enter Working Chamber
+                      <ChevronRight size={20} />
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="py-32 text-center">
@@ -634,6 +660,7 @@ export default function LawyerDashboard() {
                       <tr className="text-left border-b border-slate-100 dark:border-slate-800">
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Matter</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Claimed At</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Scheduled For</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Actions</th>
                       </tr>
                     </thead>
@@ -646,15 +673,28 @@ export default function LawyerDashboard() {
                               <div>
                                 <p className="text-sm font-bold">{t.user_display_name || "Anonymous"}</p>
                                 <p className="text-[10px] text-slate-500">{t.user_email}</p>
+                                {(t.outcome_notes?.includes("[USER-NO-SHOW]") || t.outcome_notes?.includes("[BOTH-NO-SHOW]")) && (
+                                  <div className="mt-1 flex items-center gap-1 text-[9px] font-black text-red-500 uppercase tracking-tighter">
+                                    <AlertTriangle size={10} />
+                                    <span>Missed Appointment</span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </td>
                           <td className="px-8 py-6 text-xs font-medium text-slate-500 text-center">
                             {formatDate(t.assigned_at)}
                           </td>
+                          <td className="px-8 py-6 text-xs font-medium text-center">
+                            {t.booking_confirmed_at ? (
+                              <span className="text-slate-900 dark:text-slate-200 font-bold">{formatDate(t.booking_confirmed_at)}</span>
+                            ) : (
+                              <span className="text-slate-400 opacity-50">Not Scheduled</span>
+                            )}
+                          </td>
                           <td className="px-8 py-6 text-right">
-                            <button 
-                              onClick={() => handleWorkOn(t.ticket_id)} 
+                            <button
+                              onClick={() => handleWorkOn(t.ticket_id)}
                               className="px-3 py-1.5 bg-indigo-500/10 text-indigo-500 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500 hover:text-white transition-all"
                             >
                               Work on this
@@ -749,6 +789,36 @@ export default function LawyerDashboard() {
 
         </main>
       </div>
+
+      {/* NO-SHOW CONFIRMATION MODAL */}
+      {showNoShowConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`w-full max-w-md rounded-3xl border p-8 shadow-2xl animate-in zoom-in-95 duration-200 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-gray-100"}`}>
+            <div className="h-14 w-14 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center mb-6">
+              <AlertTriangle size={28} />
+            </div>
+            <h3 className={`text-xl font-bold mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>Mark as No-Show?</h3>
+            <p className="text-sm text-gray-500 font-medium leading-relaxed mb-8">
+              This will archive the case and mark it as unresolved because the user did not attend the scheduled consultation.
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowNoShowConfirm(false)}
+                className={`flex-1 h-12 rounded-xl text-xs font-bold transition-all ${isDark ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleMarkNoShow}
+                disabled={isProcessing}
+                className="flex-1 h-12 rounded-xl bg-red-600 text-white text-xs font-bold shadow-lg shadow-red-600/20 hover:bg-red-700 transition-all disabled:opacity-50"
+              >
+                {isProcessing ? "Processing..." : "Confirm No-Show"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

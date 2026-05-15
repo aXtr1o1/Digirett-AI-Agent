@@ -63,63 +63,12 @@ class HitlService:
         try:
             response = self._supabase.table("hitl_tickets").select("ticket_id") \
                 .eq("conversation_id", conversation_id) \
-                .in_("status", ["open", "assigned", "booked"]) \
+                .in_("status", ["open", "assigned"]) \
                 .execute()
             return len(response.data or []) > 0
         except Exception as exc:
             logger.error(f"❌ Failed to check escalation status | {exc}")
             return False
-
-    def get_ticket_by_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Returns the most recent active ticket for a conversation with full user and lawyer details.
-        """
-        try:
-            response = (
-                self._supabase.table("hitl_tickets")
-                .select(
-                    "*, "
-                    "users!hitl_tickets_user_id_fkey("
-                    "  email, user_name, "
-                    "  user_profiles(display_name, phone_number)"
-                    "), "
-                    "lawyer:users!hitl_tickets_assigned_lawyer_id_fkey("
-                    "  email, user_name, "
-                    "  user_profiles(display_name)"
-                    ")"
-                )
-                .eq("conversation_id", conversation_id)
-                .order("created_at", desc=True)
-                .limit(1)
-                .execute()
-            )
-            
-            if not response.data:
-                return None
-                
-            ticket = response.data[0]
-            
-            # Flatten user info
-            raw_user = ticket.pop("users", {}) or {}
-            raw_profile = (raw_user.get("user_profiles") or {})
-            ticket["user_email"] = raw_user.get("email")
-            ticket["user_display_name"] = raw_profile.get("display_name") or raw_user.get("user_name")
-            ticket["user_phone_number"] = raw_profile.get("phone_number")
-
-            # Flatten lawyer info
-            raw_lawyer = ticket.pop("lawyer", {}) or {}
-            if raw_lawyer:
-                law_profile = (raw_lawyer.get("user_profiles") or {})
-                ticket["lawyer_email"] = raw_lawyer.get("email")
-                ticket["assigned_lawyer_name"] = law_profile.get("display_name") or raw_lawyer.get("user_name")
-            else:
-                ticket["lawyer_email"] = None
-                ticket["assigned_lawyer_name"] = None
-                
-            return ticket
-        except Exception as exc:
-            logger.error(f"❌ Failed to fetch ticket by conversation | {exc}")
-            return None
 
     def get_escalated_conversation_ids(self, conversation_ids: List[str]) -> set:
         """
@@ -284,7 +233,7 @@ class HitlService:
             logger.error(f"❌ Failed to respond to ticket {ticket_id} | {exc}")
             return False
 
-    def get_ticket_with_user_details(self, ticket_id: str, lawyer_id: str) -> Optional[Dict[str, Any]]:
+    def get_ticket_with_user_details(self, ticket_id: str, user_id: str) -> Optional[Dict[str, Any]]:
         """
         Fetches full ticket details including the user's profile info.
         Enforces that ONLY the assigned lawyer can see this.
@@ -314,11 +263,20 @@ class HitlService:
 
             ticket = response.data[0]
 
-            # Security check: only the assigned lawyer can view details
-            if ticket.get("assigned_lawyer_id") != lawyer_id:
+            # Security check: only the assigned lawyer or an admin can view details
+            is_assigned = ticket.get("assigned_lawyer_id") == user_id
+            is_admin = False
+            
+            # Check if caller is admin via users table if not assigned
+            if not is_assigned:
+                user_resp = self._supabase.table("users").select("role").eq("user_id", user_id).single().execute()
+                if user_resp.data and user_resp.data.get("role") == "admin":
+                    is_admin = True
+
+            if not is_assigned and not is_admin:
                 logger.warning(
-                    f"Unauthorized access to ticket details | "
-                    f"lawyer={lawyer_id} | ticket={ticket_id}"
+                    f"⛔ Unauthorized access attempt to ticket details | "
+                    f"user={user_id} | ticket={ticket_id}"
                 )
                 return None
 
@@ -370,36 +328,39 @@ class HitlService:
 
     def get_lawyer_active_tickets(self, lawyer_id: str) -> List[Dict[str, Any]]:
         """
-        Returns tickets assigned to a specific lawyer that are NOT resolved or closed.
-        Includes user and conversation details.
+        Returns all active tickets (assigned or booked) for a specific lawyer.
+        Flattens the data structure for easier frontend consumption.
         """
         try:
-            response = self._supabase.table("hitl_tickets") \
+            response = (
+                self._supabase.table("hitl_tickets")
                 .select(
                     "*, "
+                    "conversations!hitl_tickets_conversation_id_fkey(conversation_summary), "
                     "users!hitl_tickets_user_id_fkey("
                     "  email, "
                     "  user_profiles(display_name, phone_number)"
-                    "),"
-                    "conversations!hitl_tickets_conversation_id_fkey(conversation_summary)"
-                ) \
-                .eq("assigned_lawyer_id", lawyer_id) \
-                .in_("status", ["assigned", "booked"]) \
-                .order("assigned_at", desc=True) \
+                    ")"
+                )
+                .eq("assigned_lawyer_id", lawyer_id)
+                .in_("status", ["assigned", "booked"])
+                .order("created_at", desc=True)
                 .execute()
+            )
             
             data = response.data or []
-            # Flatten for cleaner consumption
+            # Flatten nested joins
             for ticket in data:
-                raw_user = ticket.pop("users", {}) or {}
-                raw_profile = raw_user.get("user_profiles", {}) or {}
-                ticket["user_email"] = raw_user.get("email")
-                ticket["user_display_name"] = raw_profile.get("display_name")
-                ticket["user_phone_number"] = raw_profile.get("phone_number")
-                
                 conv_data = ticket.pop("conversations", {}) or {}
                 ticket["conversation_summary"] = conv_data.get("conversation_summary")
-                
+
+                raw_user = ticket.pop("users", {}) or {}
+                ticket["user_email"] = raw_user.get("email")
+
+                raw_profile = raw_user.get("user_profiles", {}) or {}
+                ticket["user_display_name"] = raw_profile.get("display_name")
+                ticket["user_phone_number"] = raw_profile.get("phone_number")
+
             return data
         except Exception as exc:
             logger.error(f"❌ Failed to fetch lawyer active tickets | {exc}")
@@ -444,7 +405,7 @@ class HitlService:
 
     def get_ticket_by_id(self, ticket_id: str) -> Optional[Dict[str, Any]]:
         """
-        Fetches a single ticket by ID with flattened user info and assigned lawyer info.
+        Fetches a single ticket by ID with flattened user info.
         Used internally by cal.py routes and cal_webhooks.py.
         Returns None if not found.
         """
@@ -456,10 +417,6 @@ class HitlService:
                     "users!hitl_tickets_user_id_fkey("
                     "  email, user_name, "
                     "  user_profiles(display_name, phone_number)"
-                    "), "
-                    "lawyer:users!hitl_tickets_assigned_lawyer_id_fkey("
-                    "  email, user_name, "
-                    "  user_profiles(display_name)"
                     ")"
                 )
                 .eq("ticket_id", ticket_id)
@@ -487,22 +444,41 @@ class HitlService:
     # BOOKING UPDATE (called by Cal.com webhook)
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+    def get_ticket_by_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetches the active (non-resolved) ticket for a conversation.
+        Used by the conversations route to check for lawyer access.
+        """
+        try:
+            resp = (
+                self._supabase.table("hitl_tickets")
+                .select("*")
+                .eq("conversation_id", conversation_id)
+                .in_("status", ["open", "assigned", "booked", "resolved", "closed"])
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            return resp.data[0] if resp.data else None
+        except Exception as exc:
+            logger.error(f"❌ get_ticket_by_conversation failed | {exc}")
+            return None
+
     def update_booking(
         self,
         ticket_id: str,
         cal_booking_id: str,
         booking_url: Optional[str],
-        meeting_time: Optional[str] = None,
     ) -> bool:
         """
-        Updates the ticket with booking details.
-        Repurposes booking_confirmed_at to store the actual meeting start time.
+        Called by cal_webhooks.py when Cal.com confirms a booking.
+        Updates the ticket status to 'booked' and saves the meeting URL.
         """
         try:
             now = datetime.utcnow().isoformat()
             update_data: Dict[str, Any] = {
                 "booking_cal_booking_id": cal_booking_id,
-                "booking_confirmed_at": meeting_time or now,
+                "booking_confirmed_at": now,
                 "status": "booked",
             }
             if booking_url:
@@ -516,10 +492,7 @@ class HitlService:
                 logger.warning(f"⚠️ update_booking: ticket {ticket_id} not found")
                 return False
 
-            logger.info(
-                f"✅ Booking updated on ticket | ticket={ticket_id} | "
-                f"cal_id={cal_booking_id} | meet={booking_url}"
-            )
+            logger.info(f"✅ Booking updated | ticket={ticket_id} | cal_id={cal_booking_id}")
             return True
         except Exception as exc:
             logger.error(f"❌ update_booking failed | {ticket_id} | {exc}")
