@@ -27,7 +27,7 @@ const useConversations = () => {
         .from("users")
         .select("user_id")
         .eq("clerk_user_id", clerkId)
-        .single();
+        .maybeSingle();
 
       if (userError || !userData) {
         console.warn("[useConversations] Resolution failed:", userError || "No data");
@@ -40,8 +40,8 @@ const useConversations = () => {
 
       // 3. Fetch conversations
       const { data, error: sbError } = await authClient
-                .from("conversations")
-        .select("*")
+        .from("conversations")
+        .select("conversation_id, user_id, title, is_deleted, created_at, updated_at")
         .eq("user_id", internalUserId)
         .eq("is_deleted", false)
         .order("updated_at", { ascending: false })
@@ -71,8 +71,8 @@ const useConversations = () => {
       try {
         const data = await conversationService.listConversations();
         setConversations(Array.isArray(data) ? data : []);
-      } catch (e) {
-        setError("Failed to load conversations");
+      } catch (innerErr) {
+        setError(innerErr.message || "Failed to load conversations");
       }
     } finally {
       setIsLoading(false);

@@ -11,8 +11,7 @@ const WS_URL =
   cleanBase
     .replace(/^https/, "wss")
     .replace(/^http/, "ws") +
-  "/api/v1" +
-  API_ENDPOINTS.CHAT.WS;
+  "/api/v1" + API_ENDPOINTS.CHAT.WS;
 
 // ─────────────────────────────────────────────────────────────────────────────
 console.log("[chatService] Initialized with WS_URL:", WS_URL);
@@ -29,15 +28,15 @@ const chatService = {
    * @returns {Function}                  - cancel() function — same API as the old SSE version
    */
   sendMessage: (conversationId, message, onChunk, onComplete, onError, options = {}) => {
-    let ws = null;
+    let ws        = null;
     let cancelled = false;
 
     (async () => {
       try {
         const requestBody = {
-          query: message,
-          top_k: 3,
-          temperature: 0.7,
+          query:          message,
+          top_k:          3,
+          temperature:    0.7,
           skip_save_user: !!options.skipSaveUser,
         };
 
@@ -55,11 +54,11 @@ const chatService = {
         ws = new WebSocket(finalWsUrl);
 
         // Per-query state — same variables as the old SSE version
-        let fullMessage = "";
-        let sources = [];
+        let fullMessage            = "";
+        let sources                = [];
         let resolvedConversationId = conversationId;
-        let finalMetadata = {};
-        let completeFired = false;
+        let finalMetadata          = {};
+        let completeFired          = false;
 
         // ── 1. Connection established → send the query ─────────────────
         ws.onopen = () => {
@@ -100,8 +99,8 @@ const chatService = {
               break;
 
             case "complete":
-              completeFired = true;
-              finalMetadata = event.metadata || {};
+              completeFired          = true;
+              finalMetadata          = event.metadata || {};
               resolvedConversationId = finalMetadata.conversation_id || resolvedConversationId;
 
               if (onComplete) {
@@ -115,11 +114,11 @@ const chatService = {
                   : sources.map((url) => typeof url === "string" ? { url, title: url } : url);
 
                 onComplete({
-                  message: finalMetadata.full_answer || fullMessage,
-                  sources: completeSources,
+                  message:        finalMetadata.full_answer || fullMessage,
+                  sources:        completeSources,
                   conversationId: resolvedConversationId,
-                  messageId: finalMetadata.message_id || null,
-                  metadata: finalMetadata,
+                  messageId:      finalMetadata.message_id || null,
+                  metadata:       finalMetadata,
                 });
               }
 
@@ -151,13 +150,13 @@ const chatService = {
           if (!completeFired && fullMessage) {
             if (onComplete) {
               onComplete({
-                message: fullMessage,
-                sources: sources.map((url) =>
+                message:        fullMessage,
+                sources:        sources.map((url) =>
                   typeof url === "string" ? { url, title: url } : url
                 ),
                 conversationId: resolvedConversationId,
-                messageId: null,
-                metadata: finalMetadata,
+                messageId:      null,
+                metadata:       finalMetadata,
               });
             }
           }

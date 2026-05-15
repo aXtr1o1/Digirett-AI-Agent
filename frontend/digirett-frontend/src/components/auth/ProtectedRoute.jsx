@@ -1,15 +1,23 @@
-import { SignedIn, SignedOut } from '@clerk/clerk-react';
+import { useAuth, useUser } from '@clerk/clerk-react';
 import { Navigate } from 'react-router-dom';
 
 const ProtectedRoute = ({ children }) => {
-  return (
-    <>
-      <SignedIn>{children}</SignedIn>
-      <SignedOut>
-        <Navigate to="/sign-in" replace />
-      </SignedOut>
-    </>
-  );
+  const { isLoaded: authLoaded, isSignedIn } = useAuth();
+  const { isLoaded: userLoaded } = useUser();
+
+  if (!authLoaded || !userLoaded) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-black">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
+      </div>
+    );
+  }
+
+  if (!isSignedIn) {
+    return <Navigate to="/sign-in" replace />;
+  }
+
+  return children;
 };
 
 export default ProtectedRoute;
