@@ -14,9 +14,8 @@ from db.supabase_client import SupabaseClient
 logger = logging.getLogger(__name__)
 
 # ── Session constants ─────────────────────────────────────────────────────────
-SESSION_TTL_SECONDS  = 4 * 60 * 60   # 4 hours
-MAX_DOCS_PER_SESSION = 2
-MAX_TURNS_PER_SESSION = 10
+# ── Session constants (Moved to config.py) ───────────────────────────────────
+SESSION_TTL_SECONDS  = settings.DOC_SESSION_TTL_SECONDS
 
 
 class DocumentService:
@@ -86,6 +85,7 @@ class DocumentService:
                 "session_id":    str(uuid.uuid4()),
                 "doc_count":     0,
                 "turn_count":    0,
+                "token_count":   0,
                 "session_start": time.time(),
                 "docs":          [],
             }
@@ -105,18 +105,25 @@ class DocumentService:
         remaining_ttl = max(60, int(SESSION_TTL_SECONDS - elapsed))
         self._redis.set_conversation_meta(redis_key, session, ttl=remaining_ttl)
 
-    def check_turn_limit(self, conversation_id: str) -> Tuple[bool, int]:
-        
-        # ┌─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┐
-        # │ TESTING MODE — Skip turn limit enforcement                  │
-        # └─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┘
-        if settings.DOC_TESTING_MODE:
-            logger.debug(f"⏭️  TEST_MODE: Turn limit bypassed | conv={conversation_id}")
+    def check_turn_limit(self, conversation_id: str, user_role: str = "user") -> Tuple[bool, int]:
+        """Check if user has remaining turns. Admins/Lawyers bypass this."""
+        if settings.DOC_TESTING_MODE or user_role in ["admin", "lawyer"]:
             return True, 999
         
         session = self.get_or_create_session(conversation_id)
         turn_count = session.get("turn_count", 0)
-        remaining = MAX_TURNS_PER_SESSION - turn_count
+        remaining = settings.DOC_MAX_TURNS_PER_SESSION - turn_count
+        allowed = remaining > 0
+        return allowed, remaining
+
+    def check_token_limit(self, conversation_id: str, user_role: str = "user") -> Tuple[bool, int]:
+        """Check if user has remaining token quota. Admins/Lawyers bypass this."""
+        if settings.DOC_TESTING_MODE or user_role in ["admin", "lawyer"]:
+            return True, 999999
+        
+        session = self.get_or_create_session(conversation_id)
+        token_count = session.get("token_count", 0)
+        remaining = settings.DOC_MAX_TOKENS_PER_SESSION - token_count
         allowed = remaining > 0
         return allowed, remaining
 
@@ -135,30 +142,31 @@ class DocumentService:
             logger.warning(f"⚠️ Could not update session_turn_count in Supabase | {exc}")
 
         logger.info(
-            f"🔢 Turn count: {session['turn_count']}/{MAX_TURNS_PER_SESSION} | "
+            f"🔢 Turn count: {session['turn_count']}/{settings.DOC_MAX_TURNS_PER_SESSION} | "
             f"conv={conversation_id}"
         )
         return session["turn_count"]
 
-    def check_doc_limit(self, conversation_id: str) -> Tuple[bool, int]:
-        """
-        Check if the user can still upload a document this session.
+    def increment_token_count(self, conversation_id: str, tokens: int) -> int:
+        """Add tokens to the current session usage."""
+        session = self.get_or_create_session(conversation_id)
+        session["token_count"] = session.get("token_count", 0) + tokens
+        self._save_session(conversation_id, session)
         
-        ⚠️  TESTING MODE OVERRIDE: If DOC_TESTING_MODE=True, always allows uploads.
+        logger.info(
+            f"🪙 Token usage: {session['token_count']}/{settings.DOC_MAX_TOKENS_PER_SESSION} | "
+            f"+{tokens} | conv={conversation_id}"
+        )
+        return session["token_count"]
 
-        Returns:
-            (allowed: bool, docs_remaining: int)
-        """
-        # ┌─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┐
-        # │ TESTING MODE — Skip document limit enforcement              │
-        # └─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┘
-        if settings.DOC_TESTING_MODE:
-            logger.debug(f"⏭️  TEST_MODE: Document limit bypassed | conv={conversation_id}")
+    def check_doc_limit(self, conversation_id: str, user_role: str = "user") -> Tuple[bool, int]:
+        """Check if user can upload more documents. Admins/Lawyers bypass this."""
+        if settings.DOC_TESTING_MODE or user_role in ["admin", "lawyer"]:
             return True, 999
         
         session = self.get_or_create_session(conversation_id)
         doc_count = session.get("doc_count", 0)
-        remaining = MAX_DOCS_PER_SESSION - doc_count
+        remaining = settings.DOC_MAX_PER_SESSION - doc_count
         allowed = remaining > 0
         return allowed, remaining
 
@@ -234,22 +242,23 @@ class DocumentService:
         user_id: str,
         file_bytes: bytes,
         filename: str,
+        user_role: str = "user",
     ) -> Dict[str, Any]:
         """
         Parse + store a document for a conversation session.
 
-        Enforces: max 2 documents per session.
+        Enforces: max 2 documents per session (configurable).
         Stores: Redis (text, TTL=4h) + Supabase (text + metadata).
 
         Returns a dict with document metadata.
         Raises ValueError if the session doc limit is exceeded.
         """
         # ── Enforce doc limit ────────────────────────────────────────────
-        allowed, remaining = self.check_doc_limit(conversation_id)
+        allowed, remaining = self.check_doc_limit(conversation_id, user_role=user_role)
         if not allowed:
             raise ValueError(
                 f"Document upload limit reached. "
-                f"You can upload a maximum of {MAX_DOCS_PER_SESSION} documents per session "
+                f"You can upload a maximum of {settings.DOC_MAX_PER_SESSION} documents per session "
                 f"(4-hour session). Your session will reset after 4 hours."
             )
 
@@ -351,7 +360,7 @@ class DocumentService:
             "char_count":   char_count,
             "language":     document_language,
             "upload_order": upload_order,
-            "docs_remaining": MAX_DOCS_PER_SESSION - upload_order,
+            "docs_remaining": settings.DOC_MAX_PER_SESSION - upload_order,
         }
         logger.info(
             f"✅ Document stored | id={document_id} | order={upload_order} | "

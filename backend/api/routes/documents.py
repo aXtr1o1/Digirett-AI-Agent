@@ -92,16 +92,17 @@ async def upload_document(
             detail="File too large. Maximum allowed size is 20MB.",
         )
 
-    allowed, docs_remaining = _document_service.check_doc_limit(conversation_id)
+    allowed, docs_remaining = _document_service.check_doc_limit(conversation_id, user_role=user.role)
     if not allowed:
         session = _document_service.get_or_create_session(conversation_id)
         elapsed = time.time() - session.get("session_start", time.time())
-        remaining_hours = max(0, round((4 * 3600 - elapsed) / 3600, 1))
+        from config import settings
+        remaining_hours = max(0, round((settings.DOC_SESSION_TTL_SECONDS - elapsed) / 3600, 1))
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(
                 f"Document upload limit reached. "
-                f"You can upload a maximum of 2 documents per 4-hour session. "
+                f"You can upload a maximum of {settings.DOC_MAX_PER_SESSION} documents per session. "
                 f"Your session resets in approximately {remaining_hours} hour(s)."
             ),
         )
@@ -119,6 +120,7 @@ async def upload_document(
             user_id=internal_user_id,
             file_bytes=file_bytes,
             filename=filename,
+            user_role=user.role
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
@@ -274,14 +276,14 @@ async def get_session_status(
     turn_count = session.get("turn_count", 0)
     docs       = session.get("docs", [])
 
-    from services.document_service import MAX_DOCS_PER_SESSION, MAX_TURNS_PER_SESSION
+    from config import settings
 
     return SessionStatusResponse(
         conversation_id=conversation_id,
         doc_count=doc_count,
         turn_count=turn_count,
-        docs_remaining=max(0, MAX_DOCS_PER_SESSION - doc_count),
-        turns_remaining=max(0, MAX_TURNS_PER_SESSION - turn_count),
+        docs_remaining=max(0, settings.DOC_MAX_PER_SESSION - doc_count),
+        turns_remaining=max(0, settings.DOC_MAX_TURNS_PER_SESSION - turn_count),
         has_documents=_document_service.has_documents(conversation_id),
         session_active=True,
         docs=docs,

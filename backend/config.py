@@ -107,15 +107,20 @@ class Settings(BaseSettings):
     # │ TESTING MODE — Commented out for document feature testing       │
     # │ Set DOC_TESTING_MODE = False to revert to production limits     │
     # └─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┘
-    DOC_TESTING_MODE: bool = True
+    # ┌─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┐
+    # │ PRODUCTION LIMITS — 4-hour reset cycle                          │
+    # └─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┘
+    DOC_TESTING_MODE: bool = False
     
     # Max documents a user can upload within one 4-hour session.
-    # PRODUCTION: 2 | TESTING: 999 (unlimited for testing)
-    DOC_MAX_PER_SESSION: int = 999 if DOC_TESTING_MODE else 2
+    DOC_MAX_PER_SESSION: int = 2
     
     # Max query turns (user messages) allowed within one 4-hour session.
-    # PRODUCTION: 10 | TESTING: 999 (unlimited for testing)
-    DOC_MAX_TURNS_PER_SESSION: int = 999 if DOC_TESTING_MODE else 10
+    DOC_MAX_TURNS_PER_SESSION: int = 10
+
+    # Max tokens (input + output) allowed per session (Claude-style safety).
+    # ~100,000 tokens is roughly 75,000 words.
+    DOC_MAX_TOKENS_PER_SESSION: int = 100000
     
     # Max file size for document uploads (bytes). Default = 20 MB.
     DOC_MAX_FILE_SIZE_BYTES: int = 20 * 1024 * 1024
