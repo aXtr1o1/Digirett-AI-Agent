@@ -11,6 +11,7 @@ const MessageComposer = ({
   isEscalated,
   showEscalate = true,
   theme = "dark",
+  messageCount = 0,
 }) => {
   const [message, setMessage] = useState("");
   const [file, setFile] = useState(null);
@@ -19,7 +20,8 @@ const MessageComposer = ({
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [localEscalated, setLocalEscalated] = useState(false);
 
-  const isBusy = disabled || isProcessingDoc || isStreaming;
+  const isBusy = disabled || isProcessingDoc;
+  const isInputBlocked = isBusy || (disabled && !isStreaming);
 
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -91,7 +93,6 @@ const MessageComposer = ({
 
   const getPlaceholder = () => {
     if (isProcessingDoc) return "Analysing document…";
-    if (isBusy) return "Please wait…";
     if (file) return "Add a question about the document";
     return "Ask Anything...";
   };
@@ -192,7 +193,7 @@ const MessageComposer = ({
             <CheckCircle size={16} />
             <span style={{ fontSize: "14px", fontWeight: "600" }}>
               {isEscalated || localEscalated 
-                ? "Already booked for this case" 
+                ? "You booked the lawyer for this case" 
                 : "Request submitted. Lawyer will contact you shortly."}
             </span>
             <style>{`
@@ -244,6 +245,32 @@ const MessageComposer = ({
                       }}
                     >
                       Close
+                    </button>
+                  </div>
+                ) : messageCount === 0 ? (
+                  <div style={{ textAlign: "center" }}>
+                    <Scale size={24} style={{ color: "#3B82F6", marginBottom: "8px", opacity: 0.5 }} />
+                    <p style={{ fontSize: "14px", fontWeight: "600", color: isDark ? "#ffffff" : "#111827", marginBottom: "6px" }}>
+                      Start your case first
+                    </p>
+                    <p style={{ fontSize: "12px", color: isDark ? "#9ca3af" : "#6b7280", marginBottom: "12px", lineHeight: "1.5" }}>
+                      Please describe your legal matter briefly so our lawyers can understand your case before booking.
+                    </p>
+                    <button
+                      onClick={() => setShowEscalateConfirm(false)}
+                      style={{
+                        width: "100%",
+                        padding: "8px",
+                        backgroundColor: "#2563eb",
+                        color: "#ffffff",
+                        fontSize: "12px",
+                        fontWeight: "700",
+                        borderRadius: "8px",
+                        border: "none",
+                        cursor: "pointer"
+                      }}
+                    >
+                      Got it
                     </button>
                   </div>
                 ) : (
@@ -373,7 +400,7 @@ const MessageComposer = ({
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={isBusy || disabled}
+          disabled={isBusy}
           rows={1}
           placeholder={getPlaceholder()}
           style={{
@@ -393,7 +420,7 @@ const MessageComposer = ({
         />
 
         {/* Send / Stop */}
-        {isBusy ? (
+        {isStreaming || isProcessingDoc ? (
           isStreaming ? (
             <button
               type="button"

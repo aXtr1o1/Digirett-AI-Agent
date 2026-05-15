@@ -1,9 +1,20 @@
 import React, { useEffect, useState } from "react";
 import adminService from "../services/adminService";
-import { Users, Mail, Shield, ArrowUpCircle, Loader2, Search, UserPlus, CheckCircle, ArrowLeft } from "lucide-react";
+import {
+  Users, Mail, Shield, Loader2, Search,
+  UserPlus, CheckCircle, ArrowLeft, LogOut,
+  LayoutDashboard, Menu, Plus, X, Calendar, User,
+  ShieldCheck, Scale, Crown, Clock, AlertTriangle, Send,
+  UserX, UserCheck, Trash2
+} from "lucide-react";
 import { useTheme } from "../providers/ThemeProvider";
-import BackgroundLayer from "../components/common/BackgroundLayer";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useClerk, useUser } from "@clerk/clerk-react";
+import hitlService from "../services/hitlService";
+import {
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+} from 'recharts';
 
 export default function AdminDashboard() {
   const { theme, isDark } = useTheme();
@@ -14,51 +25,163 @@ export default function AdminDashboard() {
   const [inviteLoading, setInviteLoading] = useState(false);
   const [message, setMessage] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
 
-  const fetchUsers = async () => {
+  // Local sub-navigation state (Synced with URL for refresh persistence & back-button support)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeView = searchParams.get("view") || "dashboard";
+  const setActiveView = (view) => setSearchParams({ view });
+
+  const [invitations, setInvitations] = useState([]);
+  const [invitesLoading, setInvitesLoading] = useState(true);
+  const [tickets, setTickets] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [healthStatus, setHealthStatus] = useState(null);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+
+  const { user: clerkUser } = useUser();
+  const { signOut, openUserProfile } = useClerk();
+  const navigate = useNavigate();
+  const [confirmModal, setConfirmModal] = useState({ show: false, user: null });
+  const [viewUser, setViewUser] = useState(null);
+
+  // Scoped Messages
+  const [inviteMsg, setInviteMsg] = useState(null);
+  const [queueMsg, setQueueMsg] = useState(null);
+  const [usersMsg, setUsersMsg] = useState(null);
+  const [globalMsg, setGlobalMsg] = useState(null);
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate("/sign-in");
+  };
+
+  const fetchDashboardData = async () => {
     try {
-      const data = await adminService.listUsers();
-      const validUsers = data.filter(u => u.email);
-      setUsers(validUsers);
+      setDashboardLoading(true);
+      const [usersData, invitesData, ticketsData, logsData, healthData] = await Promise.all([
+        adminService.listUsers(),
+        adminService.listInvitations(),
+        adminService.getAllTickets(),
+        adminService.getAuditLogs(100),
+        adminService.getHealthStatus()
+      ]);
+
+      setUsers(usersData.filter(u => u.email));
+      setInvitations(invitesData);
+      setTickets(ticketsData);
+      setAuditLogs(logsData);
+      setHealthStatus(healthData);
     } catch (err) {
-      console.error("Failed to fetch users:", err);
+      console.error("Failed to fetch dashboard data:", err);
     } finally {
+      setDashboardLoading(false);
       setLoading(false);
+      setInvitesLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchUsers();
+    fetchDashboardData();
   }, []);
 
-  const handleInvite = async (e) => {
-    e.preventDefault();
-    if (!inviteEmail) return;
-    setInviteLoading(true);
+  useEffect(() => {
     setMessage(null);
+  }, [activeView]);
+
+  const roleInfo = {
+    lawyer: {
+      title: "Lawyer Access",
+      icon: <Scale className="w-5 h-5" />,
+      description:
+        "Lawyers can view escalated user tickets, access the case queue, review user details, and respond to assigned legal requests.",
+      permissions: [
+        "Access lawyer dashboard",
+        "View case queue",
+        "Review escalated user tickets",
+        "Manage own lawyer profile",
+      ],
+    },
+    admin: {
+      title: "Admin Access",
+      icon: <Crown className="w-5 h-5" />,
+      description:
+        "Admins can manage users, lawyers, invitations, dashboard analytics, and platform-level administrative controls.",
+      permissions: [
+        "Access admin dashboard",
+        "Manage system users",
+        "Invite lawyers and admins",
+        "View platform analytics",
+      ],
+    },
+  };
+
+  const [showConfirmInvite, setShowConfirmInvite] = useState(false);
+
+  const handleInvite = async (e, force = false) => {
+    if (e) e.preventDefault();
+    if (!inviteEmail) return;
+
+    // Check if already invited with same role
+    const existingInvite = invitations.find(i => i.email.toLowerCase() === inviteEmail.toLowerCase() && i.role === inviteRole);
+    if (existingInvite && !force) {
+      setShowConfirmInvite(true);
+      return;
+    }
+
+    setInviteLoading(true);
+    setInviteMsg(null);
+    setShowConfirmInvite(false);
     try {
       await adminService.inviteUser(inviteEmail, inviteRole);
-      setMessage({ type: "success", text: `Invitation sent to ${inviteEmail}` });
+      setInviteMsg({ type: "success", text: `Invitation sent to ${inviteEmail}` });
       setInviteEmail("");
+      fetchDashboardData();
     } catch (err) {
-      setMessage({ type: "error", text: err.message || "Failed to send invitation" });
+      setInviteMsg({ type: "error", text: err.message || "Failed to send invitation" });
     } finally {
       setInviteLoading(false);
     }
   };
 
-  const handlePromote = async (userId, role) => {
+  const handleRevokeInvite = async (inviteId) => {
+    if (!window.confirm("Are you sure you want to revoke this invitation?")) return;
     try {
-      if (role === "lawyer") {
-        await adminService.promoteToLawyer(userId);
-      } else if (role === "admin") {
-        await adminService.promoteToAdmin(userId);
-      }
-      setMessage({ type: "success", text: `User promoted to ${role} successfully` });
-      fetchUsers();
+      await adminService.revokeInvitation(inviteId);
+      setInviteMsg({ type: "success", text: "Invitation revoked successfully" });
+      fetchDashboardData();
     } catch (err) {
-      console.error("Promotion failed:", err);
-      setMessage({ type: "error", text: err.message || "Promotion failed" });
+      setInviteMsg({ type: "error", text: "Failed to revoke invitation" });
+    }
+  };
+
+  const handleToggleUserStatus = async (userId) => {
+    try {
+      await adminService.suspendUser(userId);
+      setUsersMsg({ type: "success", text: "User access suspended successfully." });
+      setConfirmModal({ show: false, user: null });
+      fetchDashboardData();
+    } catch (err) {
+      setUsersMsg({ type: "error", text: "Failed to suspend user access." });
+    }
+  };
+
+  const handleAssignTicket = async (ticketId, lawyerId) => {
+    if (!lawyerId) return;
+    try {
+      const lawyer = users.find(u => u.user_id === lawyerId);
+      const lawyerName = lawyer?.user_profiles?.display_name || lawyer?.email || "the professional";
+      await adminService.assignTicket(ticketId, lawyerId);
+      setQueueMsg({ 
+        type: "success", 
+        text: `You have assigned this case to ${lawyerName}. They are now linked to this case.` 
+      });
+      fetchDashboardData();
+      // Auto-clear message after 8 seconds
+      setTimeout(() => setQueueMsg(null), 8000);
+    } catch (err) {
+      setQueueMsg({ type: "error", text: "Failed to link the lawyer to this case. Please try again." });
     }
   };
 
@@ -69,229 +192,762 @@ export default function AdminDashboard() {
     return email.includes(query) || displayName.includes(query);
   });
 
+  // Derived Stats
+  const totalUsers = users.length;
+  const lawyerCount = users.filter(u => u.role === 'lawyer').length;
+  const adminCount = users.filter(u => u.role === 'admin').length;
+  const standardUserCount = users.filter(u => u.role === 'user' || !u.role).length;
+  const pendingInvites = invitations.filter(i => i.status === 'pending').length;
+  const acceptedInvites = invitations.filter(i => i.status === 'accepted').length;
+  const totalInvites = invitations.length;
+
+  // ── Chart Data Processors ──────────────────────────────────────────
+
+  const roleData = [
+    { name: 'Admins', value: adminCount, color: '#a855f7' },
+    { name: 'Lawyers', value: lawyerCount, color: '#3b82f6' },
+    { name: 'Users', value: standardUserCount, color: '#6366f1' },
+  ];
+
+  const statusData = [
+    { name: 'Active', value: users.filter(u => u.status === 'active').length, color: '#10b981' },
+    { name: 'Inactive', value: users.filter(u => u.status === 'inactive' || u.status === 'suspended').length, color: '#ef4444' },
+  ];
+
+  const getOnboardingTrend = () => {
+    const counts = {};
+    users.forEach(u => {
+      const sortKey = new Date(u.created_at).toISOString().split('T')[0];
+      counts[sortKey] = (counts[sortKey] || 0) + 1;
+    });
+    
+    const result = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const sKey = d.toISOString().split('T')[0];
+      result.push({
+        sortKey: sKey,
+        count: counts[sKey] || 0,
+        date: d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' })
+      });
+    }
+    return result;
+  };
+
+  const ticketStatusData = [
+    { name: 'Open', value: tickets.filter(t => t.status === 'open' && !t.assigned_lawyer_id).length, color: '#f59e0b' },
+    { name: 'Assigned', value: tickets.filter(t => t.assigned_lawyer_id && t.status !== 'closed').length, color: '#3b82f6' },
+    { name: 'Closed', value: tickets.filter(t => t.status === 'closed').length, color: '#10b981' },
+  ];
+
+  const auditTrendData = () => {
+    const counts = {};
+    auditLogs.forEach(log => {
+      const sortKey = new Date(log.created_at).toISOString().split('T')[0];
+      counts[sortKey] = (counts[sortKey] || 0) + 1;
+    });
+    
+    const result = [];
+    for (let i = 9; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const sKey = d.toISOString().split('T')[0];
+      result.push({
+        sortKey: sKey,
+        count: counts[sKey] || 0,
+        date: d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' })
+      });
+    }
+    return result;
+  };
+
+  const auditTypeData = () => {
+    const counts = {};
+    auditLogs.forEach(log => {
+      counts[log.action] = (counts[log.action] || 0) + 1;
+    });
+    return Object.keys(counts).map(action => ({
+      action: action.replace('admin.', '').replace('user.', ''),
+      count: counts[action]
+    })).sort((a, b) => b.count - a.count).slice(0, 5);
+  };
+
+  const lawyerWorkloadData = () => {
+    const counts = {};
+    tickets.forEach(t => {
+      if (t.assigned_lawyer_id) {
+        counts[t.assigned_lawyer_id] = (counts[t.assigned_lawyer_id] || 0) + 1;
+      }
+    });
+    return Object.keys(counts).map(id => {
+      const lawyer = users.find(u => u.user_id === id);
+      return {
+        name: lawyer?.user_profiles?.display_name || lawyer?.email || id.substring(0, 8),
+        tickets: counts[id]
+      };
+    }).sort((a, b) => b.tickets - a.tickets);
+  };
+
+  const getThroughputData = () => {
+    const intake = {};
+    const output = {};
+    tickets.forEach(t => {
+      const cKey = new Date(t.created_at).toISOString().split('T')[0];
+      intake[cKey] = (intake[cKey] || 0) + 1;
+      if (t.resolved_at) {
+        const rKey = new Date(t.resolved_at).toISOString().split('T')[0];
+        output[rKey] = (output[rKey] || 0) + 1;
+      }
+    });
+    const result = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const sKey = d.toISOString().split('T')[0];
+      result.push({
+        date: d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }),
+        intake: intake[sKey] || 0,
+        resolved: output[sKey] || 0
+      });
+    }
+    return result;
+  };
+
+  const selectedRole = roleInfo[inviteRole] || roleInfo.lawyer;
+
   return (
-    <div className={`min-h-screen relative overflow-hidden ${isDark ? "text-white" : "text-gray-900"}`}>
-      <BackgroundLayer theme={theme} />
-      
-      <div className="relative z-10 p-6 md:p-10">
-        <div className="max-w-7xl mx-auto">
-          {/* Navigation Header */}
-          <div className="mb-8">
-            <Link 
-              to="/chat" 
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
-                isDark ? "bg-gray-800/50 hover:bg-gray-700 text-gray-300" : "bg-white hover:bg-gray-50 text-gray-600 shadow-sm"
+    <div className={`flex min-h-screen ${isDark ? "bg-[#0f172a] text-slate-200" : "bg-[#f3f4f6] text-slate-900"}`}>
+
+      {/* Sidebar */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 transition-transform duration-300 transform bg-[#0f172a] text-white flex flex-col ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        } lg:translate-x-0 lg:static lg:inset-0 shadow-2xl`}>
+        <div className="p-6 flex items-center justify-between border-b border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="bg-indigo-600 p-2 rounded-lg">
+              <Shield size={20} className="text-white" />
+            </div>
+            <span className="font-bold text-lg tracking-tight">Admin Console</span>
+          </div>
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400">
+            <X size={20} />
+          </button>
+        </div>
+
+        <nav className="flex-1 p-4 space-y-1">
+          <p className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Navigation</p>
+
+          <button
+            onClick={() => setActiveView("dashboard")}
+            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "dashboard" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
               }`}
+          >
+            <LayoutDashboard size={18} />
+            <span className="text-sm font-semibold">Dashboard</span>
+          </button>
+
+          <button
+            onClick={() => setActiveView("invite")}
+            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "invite" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
+              }`}
+          >
+            <UserPlus size={18} />
+            <span className="text-sm font-semibold">Invite Team</span>
+          </button>
+
+          <button
+            onClick={() => setActiveView("users")}
+            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "users" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
+              }`}
+          >
+            <Users size={18} />
+            <span className="text-sm font-semibold">System Users</span>
+          </button>
+
+          <button
+            onClick={() => setActiveView("queue")}
+            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "queue" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
+              }`}
+          >
+            <Mail size={18} />
+            <span className="text-sm font-semibold">Case Queue</span>
+          </button>
+
+          <button
+            onClick={() => setActiveView("calendar")}
+            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "calendar" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
+              }`}
+          >
+            <Calendar size={18} />
+            <span className="text-sm font-semibold">Calendar</span>
+          </button>
+
+          <Link to="/chat" className="px-3 py-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg flex items-center gap-3 transition-colors group mt-6 border-t border-slate-800 pt-6">
+            <ArrowLeft size={18} />
+            <span className="text-sm font-semibold">Go to Chat</span>
+          </Link>
+        </nav>
+
+        <div className="p-4 border-t border-slate-800">
+          <button
+            onClick={handleLogout}
+            className="w-full px-4 py-2.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg flex items-center gap-3 transition-colors text-sm font-bold"
+          >
+            <LogOut size={18} />
+            Logout
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+        {/* Header */}
+        <header className={`h-16 flex items-center justify-between px-6 border-b sticky top-0 z-40 ${isDark ? "bg-slate-900/80 border-slate-800 backdrop-blur-md" : "bg-white/80 border-slate-200 backdrop-blur-md"
+          }`}>
+          <div className="flex items-center gap-4 flex-1">
+            <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden text-slate-500">
+              <Menu size={24} />
+            </button>
+            <h2 className="text-lg font-bold capitalize">
+              {activeView === 'dashboard' ? 'Admin Dashboard' : activeView.replace('-', ' ')}
+            </h2>
+          </div>
+
+          <div className="relative">
+            <div
+              onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+              className="flex items-center gap-3 pl-2 cursor-pointer group"
             >
-              <ArrowLeft size={18} />
-              <span className="font-medium">Back to Chat</span>
-            </Link>
-          </div>
-
-
-          <header className="mb-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <h1 className={`text-4xl font-black tracking-tight ${isDark ? "text-white" : "text-gray-900"}`}>Admin Dashboard</h1>
-              <p className={isDark ? "text-gray-400" : "text-gray-500"}>Manage system users and professional invitations.</p>
-            </div>
-            <div className={`flex items-center space-x-3 px-6 py-3 rounded-2xl shadow-sm border ${
-              isDark ? "bg-gray-800/50 border-gray-700 text-gray-300" : "bg-white border-gray-100 text-gray-700"
-            }`}>
-              <Shield className="h-5 w-5 text-indigo-500" />
-              <span className="font-bold tracking-wide">ADMINISTRATOR ACCESS</span>
-            </div>
-          </header>
-
-          {/* Stats Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-            {[
-              { label: "Total Users", value: users.length, icon: Users, color: "blue" },
-              { label: "Lawyers", value: users.filter(u => u.role === 'lawyer').length, icon: ArrowUpCircle, color: "indigo" },
-              { label: "Admins", value: users.filter(u => u.role === 'admin').length, icon: Shield, color: "purple" },
-              { label: "Users", value: users.filter(u => u.role === 'user' || !u.role).length, icon: Users, color: "gray" }
-            ].map((stat, idx) => (
-              <div key={idx} className={`p-6 rounded-3xl shadow-sm border flex items-center gap-5 transition-transform hover:scale-[1.02] ${
-                isDark ? "bg-gray-800/40 border-gray-700" : "bg-white border-gray-100"
-              }`}>
-                <div className={`h-14 w-14 rounded-2xl flex items-center justify-center ${
-                  isDark ? `bg-${stat.color}-900/30 text-${stat.color}-400` : `bg-${stat.color}-50 text-${stat.color}-600`
+              <div className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-xs transition-transform group-hover:scale-105 ${isDark ? "bg-indigo-500/20 text-indigo-400" : "bg-indigo-100 text-indigo-700"
                 }`}>
-                  <stat.icon className="h-7 w-7" />
-                </div>
-                <div>
-                  <p className={`text-sm font-bold uppercase tracking-widest ${isDark ? "text-gray-500" : "text-gray-400"}`}>{stat.label}</p>
-                  <h3 className={`text-2xl font-black ${isDark ? "text-white" : "text-gray-900"}`}>{stat.value}</h3>
-                </div>
+                {clerkUser?.firstName?.charAt(0) || "A"}
               </div>
-            ))}
-          </div>
+              <div className="hidden sm:block text-left">
+                <p className="text-xs font-bold leading-none">{clerkUser?.fullName || "Admin"}</p>
+                <p className="text-[10px] text-slate-500 mt-1 tracking-wider uppercase font-black">Logged In</p>
+              </div>
+            </div>
 
-          <div className="flex flex-col gap-10">
-            {/* Invite Form */}
-            <section className="w-full">
-              <div className={`rounded-3xl shadow-sm border p-8 ${
-                isDark ? "bg-gray-800/40 border-gray-700" : "bg-white border-gray-100"
-              }`}>
-                <div className="flex items-center space-x-3 mb-8">
-                  <div className={`p-3 rounded-2xl ${isDark ? "bg-indigo-900/30 text-indigo-400" : "bg-indigo-50 text-indigo-600"}`}>
-                    <UserPlus className="h-6 w-6" />
-                  </div>
-                  <h2 className={`text-2xl font-bold ${isDark ? "text-white" : "text-gray-900"}`}>Invite Member</h2>
-                </div>
-
-                <form onSubmit={handleInvite} className="space-y-6">
-                  <div>
-                    <label className={`block text-sm font-bold mb-2 ${isDark ? "text-gray-400" : "text-gray-700"}`}>Email Address</label>
-                    <input
-                      type="email"
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                      placeholder="name@example.com"
-                      className={`w-full px-5 py-4 rounded-2xl border outline-none transition-all ${
-                        isDark ? "bg-gray-900/50 border-gray-700 text-white focus:ring-2 focus:ring-indigo-900" : "bg-gray-50 border-gray-200 focus:ring-2 focus:ring-indigo-500"
-                      }`}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className={`block text-sm font-bold mb-2 ${isDark ? "text-gray-400" : "text-gray-700"}`}>Assigned Role</label>
-                    <select
-                      value={inviteRole}
-                      onChange={(e) => setInviteRole(e.target.value)}
-                      className={`w-full px-5 py-4 rounded-2xl border outline-none transition-all appearance-none bg-no-repeat bg-[right_1.25rem_center] ${
-                        isDark ? "bg-gray-900/50 border-gray-700 text-white focus:ring-2 focus:ring-indigo-900" : "bg-gray-50 border-gray-200 focus:ring-2 focus:ring-indigo-500"
-                      }`}
-                    >
-                      <option value="lawyer">Lawyer</option>
-                      <option value="admin">Administrator</option>
-                    </select>
-                  </div>
+            {showProfileDropdown && (
+              <div className={`absolute top-full right-0 mt-2 w-48 rounded-xl border shadow-2xl z-[100] overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                }`}>
+                <div className="p-2 space-y-1">
                   <button
-                    type="submit"
-                    disabled={inviteLoading}
-                    className="w-full py-4 px-6 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold rounded-2xl transition-all shadow-lg shadow-indigo-900/20 flex items-center justify-center space-x-3"
+                    onClick={() => { openUserProfile(); setShowProfileDropdown(false); }}
+                    className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-slate-300 hover:bg-slate-800" : "text-slate-600 hover:bg-slate-50"
+                      }`}
                   >
-                    {inviteLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : <Mail className="h-6 w-6" />}
-                    <span>Send Professional Invitation</span>
+                    <User size={14} />
+                    Account
                   </button>
-                </form>
-
-                {/* Notifications */}
-                {message && (
-                  <div className={`mt-6 p-4 rounded-2xl flex items-center justify-between ${
-                    message.type === 'success' 
-                      ? isDark ? 'bg-green-900/30 text-green-400 border border-green-800' : 'bg-green-50 text-green-800 border border-green-100'
-                      : isDark ? 'bg-red-900/30 text-red-400 border border-red-800' : 'bg-red-50 text-red-800 border border-red-100'
-                  }`}>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="h-5 w-5" />
-                      <span className="font-semibold">{message.text}</span>
-                    </div>
-                    <button onClick={() => setMessage(null)} className="text-current opacity-50 hover:opacity-100">
-                      &times;
-                    </button>
-                  </div>
-                )}
+                  <button
+                    onClick={handleLogout}
+                    className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-red-400 hover:bg-red-500/10" : "text-red-600 hover:bg-red-50"
+                      }`}
+                  >
+                    <LogOut size={14} />
+                    Log out
+                  </button>
+                </div>
               </div>
-            </section>
+            )}
+          </div>
+        </header>
 
-            {/* User Table */}
-            <section className="w-full">
-              <div className={`rounded-3xl shadow-sm border overflow-hidden ${
-                isDark ? "bg-gray-800/40 border-gray-700" : "bg-white border-gray-100"
-              }`}>
-                <div className={`p-8 border-b flex flex-col md:flex-row md:items-center justify-between gap-6 ${isDark ? "border-gray-700" : "border-gray-50"}`}>
-                  <div className="flex items-center space-x-3">
-                    <div className={`p-3 rounded-2xl ${isDark ? "bg-gray-700 text-gray-300" : "bg-gray-50 text-gray-600"}`}>
-                      <Users className="h-6 w-6" />
+        {/* Content Section */}
+        <main className="flex-1 overflow-y-auto p-6 md:p-8">
+
+          {/* VIEW: DASHBOARD */}
+          {activeView === "dashboard" && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300 pb-10">
+
+              {/* KPI Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-6">
+                {[
+                  { label: "Administrators", value: adminCount, color: "purple" },
+                  { label: "Active Lawyers", value: lawyerCount, color: "blue" },
+                  { label: "Standard Users", value: standardUserCount, color: "green" },
+                  { label: "Open HITL Tickets", value: tickets.filter(t => t.status === 'open' && !t.assigned_lawyer_id).length, color: "orange" },
+                  { label: "Pending Invitations", value: pendingInvites, color: "amber" },
+                  { label: "Total Platform Users", value: totalUsers, color: "indigo" },
+                ].map((stat, idx) => (
+                  <div key={idx} className={`p-6 rounded-2xl border shadow-sm flex flex-col gap-2 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                    }`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{stat.label}</span>
                     </div>
-                    <h2 className={`text-2xl font-bold ${isDark ? "text-white" : "text-gray-900"}`}>System Users</h2>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl font-black">{stat.value}</span>
+                    </div>
                   </div>
+                ))}
+              </div>
+
+              {/* Row 1: User Role Distribution + Status Breakdown + Onboarding Trend */}
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                {/* Role Distribution */}
+                <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Role Distribution</h3>
+                  <div className="h-[250px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={roleData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                          {roleData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend iconType="circle" />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Status Breakdown */}
+                <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">User Status</h3>
+                  <div className="h-[250px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={statusData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                          {statusData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend iconType="circle" />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Onboarding Trend */}
+                <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Onboarding Trend</h3>
+                  <div className="h-[250px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={getOnboardingTrend()}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#1e293b" : "#f1f5f9"} />
+                        <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={3} dot={{ r: 4 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 2: Ticket Assignment Status + Lawyer Workload */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                {/* Ticket Assignment Status */}
+                <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Ticket Assignment Status</h3>
+                  <div className="h-[300px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={ticketStatusData} layout="vertical">
+                        <XAxis type="number" hide />
+                        <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <Tooltip />
+                        <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
+                          {ticketStatusData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Lawyer Workload */}
+                <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Lawyer Workload</h3>
+                  <div className="h-[300px] w-full">
+                    {lawyerWorkloadData().length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={lawyerWorkloadData()}>
+                          <XAxis dataKey="name" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                          <Tooltip />
+                          <Bar dataKey="tickets" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-slate-500 text-xs font-bold italic opacity-40">
+                        No active assignments currently.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 3: Audit Event Breakdown + Throughput */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                {/* Case Throughput */}
+                <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Case Throughput Metrics</h3>
+                  <div className="h-[300px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={getThroughputData()}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#1e293b" : "#f1f5f9"} />
+                        <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: isDark ? '#0f172a' : '#fff', 
+                            border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
+                            borderRadius: '8px',
+                            fontSize: '10px'
+                          }}
+                        />
+                        <Legend iconType="circle" />
+                        <Bar dataKey="intake" name="New Tickets" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="resolved" name="Resolved" fill="#10b981" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Audit Event Breakdown */}
+                <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Audit Event Breakdown</h3>
+                  <div className="h-[300px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={auditTypeData()} layout="vertical">
+                        <XAxis type="number" hide />
+                        <YAxis dataKey="action" type="category" tick={{ fontSize: 9 }} width={100} axisLine={false} tickLine={false} />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: isDark ? '#0f172a' : '#fff', 
+                            border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
+                            borderRadius: '8px',
+                            fontSize: '10px'
+                          }}
+                        />
+                        <Bar dataKey="count" fill="#a855f7" radius={[0, 4, 4, 0]} barSize={25} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* VIEW: INVITE TEAM */}
+          {activeView === "invite" && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              {/* Header Card */}
+              <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                <h1 className="text-2xl font-bold">Team Invitations</h1>
+                <p className="mt-1 text-sm text-slate-500">
+                  Send secure invitation links to lawyers and administrators with controlled role-based access.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-6">
+                {/* Left Form Card */}
+                <div className={`border rounded-2xl shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                  <div className={`px-7 py-6 border-b ${isDark ? "border-slate-800" : "border-slate-100"}`}>
+                    <div className="flex items-start gap-4">
+                      <div className="w-11 h-11 rounded-xl bg-indigo-600/10 text-indigo-500 flex items-center justify-center">
+                        <UserPlus className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold">Send Official Invitation</h2>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Invite a verified legal professional or administrator to join the platform.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <form onSubmit={handleInvite} className="px-7 py-7 space-y-6">
+                    {/* Email */}
+                    <div>
+                      <label className="block text-xs font-bold tracking-wide text-slate-500 uppercase mb-2">
+                        Email Address
+                      </label>
+                      <div className="relative">
+                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                        <input
+                          type="email"
+                          value={inviteEmail}
+                          onChange={(e) => setInviteEmail(e.target.value)}
+                          placeholder="professional@company.com"
+                          className={`w-full h-14 pl-12 pr-4 rounded-xl border text-sm outline-none transition-all focus:ring-2 focus:ring-indigo-500 ${isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-white border-slate-300 text-slate-950"
+                            }`}
+                          required
+                        />
+                      </div>
+                    </div>
+                    {/* Role */}
+                    <div>
+                      <label className="block text-xs font-bold tracking-wide text-slate-500 uppercase mb-2">
+                        Assign Role
+                      </label>
+                      <select
+                        value={inviteRole}
+                        onChange={(e) => setInviteRole(e.target.value)}
+                        className={`w-full h-14 px-4 rounded-xl border text-sm outline-none appearance-none transition-all focus:ring-2 focus:ring-indigo-500 ${isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-white border-slate-300 text-slate-950"
+                          }`}
+                      >
+                        <option value="lawyer">Lawyer</option>
+                        <option value="admin">Administrator</option>
+                      </select>
+                    </div>
+                    {/* Security Box */}
+                    <div className={`rounded-xl border px-4 py-4 flex items-start gap-3 ${isDark ? "bg-amber-900/10 border-amber-900/20" : "bg-amber-50 border-amber-200"
+                      }`}>
+                      <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5" />
+                      <div>
+                        <p className={`text-sm font-semibold ${isDark ? "text-amber-400" : "text-amber-900"}`}>
+                          Secure invitation required
+                        </p>
+                        <p className={`mt-1 text-sm leading-6 ${isDark ? "text-amber-500/80" : "text-amber-800"}`}>
+                          Invitation links should expire within 24–72 hours and must only be accepted by the invited email address.
+                        </p>
+                      </div>
+                    </div>
+                    {/* Button */}
+                    <button
+                      type="submit"
+                      disabled={inviteLoading}
+                      className="w-full h-14 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold flex items-center justify-center gap-2 transition shadow-xl shadow-indigo-600/20"
+                    >
+                      {inviteLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                      Send Invitation
+                    </button>
+
+                    {showConfirmInvite && !message && (
+                      <div className={`mt-4 p-5 rounded-xl border animate-in fade-in slide-in-from-top-2 duration-300 ${isDark ? "bg-amber-500/5 border-amber-500/20" : "bg-amber-50 border-amber-200"}`}>
+                        <div className="flex items-start gap-4">
+                          <div className={`mt-1 p-2 rounded-lg ${isDark ? "bg-amber-500/10" : "bg-amber-100"}`}>
+                            <AlertTriangle className="w-5 h-5 text-amber-500" />
+                          </div>
+                          <div className="flex-1">
+                            <h4 className="text-sm font-bold">Duplicate Invitation</h4>
+                            <p className="text-xs text-slate-500 mt-1 leading-5">
+                              This user already has a pending invite for <strong>{inviteRole}</strong>.
+                              Are you sure you want to send another one?
+                            </p>
+                            <div className="mt-4 flex items-center gap-3">
+                              <button
+                                onClick={() => handleInvite(null, true)}
+                                className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-colors"
+                              >
+                                Yes, Send Again
+                              </button>
+                              <button
+                                onClick={() => setShowConfirmInvite(false)}
+                                className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${isDark ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {inviteMsg && (
+                      <div className={`mt-4 p-4 rounded-xl flex items-center justify-between text-sm font-bold animate-in fade-in zoom-in-95 ${inviteMsg.type === 'success'
+                        ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                        : 'bg-red-500/10 text-red-500 border border-red-500/20'
+                        }`}>
+                        <div className="flex items-center gap-3">
+                          {inviteMsg.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
+                          {inviteMsg.text}
+                        </div>
+                        <button onClick={() => setInviteMsg(null)} className="text-lg opacity-50 hover:opacity-100">&times;</button>
+                      </div>
+                    )}
+                  </form>
+                </div>
+
+              </div>
+
+              {/* Pending Invitations Table */}
+              <div className={`border rounded-2xl shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                <div className={`px-7 py-5 border-b ${isDark ? "border-slate-800" : "border-slate-100"}`}>
+                  <h2 className="text-lg font-bold">Pending Invitations</h2>
+                  <p className="mt-1 text-sm text-slate-500">Track invitations that are sent but not yet accepted.</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className={`${isDark ? "bg-slate-950/50" : "bg-slate-50"} border-b ${isDark ? "border-slate-800" : "border-slate-200"}`}>
+                      <tr>
+                        <th className="text-left px-7 py-4 font-semibold text-slate-500">Email</th>
+                        <th className="text-left px-7 py-4 font-semibold text-slate-500">Role</th>
+                        <th className="text-left px-7 py-4 font-semibold text-slate-500">Status</th>
+                        <th className="text-left px-7 py-4 font-semibold text-slate-500">Sent On</th>
+                        <th className="text-right px-7 py-4 font-semibold text-slate-500">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className={`divide-y ${isDark ? "divide-slate-800" : "divide-slate-100"}`}>
+                      {invitesLoading ? (
+                        <tr>
+                          <td colSpan="5" className="px-7 py-12 text-center">
+                            <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mx-auto opacity-20" />
+                          </td>
+                        </tr>
+                      ) : invitations.length === 0 ? (
+                        <tr>
+                          <td colSpan="5" className="px-7 py-12 text-center text-slate-500">
+                            No active invitations found in the system.
+                          </td>
+                        </tr>
+                      ) : (
+                        invitations.map((invite) => (
+                          <tr key={invite.invite_id} className={`transition-colors ${isDark ? "hover:bg-slate-800/30" : "hover:bg-slate-50/50"}`}>
+                            <td className="px-7 py-4 font-medium">{invite.email}</td>
+                            <td className="px-7 py-4 capitalize">{invite.role}</td>
+                            <td className="px-7 py-4">
+                              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${invite.status === 'pending'
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                }`}>
+                                {invite.status}
+                              </span>
+                            </td>
+                            <td className="px-7 py-4 text-slate-500">
+                              {new Date(invite.created_at).toLocaleDateString()}
+                            </td>
+                            <td className="px-7 py-4 text-right">
+                              {invite.status === 'pending' ? (
+                                <div className="flex items-center justify-end gap-3">
+                                  <button
+                                    onClick={async () => {
+                                      setInviteEmail(invite.email);
+                                      setInviteRole(invite.role);
+                                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    }}
+                                    className="text-indigo-500 hover:text-indigo-400 font-bold"
+                                  >
+                                    Resend
+                                  </button>
+                                  <button
+                                    onClick={() => handleRevokeInvite(invite.invite_id)}
+                                    className="text-red-500 hover:text-red-400 p-1"
+                                    title="Revoke Invitation"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-slate-600 font-bold uppercase">Accepted</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* VIEW: SYSTEM USERS */}
+          {activeView === "users" && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className={`rounded-xl border shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                }`}>
+                <div className={`p-6 border-b flex flex-col md:flex-row md:items-center justify-between gap-4 ${isDark ? "border-slate-800" : "border-slate-100"
+                  }`}>
+                  <h3 className="font-bold text-lg flex items-center gap-3">
+                    <Users size={22} className="text-slate-400" />
+                    System Members Directory
+                  </h3>
                   <div className="relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                     <input
                       type="text"
-                      placeholder="Search users..."
+                      placeholder="Search by name or email..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className={`pl-12 pr-6 py-3 border-none rounded-2xl text-sm outline-none w-full md:w-80 ${
-                        isDark ? "bg-gray-900/50 text-white focus:ring-2 focus:ring-indigo-900" : "bg-gray-50 focus:ring-2 focus:ring-indigo-500"
-                      }`}
+                      className={`pl-9 pr-4 py-2 rounded-lg border text-sm outline-none w-full md:w-80 transition-all ${isDark ? "bg-slate-950 border-slate-800 focus:border-indigo-500" : "bg-slate-50 border-slate-200 focus:border-indigo-500"
+                        }`}
                     />
                   </div>
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left">
+                  <table className="w-full">
                     <thead>
-                      <tr className={`text-xs uppercase tracking-widest font-black ${isDark ? "bg-gray-900/30 text-gray-500" : "bg-gray-50/50 text-gray-400"}`}>
-                        <th className="px-8 py-5">User</th>
-                        <th className="px-8 py-5">Role</th>
-                        <th className="px-8 py-5 text-right">Actions</th>
+                      <tr className={`text-left ${isDark ? "bg-slate-950/50" : "bg-slate-50/50"}`}>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Access Role</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Status</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">User Details</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className={`divide-y ${isDark ? "divide-gray-700" : "divide-gray-50"}`}>
+                    <tbody className={`divide-y ${isDark ? "divide-slate-800" : "divide-slate-100"}`}>
                       {loading ? (
                         <tr>
-                          <td colSpan="3" className="px-8 py-20 text-center">
-                            <Loader2 className="h-10 w-10 animate-spin text-indigo-500 mx-auto" />
+                          <td colSpan="5" className="px-8 py-20 text-center">
+                            <Loader2 size={32} className="animate-spin text-indigo-500 mx-auto opacity-20" />
                           </td>
-                        </tr>
-                      ) : filteredUsers.length === 0 ? (
-                        <tr>
-                          <td colSpan="3" className={`px-8 py-20 text-center text-lg ${isDark ? "text-gray-600" : "text-gray-400"}`}>No users found matching your search.</td>
                         </tr>
                       ) : (
                         filteredUsers.map((user) => (
-                          <tr key={user.user_id} className={`transition-colors ${isDark ? "hover:bg-gray-700/30" : "hover:bg-gray-50/50"}`}>
+                          <tr key={user.user_id} className={`group transition-colors ${isDark ? "hover:bg-slate-800/30" : "hover:bg-slate-50/50"
+                            }`}>
                             <td className="px-8 py-6">
-                              <div className="flex items-center space-x-4">
-                                <div className={`h-12 w-12 rounded-2xl flex items-center justify-center font-black text-lg ${
-                                  isDark ? "bg-indigo-900/40 text-indigo-300" : "bg-indigo-100 text-indigo-700"
-                                }`}>
+                              <div className="flex items-center gap-5">
+                                <div className={`h-11 w-11 rounded-xl flex items-center justify-center font-bold text-sm ${isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"
+                                  }`}>
                                   {(user.user_profiles?.display_name || user.email || "?").charAt(0).toUpperCase()}
                                 </div>
-                                <div>
-                                  <p className={`font-bold text-lg ${isDark ? "text-white" : "text-gray-900"}`}>{user.user_profiles?.display_name || "New User"}</p>
-                                  <p className={`text-sm ${isDark ? "text-gray-500" : "text-gray-500"}`}>{user.email}</p>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-bold truncate">{user.user_profiles?.display_name || "Active Member"}</p>
+                                  <p className="text-[11px] text-slate-500 truncate font-medium">{user.email}</p>
                                 </div>
                               </div>
                             </td>
                             <td className="px-8 py-6">
-                              <span className={`inline-flex items-center px-4 py-1 rounded-full text-[10px] font-black tracking-widest uppercase ${
-                                user.role === 'admin' ? isDark ? 'bg-purple-900/40 text-purple-300' : 'bg-purple-100 text-purple-700' :
-                                user.role === 'lawyer' ? isDark ? 'bg-blue-900/40 text-blue-300' : 'bg-blue-100 text-blue-700' : 
-                                isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700'
+                              <span className={`inline-flex items-center px-4 py-1.5 rounded-full text-[10px] font-black tracking-widest uppercase border ${user.role === 'admin'
+                                ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
+                                user.role === 'lawyer'
+                                  ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                                  'bg-slate-800 text-slate-400 border-slate-700'
                                 }`}>
                                 {user.role || 'user'}
                               </span>
                             </td>
+                            <td className="px-8 py-6">
+                              <div className="flex items-center gap-2">
+                                <div className={`h-1.5 w-1.5 rounded-full ${user.status !== 'inactive' ? "bg-emerald-500" : "bg-slate-400"}`} />
+                                <span className={`text-[10px] font-black uppercase tracking-widest ${user.status !== 'inactive' ? "text-emerald-500" : "text-slate-400"}`}>
+                                  {user.status === 'inactive' ? 'Inactive' : (user.status || 'Active')}
+                                </span>
+                              </div>
+                            </td>
                             <td className="px-8 py-6 text-right">
-                              <div className="flex flex-col sm:flex-row items-center justify-end gap-3">
-                                {user.role !== 'lawyer' && (
-                                  <button
-                                    onClick={() => handlePromote(user.user_id, 'lawyer')}
-                                    className={`whitespace-nowrap px-4 py-2 rounded-xl transition-all text-xs font-black border flex items-center gap-2 ${
-                                      isDark 
-                                        ? "bg-blue-900/20 text-blue-400 border-blue-800 hover:bg-blue-800 hover:text-white" 
-                                        : "bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-600 hover:text-white"
-                                    }`}
-                                  >
-                                    <ArrowUpCircle className="h-4 w-4" />
-                                    <span>Promote to Lawyer</span>
+                              <button
+                                onClick={() => setViewUser(user)}
+                                className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all ${isDark ? "border-slate-800 text-slate-400 hover:bg-slate-800" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                              >
+                                View Profile
+                              </button>
+                            </td>
+                            <td className="px-8 py-6 text-right">
+                              <div className="flex items-center justify-end">
+                                {clerkUser?.id === user.clerk_user_id ? (
+                                  <button disabled className="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed">
+                                    Current User
                                   </button>
-                                )}
-                                {user.role !== 'admin' && (
+                                ) : user.status === 'inactive' ? (
+                                  <button disabled className="px-4 py-2 rounded-lg text-xs font-bold bg-slate-50 text-slate-400 border border-slate-200 cursor-not-allowed">
+                                    Suspended
+                                  </button>
+                                ) : (
                                   <button
-                                    onClick={() => handlePromote(user.user_id, 'admin')}
-                                    className={`whitespace-nowrap px-4 py-2 rounded-xl transition-all text-xs font-black border flex items-center gap-2 ${
-                                      isDark 
-                                        ? "bg-purple-900/20 text-purple-400 border-purple-800 hover:bg-purple-800 hover:text-white" 
-                                        : "bg-purple-50 text-purple-600 border-purple-100 hover:bg-purple-600 hover:text-white"
-                                    }`}
+                                    onClick={() => setConfirmModal({ show: true, user: user })}
+                                    className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all text-red-500 border-red-500/20 hover:bg-red-500/5`}
                                   >
-                                    <Shield className="h-4 w-4" />
-                                    <span>Promote to Admin</span>
+                                    Suspend
                                   </button>
                                 )}
                               </div>
@@ -303,10 +959,343 @@ export default function AdminDashboard() {
                   </table>
                 </div>
               </div>
-            </section>
+            </div>
+          )}
+
+          {/* VIEW: TICKETS (QUEUE) */}
+          {activeView === "queue" && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className={`rounded-xl border shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                }`}>
+                <div className={`p-6 border-b flex flex-col md:flex-row md:items-center justify-between gap-4 ${isDark ? "border-slate-800" : "border-slate-100"
+                  }`}>
+                  <div>
+                    <h3 className="font-bold text-lg">Case Queue</h3>
+                    <p className="text-sm text-slate-500 mt-1">Review and manage legal matters escalated by users.</p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className={`text-left ${isDark ? "bg-slate-950/50" : "bg-slate-50/50"}`}>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Ticket ID</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity Details</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Matter Summary</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Assignment Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className={`divide-y ${isDark ? "divide-slate-800" : "divide-slate-100"}`}>
+                      {tickets.length === 0 ? (
+                        <tr>
+                          <td colSpan="4" className="px-8 py-20 text-center text-slate-500">
+                            No active tickets in the queue.
+                          </td>
+                        </tr>
+                      ) : (
+                        tickets.map((ticket) => (
+                          <tr key={ticket.ticket_id} className={`group transition-colors ${isDark ? "hover:bg-slate-800/30" : "hover:bg-slate-50/50"
+                            }`}>
+                            <td className="px-8 py-6">
+                              <span className="font-mono text-xs text-slate-500">#{ticket.ticket_id.substring(0, 8)}</span>
+                            </td>
+                            <td className="px-8 py-6">
+                              <div className="flex items-center gap-4">
+                                <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold text-sm ${isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"
+                                  }`}>
+                                  {(ticket.user_display_name || ticket.user_email || "U").charAt(0).toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-bold truncate">{ticket.user_display_name || "Anonymous"}</p>
+                                  <p className="text-[10px] text-slate-500 truncate font-medium">{ticket.user_email}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-8 py-6">
+                              {!ticket.assigned_lawyer_id && ticket.conversation_summary ? (
+                                <div className="max-w-xs">
+                                  <p className="text-[11px] text-slate-500 italic leading-relaxed line-clamp-2">
+                                    "{ticket.conversation_summary}"
+                                  </p>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest opacity-30">
+                                  {ticket.assigned_lawyer_id ? "Case in Progress" : "No Summary"}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-8 py-6 text-right">
+                              {ticket.assigned_lawyer_id ? (
+                                <div className="flex items-center justify-end gap-2 text-xs font-bold text-slate-400">
+                                  <User size={14} />
+                                  {users.find(u => u.user_id === ticket.assigned_lawyer_id)?.user_profiles?.display_name || "Legal Team"}
+                                </div>
+                              ) : (
+                                <select
+                                  onChange={(e) => handleAssignTicket(ticket.ticket_id, e.target.value)}
+                                  className={`text-xs font-bold py-2 px-3 rounded-lg border outline-none ${isDark ? "bg-slate-950 border-slate-800 text-slate-300" : "bg-white border-slate-200 text-slate-600"
+                                    }`}
+                                >
+                                  <option value="">Assign Lawyer...</option>
+                                  {users.filter(u => u.role?.toLowerCase() === 'lawyer').map(lawyer => (
+                                    <option key={lawyer.user_id} value={lawyer.user_id}>
+                                      {lawyer.user_profiles?.display_name || lawyer.email}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* VIEW: CALENDAR */}
+          {activeView === "calendar" && (
+            <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
+              <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+                  <div>
+                    <h1 className="text-2xl font-bold">Legal Schedule</h1>
+                    <p className="text-sm text-slate-500 mt-1">Manage court dates, client consultations, and team meetings.</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button className={`p-2 rounded-lg border ${isDark ? "border-slate-800 hover:bg-slate-800" : "border-slate-200 hover:bg-slate-50"}`}>
+                      <ArrowLeft size={16} />
+                    </button>
+                    <span className="font-bold text-sm px-4">May 2026</span>
+                    <button className={`p-2 rounded-lg border ${isDark ? "border-slate-800 hover:bg-slate-800" : "border-slate-200 hover:bg-slate-50"}`}>
+                      <Plus size={16} className="rotate-45" />
+                    </button>
+                    <button className="ml-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2">
+                      <Plus size={16} />
+                      Add Event
+                    </button>
+                  </div>
+                </div>
+
+                {/* Calendar Grid */}
+                <div className="grid grid-cols-7 gap-px bg-slate-200 dark:bg-slate-800 rounded-xl overflow-hidden border dark:border-slate-800">
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                    <div key={day} className={`py-3 text-center text-[10px] font-black uppercase tracking-widest ${isDark ? "bg-slate-950 text-slate-500" : "bg-slate-50 text-slate-400"}`}>
+                      {day}
+                    </div>
+                  ))}
+
+                  {/* Empty slots for start of month (May 2026 starts on Friday) */}
+                  {[...Array(5)].map((_, i) => (
+                    <div key={`empty-${i}`} className={`h-32 p-4 ${isDark ? "bg-slate-900/50" : "bg-slate-50/50"}`} />
+                  ))}
+
+                  {/* Days of Month */}
+                  {[...Array(31)].map((_, i) => {
+                    const day = i + 1;
+                    const isToday = day === 12;
+
+                    return (
+                      <div key={day} className={`h-32 p-4 transition-colors relative group ${isDark ? "bg-slate-900 hover:bg-slate-800/50" : "bg-white hover:bg-slate-50"}`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-sm font-bold ${isToday ? "h-7 w-7 rounded-full bg-indigo-600 text-white flex items-center justify-center -mt-1 -ml-1" : "text-slate-500"}`}>
+                            {day}
+                          </span>
+                        </div>
+                        <button className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg bg-indigo-600 text-white shadow-lg">
+                          <Plus size={12} />
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  {/* Empty slots for end of month */}
+                  {[...Array(6)].map((_, i) => (
+                    <div key={`end-${i}`} className={`h-32 p-4 ${isDark ? "bg-slate-900/50" : "bg-slate-50/50"}`} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+        </main>
+      </div>
+
+      {/* CONFIRMATION MODAL */}
+      {confirmModal.show && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`w-full max-w-md rounded-2xl border shadow-2xl overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+            <div className="p-6 border-b border-slate-800/10">
+              <div className="flex items-center gap-4 text-red-500 mb-2">
+                <AlertTriangle size={24} />
+                <h3 className="text-xl font-bold">Suspend User Access?</h3>
+              </div>
+              <p className="text-sm text-slate-500 leading-relaxed">
+                This will deactivate the user account and prevent access to the system immediately.
+              </p>
+            </div>
+
+            <div className="p-6 bg-slate-50/50 dark:bg-slate-950/20 space-y-4">
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <span className="text-slate-500 font-bold uppercase tracking-wider">User:</span>
+                <span className="col-span-2 font-bold">{confirmModal.user?.user_profiles?.display_name || "Active Member"}</span>
+
+                <span className="text-slate-500 font-bold uppercase tracking-wider">Email:</span>
+                <span className="col-span-2 font-bold truncate">{confirmModal.user?.email}</span>
+
+                <span className="text-slate-500 font-bold uppercase tracking-wider">Role:</span>
+                <span className="col-span-2">
+                  <span className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 font-black uppercase text-[9px] tracking-widest border border-blue-500/20">
+                    {confirmModal.user?.role}
+                  </span>
+                </span>
+              </div>
+            </div>
+
+            <div className="p-6 flex items-center justify-end gap-3 border-t border-slate-800/10">
+              <button
+                onClick={() => setConfirmModal({ show: false, user: null })}
+                className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${isDark ? "text-slate-400 hover:bg-slate-800" : "text-slate-600 hover:bg-slate-100"}`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleToggleUserStatus(confirmModal.user?.user_id)}
+                className="px-6 py-2 bg-red-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-500/20 hover:bg-red-600 transition-colors"
+              >
+                Suspend Access
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* USER DETAILS SIDE DRAWER */}
+      {viewUser && (
+        <>
+          <div
+            onClick={() => setViewUser(null)}
+            className="fixed inset-0 z-[110] bg-slate-950/40 backdrop-blur-[2px] animate-in fade-in duration-300"
+          />
+          <div className={`fixed inset-y-0 right-0 z-[120] w-full max-w-md shadow-2xl transform transition-transform duration-500 ease-out animate-in slide-in-from-right duration-500 border-l ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"
+            }`}>
+            <div className="flex flex-col h-full">
+              {/* Drawer Header */}
+              <div className="p-6 border-b border-slate-800/10 flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold">User Details</h3>
+                  <p className="text-[10px] text-slate-500 mt-1 uppercase font-black tracking-widest">Management Profile</p>
+                </div>
+                <button
+                  onClick={() => setViewUser(null)}
+                  className={`p-2 rounded-lg transition-colors ${isDark ? "hover:bg-slate-800 text-slate-400" : "hover:bg-slate-50 text-slate-500"}`}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Drawer Content */}
+              <div className="flex-1 overflow-y-auto p-8 space-y-10">
+                {/* Profile Header */}
+                <div className="flex flex-col items-center text-center">
+                  <div className={`h-24 w-24 rounded-3xl flex items-center justify-center font-black text-3xl mb-4 shadow-xl ${isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"
+                    }`}>
+                    {(viewUser.user_profiles?.display_name || viewUser.email || "?").charAt(0).toUpperCase()}
+                  </div>
+                  <h4 className="text-xl font-bold">{viewUser.user_profiles?.display_name || "Active Member"}</h4>
+                  <p className="text-sm text-slate-500">{viewUser.email}</p>
+
+                  <div className="flex gap-2 mt-4">
+                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${viewUser.role === 'admin'
+                      ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
+                      viewUser.role === 'lawyer'
+                        ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                        'bg-slate-800 text-slate-400 border-slate-700'
+                      }`}>
+                      {viewUser.role || 'user'}
+                    </span>
+                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${viewUser.status !== 'suspended' && viewUser.status !== 'inactive'
+                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                      : 'bg-slate-100 text-slate-400 border-slate-200'
+                      }`}>
+                      {viewUser.status === 'suspended' || viewUser.status === 'inactive' ? 'Suspended' : 'Active'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Identity Information */}
+                <div className="space-y-6">
+                  <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400 border-b pb-2">Identity Details</h5>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-slate-500">System ID</span>
+                      <span className="text-xs font-mono font-bold text-indigo-500">#{viewUser.user_id.substring(0, 12)}...</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-slate-500">Joined Date</span>
+                      <span className="text-xs font-bold">{new Date(viewUser.created_at).toLocaleDateString(undefined, { dateStyle: 'long' })}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-slate-500">Auth Method</span>
+                      <span className="text-xs font-bold flex items-center gap-1.5">
+                        <ShieldCheck size={14} className="text-emerald-500" />
+                        Clerk Managed
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Account Security */}
+                <div className="space-y-6">
+                  <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400 border-b pb-2">Account Security</h5>
+                  <div className={`p-4 rounded-xl border ${isDark ? "bg-slate-950/50 border-slate-800" : "bg-slate-50 border-slate-200"}`}>
+                    <p className="text-xs text-slate-500 leading-relaxed italic">
+                      This user's authentication and session tokens are managed via Clerk. Administrative actions here will affect platform-level access and database visibility.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Drawer Footer */}
+              <div className="p-6 border-t border-slate-800/10 bg-slate-50/50 dark:bg-slate-950/20">
+                <button
+                  onClick={() => setViewUser(null)}
+                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-center gap-2"
+                >
+                  Close Profile
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+      {/* Floating Notifications */}
+      {queueMsg && (
+        <div className="fixed bottom-8 right-8 z-[200] w-full max-w-md animate-in slide-in-from-bottom-4 duration-500">
+          <div className={`p-5 rounded-2xl flex items-center justify-between text-sm font-bold shadow-2xl backdrop-blur-md border ${queueMsg.type === 'success'
+            ? 'bg-emerald-600/90 text-white border-emerald-400'
+            : 'bg-red-600/90 text-white border-red-400'
+            }`}>
+            <div className="flex items-center gap-4">
+              <div className="h-10 w-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                {queueMsg.type === 'success' ? <CheckCircle size={20} /> : <AlertTriangle size={20} />}
+              </div>
+              <div>
+                <p className="text-[10px] opacity-70 uppercase tracking-widest font-black mb-0.5">System Notification</p>
+                <p className="leading-tight">{queueMsg.text}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setQueueMsg(null)}
+              className="ml-4 p-2 hover:bg-white/10 rounded-lg transition-colors flex-shrink-0"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

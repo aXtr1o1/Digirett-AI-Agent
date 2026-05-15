@@ -14,6 +14,10 @@ function ClerkWithRouter({ children }) {
     <ClerkProvider
       publishableKey={clerkPubKey}
       navigate={(to) => navigate(to)}
+      afterSignInUrl="/"
+      afterSignUpUrl="/"
+      signInUrl="/sign-in"
+      signUpUrl="/sign-up"
     >
       {children}
     </ClerkProvider>

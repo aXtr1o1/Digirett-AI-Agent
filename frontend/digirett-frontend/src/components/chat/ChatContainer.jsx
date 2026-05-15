@@ -4,6 +4,7 @@ import MessageList from "./MessageList";
 import MessageComposer from "./MessageComposer";
 import ErrorMessage from "../common/ErrorMessage";
 import useChat from "../../hooks/useChat";
+import EscalationStatusCard from "./EscalationStatusCard";
 
 const ChatContainer = ({
   conversationId,
@@ -11,6 +12,7 @@ const ChatContainer = ({
   moveConversationToTop,
   userId,
   theme = "dark",
+  onEscalated, // New prop
 }) => {
   const isDark = theme === "dark";
   const { user } = useUser();
@@ -44,6 +46,13 @@ const ChatContainer = ({
     userId,
   );
 
+  // Notify parent of escalation status
+  React.useEffect(() => {
+    if (onEscalated) {
+      onEscalated(isEscalated);
+    }
+  }, [isEscalated, onEscalated]);
+
   return (
     <div className="flex flex-col h-full w-full bg-transparent">
       {(error || uploadError) && (
@@ -68,12 +77,15 @@ const ChatContainer = ({
             isProcessingDoc={isProcessingDoc}
             theme={theme}
           />
+          
+          {/* ✅ Status Card removed from here — moved to Right Sidebar */}
         </div>
       </div>
 
       <div className="flex-shrink-0 bg-transparent">
         <div className="max-w-2xl mx-auto w-full px-4 py-4">
           <MessageComposer
+            key={conversationId || "new-chat"}
             onSend={sendMessage}
             disabled={isLoading || isChatDisabled}
             isStreaming={isStreaming}
@@ -89,6 +101,7 @@ const ChatContainer = ({
             onEscalate={escalate}
             isEscalated={isEscalated}
             showEscalate={role === "user" || !role}
+            messageCount={messages.length}
           />
         </div>
         <p className={`text-center text-xs pb-3 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
@@ -99,4 +112,4 @@ const ChatContainer = ({
   );
 };
 
-export default ChatContainer;
+export default ChatContainer;
