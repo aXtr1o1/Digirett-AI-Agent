@@ -39,17 +39,18 @@ _message_service      = None
 _llm_service          = None
 
 
-_message_service      = None
-_llm_service          = None
 _user_service         = None
+_document_service     = None
 
 
-def set_services(rag_service, conversation_service, message_service, llm_service, user_service=None) -> None:
-    global _rag_service, _conversation_service, _message_service, _llm_service, _user_service
+def set_services(rag_service, conversation_service, message_service, llm_service, document_service, user_service=None) -> None:
+    global _rag_service, _conversation_service, _message_service, _llm_service, _document_service, _user_service
     _rag_service          = rag_service
     _conversation_service = conversation_service
     _message_service      = message_service
     _llm_service          = llm_service
+    _document_service     = document_service
+    _user_service         = user_service
     
     # We load user_service to get the internal user ID. 
     # Optional parameter because of circular init ordering in main.py, but it will be set.
@@ -302,7 +303,7 @@ async def chat_websocket(websocket: WebSocket):
                 })
                 continue   # keep connection open, wait for next message
 
-            # Process one full query and stream all events back
+    # Process one full query and stream all events back
             await _handle_query(websocket, chat_request, internal_user_id, clerk_user)
 
     except WebSocketDisconnect:
@@ -354,10 +355,36 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
                 await websocket.send_json({"type": "error", "message": "Not authorized to access this conversation"})
                 return
 
-            existing          = _message_service.get_conversation_messages(
+            existing = _message_service.get_conversation_messages(
                 conversation_id=conversation_id, limit=1,
             )
             is_first_exchange = len(existing) == 0
+
+        # ── Step 1.5: Enforce Quotas ───────────────────────────
+        # Check turn count and token count from DocumentService session (Authoritative for User)
+        if _document_service:
+            role = clerk_user.role
+            # 1. Check Turn Limit
+            allowed_turn, turns_rem = _document_service.check_turn_limit(user_id, user_role=role)
+            if not allowed_turn:
+                logger.warning(f"🚫 Quota exceeded (Turns) | user={user_id}")
+                await websocket.send_json({
+                    "type": "error", 
+                    "error_type": "quota_exceeded",
+                    "message": f"Message limit reached. Your session resets every 4 hours."
+                })
+                return
+
+            # 2. Check Token Limit
+            allowed_token, tokens_rem = _document_service.check_token_limit(user_id, user_role=role)
+            if not allowed_token:
+                logger.warning(f"🚫 Quota exceeded (Tokens) | user={user_id}")
+                await websocket.send_json({
+                    "type": "error", 
+                    "error_type": "quota_exceeded",
+                    "message": f"Token limit reached. Your session resets every 4 hours."
+                })
+                return
 
     
         async for event in _rag_service.process_query(
@@ -609,6 +636,16 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
                         )
 
                 await websocket.send_json({"type": "complete", "metadata": metadata})
+
+                # ── Step 6: Update Quota Counters ─────────────────────
+                if _document_service:
+                    _document_service.increment_turn_count(user_id)
+                    
+                    # Approximate token count (chars / 4 is a common heuristic)
+                    # Input tokens (query) + Output tokens (full_answer)
+                    input_tokens = len(chat_request.query) // 4
+                    output_tokens = len(full_answer) // 4
+                    _document_service.increment_token_count(user_id, input_tokens + output_tokens)
 
             elif event_type == "error":
                 await websocket.send_json(event)

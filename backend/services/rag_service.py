@@ -164,44 +164,7 @@ class RAGService:
         try:
             logger.info(f"🤖 RAGService: processing query '{query[:60]}'")
 
-            # ── Session turn limit check ───────────────────────────────────
-            if self._document_service:
-                turn_allowed, turns_remaining = self._document_service.check_turn_limit(
-                    conversation_id
-                )
-                if not turn_allowed:
-                    limit_msg = (
-                        "Du har nådd grensen på 10 samtaler per økt (4 timer). "
-                        "Økten din tilbakestilles automatisk etter 4 timer fra start."
-                        "  |  "
-                        "You have reached the 10-conversation limit per session (4 hours). "
-                        "Your session resets automatically after 4 hours."
-                    )
-                    logger.warning("⛔ Session turn limit exceeded")
-                    yield {
-                        "type": "intent",
-                        "data": {"intent": "BLOCKED", "language": "unknown"},
-                    }
-                    for char in limit_msg:
-                        yield {"type": "token", "data": char}
-                    yield {
-                        "type": "complete",
-                        "metadata": {
-                            "intent": "BLOCKED",
-                            "language": "unknown",
-                            "full_answer": limit_msg,
-                            "score": 0.0,
-                            "confidence": "Session turn limit reached",
-                            "rag_chunks": [],
-                            "tokens_generated": 0,
-                        },
-                    }
-                    return
-
-                self._document_service.increment_turn_count(conversation_id)
-                logger.info(
-                    f"🔢 Turn {10 - turns_remaining + 1}/10 | conv={conversation_id}"
-                )
+            # Quotas are now handled at the route level (chat.py)
 
             # ── Load history ───────────────────────────────────────────────
             history = self._orchestrator.load_history(
