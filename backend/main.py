@@ -158,6 +158,7 @@ async def lifespan(app: FastAPI):
             conversation_service=conversation_service,
             message_service=message_service,
             llm_service=llm_service,
+            document_service=document_service,  # ← added
             user_service=user_service,
         )
         conversations.set_services(

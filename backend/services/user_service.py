@@ -343,10 +343,17 @@ class UserService:
                 
             # 4. Promote user
             success = False
+            user_info = self.get_user_by_id(user_id)
+            current_role = user_info.get("role", "user") if user_info else "user"
+
             if role == "lawyer":
-                success = self.promote_to_lawyer(user_id=user_id, admin_id="system", bar_license="PENDING", bar_council="PENDING")
+                if current_role == "admin":
+                    # DUAL ROLE SCENARIO: Keep as Admin, just add Lawyer profile
+                    logger.info(f"🛡️ Dual-role detected for Admin {user_id}. Creating lawyer profile...")
+                    success = self.enable_lawyer_dashboard_for_admin(user_id=user_id, admin_id=user_id)
+                else:
+                    success = self.promote_to_lawyer(user_id=user_id, admin_id=None, bar_license="PENDING", bar_council="PENDING")
             elif role == "admin":
-                user_info = self.get_user_by_id(user_id)
                 full_name = user_info.get("user_name") if user_info else "Admin"
                 success = self.promote_to_admin(user_id=user_id, admin_id="system", full_name=full_name)
                 
@@ -375,7 +382,8 @@ class UserService:
             existing_user_resp = self._supabase.table("users").select("role").eq("email", email).execute()
             if existing_user_resp.data:
                 existing_role = existing_user_resp.data[0].get("role", "user")
-                if existing_role in ["admin", "lawyer"]:
+                # Allow Admin to invite themselves as a Lawyer
+                if existing_role == "lawyer" or (existing_role == "admin" and role == "admin"):
                     logger.warning(f"⚠️ User {email} already has role {existing_role}. Invitation blocked.")
                     return False
 
@@ -450,7 +458,7 @@ class UserService:
                 "bar_license_number": bar_license,
                 "bar_council": bar_council,
                 "verification_status": "approved",
-                "verified_by": admin_id,
+                "verified_by": admin_id if admin_id != "system" else None,
                 "verified_at": now,
                 "updated_at": now
             }).execute()
@@ -503,6 +511,38 @@ class UserService:
             logger.error(f"❌ promote_to_admin failed | {user_id} | {exc}")
             return False
 
+    def enable_lawyer_dashboard_for_admin(self, user_id: str, admin_id: str) -> bool:
+        """Adds a lawyer profile to an existing admin without changing their role."""
+        try:
+            user = self.get_user_by_id(user_id)
+            if not user or user.get("role") != "admin":
+                return False
+
+            now = datetime.utcnow().isoformat()
+            
+            # 1. Ensure lawyer_profiles entry exists
+            clerk_details = self._get_clerk_user_details(user["clerk_user_id"])
+            full_name = clerk_details.get("full_name") if clerk_details else user.get("user_name")
+
+            self._supabase.table("lawyer_profiles").upsert({
+                "lawyer_id": user_id,
+                "full_name": full_name,
+                "verification_status": "approved",
+                "verified_by": admin_id if admin_id != "system" else None,
+                "verified_at": now,
+                "updated_at": now
+            }).execute()
+
+            # 2. Sync Clerk Metadata with the new flag
+            self._sync_clerk_metadata(user["clerk_user_id"], {"role": "admin", "has_lawyer_dashboard": True})
+            
+            # 3. Audit
+            self._log_audit("admin.dual_role_enabled", admin_id, {"target_user_id": user_id})
+            return True
+        except Exception as exc:
+            logger.error(f"❌ enable_lawyer_dashboard_for_admin failed | {user_id} | {exc}")
+            return False
+
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     def _get_clerk_user_details(self, clerk_user_id: str) -> Optional[Dict[str, Any]]:
         """Fetch user details from Clerk API."""
@@ -529,21 +569,25 @@ class UserService:
 
 
     def _sync_clerk_role(self, clerk_user_id: str, role: str) -> None:
-        """Updates the publicMetadata.role for a user in Clerk."""
+        """Backward compatible wrapper for _sync_clerk_metadata."""
+        self._sync_clerk_metadata(clerk_user_id, {"role": role})
+
+    def _sync_clerk_metadata(self, clerk_user_id: str, metadata: Dict[str, Any]) -> None:
+        """Updates the publicMetadata in Clerk with flexible keys."""
         if not settings.CLERK_SECRET_KEY or not clerk_user_id:
             return
         try:
             url = f"https://api.clerk.com/v1/users/{clerk_user_id}/metadata"
-            payload = {"public_metadata": {"role": role}}
+            payload = {"public_metadata": metadata}
             headers = {"Authorization": f"Bearer {settings.CLERK_SECRET_KEY}", "Content-Type": "application/json"}
             
             resp = httpx.patch(url, json=payload, headers=headers)
             if resp.status_code == 200:
-                logger.info(f"🔑 Clerk role synced | {clerk_user_id} → {role}")
+                logger.info(f"🔑 Clerk metadata synced | {clerk_user_id} → {metadata}")
             else:
-                logger.warning(f"⚠️ Clerk role sync failed | {clerk_user_id} | status={resp.status_code} | {resp.text}")
+                logger.warning(f"⚠️ Clerk metadata sync failed | {clerk_user_id} | status={resp.status_code} | {resp.text}")
         except Exception as exc:
-            logger.error(f"❌ Clerk role sync error | {clerk_user_id} | {exc}")
+            logger.error(f"❌ Clerk metadata sync error | {clerk_user_id} | {exc}")
 
     def _log_audit(self, action: str, performer_id: Optional[str], payload: Dict[str, Any]) -> None:
         """Saves an entry to the audit_logs table."""

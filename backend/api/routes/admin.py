@@ -370,14 +370,14 @@ async def admin_list_lawyers(
     Includes their Cal.com configuration status.
     """
     try:
+        # We fetch all users who HAVE a lawyer profile (!inner join), regardless of their role
         resp = (
             _user_service._supabase.table("users")
             .select(
-                "user_id, email, user_name, "
+                "user_id, email, user_name, role, "
                 "user_profiles(display_name), "
-                "lawyer_profiles(cal_event_type_id, cal_api_key)"
+                "lawyer_profiles!inner(cal_event_type_id, cal_api_key, verification_status)"
             )
-            .eq("role", "lawyer")
             .order("created_at", desc=False)
             .execute()
         )
