@@ -11,7 +11,7 @@ import {
   Trash2,
   Sun,
   Moon,
-    LogOut,
+  LogOut,
   User,
   Shield,
   Gavel
@@ -64,7 +64,7 @@ const Sidebar = ({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [menuOpen]);
-  
+
   const handleEscalate = () => {
     // This is a placeholder for now to avoid the crash.
     // In a real scenario, this would trigger the HITL escalation.
@@ -85,7 +85,7 @@ const Sidebar = ({
     features.push({ id: "admin", label: "Admin Panel", icon: Shield, path: "/admin" });
   }
   if (role === "lawyer") {
-    features.push({ id: "lawyer", label: "Case Queue", icon: FileText, path: "/lawyer" });
+    features.push({ id: "lawyer", label: "Matter Queue", icon: FileText, path: "/lawyer" });
   }
 
   const handleFeatureClick = (feature) => {
@@ -158,7 +158,7 @@ const Sidebar = ({
               flexShrink: 0,
             }}
           >
-            <img src="/digirett-logo.png" alt="DigiRett Logo" style={{ width: "32px", height: "32px" }} />
+            <img src="/user-chat-logo.png" alt="DigiRett Logo" style={{ width: "32px", height: "32px" }} />
           </div>
           <span style={{
             fontSize: "16px",
@@ -433,7 +433,7 @@ const Sidebar = ({
             return (
               <button
                 key={feature.id}
-                                onClick={() => {
+                onClick={() => {
                   handleFeatureClick(feature);
                 }}
                 style={{
@@ -446,13 +446,13 @@ const Sidebar = ({
                   fontSize: "13px",
                   fontWeight: "500",
                   backgroundColor: isActive
-                      ? isDark
-                        ? "rgba(59, 130, 246, 0.15)"
-                        : "rgba(59, 130, 246, 0.1)"
-                      : "transparent",
+                    ? isDark
+                      ? "rgba(59, 130, 246, 0.15)"
+                      : "rgba(59, 130, 246, 0.1)"
+                    : "transparent",
                   color: isActive
-                      ? isDark ? "#3B82F6" : "#2563EB"
-                      : isDark ? "#d1d5db" : "#374151",
+                    ? isDark ? "#3B82F6" : "#2563EB"
+                    : isDark ? "#d1d5db" : "#374151",
                   border: "none",
                   cursor: "pointer",
                   transition: "all 0.15s",
@@ -471,17 +471,17 @@ const Sidebar = ({
                   }
                 }}
               >
-                  <Icon
-                    size={16}
-                    style={{
-                      flexShrink: 0,
-                      color: isActive
-                        ? (isDark ? "#3B82F6" : "#2563EB")
-                        : (isDark ? "#d1d5db" : "#374151")
-                    }}
-                  />
-                  <span>{feature.label}</span>
-                </button>
+                <Icon
+                  size={16}
+                  style={{
+                    flexShrink: 0,
+                    color: isActive
+                      ? (isDark ? "#3B82F6" : "#2563EB")
+                      : (isDark ? "#d1d5db" : "#374151")
+                  }}
+                />
+                <span>{feature.label}</span>
+              </button>
             );
           })}
         </div>

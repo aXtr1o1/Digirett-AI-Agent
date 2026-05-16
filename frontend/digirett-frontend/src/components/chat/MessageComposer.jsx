@@ -192,8 +192,8 @@ const MessageComposer = ({
           }}>
             <CheckCircle size={16} />
             <span style={{ fontSize: "14px", fontWeight: "600" }}>
-              {isEscalated || localEscalated 
-                ? "You booked the lawyer for this case" 
+              {isEscalated || localEscalated
+                ? "You have successfully scheduled a consultation"
                 : "Request submitted. Lawyer will contact you shortly."}
             </span>
             <style>{`
@@ -228,7 +228,7 @@ const MessageComposer = ({
                       Already Booked
                     </p>
                     <p style={{ fontSize: "12px", color: isDark ? "#9ca3af" : "#6b7280", marginBottom: "12px" }}>
-                      You have already requested a lawyer for this case.
+                      You have already requested a legal consultation for this matter.
                     </p>
                     <button
                       onClick={() => setShowEscalateConfirm(false)}
@@ -249,12 +249,11 @@ const MessageComposer = ({
                   </div>
                 ) : messageCount === 0 ? (
                   <div style={{ textAlign: "center" }}>
-                    <Scale size={24} style={{ color: "#3B82F6", marginBottom: "8px", opacity: 0.5 }} />
                     <p style={{ fontSize: "14px", fontWeight: "600", color: isDark ? "#ffffff" : "#111827", marginBottom: "6px" }}>
-                      Start your case first
+                      Begin your enquiry
                     </p>
                     <p style={{ fontSize: "12px", color: isDark ? "#9ca3af" : "#6b7280", marginBottom: "12px", lineHeight: "1.5" }}>
-                      Please describe your legal matter briefly so our lawyers can understand your case before booking.
+                      Please provide a brief overview of your legal requirements so our professionals can review them prior to your consultation.
                     </p>
                     <button
                       onClick={() => setShowEscalateConfirm(false)}
@@ -276,7 +275,7 @@ const MessageComposer = ({
                 ) : (
                   <>
                     <p style={{ fontSize: "14px", marginBottom: "12px", fontWeight: "500", color: isDark ? "#d1d5db" : "#374151" }}>
-                      Talk to a real lawyer about this case?
+                      Would you like to consult with a professional regarding this matter?
                     </p>
                     <div style={{ display: "flex", gap: "8px" }}>
                       <button

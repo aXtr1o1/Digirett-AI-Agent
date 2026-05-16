@@ -58,7 +58,7 @@ const LegalPanel = ({ conversationId, theme = "dark" }) => {
             }`}>
               <Info size={14} className="mt-0.5 flex-shrink-0" />
               <span>
-                Your conversation has been escalated to a human lawyer. You can still chat with the AI, but a specialized professional will review your case.
+                Your conversation has been escalated to a human lawyer. You can still chat with the AI, but a specialized professional will review your matter.
               </span>
             </div>
           </div>

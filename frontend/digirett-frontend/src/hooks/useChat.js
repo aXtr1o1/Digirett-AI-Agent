@@ -8,6 +8,12 @@ import useDocumentUpload from "./useDocumentUpload";
 import documentService from "../services/documentService";
 import { MESSAGE_ROLES } from "../utils/constants";
 
+const isUuid = (str) => {
+  if (!str) return false;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+};
+
 const useChat = (
   conversationId,
   onConversationCreated,
@@ -54,6 +60,15 @@ const useChat = (
       setIsEscalated(false);
       return;
     }
+
+    // Safety: Ensure conversationId is a valid UUID before querying Supabase
+    if (!isUuid(conversationId)) {
+      console.warn("[useChat] Skipping loadMessages: invalid UUID format", conversationId);
+      setMessages([]);
+      setError(null);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
@@ -408,13 +423,10 @@ const useChat = (
     setIsProcessingDoc(false);
   }, []);
 
+  // Initial load
   useEffect(() => {
     loadMessages();
   }, [loadMessages]);
-
-  useEffect(() => {
-    setIsEscalated(false);
-  }, [conversationId]);
 
   useEffect(() => {
     if (conversationId) {
@@ -425,7 +437,7 @@ const useChat = (
   // Sync escalation status from backend sessionStatus or dedicated check
   useEffect(() => {
     const checkEscalation = async () => {
-      if (!conversationId) return;
+      if (!isUuid(conversationId)) return;
       try {
         const data = await hitlService.getEscalationStatus(conversationId);
         console.log("[useChat] checkEscalation result:", data);

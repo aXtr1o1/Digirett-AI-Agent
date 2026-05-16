@@ -88,7 +88,7 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
               Searching for a Lawyer...
             </h4>
             <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
-              Your case has been escalated. A specialized lawyer is currently reviewing your matter and will accept shortly.
+              Your matter has been escalated. A specialized lawyer is currently reviewing your matter and will accept shortly.
             </p>
             <div className="mt-4 flex items-center gap-2">
               <Loader2 className="w-3 h-3 text-indigo-500 animate-spin" />
@@ -226,7 +226,7 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
         <div className="space-y-4">
           <div className="flex items-center gap-2 mb-2">
             <Scale size={12} className="text-indigo-500" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Case Feedback</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Matter Feedback</span>
           </div>
 
           <div className={`relative p-6 rounded-3xl border shadow-sm ${
@@ -270,7 +270,7 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
             Consultation Missed
           </h4>
           <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
-            The lawyer reported that you were unable to attend the scheduled meeting. This case has been archived.
+            The lawyer reported that you were unable to attend the scheduled meeting. This matter has been archived.
           </p>
         </div>
       </div>
@@ -285,7 +285,7 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
         <div className="flex flex-col items-center text-center">
           <ShieldCheck className="text-slate-500 w-8 h-8 mb-3 opacity-50" />
           <h4 className={`text-sm font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
-            Case Archived
+            Matter Archived
           </h4>
           <p className="text-[10px] text-slate-500 font-medium">
             This legal consultation has been closed and archived.

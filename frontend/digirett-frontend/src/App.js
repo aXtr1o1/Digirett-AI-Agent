@@ -34,7 +34,7 @@ const HomeRedirect = () => {
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
           </div>
         </div>
-        
+
         <h2 className="text-2xl font-bold text-white mb-2 animate-pulse">
           Finalizing your workspace...
         </h2>
@@ -80,9 +80,9 @@ function App() {
             <Route path="/invite" element={<InvitePage />} />
             <Route path="/provisioning" element={<ProvisioningPage />} />
             <Route path="/suspended" element={<SuspendedPage />} />
-            <Route 
-              path="/sso-callback" 
-              element={<SSOCallback />} 
+            <Route
+              path="/sso-callback"
+              element={<SSOCallback />}
             />
 
             {/* ================= AUTH PAGES ================= */}
@@ -135,6 +135,15 @@ function App() {
 
             <Route
               path="/chat"
+              element={
+                <ProtectedRoute>
+                  <ChatPage />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/chat/:id"
               element={
                 <ProtectedRoute>
                   <ChatPage />

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import hitlService from "../services/hitlService";
 import { useUser, useClerk } from "@clerk/clerk-react";
@@ -43,6 +43,7 @@ import {
 } from 'recharts';
 import { useTheme } from "../providers/ThemeProvider";
 import { Link } from "react-router-dom";
+import SystemNotification from "../components/chat/ResolutionNotification";
 
 export default function LawyerDashboard() {
   const { theme, isDark, toggleTheme } = useTheme();
@@ -65,6 +66,7 @@ export default function LawyerDashboard() {
   const [showNoShowConfirm, setShowNoShowConfirm] = useState(false);
   const [noShowTicketId, setNoShowTicketId] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [claimError, setClaimError] = useState(null);
 
   const navigate = useNavigate();
   const { user: clerkUser } = useUser();
@@ -76,6 +78,59 @@ export default function LawyerDashboard() {
   };
 
   const [globalError, setGlobalError] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [dismissedEvents, setDismissedEvents] = useState(() => {
+    const seen = localStorage.getItem("dismissed_lawyer_events");
+    return seen ? JSON.parse(seen) : [];
+  });
+
+  // Monitor for new cases in the queue
+  const checkQueueStatus = useCallback(async () => {
+    try {
+      const savedDismissed = localStorage.getItem("dismissed_lawyer_events");
+      const currentDismissed = savedDismissed ? JSON.parse(savedDismissed) : [];
+
+      console.log("[LawyerDashboard] Checking queue for notifications...");
+      const queueData = await hitlService.getQueue();
+
+      if (!Array.isArray(queueData)) {
+        console.warn("[LawyerDashboard] Queue data is not an array:", queueData);
+        return;
+      }
+
+      console.log(`[LawyerDashboard] Found ${queueData.length} items in queue.`);
+
+      const newNotifications = [];
+      queueData.forEach(ticket => {
+        const ticketId = ticket.ticket_id || ticket.id;
+        const eventId = `new_case_${ticketId}`;
+
+        if (!currentDismissed.includes(eventId)) {
+          newNotifications.push({
+            id: eventId,
+            type: 'new_case',
+            caseRef: ticketId,
+            message: `New Incoming Matter: A legal consultation has been requested and is waiting in your queue.`,
+            view: 'queue'
+          });
+        }
+      });
+
+      console.log(`[LawyerDashboard] Showing ${newNotifications.length} new notifications.`);
+      setNotifications(newNotifications);
+    } catch (err) {
+      console.error("[LawyerDashboard] Error checking queue:", err);
+    }
+  }, []);
+
+  const handleDismissNotification = useCallback((notifId) => {
+    setDismissedEvents(prev => {
+      const updated = [...prev, notifId];
+      localStorage.setItem("dismissed_lawyer_events", JSON.stringify(updated));
+      return updated;
+    });
+    setNotifications(prev => prev.filter(n => n.id !== notifId));
+  }, []);
 
   const fetchData = async (isManual = false) => {
     if (isManual) setRefreshing(true);
@@ -98,6 +153,17 @@ export default function LawyerDashboard() {
       setRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    fetchData();
+    checkQueueStatus();
+    const dataInterval = setInterval(fetchData, 30000);
+    const notifInterval = setInterval(checkQueueStatus, 30000);
+    return () => {
+      clearInterval(dataInterval);
+      clearInterval(notifInterval);
+    };
+  }, [checkQueueStatus]);
 
   // Logic to determine Intake vs Pending with persistence
   useEffect(() => {
@@ -134,16 +200,31 @@ export default function LawyerDashboard() {
       const currentIntakeId = localStorage.getItem("lawyer_current_intake_id");
       if (!currentIntakeId) {
         localStorage.setItem("lawyer_current_intake_id", ticketId);
-        setQueueMsg({ type: "success", text: "You claimed this case! It is now in your Intake." });
+        setQueueMsg({ type: "success", text: "You claimed this matter! It is now in your Intake." });
         setActiveView("intake");
       } else {
-        setQueueMsg({ type: "success", text: "You claimed this case! It is now in your Pending list." });
+        setQueueMsg({ type: "success", text: "You claimed this matter! It is now in your Pending list." });
         setActiveView("pending");
       }
 
       await fetchData();
     } catch (err) {
-      setQueueMsg({ type: "error", text: err.message || "Failed to claim ticket" });
+      console.error("[LawyerDashboard] Claim failed:", err);
+      const isConflict = err.status === 409 ||
+        (err.message || "").toLowerCase().includes("already claimed") ||
+        (err.message || "").toLowerCase().includes("conflict");
+
+      if (isConflict) {
+        setClaimError({
+          title: "Already Claimed",
+          message: "Another lawyer claimed this matter just a moment ago. The queue has been updated to reflect current availability.",
+          ticketId: ticketId
+        });
+        setQueueMsg(null);
+        await fetchData();
+      } else {
+        setQueueMsg({ type: "error", text: err.message || "Failed to claim ticket" });
+      }
     }
   };
 
@@ -240,8 +321,8 @@ export default function LawyerDashboard() {
           {/* Sidebar Header */}
           <div className="h-16 flex items-center px-6 border-b border-white/5">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center">
-                <Scale className="text-white w-5 h-5" />
+              <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center">
+                <img src="/digirett-logo.png" alt="Logo" className="w-full h-full object-contain p-0.5" />
               </div>
               <h1 className="text-sm font-bold tracking-tight text-white uppercase italic tracking-tighter">Lawyer Panel</h1>
             </div>
@@ -269,14 +350,14 @@ export default function LawyerDashboard() {
                     }`}
                 >
                   <ClipboardList size={16} />
-                  Case Queue
+                  Matter Queue
                   <span className="ml-auto bg-white/10 text-white px-1.5 py-0.5 rounded text-[10px]">{queueTickets.length}</span>
                 </button>
               </nav>
             </div>
 
             <div>
-              <p className="px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 mb-4 opacity-50 font-bold">Claimed Cases</p>
+              <p className="px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 mb-4 opacity-50 font-bold">Claimed Matters</p>
               <nav className="space-y-1">
                 <button
                   onClick={() => { setActiveView("intake"); setIsSidebarOpen(false); }}
@@ -293,7 +374,7 @@ export default function LawyerDashboard() {
                     }`}
                 >
                   <Layers size={16} />
-                  Pending Cases
+                  Pending Matters
                   {pendingTickets.length > 0 && <span className="ml-auto bg-white/10 text-white px-1.5 py-0.5 rounded text-[10px]">{pendingTickets.length}</span>}
                 </button>
               </nav>
@@ -326,6 +407,15 @@ export default function LawyerDashboard() {
                   <ArrowLeft size={16} />
                   Go to Chat
                 </Link>
+                {clerkUser?.publicMetadata?.role === "admin" && (
+                  <Link
+                    to="/admin"
+                    className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-bold text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/5 transition-all border border-indigo-500/20 mt-4"
+                  >
+                    <Shield size={16} />
+                    Admin Dashboard
+                  </Link>
+                )}
               </nav>
             </div>
           </div>
@@ -354,14 +444,13 @@ export default function LawyerDashboard() {
                 <Menu size={24} />
               </button>
               <div className="flex items-center gap-3">
-                <div className={`p-2.5 rounded-2xl ${isDark ? "bg-blue-600/20 text-blue-400" : "bg-blue-600 text-white"}`}>
-                  <Scale className="h-6 w-6" />
+                <div className={`p-1 rounded-2xl overflow-hidden ${isDark ? "bg-white/90" : "bg-white border"}`}>
+                  <img src="/digirett-logo.png" alt="Logo" className="h-9 w-9 object-contain" />
                 </div>
                 <div>
-                  <h1 className={`text-xl font-black tracking-tight ${isDark ? "text-white" : "text-gray-900"}`}>
-                    Legal<span className="text-blue-600">Counsel</span>
+                  <h1 className={`text-lg font-black tracking-widest uppercase ${isDark ? "text-white" : "text-gray-900"}`}>
+                    Lawyer Dashboard
                   </h1>
-                  <p className="text-[10px] uppercase tracking-widest font-bold text-gray-500">Lawyer Workspace</p>
                 </div>
               </div>
             </div>
@@ -391,7 +480,7 @@ export default function LawyerDashboard() {
                   </div>
                   <div className="hidden md:block text-left">
                     <p className={`text-xs font-bold ${isDark ? "text-white" : "text-gray-900"}`}>{clerkUser?.fullName || "Lawyer"}</p>
-                    <p className="text-[10px] text-gray-500">Professional ID: 8829</p>
+                    <p className="text-[10px] text-gray-500">Professional ID: {clerkUser?.id?.slice(-4).toUpperCase() || "8829"}</p>
                   </div>
                 </button>
 
@@ -502,13 +591,13 @@ export default function LawyerDashboard() {
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#1e293b" : "#f1f5f9"} />
                         <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
                         <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: isDark ? '#0f172a' : '#fff', 
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: isDark ? '#0f172a' : '#fff',
                             border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
                             borderRadius: '8px',
                             fontSize: '10px'
-                          }} 
+                          }}
                         />
                         <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={30} />
                       </BarChart>
@@ -521,12 +610,12 @@ export default function LawyerDashboard() {
             </div>
           )}
 
-          {/* VIEW: CASE QUEUE (ALL OPEN CASES) */}
+          {/* VIEW: MATTER QUEUE (ALL OPEN MATTERS) */}
           {activeView === "queue" && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className={`border rounded-2xl shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
                 <div className={`px-8 py-5 border-b ${isDark ? "border-slate-800" : "border-slate-100"}`}>
-                  <h2 className="text-base font-bold">Case Queue</h2>
+                  <h3 className="font-bold text-lg">Matter Queue</h3>
                   <p className="text-xs text-slate-500 mt-1">Shared pool of open legal escalations waiting for assignment.</p>
                 </div>
 
@@ -585,7 +674,7 @@ export default function LawyerDashboard() {
             </div>
           )}
 
-          {/* VIEW: INTAKE (THE CURRENTLY WORKING CASE) */}
+          {/* VIEW: INTAKE (THE CURRENTLY WORKING MATTER) */}
           {activeView === "intake" && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
               {intakeTicket ? (
@@ -605,7 +694,7 @@ export default function LawyerDashboard() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                     <div className="space-y-6">
-                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Case Intelligence</h4>
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Matter Intelligence</h4>
                       <div className={`p-6 rounded-2xl ${isDark ? "bg-slate-950/50" : "bg-slate-50"}`}>
                         <p className="text-sm leading-relaxed text-slate-500 italic">
                           {intakeTicket.conversation_summary || "Matter summary is being synthesized by AI. Please review the raw chat logs for full legal context."}
@@ -644,7 +733,7 @@ export default function LawyerDashboard() {
                     <Inbox size={40} />
                   </div>
                   <h3 className="text-xl font-bold">No Active Intake</h3>
-                  <p className="text-sm text-slate-500 mt-2">Go to the Case Queue to claim a matter and start working.</p>
+                  <p className="text-sm text-slate-500 mt-2">Go to the Matter Queue to claim a matter and start working.</p>
                 </div>
               )}
             </div>
@@ -720,7 +809,7 @@ export default function LawyerDashboard() {
               {resolvedTickets.length > 0 ? (
                 <div className={`border rounded-2xl shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
                   <div className="px-8 py-5 border-b border-slate-100 dark:border-slate-800">
-                    <h2 className="text-base font-bold">Resolved Case History</h2>
+                    <h2 className="text-base font-bold">Resolved Matter History</h2>
                     <p className="text-xs text-slate-500 mt-1">Matters you have successfully addressed and resolved.</p>
                   </div>
                   <table className="w-full">
@@ -814,6 +903,42 @@ export default function LawyerDashboard() {
                 className="flex-1 h-12 rounded-xl bg-red-600 text-white text-xs font-bold shadow-lg shadow-red-600/20 hover:bg-red-700 transition-all disabled:opacity-50"
               >
                 {isProcessing ? "Processing..." : "Confirm No-Show"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Real-time Notifications Overlay */}
+      <SystemNotification
+        notifications={notifications}
+        onDismiss={handleDismissNotification}
+        onNavigate={(view) => {
+          if (view === 'queue') {
+            setActiveView('queue');
+            setIsSidebarOpen(false);
+          }
+        }}
+        isDark={isDark}
+      />
+
+      {/* CLAIM CONFLICT MODAL */}
+      {claimError && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className={`w-full max-w-md p-8 rounded-3xl border shadow-2xl animate-in zoom-in-95 duration-300 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+            }`}>
+            <div className="flex flex-col items-center text-center">
+              <div className="h-16 w-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mb-6">
+                <AlertTriangle size={32} />
+              </div>
+              <h3 className="text-xl font-black tracking-tight mb-2">{claimError.title}</h3>
+              <p className="text-sm text-slate-500 leading-relaxed mb-8">{claimError.message}</p>
+
+              <button
+                onClick={() => setClaimError(null)}
+                className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all"
+              >
+                Got it
               </button>
             </div>
           </div>

@@ -26,7 +26,8 @@ import {
   History as HistoryIcon,
   Sun,
   Moon,
-  UserX
+  UserX,
+  LayoutDashboard
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import useDocumentUpload from "../hooks/useDocumentUpload";
@@ -153,6 +154,14 @@ export default function TicketDetailsPage() {
           <p className="px-4 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Main Console</p>
 
           <button
+            onClick={() => navigate("/lawyer")}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-gray-400 hover:bg-white/5 hover:text-white"
+          >
+            <LayoutDashboard size={18} />
+            <span className="text-xs font-semibold tracking-wide">Go to Dashboard</span>
+          </button>
+
+          <button
             onClick={() => setCurrentView("details")}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${currentView === "details" ? "bg-blue-600/90 text-white shadow-lg shadow-blue-600/20" : "text-gray-400 hover:bg-white/5 hover:text-white"
               }`}
@@ -167,7 +176,7 @@ export default function TicketDetailsPage() {
               }`}
           >
             <CheckCircle2 size={18} />
-            <span className="text-xs font-semibold tracking-wide">Resolve Case</span>
+            <span className="text-xs font-semibold tracking-wide">Resolve Matter</span>
           </button>
 
           <button
@@ -217,7 +226,7 @@ export default function TicketDetailsPage() {
         {/* COMPACT TOP BAR */}
         <header className={`px-8 h-16 border-b flex items-center justify-between z-10 shrink-0 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
           <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">
-            <span>Case Review</span>
+            <span>Matter Review</span>
             <ChevronRight size={12} />
             <span className="text-blue-600">User Details</span>
           </div>
@@ -274,7 +283,7 @@ export default function TicketDetailsPage() {
 
                   <div className={`grid grid-cols-1 divide-y ${isDark ? "divide-slate-800" : "divide-gray-50"}`}>
                     {[
-                      { icon: <Hash size={16} />, label: "Case ID", value: `#${ticket.ticket_id || id.slice(0, 8).toUpperCase()}`, valueClass: "text-blue-600" },
+                      { icon: <Hash size={16} />, label: "Matter ID", value: `#${ticket.ticket_id || id.slice(0, 8).toUpperCase()}`, valueClass: "text-blue-600" },
                       {
                         icon: <Clock size={16} />,
                         label: "Assigned",
@@ -308,7 +317,7 @@ export default function TicketDetailsPage() {
                 {ticket.status === 'resolved' || ticket.status === 'closed' ? (
                   <div className="space-y-6">
                     <div className="mb-8">
-                      <h2 className={`text-3xl font-bold tracking-tight mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>Case Resolved</h2>
+                      <h2 className={`text-3xl font-bold tracking-tight mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>Matter Resolved</h2>
                       <p className="text-gray-400 font-bold uppercase text-[9px] tracking-widest">Final legal outcome provided on {new Date(ticket.resolved_at || ticket.closed_at).toLocaleDateString()}</p>
                     </div>
 
@@ -353,7 +362,7 @@ export default function TicketDetailsPage() {
                 ) : (
                   <>
                     <div className="mb-8">
-                      <h2 className={`text-3xl font-bold tracking-tight mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>Resolve Case</h2>
+                      <h2 className={`text-3xl font-bold tracking-tight mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>Resolve Matter</h2>
                       <p className="text-gray-400 font-bold uppercase text-[9px] tracking-widest">Draft legal outcome for client</p>
                     </div>
 

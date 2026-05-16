@@ -47,22 +47,40 @@ api.interceptors.response.use(
     let message = "Something went wrong";
 
     if (error.response) {
-      if (error.response.status === 500) {
-        message = "Server error. Please try again.";
-      } else if (error.response.status === 404) {
-        message = "Data not found.";
-      } else if (error.response.status === 401) {
-        const detail = error.response.data?.detail || "";
-        const isExpired = typeof detail === 'string' && detail.toLowerCase().includes("expired");
-        message = isExpired ? "Session expired. Please log in again." : "Please login again.";
+      const status = error.response.status;
+      const data = error.response.data;
+      let detail = data?.detail || data?.message || "";
+
+      // Handle cases where detail might be an array (validation errors)
+      if (Array.isArray(detail) && detail.length > 0) {
+        detail = detail[0]?.msg || JSON.stringify(detail);
+      } else if (typeof detail === "object" && detail !== null) {
+        detail = detail.message || detail.error || JSON.stringify(detail);
+      }
+
+      const detailStr = String(detail).toLowerCase();
+
+      if (status === 401) {
+        const isExpired = detailStr.includes("expired") || detailStr.includes("jwt") || detailStr.includes("signature");
+        message = isExpired ? "Session expired. Please sign in again to continue." : "Authentication required. Please sign in.";
+      } else if (status === 403) {
+        message = "Access denied. You do not have permission for this action.";
+      } else if (status === 429) {
+        message = detail || "Too many requests. Please try again later.";
       } else {
-        message = error.response.data?.detail || "Something went wrong";
+        // Fallback to detail if available, otherwise status-based generic message
+        message = detail || (status === 500 ? "Server error. Please try again." : "Something went wrong");
       }
     } else if (error.request) {
-      message = "Server not reachable";
+      message = "Network error. Please check your connection.";
     }
 
-    return Promise.reject(new Error(message));
+    // Create error object and attach response data for deeper inspection if needed
+    const finalError = new Error(String(message));
+    finalError.status = error.response?.status;
+    finalError.data = error.response?.data;
+    
+    return Promise.reject(finalError);
   }
 );
 

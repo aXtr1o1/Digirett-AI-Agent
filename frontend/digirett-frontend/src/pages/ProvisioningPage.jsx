@@ -48,9 +48,9 @@ export default function ProvisioningPage() {
       const checkRole = async () => {
         setStatus("Syncing professional permissions...");
         await user.reload();
-        
+
         const role = user.publicMetadata?.role;
-        
+
         if (role && (role === finalTarget || (finalTarget === 'lawyer' && role === 'admin'))) {
           const redirectPath = role === 'lawyer' ? '/lawyer' : `/${role}`;
           navigate(redirectPath, { replace: true });
@@ -78,14 +78,14 @@ export default function ProvisioningPage() {
             <Loader2 className="h-12 w-12 text-indigo-600 animate-spin" />
           </div>
         </div>
-        
+
         <h1 className="text-3xl font-black text-gray-900 mb-4">
           Setting up your workspace{dots}
         </h1>
         <p className="text-gray-600 mb-8 leading-relaxed font-medium">
           {status}
         </p>
-        
+
         <div className="space-y-3">
           <div className="flex items-center justify-center space-x-2 text-sm font-medium text-gray-400">
             <CheckCircle className="h-4 w-4 text-green-500" />
