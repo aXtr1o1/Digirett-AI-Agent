@@ -48,7 +48,16 @@ api.interceptors.response.use(
 
     if (error.response) {
       const status = error.response.status;
-      const detail = error.response.data?.detail || "";
+      const data = error.response.data;
+      let detail = data?.detail || data?.message || "";
+
+      // Handle cases where detail might be an array (validation errors)
+      if (Array.isArray(detail) && detail.length > 0) {
+        detail = detail[0]?.msg || JSON.stringify(detail);
+      } else if (typeof detail === "object" && detail !== null) {
+        detail = detail.message || detail.error || JSON.stringify(detail);
+      }
+
       const detailStr = String(detail).toLowerCase();
 
       if (status === 401) {
@@ -59,16 +68,18 @@ api.interceptors.response.use(
       } else if (status === 429) {
         message = detail || "Too many requests. Please try again later.";
       } else {
+        // Fallback to detail if available, otherwise status-based generic message
         message = detail || (status === 500 ? "Server error. Please try again." : "Something went wrong");
       }
     } else if (error.request) {
       message = "Network error. Please check your connection.";
     }
 
-    const finalError = new Error(message);
+    // Create error object and attach response data for deeper inspection if needed
+    const finalError = new Error(String(message));
     finalError.status = error.response?.status;
     finalError.data = error.response?.data;
-
+    
     return Promise.reject(finalError);
   }
 );

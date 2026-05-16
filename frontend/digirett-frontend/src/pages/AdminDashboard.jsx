@@ -197,7 +197,9 @@ export default function AdminDashboard() {
       setInviteEmail("");
       fetchDashboardData();
     } catch (err) {
-      setInviteMsg({ type: "error", text: err.message || "Failed to send invitation" });
+      // Prioritize the extracted message from the error object
+      const errorMsg = err.message || "An unexpected error occurred while sending the invitation.";
+      setInviteMsg({ type: "error", text: errorMsg });
     } finally {
       setInviteLoading(false);
     }
@@ -1086,7 +1088,7 @@ export default function AdminDashboard() {
                 <div className={`p-6 border-b flex flex-col md:flex-row md:items-center justify-between gap-4 ${isDark ? "border-slate-800" : "border-slate-100"
                   }`}>
                   <div>
-                    <h3 className="font-bold text-lg">Case Queue</h3>
+                    <h3 className="font-bold text-lg">Matter Queue</h3>
                     <p className="text-sm text-slate-500 mt-1">Review and manage legal matters escalated by users.</p>
                   </div>
                 </div>
@@ -1136,7 +1138,7 @@ export default function AdminDashboard() {
                                 </div>
                               ) : (
                                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest opacity-30">
-                                  {ticket.assigned_lawyer_id ? "Case in Progress" : "No Summary"}
+                                  {ticket.assigned_lawyer_id ? "Matter in Progress" : "No Summary"}
                                 </span>
                               )}
                             </td>

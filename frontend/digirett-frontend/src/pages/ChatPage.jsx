@@ -45,6 +45,24 @@ const ChatPage = () => {
     }
   }, [urlId, selectConversation, currentConversationId]);
 
+  // Persistence: Check if current conversation is already escalated on load/change
+  useEffect(() => {
+    const checkEscalation = async () => {
+      if (currentConversationId && isUuid(currentConversationId)) {
+        try {
+          const status = await hitlService.getEscalationStatus(currentConversationId);
+          setIsEscalated(status.is_escalated);
+        } catch (err) {
+          console.error("[ChatPage] Error checking escalation status:", err);
+          setIsEscalated(false);
+        }
+      } else {
+        setIsEscalated(false);
+      }
+    };
+    checkEscalation();
+  }, [currentConversationId]);
+
   const { isDark } = useTheme();
 
   // Monitor for persistent status alerts (Accepted/Resolved)
@@ -52,85 +70,125 @@ const ChatPage = () => {
     if (!user?.id) return;
 
     try {
-      // 1. Always get the LATEST dismissed events directly from storage to prevent race conditions
+      // 1. Get dismissed events - Unified storage for sync
       const savedDismissed = localStorage.getItem("dismissed_system_events");
       const currentDismissed = savedDismissed ? JSON.parse(savedDismissed) : [];
+      
+      // Also check lawyer-specific dismissals if applicable
+      const savedLawyerDismissed = localStorage.getItem("dismissed_lawyer_events");
+      const currentLawyerDismissed = savedLawyerDismissed ? JSON.parse(savedLawyerDismissed) : [];
+      
+      const allDismissed = [...new Set([...currentDismissed, ...currentLawyerDismissed])];
 
       // 2. Fetch user's tickets
       const tickets = await hitlService.getMyTickets();
-      if (!Array.isArray(tickets)) return;
-
       const currentNotifications = [];
 
-      tickets.forEach(ticket => {
-        const ticketId = ticket.ticket_id || ticket.id;
-        if (!ticketId) return;
+      if (Array.isArray(tickets)) {
+        tickets.forEach(ticket => {
+          const ticketId = ticket.ticket_id || ticket.id;
+          if (!ticketId) return;
 
-        const status = (ticket.status || "").toLowerCase();
-        const convId = ticket.conversation_id;
+          const status = (ticket.status || "").toLowerCase();
+          const convId = ticket.conversation_id;
 
-        // Smart Filter: Skip notification if user is ALREADY inside this conversation
-        if (convId === currentConversationId) return;
+          if (convId === currentConversationId) return;
 
-        // Find the conversation title
-        const conv = conversations.find(c => c.conversation_id === convId);
-        const title = conv?.title || "Legal Matter";
+          const conv = conversations.find(c => c.conversation_id === convId);
+          const title = conv?.title || "Legal Matter";
+          const lawyerName = ticket.lawyer_name || "A specialized lawyer";
+          const caseRef = ticketId.slice(-4).toUpperCase();
 
-        // Find the lawyer name if assigned
-        const lawyerName = ticket.lawyer_name || "A specialized lawyer";
-        const caseRef = ticketId.slice(-4).toUpperCase(); // Short unique ID
+          const isAccepted = status !== "open" && status !== "resolved" && status !== "closed" && status !== "completed";
+          if (isAccepted) {
+            const eventId = `accepted_${ticketId}`;
+            if (!allDismissed.includes(eventId)) {
+              currentNotifications.push({
+                id: eventId,
+                type: 'accepted',
+                title: title,
+                caseRef: caseRef,
+                message: `Matter #${caseRef}: Lawyer "${lawyerName}" has accepted your matter "${title}".`,
+                conversation_id: convId
+              });
+            }
+          }
 
-        // Check A: Lawyer Accepted (Milestone 1)
-        const isAccepted = status !== "open" && status !== "resolved" && status !== "closed" && status !== "completed";
-        if (isAccepted) {
-          const eventId = `accepted_${ticketId}`;
-          if (!currentDismissed.includes(eventId)) {
-            currentNotifications.push({
-              id: eventId,
-              type: 'accepted',
-              title: title,
-              caseRef: caseRef,
-              message: `Matter #${caseRef}: Lawyer "${lawyerName}" has accepted your matter "${title}".`,
-              conversation_id: convId
+          const isResolved = status === "resolved" || status === "closed" || status === "completed";
+          if (isResolved) {
+            const eventId = `resolved_${ticketId}`;
+            if (!allDismissed.includes(eventId)) {
+              currentNotifications.push({
+                id: eventId,
+                type: 'resolved',
+                title: title,
+                caseRef: caseRef,
+                message: `Matter #${caseRef}: Your legal consultation for "${title}" is now complete. View the official resolution.`,
+                conversation_id: convId
+              });
+            }
+          }
+        });
+      }
+
+      // 3. If User is a Lawyer, also monitor the Matter Queue
+      const userRole = user?.publicMetadata?.role || (user?.unsafeMetadata?.role);
+      
+      if (userRole === "lawyer" || userRole === "admin") {
+        try {
+          const queueTickets = await hitlService.getQueue(); // Corrected function name
+          if (Array.isArray(queueTickets)) {
+            queueTickets.forEach(ticket => {
+              const ticketId = ticket.ticket_id || ticket.id;
+              const eventId = `new_case_${ticketId}`;
+              
+              if (!allDismissed.includes(eventId)) {
+                currentNotifications.push({
+                  id: eventId,
+                  type: 'new_case',
+                  caseRef: ticketId.slice(-4).toUpperCase(),
+                  message: `New Incoming Matter: A legal consultation has been requested and is waiting in your queue.`,
+                  view: 'queue'
+                });
+              }
             });
           }
+        } catch (queueErr) {
+          console.error("[ChatPage] Error checking matter queue:", queueErr);
         }
-
-        // Check B: Lawyer Resolved (Milestone 2)
-        const isResolved = status === "resolved" || status === "closed" || status === "completed";
-        if (isResolved) {
-          const eventId = `resolved_${ticketId}`;
-          if (!currentDismissed.includes(eventId)) {
-            currentNotifications.push({
-              id: eventId,
-              type: 'resolved',
-              title: title,
-              caseRef: caseRef,
-              message: `Matter #${caseRef}: Your legal consultation for "${title}" is now complete. View the official resolution.`,
-              conversation_id: convId
-            });
-          }
-        }
-      });
+      }
 
       setNotifications(currentNotifications);
     } catch (err) {
       console.error("[ChatPage] Error checking matter status:", err);
     }
-  }, [user?.id, conversations, currentConversationId]);
+  }, [user?.id, user?.publicMetadata?.role, conversations, currentConversationId]);
 
   useEffect(() => {
-    const interval = setInterval(checkMatterStatus, 30000); // Check every 30s
+    const interval = setInterval(checkMatterStatus, 10000); // Check every 10s for faster updates
     checkMatterStatus(); // Initial check
     return () => clearInterval(interval);
   }, [checkMatterStatus]);
 
   const handleDismissNotification = useCallback((notifId) => {
+    // 1. Update General System Dismissals
     setDismissedEvents(prev => {
-      const updated = [...prev, notifId];
+      const updated = [...new Set([...prev, notifId])];
       localStorage.setItem("dismissed_system_events", JSON.stringify(updated));
       return updated;
     });
+
+    // 2. ALSO update Lawyer Dashboard Dismissals (if it's a queue notification)
+    // This ensures that dismissing it in Chat also clears it from the Lawyer Dashboard
+    if (notifId.startsWith('new_case_')) {
+      const savedLawyerDismissed = localStorage.getItem("dismissed_lawyer_events");
+      const lawyerDismissed = savedLawyerDismissed ? JSON.parse(savedLawyerDismissed) : [];
+      if (!lawyerDismissed.includes(notifId)) {
+        const updatedLawyer = [...lawyerDismissed, notifId];
+        localStorage.setItem("dismissed_lawyer_events", JSON.stringify(updatedLawyer));
+      }
+    }
+
     setNotifications(prev => prev.filter(n => n.id !== notifId));
   }, []);
 
@@ -182,7 +240,14 @@ const ChatPage = () => {
       <SystemNotification
         notifications={notifications}
         onDismiss={handleDismissNotification}
-        onNavigate={(id) => {
+        onNavigate={(target) => {
+          if (target === 'queue') {
+            navigate('/lawyer');
+            return;
+          }
+          
+          // If it's a conversation ID
+          const id = target;
           // 1. Clear ALL notifications for this specific conversation ID immediately
           const relatedNotifs = notifications.filter(n => n.conversation_id === id);
           relatedNotifs.forEach(n => handleDismissNotification(n.id));

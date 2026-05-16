@@ -480,7 +480,7 @@ export default function LawyerDashboard() {
                   </div>
                   <div className="hidden md:block text-left">
                     <p className={`text-xs font-bold ${isDark ? "text-white" : "text-gray-900"}`}>{clerkUser?.fullName || "Lawyer"}</p>
-                    <p className="text-[10px] text-gray-500">Professional ID: 8829</p>
+                    <p className="text-[10px] text-gray-500">Professional ID: {clerkUser?.id?.slice(-4).toUpperCase() || "8829"}</p>
                   </div>
                 </button>
 
@@ -610,12 +610,12 @@ export default function LawyerDashboard() {
             </div>
           )}
 
-          {/* VIEW: CASE QUEUE (ALL OPEN CASES) */}
+          {/* VIEW: MATTER QUEUE (ALL OPEN MATTERS) */}
           {activeView === "queue" && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className={`border rounded-2xl shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
                 <div className={`px-8 py-5 border-b ${isDark ? "border-slate-800" : "border-slate-100"}`}>
-                  <h2 className="text-base font-bold">Matter Queue</h2>
+                  <h3 className="font-bold text-lg">Matter Queue</h3>
                   <p className="text-xs text-slate-500 mt-1">Shared pool of open legal escalations waiting for assignment.</p>
                 </div>
 
@@ -674,7 +674,7 @@ export default function LawyerDashboard() {
             </div>
           )}
 
-          {/* VIEW: INTAKE (THE CURRENTLY WORKING CASE) */}
+          {/* VIEW: INTAKE (THE CURRENTLY WORKING MATTER) */}
           {activeView === "intake" && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
               {intakeTicket ? (
@@ -733,7 +733,7 @@ export default function LawyerDashboard() {
                     <Inbox size={40} />
                   </div>
                   <h3 className="text-xl font-bold">No Active Intake</h3>
-                  <p className="text-sm text-slate-500 mt-2">Go to the Case Queue to claim a matter and start working.</p>
+                  <p className="text-sm text-slate-500 mt-2">Go to the Matter Queue to claim a matter and start working.</p>
                 </div>
               )}
             </div>
@@ -809,7 +809,7 @@ export default function LawyerDashboard() {
               {resolvedTickets.length > 0 ? (
                 <div className={`border rounded-2xl shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
                   <div className="px-8 py-5 border-b border-slate-100 dark:border-slate-800">
-                    <h2 className="text-base font-bold">Resolved Case History</h2>
+                    <h2 className="text-base font-bold">Resolved Matter History</h2>
                     <p className="text-xs text-slate-500 mt-1">Matters you have successfully addressed and resolved.</p>
                   </div>
                   <table className="w-full">
