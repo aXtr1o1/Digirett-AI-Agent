@@ -62,7 +62,11 @@ api.interceptors.response.use(
       message = "Server not reachable";
     }
 
-    return Promise.reject(new Error(message));
+    const finalError = new Error(message);
+    finalError.status = error.response?.status;
+    finalError.data = error.response?.data;
+    
+    return Promise.reject(finalError);
   }
 );
 

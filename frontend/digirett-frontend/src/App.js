@@ -142,6 +142,15 @@ function App() {
               }
             />
 
+            <Route
+              path="/chat/:id"
+              element={
+                <ProtectedRoute>
+                  <ChatPage />
+                </ProtectedRoute>
+              }
+            />
+
             {/* ================= ADMIN ================= */}
 
             <Route
