@@ -8,13 +8,14 @@ import {
   UserX, UserCheck, Trash2
 } from "lucide-react";
 import { useTheme } from "../providers/ThemeProvider";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useClerk, useUser } from "@clerk/clerk-react";
 import hitlService from "../services/hitlService";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
+import SystemNotification from "../components/chat/ResolutionNotification";
 
 export default function AdminDashboard() {
   const { theme, isDark } = useTheme();
@@ -23,6 +24,7 @@ export default function AdminDashboard() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("lawyer");
   const [inviteLoading, setInviteLoading] = useState(false);
+  const [enablingLawyer, setEnablingLawyer] = useState(false);
   const [message, setMessage] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -30,6 +32,7 @@ export default function AdminDashboard() {
 
   // Local sub-navigation state (Synced with URL for refresh persistence & back-button support)
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
   const activeView = searchParams.get("view") || "dashboard";
   const setActiveView = (view) => setSearchParams({ view });
 
@@ -51,11 +54,57 @@ export default function AdminDashboard() {
   const [queueMsg, setQueueMsg] = useState(null);
   const [usersMsg, setUsersMsg] = useState(null);
   const [globalMsg, setGlobalMsg] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [dismissedEvents, setDismissedEvents] = useState(() => {
+    const seen = localStorage.getItem("dismissed_admin_events");
+    return seen ? JSON.parse(seen) : [];
+  });
 
   const handleLogout = async () => {
     await signOut();
     navigate("/sign-in");
   };
+
+  const checkInvitationStatus = React.useCallback(async () => {
+    try {
+      const savedDismissed = localStorage.getItem("dismissed_admin_events");
+      const currentDismissed = savedDismissed ? JSON.parse(savedDismissed) : [];
+
+      const invitesData = await adminService.listInvitations();
+      if (!Array.isArray(invitesData)) return;
+
+      const newNotifications = [];
+      invitesData.forEach(invite => {
+        if (invite.status === 'accepted') {
+          const inviteId = invite.invite_id || invite.id;
+          const eventId = `accepted_${inviteId}`;
+
+          if (!currentDismissed.includes(eventId)) {
+            newNotifications.push({
+              id: eventId,
+              type: 'accepted',
+              caseRef: invite.role.toUpperCase(),
+              message: `Invitation accepted by ${invite.email} for role: ${invite.role.toUpperCase()}.`,
+              view: 'users'
+            });
+          }
+        }
+      });
+
+      setNotifications(newNotifications);
+    } catch (err) {
+      console.error("[AdminDashboard] Error checking invitation status:", err);
+    }
+  }, []);
+
+  const handleDismissNotification = React.useCallback((notifId) => {
+    setDismissedEvents(prev => {
+      const updated = [...prev, notifId];
+      localStorage.setItem("dismissed_admin_events", JSON.stringify(updated));
+      return updated;
+    });
+    setNotifications(prev => prev.filter(n => n.id !== notifId));
+  }, []);
 
   const fetchDashboardData = async () => {
     try {
@@ -73,6 +122,9 @@ export default function AdminDashboard() {
       setTickets(ticketsData);
       setAuditLogs(logsData);
       setHealthStatus(healthData);
+      
+      // Also check for new notifications during main fetch
+      checkInvitationStatus();
     } catch (err) {
       console.error("Failed to fetch dashboard data:", err);
     } finally {
@@ -84,7 +136,13 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+    const dataInterval = setInterval(fetchDashboardData, 30000);
+    const notifInterval = setInterval(checkInvitationStatus, 30000);
+    return () => {
+      clearInterval(dataInterval);
+      clearInterval(notifInterval);
+    };
+  }, [checkInvitationStatus]);
 
   useEffect(() => {
     setMessage(null);
@@ -95,10 +153,10 @@ export default function AdminDashboard() {
       title: "Lawyer Access",
       icon: <Scale className="w-5 h-5" />,
       description:
-        "Lawyers can view escalated user tickets, access the case queue, review user details, and respond to assigned legal requests.",
+        "Lawyers can view escalated user tickets, access the matter queue, review user details, and respond to assigned legal requests.",
       permissions: [
         "Access lawyer dashboard",
-        "View case queue",
+        "View matter queue",
         "Review escalated user tickets",
         "Manage own lawyer profile",
       ],
@@ -173,17 +231,25 @@ export default function AdminDashboard() {
       const lawyer = users.find(u => u.user_id === lawyerId);
       const lawyerName = lawyer?.user_profiles?.display_name || lawyer?.email || "the professional";
       await adminService.assignTicket(ticketId, lawyerId);
-      setQueueMsg({ 
-        type: "success", 
-        text: `You have assigned this case to ${lawyerName}. They are now linked to this case.` 
+      setQueueMsg({
+        type: "success",
+        text: `You have assigned this matter to ${lawyerName}. They are now linked to this matter.`
       });
       fetchDashboardData();
       // Auto-clear message after 8 seconds
       setTimeout(() => setQueueMsg(null), 8000);
     } catch (err) {
-      setQueueMsg({ type: "error", text: "Failed to link the lawyer to this case. Please try again." });
+      setQueueMsg({ type: "error", text: "Failed to link the lawyer to this matter. Please try again." });
     }
   };
+
+  const handleEnableLawyerFeatures = () => {
+    setInviteEmail(clerkUser?.primaryEmailAddress?.emailAddress || "");
+    setInviteRole("lawyer");
+    setActiveView("invite");
+  };
+
+  const hasLawyerDashboard = clerkUser?.publicMetadata?.has_lawyer_dashboard === true;
 
   const filteredUsers = users.filter(u => {
     const email = (u.email || "").toLowerCase();
@@ -220,7 +286,7 @@ export default function AdminDashboard() {
       const sortKey = new Date(u.created_at).toISOString().split('T')[0];
       counts[sortKey] = (counts[sortKey] || 0) + 1;
     });
-    
+
     const result = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
@@ -247,7 +313,7 @@ export default function AdminDashboard() {
       const sortKey = new Date(log.created_at).toISOString().split('T')[0];
       counts[sortKey] = (counts[sortKey] || 0) + 1;
     });
-    
+
     const result = [];
     for (let i = 9; i >= 0; i--) {
       const d = new Date();
@@ -370,7 +436,7 @@ export default function AdminDashboard() {
               }`}
           >
             <Mail size={18} />
-            <span className="text-sm font-semibold">Case Queue</span>
+            <span className="text-sm font-semibold">Matter Queue</span>
           </button>
 
           <button
@@ -381,6 +447,25 @@ export default function AdminDashboard() {
             <Calendar size={18} />
             <span className="text-sm font-semibold">Calendar</span>
           </button>
+
+          <button
+            onClick={() => setActiveView("settings")}
+            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "settings" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
+              }`}
+          >
+            <ShieldCheck size={18} />
+            <span className="text-sm font-semibold">Admin Settings</span>
+          </button>
+
+          {hasLawyerDashboard && (
+            <Link
+              to="/lawyer"
+              className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all text-slate-400 hover:text-white hover:bg-slate-800 mt-2 border border-indigo-500/20 bg-indigo-500/5`}
+            >
+              <Scale size={18} className="text-indigo-400" />
+              <span className="text-sm font-semibold">Lawyer Dashboard</span>
+            </Link>
+          )}
 
           <Link to="/chat" className="px-3 py-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg flex items-center gap-3 transition-colors group mt-6 border-t border-slate-800 pt-6">
             <ArrowLeft size={18} />
@@ -441,6 +526,27 @@ export default function AdminDashboard() {
                     <User size={14} />
                     Account
                   </button>
+
+                  {hasLawyerDashboard ? (
+                    <Link
+                      to="/lawyer"
+                      onClick={() => setShowProfileDropdown(false)}
+                      className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-indigo-400 hover:bg-indigo-500/10" : "text-indigo-600 hover:bg-indigo-50"
+                        }`}
+                    >
+                      <Scale size={14} />
+                      Lawyer Dashboard
+                    </Link>
+                  ) : (
+                    <button
+                      onClick={() => { setActiveView("settings"); setShowProfileDropdown(false); }}
+                      className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-indigo-400 hover:bg-indigo-500/10" : "text-indigo-600 hover:bg-indigo-50"
+                        }`}
+                    >
+                      <Plus size={14} />
+                      Enable Lawyer Features
+                    </button>
+                  )}
                   <button
                     onClick={handleLogout}
                     className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-red-400 hover:bg-red-500/10" : "text-red-600 hover:bg-red-50"
@@ -468,7 +574,7 @@ export default function AdminDashboard() {
                   { label: "Administrators", value: adminCount, color: "purple" },
                   { label: "Active Lawyers", value: lawyerCount, color: "blue" },
                   { label: "Standard Users", value: standardUserCount, color: "green" },
-                  { label: "Open HITL Tickets", value: tickets.filter(t => t.status === 'open' && !t.assigned_lawyer_id).length, color: "orange" },
+                  { label: "Open Tickets", value: tickets.filter(t => t.status === 'open' && !t.assigned_lawyer_id).length, color: "orange" },
                   { label: "Pending Invitations", value: pendingInvites, color: "amber" },
                   { label: "Total Platform Users", value: totalUsers, color: "indigo" },
                 ].map((stat, idx) => (
@@ -586,16 +692,16 @@ export default function AdminDashboard() {
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
                 {/* Case Throughput */}
                 <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Case Throughput Metrics</h3>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Matter Throughput Metrics</h3>
                   <div className="h-[300px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={getThroughputData()}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#1e293b" : "#f1f5f9"} />
                         <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                         <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: isDark ? '#0f172a' : '#fff', 
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: isDark ? '#0f172a' : '#fff',
                             border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
                             borderRadius: '8px',
                             fontSize: '10px'
@@ -617,9 +723,9 @@ export default function AdminDashboard() {
                       <BarChart data={auditTypeData()} layout="vertical">
                         <XAxis type="number" hide />
                         <YAxis dataKey="action" type="category" tick={{ fontSize: 9 }} width={100} axisLine={false} tickLine={false} />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: isDark ? '#0f172a' : '#fff', 
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: isDark ? '#0f172a' : '#fff',
                             border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
                             borderRadius: '8px',
                             fontSize: '10px'
@@ -757,7 +863,17 @@ export default function AdminDashboard() {
                         }`}>
                         <div className="flex items-center gap-3">
                           {inviteMsg.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
-                          {inviteMsg.text}
+                          <div>
+                            <p>{inviteMsg.text}</p>
+                            {inviteMsg.type === 'error' && (inviteMsg.text.toLowerCase().includes("sign in") || inviteMsg.text.toLowerCase().includes("expired")) && (
+                              <button
+                                onClick={() => navigate("/sign-in")}
+                                className="mt-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-[10px] uppercase tracking-widest font-black transition-all"
+                              >
+                                Sign In Now
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <button onClick={() => setInviteMsg(null)} className="text-lg opacity-50 hover:opacity-100">&times;</button>
                       </div>
@@ -1120,6 +1236,93 @@ export default function AdminDashboard() {
             </div>
           )}
 
+          {/* VIEW: ADMIN SETTINGS */}
+          {activeView === "settings" && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                <h1 className="text-2xl font-bold">Admin Settings</h1>
+                <p className="mt-1 text-sm text-slate-500">
+                  Manage your administrative profile and platform-level configuration.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Profile Card */}
+                <div className={`border rounded-2xl shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                  <div className={`px-7 py-6 border-b ${isDark ? "border-slate-800" : "border-slate-100"}`}>
+                    <h2 className="text-lg font-bold">My Profile</h2>
+                  </div>
+                  <div className="p-7 space-y-6">
+                    <div className="flex items-center gap-4">
+                      <div className={`h-16 w-16 rounded-2xl flex items-center justify-center font-black text-2xl ${isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"}`}>
+                        {clerkUser?.firstName?.charAt(0) || "A"}
+                      </div>
+                      <div>
+                        <p className="font-bold text-lg">{clerkUser?.fullName || "Administrator"}</p>
+                        <p className="text-sm text-slate-500">{clerkUser?.primaryEmailAddress?.emailAddress}</p>
+                      </div>
+                    </div>
+                    <div className={`p-4 rounded-xl border ${isDark ? "bg-slate-950 border-slate-800" : "bg-slate-50 border-slate-200"}`}>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Security Access</span>
+                        <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-500 font-black uppercase text-[9px] tracking-widest border border-purple-500/20">Full Admin</span>
+                      </div>
+                      <p className="text-xs text-slate-400 italic">Auth session managed via Clerk</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dual-Role Card */}
+                <div className={`border rounded-2xl shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                  <div className={`px-7 py-6 border-b ${isDark ? "border-slate-800" : "border-slate-100"}`}>
+                    <h2 className="text-lg font-bold">Dual-Role Management</h2>
+                  </div>
+                  <div className="p-7 space-y-6">
+                    <p className="text-sm text-slate-500 leading-relaxed">
+                      As an administrator, you can enable a parallel <strong>Lawyer Profile</strong>. This allows you to claim and manage cases while retaining full administrative authority.
+                    </p>
+
+                    {hasLawyerDashboard ? (
+                      <div className={`p-6 rounded-xl border flex flex-col items-center text-center gap-4 ${isDark ? "bg-emerald-500/5 border-emerald-500/20" : "bg-emerald-50 border-emerald-200"}`}>
+                        <div className="h-12 w-12 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                          <CheckCircle size={24} />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-emerald-500">Lawyer Mode Active</h3>
+                          <p className="text-xs text-slate-500 mt-1">You are fully authorized to access the Lawyer Dashboard.</p>
+                        </div>
+                        <Link
+                          to="/lawyer"
+                          className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold transition-all shadow-lg shadow-indigo-600/20"
+                        >
+                          Go to Lawyer Dashboard
+                        </Link>
+                      </div>
+                    ) : (
+                      <div className={`p-6 rounded-xl border flex flex-col items-center text-center gap-4 ${isDark ? "bg-indigo-500/5 border-indigo-500/20" : "bg-indigo-50 border-indigo-200"}`}>
+                        <div className="h-12 w-12 rounded-full bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
+                          <Scale size={24} />
+                        </div>
+                        <div>
+                          <h3 className="font-bold">Enable Lawyer Features</h3>
+                          <p className="text-xs text-slate-500 mt-1">Activate your profile in the lawyer case queue.</p>
+                        </div>
+                        <button
+                          onClick={handleEnableLawyerFeatures}
+                          disabled={enablingLawyer}
+                          className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2"
+                        >
+                          {enablingLawyer ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus size={16} />}
+                          Activate Lawyer Mode
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
         </main>
       </div>
 
@@ -1296,6 +1499,17 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* System Notifications (Global Overlay) */}
+      <SystemNotification
+        notifications={notifications}
+        onDismiss={handleDismissNotification}
+        onNavigate={(view) => {
+          setActiveView(view);
+          // Optional: handle dismiss on navigate if desired
+        }}
+        isDark={isDark}
+      />
     </div>
   );
 }

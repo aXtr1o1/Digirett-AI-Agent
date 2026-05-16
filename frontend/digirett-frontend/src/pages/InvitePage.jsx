@@ -55,7 +55,7 @@ export default function InvitePage() {
         }
       }
     };
-    
+
     claimAndRedirect();
   }, [isLoaded, isSignedIn, invite, navigate, token]);
 
@@ -93,24 +93,24 @@ export default function InvitePage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-indigo-50 flex items-center justify-center p-6">
       <div className="max-w-5xl w-full flex flex-col md:flex-row items-center justify-center gap-12 lg:gap-20">
-        
+
         {/* Left Side: Branding & Info */}
         <div className="flex-1 max-w-lg">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-700 text-sm font-semibold mb-8 animate-fade-in">
             <CheckCircle className="h-4 w-4" />
             <span>Invitation Verified</span>
           </div>
-          
+
           <h1 className="text-5xl font-black text-gray-900 leading-tight mb-6">
             Welcome to <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-500">Digirett AI</span>
           </h1>
-          
+
           <p className="text-xl text-gray-600 mb-10 leading-relaxed">
-            You've been professionally invited as a <span className="font-extrabold text-gray-900 border-b-4 border-indigo-200">{invite.role.toUpperCase()}</span>. 
+            You've been professionally invited as a <span className="font-extrabold text-gray-900 border-b-4 border-indigo-200">{invite.role.toUpperCase()}</span>.
             Join our platform to start managing legal escalations.
           </p>
-          
+
           <div className="space-y-6">
             {[
               { num: 1, text: "Accept your professional role" },
@@ -125,7 +125,7 @@ export default function InvitePage() {
               </div>
             ))}
           </div>
-          
+
           <div className="mt-12 pt-8 border-t border-gray-100">
             <p className="text-sm text-gray-400">
               &copy; 2026 Digirett AS. Secured by professional-grade encryption.
@@ -135,10 +135,10 @@ export default function InvitePage() {
 
         {/* Right Side: Clerk Signup */}
         <div className="flex-shrink-0 w-full md:w-auto flex justify-center scale-95 origin-top">
-          <SignUp 
-            routing="hash" 
-            signInUrl="/sign-in" 
-            redirectUrl={`/provisioning?target=${invite.role}`}
+          <SignUp
+            routing="hash"
+            signInUrl="/sign-in"
+            redirectUrl={`/provisioning?target=${invite.role}&token=${token}`}
             appearance={{
               variables: {
                 colorPrimary: "#4f46e5",

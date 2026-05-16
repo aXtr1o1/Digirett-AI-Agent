@@ -77,7 +77,7 @@ const ChatContainer = ({
             isProcessingDoc={isProcessingDoc}
             theme={theme}
           />
-          
+
           {/* ✅ Status Card removed from here — moved to Right Sidebar */}
         </div>
       </div>

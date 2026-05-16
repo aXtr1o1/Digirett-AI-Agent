@@ -124,7 +124,7 @@ const NotificationItem = ({ notif, onDismiss, onNavigate, index }) => {
               fontWeight: "900",
               color: "#ffffff"
             }}>
-              {isResolution ? "CASE RESOLVED" : isNewCase ? "NEW CASE AVAILABLE" : "LAWYER LINKED"}
+              {isResolution ? "MATTER RESOLVED" : isNewCase ? "NEW MATTER AVAILABLE" : "LAWYER LINKED"}
             </span>
           </div>
           <div style={{

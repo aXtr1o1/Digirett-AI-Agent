@@ -50,7 +50,7 @@ const ChatPage = () => {
   // Monitor for persistent status alerts (Accepted/Resolved)
   const checkMatterStatus = useCallback(async () => {
     if (!user?.id) return;
-    
+
     try {
       // 1. Always get the LATEST dismissed events directly from storage to prevent race conditions
       const savedDismissed = localStorage.getItem("dismissed_system_events");
@@ -61,7 +61,7 @@ const ChatPage = () => {
       if (!Array.isArray(tickets)) return;
 
       const currentNotifications = [];
-      
+
       tickets.forEach(ticket => {
         const ticketId = ticket.ticket_id || ticket.id;
         if (!ticketId) return;
@@ -90,7 +90,7 @@ const ChatPage = () => {
               type: 'accepted',
               title: title,
               caseRef: caseRef,
-              message: `Case #${caseRef}: Lawyer "${lawyerName}" has accepted your matter "${title}".`,
+              message: `Matter #${caseRef}: Lawyer "${lawyerName}" has accepted your matter "${title}".`,
               conversation_id: convId
             });
           }
@@ -106,7 +106,7 @@ const ChatPage = () => {
               type: 'resolved',
               title: title,
               caseRef: caseRef,
-              message: `Case #${caseRef}: Your legal consultation for "${title}" is now complete. View the official resolution.`,
+              message: `Matter #${caseRef}: Your legal consultation for "${title}" is now complete. View the official resolution.`,
               conversation_id: convId
             });
           }
@@ -136,63 +136,63 @@ const ChatPage = () => {
 
   return (
     <>
-    <MainLayout
-      conversations={conversations}
-      currentConversationId={currentConversationId}
-      onNewChat={() => {
-        localStorage.removeItem("conversationId");
-        navigate("/chat");
-        setCurrentConversationId(null);
-        setIsEscalated(false);
-      }}
-      onSelectConversation={(id) => {
-        navigate(`/chat/${id}`);
-        setIsEscalated(false);
-      }}
-      onDeleteConversation={deleteConversation}
-      isLoadingConversations={convLoading}
-      error={null} // Errors handled inside components
-      rightSidebar={
-        isEscalated && currentConversationId ? (
-          <LegalPanel conversationId={currentConversationId} />
-        ) : null
-      }
-    >
-      {convLoading ? (
-        <div className="flex-1 flex items-center justify-center h-full text-gray-500">
-          Loading...
-        </div>
-      ) : (
-        <ChatContainer
-          conversationId={currentConversationId}
-          onConversationCreated={handleAutoCreatedConversation}
-          moveConversationToTop={moveConversationToTop}
-          userId={user?.id}
-          onEscalated={(status) => {
-            setIsEscalated(status);
-            if (status && currentConversationId) {
-              updateEscalationStatus(currentConversationId, true);
-            }
-          }}
-        />
-      )}
-    </MainLayout>
+      <MainLayout
+        conversations={conversations}
+        currentConversationId={currentConversationId}
+        onNewChat={() => {
+          localStorage.removeItem("conversationId");
+          navigate("/chat");
+          setCurrentConversationId(null);
+          setIsEscalated(false);
+        }}
+        onSelectConversation={(id) => {
+          navigate(`/chat/${id}`);
+          setIsEscalated(false);
+        }}
+        onDeleteConversation={deleteConversation}
+        isLoadingConversations={convLoading}
+        error={null} // Errors handled inside components
+        rightSidebar={
+          isEscalated && currentConversationId ? (
+            <LegalPanel conversationId={currentConversationId} />
+          ) : null
+        }
+      >
+        {convLoading ? (
+          <div className="flex-1 flex items-center justify-center h-full text-gray-500">
+            Loading...
+          </div>
+        ) : (
+          <ChatContainer
+            conversationId={currentConversationId}
+            onConversationCreated={handleAutoCreatedConversation}
+            moveConversationToTop={moveConversationToTop}
+            userId={user?.id}
+            onEscalated={(status) => {
+              setIsEscalated(status);
+              if (status && currentConversationId) {
+                updateEscalationStatus(currentConversationId, true);
+              }
+            }}
+          />
+        )}
+      </MainLayout>
 
-    {/* System Notifications (Global Overlay) */}
-    <SystemNotification 
-      notifications={notifications}
-      onDismiss={handleDismissNotification}
-      onNavigate={(id) => {
-        // 1. Clear ALL notifications for this specific conversation ID immediately
-        const relatedNotifs = notifications.filter(n => n.conversation_id === id);
-        relatedNotifs.forEach(n => handleDismissNotification(n.id));
-        
-        // 2. Redirect to the conversation URL (Clean switch)
-        navigate(`/chat/${id}`);
-        setIsEscalated(false); 
-      }}
-      isDark={isDark}
-    />
+      {/* System Notifications (Global Overlay) */}
+      <SystemNotification
+        notifications={notifications}
+        onDismiss={handleDismissNotification}
+        onNavigate={(id) => {
+          // 1. Clear ALL notifications for this specific conversation ID immediately
+          const relatedNotifs = notifications.filter(n => n.conversation_id === id);
+          relatedNotifs.forEach(n => handleDismissNotification(n.id));
+
+          // 2. Redirect to the conversation URL (Clean switch)
+          navigate(`/chat/${id}`);
+          setIsEscalated(false);
+        }}
+        isDark={isDark}
+      />
     </>
   );
 };

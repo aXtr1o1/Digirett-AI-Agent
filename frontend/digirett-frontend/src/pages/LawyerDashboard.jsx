@@ -110,7 +110,7 @@ export default function LawyerDashboard() {
             id: eventId,
             type: 'new_case',
             caseRef: ticketId,
-            message: `New Incoming Case: A legal consultation has been requested and is waiting in your queue.`,
+            message: `New Incoming Matter: A legal consultation has been requested and is waiting in your queue.`,
             view: 'queue'
           });
         }
@@ -200,10 +200,10 @@ export default function LawyerDashboard() {
       const currentIntakeId = localStorage.getItem("lawyer_current_intake_id");
       if (!currentIntakeId) {
         localStorage.setItem("lawyer_current_intake_id", ticketId);
-        setQueueMsg({ type: "success", text: "You claimed this case! It is now in your Intake." });
+        setQueueMsg({ type: "success", text: "You claimed this matter! It is now in your Intake." });
         setActiveView("intake");
       } else {
-        setQueueMsg({ type: "success", text: "You claimed this case! It is now in your Pending list." });
+        setQueueMsg({ type: "success", text: "You claimed this matter! It is now in your Pending list." });
         setActiveView("pending");
       }
 
@@ -217,7 +217,7 @@ export default function LawyerDashboard() {
       if (isConflict) {
         setClaimError({
           title: "Already Claimed",
-          message: "Another lawyer claimed this case just a moment ago. The queue has been updated to reflect current availability.",
+          message: "Another lawyer claimed this matter just a moment ago. The queue has been updated to reflect current availability.",
           ticketId: ticketId
         });
         setQueueMsg(null);
@@ -350,14 +350,14 @@ export default function LawyerDashboard() {
                     }`}
                 >
                   <ClipboardList size={16} />
-                  Case Queue
+                  Matter Queue
                   <span className="ml-auto bg-white/10 text-white px-1.5 py-0.5 rounded text-[10px]">{queueTickets.length}</span>
                 </button>
               </nav>
             </div>
 
             <div>
-              <p className="px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 mb-4 opacity-50 font-bold">Claimed Cases</p>
+              <p className="px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 mb-4 opacity-50 font-bold">Claimed Matters</p>
               <nav className="space-y-1">
                 <button
                   onClick={() => { setActiveView("intake"); setIsSidebarOpen(false); }}
@@ -374,7 +374,7 @@ export default function LawyerDashboard() {
                     }`}
                 >
                   <Layers size={16} />
-                  Pending Cases
+                  Pending Matters
                   {pendingTickets.length > 0 && <span className="ml-auto bg-white/10 text-white px-1.5 py-0.5 rounded text-[10px]">{pendingTickets.length}</span>}
                 </button>
               </nav>
@@ -407,6 +407,15 @@ export default function LawyerDashboard() {
                   <ArrowLeft size={16} />
                   Go to Chat
                 </Link>
+                {clerkUser?.publicMetadata?.role === "admin" && (
+                  <Link
+                    to="/admin"
+                    className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-bold text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/5 transition-all border border-indigo-500/20 mt-4"
+                  >
+                    <Shield size={16} />
+                    Admin Dashboard
+                  </Link>
+                )}
               </nav>
             </div>
           </div>
@@ -606,7 +615,7 @@ export default function LawyerDashboard() {
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className={`border rounded-2xl shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
                 <div className={`px-8 py-5 border-b ${isDark ? "border-slate-800" : "border-slate-100"}`}>
-                  <h2 className="text-base font-bold">Case Queue</h2>
+                  <h2 className="text-base font-bold">Matter Queue</h2>
                   <p className="text-xs text-slate-500 mt-1">Shared pool of open legal escalations waiting for assignment.</p>
                 </div>
 
@@ -685,7 +694,7 @@ export default function LawyerDashboard() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                     <div className="space-y-6">
-                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Case Intelligence</h4>
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Matter Intelligence</h4>
                       <div className={`p-6 rounded-2xl ${isDark ? "bg-slate-950/50" : "bg-slate-50"}`}>
                         <p className="text-sm leading-relaxed text-slate-500 italic">
                           {intakeTicket.conversation_summary || "Matter summary is being synthesized by AI. Please review the raw chat logs for full legal context."}
