@@ -201,6 +201,9 @@ async def lifespan(app: FastAPI):
         invite.set_services(
             supabase_client=supabase_client,
         )
+        auth.set_services(
+            user_service=user_service,
+        )
 
         logger.info("All services ready — server is live")
 

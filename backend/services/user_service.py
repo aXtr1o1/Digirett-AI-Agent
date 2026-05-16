@@ -328,23 +328,32 @@ class UserService:
                 
             invite = resp.data[0]
             
-            # 2. Validate email matches
-            if invite["email"].lower() != email.lower():
-                logger.warning(f"⚠️ Invite email mismatch. Token email: {invite['email']}, User email: {email}")
-                return False
-                
-            role = invite["role"]
-            
             # 3. Get user_id from clerk_id
             user_id = self.get_user_id_from_clerk_id(clerk_user_id)
             if not user_id:
                 logger.error(f"❌ Could not find internal user_id for clerk_id: {clerk_user_id}")
                 return False
                 
-            # 4. Promote user
-            success = False
             user_info = self.get_user_by_id(user_id)
-            current_role = user_info.get("role", "user") if user_info else "user"
+            if not user_info:
+                logger.error(f"❌ Could not find user info for user_id: {user_id}")
+                return False
+                
+            db_email = user_info.get("email")
+            
+            # 2. Validate email matches
+            invite_email = invite.get("email")
+            
+            if not invite_email or not db_email:
+                logger.warning(f"⚠️ Missing email for verification. Token email: {invite_email}, DB email: {db_email}")
+                return False
+                
+            if invite_email.lower() != db_email.lower():
+                logger.warning(f"⚠️ Invite email mismatch. Token email: {invite_email}, DB email: {db_email}")
+                return False
+                
+            role = invite["role"]
+            current_role = user_info.get("role", "user")
 
             if role == "lawyer":
                 if current_role == "admin":
@@ -385,7 +394,7 @@ class UserService:
                 # Allow Admin to invite themselves as a Lawyer
                 if existing_role == "lawyer" or (existing_role == "admin" and role == "admin"):
                     logger.warning(f"⚠️ User {email} already has role {existing_role}. Invitation blocked.")
-                    return False
+                    raise ValueError(f"An account with this email is already registered as a {existing_role.capitalize()}. Duplicate invitations are restricted.")
 
             token = str(uuid4())
             invite_data = {
@@ -408,6 +417,8 @@ class UserService:
                 logger.info(f"📨 Invited user | email={email} | role={role}")
                 return True
             return False
+        except ValueError as exc:
+            raise exc
         except Exception as exc:
             logger.error(f"❌ invite_user failed | {email} | {exc}")
             return False
