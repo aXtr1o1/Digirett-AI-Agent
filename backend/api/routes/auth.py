@@ -3,8 +3,15 @@ from pydantic import BaseModel
 
 from core.auth import ClerkUser, require_db_role
 from services.user_service import UserService
+from typing import Optional
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+_user_service: Optional[UserService] = None
+
+def set_services(user_service: UserService) -> None:
+    global _user_service
+    _user_service = user_service
 
 class AcceptInviteRequest(BaseModel):
     token: str
@@ -18,10 +25,10 @@ async def accept_invite(
     User accepts an invitation using the token from their email.
     If they are already logged in, this upgrades their role immediately.
     """
-    # Import inside to avoid circular dependency if user_service is global
-    from main import user_service
-    
-    success = user_service.accept_invite(
+    if not _user_service:
+        raise HTTPException(status_code=500, detail="UserService not initialized")
+        
+    success = _user_service.accept_invite(
         token=req.token, 
         clerk_user_id=current_user.clerk_user_id,
         email=current_user.email

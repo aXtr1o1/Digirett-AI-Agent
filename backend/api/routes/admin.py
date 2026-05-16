@@ -86,15 +86,18 @@ async def invite_user(
     admin_id = _user_service.get_user_id_from_clerk_id(current_admin.clerk_user_id)
     admin_email = current_admin.email
 
-    success = await _user_service.invite_user(
-        email=req.email,
-        role=req.role,
-        admin_id=admin_id,
-        email_service=_email_service,
-        admin_email=admin_email,
-    )
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to send invitation.")
+    try:
+        success = await _user_service.invite_user(
+            email=req.email,
+            role=req.role,
+            admin_id=admin_id,
+            email_service=_email_service,
+            admin_email=admin_email,
+        )
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to send invitation.")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     return {"message": f"Invitation sent to {req.email}"}
 
