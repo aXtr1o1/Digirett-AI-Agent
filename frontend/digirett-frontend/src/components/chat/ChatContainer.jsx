@@ -47,11 +47,16 @@ const ChatContainer = ({
   );
 
   // Notify parent of escalation status
+  const onEscalatedRef = React.useRef(onEscalated);
   React.useEffect(() => {
-    if (onEscalated) {
-      onEscalated(isEscalated);
+    onEscalatedRef.current = onEscalated;
+  }, [onEscalated]);
+
+  React.useEffect(() => {
+    if (onEscalatedRef.current) {
+      onEscalatedRef.current(isEscalated);
     }
-  }, [isEscalated, onEscalated]);
+  }, [isEscalated]);
 
   return (
     <div className="flex flex-col h-full w-full bg-transparent">

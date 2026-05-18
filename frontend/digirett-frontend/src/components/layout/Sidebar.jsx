@@ -14,7 +14,8 @@ import {
   LogOut,
   User,
   Shield,
-  Gavel
+  Gavel,
+  AlertTriangle
 } from "lucide-react";
 import { useUser, useClerk } from "@clerk/clerk-react";
 import { useNavigate } from "react-router-dom";
@@ -77,15 +78,15 @@ const Sidebar = ({
 
   const features = [
     { id: "chat", label: "Chat", icon: MessageSquare, path: "/chat" },
-    { id: "archived", label: "Archived", icon: Archive, path: "/archived" },
-    { id: "library", label: "Library", icon: Menu, path: "/library" },
+    { id: "archived", label: "Archived", icon: Archive },
+    { id: "library", label: "Library", icon: Menu },
   ];
 
   if (role === "admin") {
-    features.push({ id: "admin", label: "Admin Panel", icon: Shield, path: "/admin" });
+    features.push({ id: "admin", label: "Admin Dashboard", icon: Shield, path: "/admin" });
   }
   if (role === "lawyer") {
-    features.push({ id: "lawyer", label: "Matter Queue", icon: FileText, path: "/lawyer" });
+    features.push({ id: "lawyer", label: "Lawyer Dashboard", icon: FileText, path: "/lawyer" });
   }
 
   const handleFeatureClick = (feature) => {
@@ -698,8 +699,31 @@ const Sidebar = ({
       </div>
       </div> */}
 
+      {/* BETA DISCLAIMER */}
+      <div style={{ flexShrink: 0, marginTop: "auto", padding: "16px" }}>
+        <div style={{
+          padding: "12px",
+          borderRadius: "12px",
+          backgroundColor: isDark ? "rgba(249, 115, 22, 0.05)" : "rgba(249, 115, 22, 0.1)",
+          border: isDark ? "1px solid rgba(249, 115, 22, 0.2)" : "1px solid rgba(249, 115, 22, 0.3)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+            <AlertTriangle size={14} color="#f97316" />
+            <span style={{ fontSize: "11px", fontWeight: "700", color: "#f97316", letterSpacing: "0.05em" }}>BETA VERSION</span>
+          </div>
+          <p style={{
+            fontSize: "10px",
+            lineHeight: "1.5",
+            color: isDark ? "#9ca3af" : "#4b5563",
+            margin: 0
+          }}>
+            DigiRett is currently in beta. Responses may be incomplete or inaccurate and should not be treated as formal legal advice.
+          </p>
+        </div>
+      </div>
+
       {/* UPGRADE TO PREMIUM CARD */}
-      {/* <div style={{ flexShrink: 0, marginTop: "auto" }}>
+      {/* <div style={{ flexShrink: 0 }}>
         <UpgradeCard theme={theme} />
       </div> */}
     </aside>

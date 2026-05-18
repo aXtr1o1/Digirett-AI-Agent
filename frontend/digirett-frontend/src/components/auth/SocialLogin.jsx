@@ -1,26 +1,36 @@
 import React from 'react';
-import { useSignUp } from '@clerk/clerk-react';
+import { useSignUp, useSignIn } from '@clerk/clerk-react';
 import { FcGoogle } from 'react-icons/fc';
 
-const SocialLogin = () => {
-  const { signUp, isLoaded } = useSignUp();
+const SocialLogin = ({ mode = 'signin' }) => {
+  const { signUp, isLoaded: signUpLoaded } = useSignUp();
+  const { signIn, isLoaded: signInLoaded } = useSignIn();
 
   const handleGoogleLogin = async () => {
-    if (!isLoaded) return;
-
-    try {
-      // ✅ Universal Clerk OAuth flow (Sign Up version):
-      // 1. Redirect to /sso-callback to process the auth
-      // 2. Redirect to /chat (or customized in SSOCallback)
-      // Note: useSignUp is better for universal buttons because it handles new users
-      // without 'Account not found' errors, while existing users are auto-signed in.
-      await signUp.authenticateWithRedirect({
-        strategy: 'oauth_google',
-        redirectUrl: `${window.location.origin}/sso-callback`,
-        redirectUrlComplete: `${window.location.origin}/`,
-      });
-    } catch (err) {
-      console.error("Social login error:", err);
+    if (mode === 'signup') {
+      if (!signUpLoaded) return;
+      try {
+        console.log("[SocialLogin] Initiating Google OAuth Sign-Up...");
+        await signUp.authenticateWithRedirect({
+          strategy: 'oauth_google',
+          redirectUrl: `${window.location.origin}/sso-callback`,
+          redirectUrlComplete: `${window.location.origin}/`,
+        });
+      } catch (err) {
+        console.error("Social signup error:", err);
+      }
+    } else {
+      if (!signInLoaded) return;
+      try {
+        console.log("[SocialLogin] Initiating Google OAuth Sign-In...");
+        await signIn.authenticateWithRedirect({
+          strategy: 'oauth_google',
+          redirectUrl: `${window.location.origin}/sso-callback`,
+          redirectUrlComplete: `${window.location.origin}/`,
+        });
+      } catch (err) {
+        console.error("Social signin error:", err);
+      }
     }
   };
 
