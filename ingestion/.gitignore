@@ -59,3 +59,5 @@ Thumbs.db
 
 
 deployment/*.csv
+del_milvus.py
+verify_milvus.py

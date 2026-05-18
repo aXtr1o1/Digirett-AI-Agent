@@ -38,20 +38,20 @@
   .container {
     @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
   }
-  
+
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: #888 transparent;
   }
-  
+
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
   }
-  
+
   .scrollbar-thin::-webkit-scrollbar-track {
     background: transparent;
   }
-  
+
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background: #888;
     border-radius: 3px;
@@ -164,6 +164,7 @@
       opacity: 0;
       transform: translateY(10px);
     }
+
     to {
       opacity: 1;
       transform: translateY(0);
@@ -205,24 +206,7 @@
   }
 }
 
-/* Clerk component customization */
-.cl-internal-b3fm6y {
-  background-color: #0a0a0a !important;
-}
-
-.cl-card {
-  background-color: #1a1a1a !important;
-  border-color: #374151 !important;
-}
-
-.cl-formButtonPrimary {
-  background-color: white !important;
-  color: black !important;
-}
-
-.cl-formButtonPrimary:hover {
-  background-color: #f3f4f6 !important;
-}
+/* Clerk component customization removed to allow dynamic theming via React props */
 
 /* Scrollbar — visible in both light and dark mode */
 ::-webkit-scrollbar {
@@ -341,10 +325,13 @@
 
 /* Hide scrollbar in sidebar */
 .sidebar-scrollbar-hidden {
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE and Edge */
 }
 
 .sidebar-scrollbar-hidden::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
+  display: none;
+  /* Chrome, Safari, Opera */
 }

@@ -1,14 +1,15 @@
 import api from "./api";
-import { API_ENDPOINTS, DEFAULT_USER_ID } from "../utils/constants";
+import { API_ENDPOINTS } from "../utils/constants";
 
 const conversationService = {
 
   createNewConversation: async (title = null) => {
     try {
-      const response = await api.post(API_ENDPOINTS.CONVERSATIONS.CREATE, {
-        user_id: DEFAULT_USER_ID,
+      const payload = {
         ...(title ? { title } : {}),
-      });
+      };
+      console.log("[conversationService] Sending body:", payload);
+      const response = await api.post(API_ENDPOINTS.CONVERSATIONS.CREATE, payload);
       console.log("[conversationService] createNewConversation response:", response.data);
       return response.data;
     } catch (error) {
@@ -19,9 +20,7 @@ const conversationService = {
 
   listConversations: async () => {
     try {
-      const response = await api.get(
-        API_ENDPOINTS.CONVERSATIONS.LIST(DEFAULT_USER_ID)
-      );
+      const response = await api.get(API_ENDPOINTS.CONVERSATIONS.LIST);
       const data = response.data;
       console.log("[conversationService] listConversations raw response:", data);
 

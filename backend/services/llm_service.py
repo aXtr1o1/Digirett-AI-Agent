@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def _extract_score(full_text: str):
     
-    pattern = re.compile(r"\[SCORE:([0-9.]+)\]")
+    pattern = re.compile(r"\[SCORE:\s*([0-9.]+)\]")
     match = pattern.search(full_text)
 
     if match:
@@ -76,6 +76,7 @@ class LLMService:
         query: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
+        language: Optional[str] = None,
     ) -> AsyncIterator[str]:
         """Stream casual response tokens. No RAG context involved."""
         async with llm_span("casual_generation"):
@@ -83,6 +84,7 @@ class LLMService:
                 query=query,
                 conversation_history=conversation_history,
                 temperature=temperature,
+                language=language,
             ):
                 yield token
 
@@ -152,7 +154,7 @@ class LLMService:
                 yield char
             return
 
-        score_re = re.compile(r"\[SCORE:[0-9.]+\]")
+        score_re = re.compile(r"\[SCORE:\s*[0-9.]+\]")
         buffer = ""
 
         async with llm_span("legal_stream"):
@@ -265,3 +267,42 @@ class LLMService:
         except Exception as exc:
             logger.error(f" LLM connection check failed | {exc}")
             return False
+    async def summarize_document_stream(
+        self,
+        doc_text: str,
+    ) -> AsyncIterator[str]:
+        """
+        Stream a concise document summary in the document's own language.
+        Bypasses GeneratorAgent — uses the raw LLM with a neutral system prompt.
+        """
+        truncated = doc_text[:60_000]
+
+        messages = [
+            SystemMessage(content=(
+                "You are a document summarizer. "
+                "Identify the language of the document and Strictly respond ONLY in that language. "
+                "English document → English summary. "
+                "Norwegian document → Norwegian summary. "
+                "Never translate. Never switch languages. and Never mix languages in your response."
+            )),
+            HumanMessage(content=(
+                f"Summarize the following document in 3-5 sentences. "
+                f"Cover only the main purpose and key points. "
+                f"Do not use code blocks or backticks.\n\n"
+                f"DOCUMENT:\n{truncated}"
+            )),
+        ]
+
+        llm = AzureChatOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+            temperature=0.3,
+            streaming=True,
+        )
+
+        async with llm_span("document_summarization"):
+            async for chunk in llm.astream(messages):
+                if hasattr(chunk, "content") and chunk.content:
+                    yield chunk.content

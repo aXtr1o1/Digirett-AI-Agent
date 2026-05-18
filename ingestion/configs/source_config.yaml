@@ -1,0 +1,64 @@
+# =============================================================================
+# source_config.yaml — Adapter registry & source endpoints
+# =============================================================================
+# Each source maps to an adapter class via the `adapter` field.
+# The AdapterFactory reads this file to instantiate the correct adapter.
+#
+# Environment variables can be referenced with ${VAR_NAME} syntax.
+# =============================================================================
+
+sources:
+
+  lovdata:
+    adapter: lovdata
+    enabled: true
+    description: "Lovdata XML legal documents"
+    base_url: "${LOVDATA_API_URL}"
+    format: xml
+    # Where to look for local XML files (fallback if API unavailable)
+    local_data_dir: "./data/raw_xml"
+
+  xapi:
+    adapter: xapi
+    enabled: true
+    description: "XAPI Lovdata JSON API"
+    base_url: "${XAPI_BASE_URL}"
+    auth_header: "X-API-Key"
+    api_key_env: "XAPI_KEY"
+    format: json
+    fetch_limit: 5
+    # Rate-limit controls (overridden by env vars XAPI_REQUEST_DELAY_SECONDS etc.)
+    request_delay_seconds: 0.8   # polite pause between each detail + paragraph call
+    max_retry_attempts: 3        # retries before aborting batch on 429
+    retry_base_seconds: 5.0      # backoff base: 5s → 10s → 20s
+
+  file_upload:
+    adapter: file
+    enabled: true
+    description: "Local file uploads (PDF, DOCX, TXT, XML)"
+    watch_dir: "./data/uploads"
+    formats:
+      - pdf
+      - docx
+      - txt
+      - xml
+
+  generic_fallback:
+    adapter: generic_api
+    enabled: false
+    description: "Generic REST API adapter for future data sources"
+    base_url: ""
+    method: GET
+    headers: {}
+    auth_type: "none"    # none | api_key | bearer
+    api_key_env: ""
+    response_format: json
+
+# =============================================================================
+# Default settings for all adapters
+# =============================================================================
+
+defaults:
+  timeout_seconds: 30
+  max_retries: 3
+  retry_delay_seconds: 2

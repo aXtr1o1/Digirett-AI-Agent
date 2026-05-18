@@ -1,17 +1,40 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Send, StopCircle, Paperclip, Settings, Grid3x3, Mic, ArrowUp, Star } from "lucide-react";
+import { StopCircle, Paperclip, ArrowUp, X, Scale, Check, CheckCircle, Loader2 } from "lucide-react";
 
-const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark" }) => {
+const MessageComposer = ({
+  onSend,
+  disabled,
+  isStreaming,
+  isProcessingDoc,
+  onStop,
+  onEscalate,
+  isEscalated,
+  showEscalate = true,
+  theme = "dark",
+  messageCount = 0,
+}) => {
   const [message, setMessage] = useState("");
+  const [file, setFile] = useState(null);
+  const [showEscalateConfirm, setShowEscalateConfirm] = useState(false);
+  const [isEscalating, setIsEscalating] = useState(false);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [localEscalated, setLocalEscalated] = useState(false);
+
+  const isBusy = disabled || isProcessingDoc;
+  const isInputBlocked = isBusy || (disabled && !isStreaming);
+
   const textareaRef = useRef(null);
+  const fileInputRef = useRef(null);
+
   const isDark = theme === "dark";
-  const sendingRef = useRef(false);
+  // treat doc processing same as streaming — block all input
+
+  // Auto resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
       const newHeight = Math.min(textareaRef.current.scrollHeight, 200);
       textareaRef.current.style.height = newHeight + "px";
-      // Show scrollbar only when content exceeds max height
       textareaRef.current.style.overflowY =
         textareaRef.current.scrollHeight > 200 ? "scroll" : "hidden";
     }
@@ -21,161 +44,460 @@ const MessageComposer = ({ onSend, disabled, isStreaming, onStop, theme = "dark"
     textareaRef.current?.focus();
   }, []);
 
+  // File select
+  const handleFileSelect = (e) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile) {
+      setFile(selectedFile);
+    }
+  };
+
+  // Remove file
+  const removeFile = () => {
+    setFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  // Send message
   const sendMessage = () => {
-    if (sendingRef.current) return;     // ⭐ block double send
-    if (!message.trim() || disabled || isStreaming) return;
+    if (isBusy || disabled) return;
+    if (!message.trim() && !file) return;
 
-    sendingRef.current = true;
+    onSend({
+      text: message,
+      file: file,
+    });
 
-    onSend(message);
     setMessage("");
+    setFile(null);
 
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.overflowY = "hidden";
     }
-
-    setTimeout(() => {
-      sendingRef.current = false;
-    }, 300);
   };
 
+  // ✅ Enter key sends; Shift+Enter inserts newline
   const handleKeyDown = (e) => {
-    if (e.key !== "Enter") return;
-    if (e.shiftKey) return;       // allow new line
-    if (isStreaming) return;
+    if (isBusy) return;
 
-    e.preventDefault();
-    sendMessage();
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
+  const canSend = !disabled && !isBusy && (!!message.trim() || !!file);
+
+  const getPlaceholder = () => {
+    if (isProcessingDoc) return "Analysing document…";
+    if (file) return "Add a question about the document";
+    return "Ask Anything...";
   };
 
   return (
     <div
       style={{
         display: "flex",
-        alignItems: "center",
-        gap: "12px",
-        borderRadius: "12px",
-        padding: "14px 16px",
-        border: isDark 
-          ? "1px solid rgba(59, 130, 246, 0.2)" 
-          : "1px solid rgba(59, 130, 246, 0.15)",
-        backgroundColor: isDark 
-          ? "rgba(30, 30, 30, 0.3)" 
-          : "rgba(255, 255, 255, 0.5)",
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
-        boxShadow: isDark
-          ? "0 0 10px rgba(59, 130, 246, 0.1), 0 0 20px rgba(37, 99, 235, 0.05)"
-          : "0 0 10px rgba(96, 165, 250, 0.08), 0 0 20px rgba(147, 197, 253, 0.05)",
-        transition: "all 0.2s",
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = isDark 
-          ? "rgba(59, 130, 246, 0.3)" 
-          : "rgba(59, 130, 246, 0.2)";
-        e.currentTarget.style.boxShadow = isDark
-          ? "0 0 15px rgba(59, 130, 246, 0.15), 0 0 30px rgba(37, 99, 235, 0.08)"
-          : "0 0 15px rgba(96, 165, 250, 0.12), 0 0 30px rgba(147, 197, 253, 0.08)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = isDark 
-          ? "rgba(59, 130, 246, 0.2)" 
-          : "rgba(59, 130, 246, 0.15)";
-        e.currentTarget.style.boxShadow = isDark
-          ? "0 0 10px rgba(59, 130, 246, 0.1), 0 0 20px rgba(37, 99, 235, 0.05)"
-          : "0 0 10px rgba(96, 165, 250, 0.08), 0 0 20px rgba(147, 197, 253, 0.05)";
+        flexDirection: "column",
+        gap: "6px",
       }}
     >
-      <textarea
-        ref={textareaRef}
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        onKeyDown={handleKeyDown}
-        disabled={disabled}
-        rows={1}
-        placeholder="Ask Anything..."
-        style={{
-          flex: 1,
-          resize: "none",
-          background: "transparent",
-          border: "none",
-          outline: "none",
-          fontSize: "16px",
-          lineHeight: "24px",
-          color: isDark ? "#f3f4f6" : "#111827",
-          maxHeight: "200px",
-          overflowY: "hidden",
-          fontFamily: "inherit",
-          padding: 0,
-          minHeight: "24px",
-          verticalAlign: "middle",
-        }}
-        className={isDark ? "placeholder-dark" : "placeholder-light"}
-      />
-
-      {/* Send Button */}
-      {isStreaming ? (
-        <button
-          type="button"
-          onClick={onStop}
+      {/* File Preview */}
+      {file && (
+        <div
           style={{
-            width: "40px",
-            height: "40px",
-            borderRadius: "50%",
-            backgroundColor: "#ef4444",
-            border: "none",
-            cursor: "pointer",
             display: "flex",
             alignItems: "center",
-            justifyContent: "center",
-            color: "#ffffff",
-            transition: "all 0.2s",
-            flexShrink: 0,
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#dc2626"}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#ef4444"}
-        >
-          <StopCircle size={18} />
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={sendMessage}
-          disabled={disabled || isStreaming || !message.trim()}
-          style={{
-            width: "40px",
-            height: "40px",
-            borderRadius: "50%",
-            backgroundColor: (!disabled && message.trim()) 
-              ? (isDark ? "#3B82F6" : "#2563EB")
-              : (isDark ? "rgba(59, 130, 246, 0.4)" : "rgba(37, 99, 235, 0.4)"),
-            border: "none",
-            cursor: (!disabled && message.trim()) ? "pointer" : "not-allowed",
-
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#ffffff",
-            transition: "all 0.2s",
-            flexShrink: 0,
-          }}
-          onMouseEnter={(e) => {
-            if (!disabled && message.trim()) {
-              e.currentTarget.style.backgroundColor = isDark ? "#2563EB" : "#1D4ED8";
-              e.currentTarget.style.transform = "scale(1.05)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (!disabled && message.trim()) {
-              e.currentTarget.style.backgroundColor = isDark ? "#3B82F6" : "#2563EB";
-              e.currentTarget.style.transform = "scale(1)";
-            }
+            justifyContent: "space-between",
+            padding: "6px 10px",
+            borderRadius: "8px",
+            backgroundColor: isDark
+              ? "rgba(59, 130, 246, 0.1)"
+              : "rgba(59, 130, 246, 0.08)",
+            fontSize: "13px",
+            color: isDark ? "#d1d5db" : "#374151",
           }}
         >
-          <ArrowUp size={18} />
-        </button>
+          <span>📄 {file.name}</span>
+          <button
+            onClick={removeFile}
+            style={{
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              color: "#ef4444",
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
       )}
+
+      {/* Processing hint shown above input */}
+      {isProcessingDoc && (
+        <div
+          style={{
+            fontSize: "12px",
+            textAlign: "center",
+            color: isDark ? "#6b7280" : "#9ca3af",
+            padding: "2px 0",
+          }}
+        >
+          Analysing document — please wait…
+        </div>
+      )}
+
+      {/* Input Box */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
+          borderRadius: "12px",
+          padding: "14px 16px",
+          border: isDark
+            ? "1px solid rgba(59, 130, 246, 0.2)"
+            : "1px solid rgba(59, 130, 246, 0.15)",
+          backgroundColor: isDark
+            ? "rgba(30, 30, 30, 0.3)"
+            : "rgba(255, 255, 255, 0.5)",
+          backdropFilter: "blur(16px)",
+          opacity: isBusy ? 0.7 : 1,
+          transition: "opacity 0.2s",
+          position: "relative",
+        }}
+      >
+        {/* Success Toast */}
+        {showSuccessToast && (
+          <div style={{
+            position: "absolute",
+            top: "-60px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            padding: "10px 24px",
+            borderRadius: "99px",
+            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.3)",
+            backgroundColor: isDark ? "#1e293b" : "#ffffff",
+            border: isDark ? "1px solid rgba(59, 130, 246, 0.2)" : "1px solid rgba(59, 130, 246, 0.1)",
+            color: isDark ? "#60a5fa" : "#2563eb",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            whiteSpace: "nowrap",
+            zIndex: 100,
+            animation: "toastIn 0.3s ease-out forwards",
+          }}>
+            <CheckCircle size={16} />
+            <span style={{ fontSize: "14px", fontWeight: "600" }}>
+              {isEscalated || localEscalated
+                ? "You have successfully scheduled a consultation"
+                : "Request submitted. Lawyer will contact you shortly."}
+            </span>
+            <style>{`
+              @keyframes toastIn {
+                from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+                to { opacity: 1; transform: translateX(-50%) translateY(0); }
+              }
+            `}</style>
+          </div>
+        )}
+
+        {/* Lawyer Escalation Button (Only for Users) */}
+        {showEscalate && (
+          <div className="relative">
+            {showEscalateConfirm && (
+              <div style={{
+                position: "absolute",
+                bottom: "calc(100% + 12px)",
+                right: "0",
+                width: "256px",
+                padding: "16px",
+                borderRadius: "16px",
+                boxShadow: "0 10px 30px rgba(0, 0, 0, 0.3)",
+                backgroundColor: isDark ? "#1a1a1a" : "#ffffff",
+                border: isDark ? "1px solid rgba(42, 42, 42, 0.5)" : "1px solid rgba(229, 231, 235, 0.5)",
+                zIndex: 50,
+              }}>
+                {isEscalated || localEscalated ? (
+                  <div style={{ textAlign: "center" }}>
+                    <CheckCircle size={24} style={{ color: "#2563eb", marginBottom: "8px" }} />
+                    <p style={{ fontSize: "14px", fontWeight: "600", color: isDark ? "#ffffff" : "#111827", marginBottom: "4px" }}>
+                      Already Booked
+                    </p>
+                    <p style={{ fontSize: "12px", color: isDark ? "#9ca3af" : "#6b7280", marginBottom: "12px" }}>
+                      You have already requested a legal consultation for this matter.
+                    </p>
+                    <button
+                      onClick={() => setShowEscalateConfirm(false)}
+                      style={{
+                        width: "100%",
+                        padding: "8px",
+                        backgroundColor: isDark ? "#2a2a2a" : "#f3f4f6",
+                        color: isDark ? "#9ca3af" : "#6b7280",
+                        fontSize: "12px",
+                        fontWeight: "700",
+                        borderRadius: "8px",
+                        border: "none",
+                        cursor: "pointer"
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                ) : messageCount === 0 ? (
+                  <div style={{ textAlign: "center" }}>
+                    <p style={{ fontSize: "14px", fontWeight: "600", color: isDark ? "#ffffff" : "#111827", marginBottom: "6px" }}>
+                      Begin your enquiry
+                    </p>
+                    <p style={{ fontSize: "12px", color: isDark ? "#9ca3af" : "#6b7280", marginBottom: "12px", lineHeight: "1.5" }}>
+                      Please provide a brief overview of your legal requirements so our professionals can review them prior to your consultation.
+                    </p>
+                    <button
+                      onClick={() => setShowEscalateConfirm(false)}
+                      style={{
+                        width: "100%",
+                        padding: "8px",
+                        backgroundColor: "#2563eb",
+                        color: "#ffffff",
+                        fontSize: "12px",
+                        fontWeight: "700",
+                        borderRadius: "8px",
+                        border: "none",
+                        cursor: "pointer"
+                      }}
+                    >
+                      Got it
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <p style={{ fontSize: "14px", marginBottom: "12px", fontWeight: "500", color: isDark ? "#d1d5db" : "#374151" }}>
+                      Would you like to consult with a professional regarding this matter?
+                    </p>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button
+                        onClick={async () => {
+                          setIsEscalating(true);
+                          try {
+                            await onEscalate();
+                            setLocalEscalated(true);
+                            setShowEscalateConfirm(false);
+                            setShowSuccessToast(true);
+                            setTimeout(() => setShowSuccessToast(false), 3000);
+                          } catch (err) {
+                            console.error("Escalation failed:", err);
+                          } finally {
+                            setIsEscalating(false);
+                          }
+                        }}
+                        disabled={isEscalating}
+                        style={{
+                          flex: 1,
+                          padding: "8px",
+                          backgroundColor: "#2563eb",
+                          color: "#ffffff",
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          borderRadius: "8px",
+                          border: "none",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center"
+                        }}
+                      >
+                        {isEscalating ? <Loader2 className="h-3 w-3 animate-spin" /> : "Confirm"}
+                      </button>
+                      <button
+                        onClick={() => setShowEscalateConfirm(false)}
+                        style={{
+                          flex: 1,
+                          padding: "8px",
+                          backgroundColor: isDark ? "#2a2a2a" : "#f3f4f6",
+                          color: isDark ? "#9ca3af" : "#6b7280",
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          borderRadius: "8px",
+                          border: "none",
+                          cursor: "pointer"
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowEscalateConfirm(!showEscalateConfirm);
+              }}
+              style={{
+                width: "36px",
+                height: "36px",
+                borderRadius: "50%",
+                border: "none",
+                cursor: isBusy ? "not-allowed" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: (isEscalated || localEscalated) ? "rgba(59, 130, 246, 0.1)" : "transparent",
+                color: (isEscalated || localEscalated) ? "#3B82F6" : (isDark ? "#9ca3af" : "#6b7280"),
+                flexShrink: 0,
+                opacity: isBusy ? 0.4 : 1,
+              }}
+              title={(isEscalated || localEscalated) ? "" : "Talk to Lawyer"}
+            >
+              {(isEscalated || localEscalated) ? (
+                <CheckCircle size={22} style={{ color: "#2563eb" }} />
+              ) : (
+                <Scale size={18} />
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* Upload Button */}
+        <button
+          type="button"
+          onClick={() => !isBusy && fileInputRef.current?.click()}
+          style={{
+            width: "36px",
+            height: "36px",
+            borderRadius: "50%",
+            border: "none",
+            cursor: isBusy ? "not-allowed" : "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "transparent",
+            color: isDark ? "#9ca3af" : "#6b7280",
+            flexShrink: 0,
+            opacity: isBusy ? 0.4 : 1,
+          }}
+        >
+          <Paperclip size={18} />
+        </button>
+
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileSelect}
+          accept=".pdf,.docx,.doc"
+          style={{ display: "none" }}
+        />
+
+        {/* Textarea */}
+        <textarea
+          ref={textareaRef}
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          onKeyDown={handleKeyDown}
+          disabled={isBusy}
+          rows={1}
+          placeholder={getPlaceholder()}
+          style={{
+            flex: 1,
+            resize: "none",
+            background: "transparent",
+            border: "none",
+            outline: "none",
+            fontSize: "16px",
+            lineHeight: "24px",
+            color: isDark ? "#f3f4f6" : "#111827",
+            maxHeight: "200px",
+            overflowY: "hidden",
+            fontFamily: "inherit",
+            cursor: isBusy ? "not-allowed" : "text",
+          }}
+        />
+
+        {/* Send / Stop */}
+        {isStreaming || isProcessingDoc ? (
+          isStreaming ? (
+            <button
+              type="button"
+              onClick={onStop}
+              style={{
+                width: "40px",
+                height: "40px",
+                borderRadius: "50%",
+                backgroundColor: "#ef4444",
+                border: "none",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#ffffff",
+              }}
+            >
+              <StopCircle size={18} />
+            </button>
+          ) : (
+            /* Doc processing spinner */
+            <div
+              style={{
+                width: "40px",
+                height: "40px",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                style={{ animation: "spin 1s linear infinite" }}
+              >
+                <circle
+                  cx="12" cy="12" r="10"
+                  stroke={isDark ? "#4b5563" : "#d1d5db"}
+                  strokeWidth="3"
+                />
+                <path
+                  d="M12 2a10 10 0 0 1 10 10"
+                  stroke="#3B82F6"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                />
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+              </svg>
+            </div>
+          )
+        ) : (
+          <button
+            type="button"
+            onClick={sendMessage}
+            disabled={!canSend}
+            style={{
+              width: "40px",
+              height: "40px",
+              borderRadius: "50%",
+              backgroundColor: canSend
+                ? "#3B82F6"
+                : "rgba(59, 130, 246, 0.4)",
+              border: "none",
+              cursor: canSend ? "pointer" : "not-allowed",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#ffffff",
+            }}
+          >
+            <ArrowUp size={18} />
+          </button>
+        )}
+      </div>
     </div>
   );
 };

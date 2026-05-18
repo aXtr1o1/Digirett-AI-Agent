@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React from "react";
 import Sidebar from "./Sidebar";
 import BackgroundLayer from "../common/BackgroundLayer";
+import { useTheme } from "../../providers/ThemeProvider";
 
 const MainLayout = ({
   children,
@@ -9,21 +10,10 @@ const MainLayout = ({
   onSelectConversation,
   onNewChat,
   onDeleteConversation,
+  rightSidebar,
 }) => {
-  // ✅ FIX: Read saved theme from localStorage on first load, fallback to "dark"
-  const [theme, setTheme] = useState(
-    () => localStorage.getItem("theme") || "dark"
-  );
-  const isDark = theme === "dark";
+  const { theme, toggleTheme, isDark } = useTheme();
 
-  const handleToggleTheme = () => {
-    setTheme((prev) => {
-      const next = prev === "dark" ? "light" : "dark";
-      // ✅ FIX: Save new theme to localStorage whenever it changes
-      localStorage.setItem("theme", next);
-      return next;
-    });
-  };
 
   return (
     <div className="relative flex h-screen w-screen overflow-hidden">
@@ -32,7 +22,7 @@ const MainLayout = ({
       
       {/* Main Content Container with padding on all sides */}
       <div
-        className={`relative flex h-full w-full p-2 ${
+        className={`relative flex h-full w-full p-2 gap-2 ${
           isDark ? "text-gray-200" : "text-gray-900"
         }`}
       >
@@ -45,7 +35,7 @@ const MainLayout = ({
             onNewChat={onNewChat}
             onDeleteConversation={onDeleteConversation}
             theme={theme}
-            onToggleTheme={handleToggleTheme}
+            onToggleTheme={toggleTheme}
           />
         </div>
 
@@ -61,6 +51,13 @@ const MainLayout = ({
             </div>
           </main>
         </div>
+
+        {/* RIGHT SIDEBAR — only shown if provided */}
+        {rightSidebar && (
+          <div className="relative z-10 flex-shrink-0 h-full animate-in slide-in-from-right duration-300">
+            {React.cloneElement(rightSidebar, { theme })}
+          </div>
+        )}
       </div>
     </div>
   );

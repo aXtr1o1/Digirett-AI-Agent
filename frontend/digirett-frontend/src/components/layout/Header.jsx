@@ -1,14 +1,21 @@
 import React, { useState } from "react";
 import { Sun, Moon, User } from "lucide-react";
+import { useUser, useClerk } from "@clerk/clerk-react";
+import { useNavigate } from "react-router-dom";
 
 const Header = ({ theme, onToggleTheme }) => {
   const isDark = theme === "dark";
   const [open, setOpen] = useState(false);
+  const { user } = useUser();
+  const { signOut } = useClerk();
+  const navigate = useNavigate();
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    window.location.href = "/sign-in";
+  const handleLogout = async () => {
+    await signOut();
+    navigate("/sign-in");
   };
+
+  const displayName = user?.username || user?.primaryEmailAddress?.emailAddress || "User";
 
   return (
     <header
@@ -63,36 +70,41 @@ const Header = ({ theme, onToggleTheme }) => {
         <div className="relative">
           <button
             onClick={() => setOpen(!open)}
-            className={`p-2 rounded-full transition ${
+            className={`p-2 rounded-full transition flex items-center justify-center ${
               isDark
                 ? "hover:bg-gray-800 text-white"
                 : "hover:bg-gray-200 text-gray-900"
             }`}
           >
-            <User size={20} />
+            {user?.imageUrl ? (
+              <img src={user.imageUrl} alt="Profile" className="w-6 h-6 rounded-full" />
+            ) : (
+              <User size={20} />
+            )}
           </button>
 
           {open && (
             <div
-              className={`absolute right-0 mt-2 w-44 rounded-lg shadow-lg border z-50 ${
+              className={`absolute right-0 mt-2 w-44 rounded-lg shadow-lg border z-50 overflow-hidden ${
                 isDark
                   ? "bg-[#1a1a1a] border-gray-700 text-white"
                   : "bg-white border-gray-200 text-gray-900"
               }`}
             >
               <div
-                className={`px-4 py-2 text-sm border-b ${
-                  isDark ? "border-gray-700" : "border-gray-200"
+                className={`px-4 py-3 text-sm border-b truncate ${
+                  isDark ? "border-gray-700 text-gray-300" : "border-gray-200 text-gray-700"
                 }`}
+                title={displayName}
               >
-                admin1
+                {displayName}
               </div>
 
               <button
                 onClick={handleLogout}
-                className="w-full text-left px-4 py-2 rounded-lg transition text-red-600 hover:bg-red-50"
+                className="w-full text-left px-4 py-2.5 transition text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 font-medium"
               >
-                Logout
+                Sign out
               </button>
             </div>
           )}

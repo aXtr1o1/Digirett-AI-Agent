@@ -41,6 +41,7 @@ class ConversationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     is_deleted: bool = False
+    is_escalated: bool = False
 
 
 class MessageResponse(BaseModel):
@@ -52,6 +53,8 @@ class MessageResponse(BaseModel):
     created_at: datetime
     metadata: Optional[Dict[str, Any]] = None
     sources: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
+    type: str = "text"
+    file_name: Optional[str] = None
 
 
 class ConversationHistoryResponse(BaseModel):

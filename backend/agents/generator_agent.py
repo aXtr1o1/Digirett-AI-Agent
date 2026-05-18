@@ -101,10 +101,17 @@ LANGUAGE RULE:
         query: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
+        language: Optional[str] = None,
     ) -> AsyncIterator[str]:
         logger.info(" GeneratorAgent: casual stream starting")
 
-        messages = [SystemMessage(content=self.CASUAL_SYSTEM_PROMPT)]
+        # Build system prompt with language instruction
+        system_prompt = self.CASUAL_SYSTEM_PROMPT
+        if language:
+            lang_name = "Norwegian" if language == "norwegian" else "English"
+            system_prompt += f"\n\nIMPORTANT: Respond ONLY in {lang_name}. Do not translate or mix languages."
+
+        messages = [SystemMessage(content=system_prompt)]
 
         if conversation_history:
             for msg in conversation_history:
@@ -133,9 +140,9 @@ LANGUAGE RULE:
         response_style: str = "",
     ) -> AsyncIterator[str]:
         import json
-        logger.info("  GeneratorAgent: legal stream starting")
+        logger.info(" GeneratorAgent: legal stream starting")
 
-        buffer = ""  # <-- initialize buffer to store all streamed content
+        buffer = ""  
 
         if not rag_context or not rag_context.strip():
             error_msg = (

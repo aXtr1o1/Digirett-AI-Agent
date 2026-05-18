@@ -35,6 +35,10 @@ class ChatRequest(BaseModel):
         le=1.0,
         description="LLM temperature. Lower = more deterministic.",
     )
+    skip_save_user: bool = Field(
+        default=False,
+        description="If True, skips saving the user message in save_exchange. Used when the message is already saved (e.g. file upload).",
+    )
 
     @field_validator("query")
     @classmethod
@@ -61,8 +65,8 @@ class ConversationCreate(BaseModel):
     """Body for POST /conversations"""
 
    
-    user_id: str = Field(
-        ...,
+    user_id: Optional[str] = Field(
+        None,
         description="UUID of the user creating the conversation.",
     )
     title: Optional[str] = Field(

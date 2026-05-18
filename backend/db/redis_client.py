@@ -26,6 +26,14 @@ class RedisClient:
         if not hasattr(self, "_ready"):
             self._ready = False
 
+    # def connect(
+    #     self,
+    #     host: str,
+    #     port: int,
+    #     db: int = 0,
+    #     password: Optional[str] = None,
+    #     max_connections: int = 50,
+    # ) -> None:
     def connect(
         self,
         host: str,
@@ -34,31 +42,33 @@ class RedisClient:
         password: Optional[str] = None,
         max_connections: int = 50,
     ) -> None:
-        
+
         try:
             logger.info(f"🔌 Connecting to Redis at {host}:{port} (DB: {db})...")
 
-            self._pool = ConnectionPool(
+            self._client = redis.Redis(
                 host=host,
                 port=port,
+                username="default",        # 🔥 REQUIRED
+                password=password,
                 db=db,
-                password=password or None,
+                # ssl=True,                  # 🔥 MUST for Redis Cloud
+                # ssl_cert_reqs=None,        # 🔥 avoid cert issues
                 decode_responses=True,
-                max_connections=max_connections,
                 socket_timeout=5,
                 socket_connect_timeout=5,
                 retry_on_timeout=True,
             )
 
-            self._client = redis.Redis(connection_pool=self._pool)
+            # Test connection
             self._client.ping()
 
             self._ready = True
-            logger.info(f" Redis connected | {host}:{port} | DB: {db}")
+            logger.info(f"✅ Redis connected | {host}:{port} | DB: {db}")
 
         except Exception as exc:
             logger.error(
-                f" Redis connection failed | {host}:{port} | {exc}",
+                f"❌ Redis connection failed | {host}:{port} | {exc}",
                 exc_info=True,
             )
             raise ConnectionError(f"Redis connection failed: {exc}") from exc

@@ -9,7 +9,7 @@ from unittest.mock import patch
 import ingestion.src.scheduler.trigger_handler as trigger_module
 
 
-# 7️⃣ dry run
+
 @patch.object(trigger_module, "ingestion_job")
 @patch.object(trigger_module, "fetch_latest_archive_name")
 @patch.object(trigger_module, "load_state")
@@ -21,7 +21,6 @@ def test_dry_run(mock_load, mock_fetch, mock_ingest):
     mock_ingest.assert_not_called()
 
 
-# 8️⃣ normal run (archive changed)
 @patch.object(trigger_module, "ingestion_job")
 @patch.object(trigger_module, "fetch_latest_archive_name")
 @patch.object(trigger_module, "load_state")
@@ -34,7 +33,6 @@ def test_change_success(mock_load, mock_fetch, mock_ingest):
     mock_ingest.assert_called_once()
 
 
-# 9️⃣ no change skip
 @patch.object(trigger_module, "ingestion_job")
 @patch.object(trigger_module, "fetch_latest_archive_name")
 @patch.object(trigger_module, "load_state")
@@ -46,7 +44,7 @@ def test_no_change_skip_pipeline(mock_load, mock_fetch, mock_ingest):
     mock_ingest.assert_not_called()
 
 
-# 🔟 force run
+
 @patch.object(trigger_module, "ingestion_job")
 @patch.object(trigger_module, "fetch_latest_archive_name")
 @patch.object(trigger_module, "load_state")
@@ -59,7 +57,6 @@ def test_force_runs_pipeline(mock_load, mock_fetch, mock_ingest):
     mock_ingest.assert_called_once()
 
 
-# 1️⃣1️⃣ API failure
 @patch.object(trigger_module, "ingestion_job")
 @patch.object(trigger_module, "fetch_latest_archive_name")
 @patch.object(trigger_module, "load_state")
