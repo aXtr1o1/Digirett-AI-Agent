@@ -36,7 +36,7 @@ export default function BookingSystem({ ticketId, onBookingComplete, theme = "da
       }
     } catch (err) {
       console.error("❌ Failed to fetch slots:", err);
-      const msg = err.response?.data?.detail || "Failed to load available time slots.";
+      const msg = err.message || "Failed to load available time slots.";
       setError(msg);
     } finally {
       setLoading(false);
@@ -53,7 +53,7 @@ export default function BookingSystem({ ticketId, onBookingComplete, theme = "da
       setConfirmation(result);
       if (onBookingComplete) onBookingComplete(result);
     } catch (err) {
-      setError(err.response?.data?.detail || "Failed to create booking.");
+      setError(err.message || "Failed to create booking.");
     } finally {
       setBookingLoading(false);
     }
@@ -94,9 +94,6 @@ export default function BookingSystem({ ticketId, onBookingComplete, theme = "da
     }`}>
       <div className={`${isSidebar ? "p-4" : "p-6"} border-b ${isDark ? "border-white/5 bg-white/5" : "border-slate-100 bg-slate-50/50"}`}>
         <div className="flex items-center gap-3">
-          <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <Calendar className="text-white w-3.5 h-3.5" />
-          </div>
           <h3 className={`text-xs font-black tracking-tight ${isDark ? "text-white" : "text-slate-900"}`}>Schedule Consultation</h3>
         </div>
       </div>

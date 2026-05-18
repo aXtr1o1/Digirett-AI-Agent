@@ -8,6 +8,7 @@ import { useUser } from "@clerk/clerk-react";
 import hitlService from "../services/hitlService";
 import SystemNotification from "../components/chat/ResolutionNotification";
 import { useTheme } from "../providers/ThemeProvider";
+import { Gavel } from "lucide-react";
 
 const isUuid = (str) => {
   if (!str) return false;
@@ -20,6 +21,7 @@ const ChatPage = () => {
   const navigate = useNavigate();
   const { user } = useUser();
   const [isEscalated, setIsEscalated] = useState(false);
+  const [isLegalPanelOpen, setIsLegalPanelOpen] = useState(true);
   const [notifications, setNotifications] = useState([]);
   const [dismissedEvents, setDismissedEvents] = useState(() => {
     const seen = localStorage.getItem("dismissed_system_events");
@@ -73,11 +75,11 @@ const ChatPage = () => {
       // 1. Get dismissed events - Unified storage for sync
       const savedDismissed = localStorage.getItem("dismissed_system_events");
       const currentDismissed = savedDismissed ? JSON.parse(savedDismissed) : [];
-      
+
       // Also check lawyer-specific dismissals if applicable
       const savedLawyerDismissed = localStorage.getItem("dismissed_lawyer_events");
       const currentLawyerDismissed = savedLawyerDismissed ? JSON.parse(savedLawyerDismissed) : [];
-      
+
       const allDismissed = [...new Set([...currentDismissed, ...currentLawyerDismissed])];
 
       // 2. Fetch user's tickets
@@ -91,8 +93,6 @@ const ChatPage = () => {
 
           const status = (ticket.status || "").toLowerCase();
           const convId = ticket.conversation_id;
-
-          if (convId === currentConversationId) return;
 
           const conv = conversations.find(c => c.conversation_id === convId);
           const title = conv?.title || "Legal Matter";
@@ -133,7 +133,7 @@ const ChatPage = () => {
 
       // 3. If User is a Lawyer, also monitor the Matter Queue
       const userRole = user?.publicMetadata?.role || (user?.unsafeMetadata?.role);
-      
+
       if (userRole === "lawyer" || userRole === "admin") {
         try {
           const queueTickets = await hitlService.getQueue(); // Corrected function name
@@ -141,7 +141,7 @@ const ChatPage = () => {
             queueTickets.forEach(ticket => {
               const ticketId = ticket.ticket_id || ticket.id;
               const eventId = `new_case_${ticketId}`;
-              
+
               if (!allDismissed.includes(eventId)) {
                 currentNotifications.push({
                   id: eventId,
@@ -202,17 +202,19 @@ const ChatPage = () => {
           navigate("/chat");
           setCurrentConversationId(null);
           setIsEscalated(false);
+          setIsLegalPanelOpen(true);
         }}
         onSelectConversation={(id) => {
           navigate(`/chat/${id}`);
           setIsEscalated(false);
+          setIsLegalPanelOpen(true);
         }}
         onDeleteConversation={deleteConversation}
         isLoadingConversations={convLoading}
         error={null} // Errors handled inside components
         rightSidebar={
-          isEscalated && currentConversationId ? (
-            <LegalPanel conversationId={currentConversationId} />
+          isEscalated && currentConversationId && isLegalPanelOpen ? (
+            <LegalPanel conversationId={currentConversationId} onClose={() => setIsLegalPanelOpen(false)} theme={isDark ? "dark" : "light"} />
           ) : null
         }
       >
@@ -221,18 +223,37 @@ const ChatPage = () => {
             Loading...
           </div>
         ) : (
-          <ChatContainer
-            conversationId={currentConversationId}
-            onConversationCreated={handleAutoCreatedConversation}
-            moveConversationToTop={moveConversationToTop}
-            userId={user?.id}
-            onEscalated={(status) => {
-              setIsEscalated(status);
-              if (status && currentConversationId) {
-                updateEscalationStatus(currentConversationId, true);
-              }
-            }}
-          />
+          <div className="relative w-full h-full flex flex-col">
+            <ChatContainer
+              conversationId={currentConversationId}
+              onConversationCreated={handleAutoCreatedConversation}
+              moveConversationToTop={moveConversationToTop}
+              userId={user?.id}
+              theme={isDark ? "dark" : "light"}
+              onEscalated={(status) => {
+                setIsEscalated(status);
+                if (status && currentConversationId) {
+                  updateEscalationStatus(currentConversationId, true);
+                  setIsLegalPanelOpen(true);
+                }
+              }}
+            />
+            {isEscalated && !isLegalPanelOpen && (
+              <button
+                onClick={() => setIsLegalPanelOpen(true)}
+                className={`absolute top-4 right-4 z-50 px-4 py-2.5 text-sm font-bold rounded-xl border shadow-lg transition-all animate-in zoom-in duration-300 flex items-center gap-2 ${isDark
+                    ? "bg-indigo-500/20 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/30 hover:text-white"
+                    : "bg-indigo-50 border-indigo-100 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800"
+                  }`}
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                Open Legal Assistant
+              </button>
+            )}
+          </div>
         )}
       </MainLayout>
 
@@ -245,7 +266,7 @@ const ChatPage = () => {
             navigate('/lawyer');
             return;
           }
-          
+
           // If it's a conversation ID
           const id = target;
           // 1. Clear ALL notifications for this specific conversation ID immediately

@@ -137,10 +137,10 @@ export default function TicketDetailsPage() {
   const initials = (userInfo.display_name || "U").split(' ').map(n => n[0]).join('').toUpperCase();
 
   return (
-    <div className="min-h-screen flex bg-[#F8F9FC] text-[#1E293B] font-sans">
+    <div className="h-screen overflow-hidden flex bg-[#F8F9FC] text-[#1E293B] font-sans">
 
       {/* 1) REFINED SIDEBAR (2nd SS Style) */}
-      <aside className="w-[260px] flex-shrink-0 flex flex-col bg-[#0F172A] text-white sticky top-0 h-screen z-50">
+      <aside className="w-[260px] flex-shrink-0 flex flex-col bg-[#0F172A] text-white relative h-full z-50">
         <div className="p-6 flex items-center gap-3 mb-2">
           <div className="h-9 w-9 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/20">
             <ScaleIcon className="h-5 w-5 text-white" />
@@ -152,14 +152,6 @@ export default function TicketDetailsPage() {
 
         <div className="px-3 py-4 flex-1 space-y-1">
           <p className="px-4 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Main Console</p>
-
-          <button
-            onClick={() => navigate("/lawyer")}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-gray-400 hover:bg-white/5 hover:text-white"
-          >
-            <LayoutDashboard size={18} />
-            <span className="text-xs font-semibold tracking-wide">Go to Dashboard</span>
-          </button>
 
           <button
             onClick={() => setCurrentView("details")}
@@ -181,9 +173,7 @@ export default function TicketDetailsPage() {
 
           <button
             onClick={() => setShowNoShowConfirm(true)}
-            disabled={!ticket?.booking_confirmed_at}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${!ticket?.booking_confirmed_at ? "opacity-30 cursor-not-allowed" : "text-gray-400 hover:bg-red-500/10 hover:text-red-400"
-              }`}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group text-gray-400 hover:bg-red-500/10 hover:text-red-400"
           >
             <UserX size={18} />
             <span className="text-xs font-semibold tracking-wide">Mark No-Show</span>
@@ -202,12 +192,13 @@ export default function TicketDetailsPage() {
           </button>
 
           <button
-            onClick={() => navigate("/chat")}
+            onClick={() => navigate("/lawyer")}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-gray-400 hover:bg-white/5 hover:text-white"
           >
-            <HistoryIcon size={18} />
-            <span className="text-xs font-semibold tracking-wide">Go to Chat</span>
+            <LayoutDashboard size={18} />
+            <span className="text-xs font-semibold tracking-wide">Go to Dashboard</span>
           </button>
+
         </div>
 
         <div className="p-4 border-t border-white/5">
@@ -251,10 +242,6 @@ export default function TicketDetailsPage() {
                 }`}></div>
               {ticket.status?.toUpperCase() || 'OPEN'}
             </div>
-            <button className={`h-9 w-9 rounded-lg border flex items-center justify-center transition-all ${isDark ? "bg-slate-800 border-slate-700 text-slate-400 hover:text-white" : "bg-white border-gray-100 text-gray-400 hover:text-gray-900"
-              }`}>
-              <MoreHorizontal size={18} />
-            </button>
           </div>
         </header>
 
@@ -375,18 +362,7 @@ export default function TicketDetailsPage() {
                           }`}
                       />
 
-                      <div className="flex items-center justify-between mt-6">
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className={`h-11 px-4 rounded-xl border flex items-center gap-2 text-xs font-semibold transition-all ${isDark ? "bg-slate-800 border-slate-700 text-slate-400 hover:text-white" : "bg-white border-gray-100 text-gray-500 hover:text-blue-600 shadow-sm"
-                            }`}
-                        >
-                          <Paperclip size={16} />
-                          Attach File
-                        </button>
-                        <input type="file" ref={fileInputRef} onChange={(e) => setFile(e.target.files?.[0])} className="hidden" />
-
+                      <div className="flex items-center justify-end mt-6">
                         <button
                           onClick={handleSubmit}
                           disabled={submitting || (!response.trim() && !file)}

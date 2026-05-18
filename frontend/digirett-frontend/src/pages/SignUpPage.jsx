@@ -13,7 +13,7 @@ const SignUpPage = () => {
             <p className="text-gray-500 text-[9px]">Join Digirett to start your legal journey</p>
           </div>
 
-          <SocialLogin />
+          <SocialLogin mode="signup" />
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">

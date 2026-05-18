@@ -130,7 +130,7 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
 
       <div className={`flex flex-col min-w-0 ${isUser ? "items-end max-w-[85%]" : "flex-1"}`}>
         <p className={`text-[10px] font-bold uppercase tracking-wider opacity-50 mb-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-          {isUser ? (user?.fullName || user?.firstName || 'User') : (message.metadata?.is_lawyer ? "Personal Lawyer" : "AI Agent")}
+          {isUser ? (user?.username || user?.firstName || 'User') : (message.metadata?.is_lawyer ? "Personal Lawyer" : "Digirett Agent")}
         </p>
         {isUser ? (
           <div

@@ -122,7 +122,7 @@ export default function AdminDashboard() {
       setTickets(ticketsData);
       setAuditLogs(logsData);
       setHealthStatus(healthData);
-      
+
       // Also check for new notifications during main fetch
       checkInvitationStatus();
     } catch (err) {
@@ -272,9 +272,9 @@ export default function AdminDashboard() {
   // ── Chart Data Processors ──────────────────────────────────────────
 
   const roleData = [
-    { name: 'Admins', value: adminCount, color: '#a855f7' },
-    { name: 'Lawyers', value: lawyerCount, color: '#3b82f6' },
-    { name: 'Users', value: standardUserCount, color: '#6366f1' },
+    { name: 'Admins', value: adminCount, color: '#EC6B56' },
+    { name: 'Lawyers', value: lawyerCount, color: '#FFC154' },
+    { name: 'Users', value: standardUserCount, color: '#47B39C' },
   ];
 
   const statusData = [
@@ -385,17 +385,14 @@ export default function AdminDashboard() {
   const selectedRole = roleInfo[inviteRole] || roleInfo.lawyer;
 
   return (
-    <div className={`flex min-h-screen ${isDark ? "bg-[#0f172a] text-slate-200" : "bg-[#f3f4f6] text-slate-900"}`}>
+    <div className={`flex h-screen overflow-hidden ${isDark ? "bg-[#0f172a] text-slate-200" : "bg-[#f3f4f6] text-slate-900"}`}>
 
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 transition-transform duration-300 transform bg-[#0f172a] text-white flex flex-col ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } lg:translate-x-0 lg:static lg:inset-0 shadow-2xl`}>
+      <aside className={`fixed lg:relative z-50 inset-y-0 left-0 w-64 transition-transform duration-300 transform bg-[#0f172a] text-white flex flex-col ${isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        } shadow-2xl`}>
         <div className="p-6 flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="bg-indigo-600 p-2 rounded-lg">
-              <Shield size={20} className="text-white" />
-            </div>
-            <span className="font-bold text-lg tracking-tight">Admin Console</span>
+            <span className="font-bold text-lg tracking-tight">Admin Panel</span>
           </div>
           <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400">
             <X size={20} />
@@ -473,17 +470,15 @@ export default function AdminDashboard() {
             <ArrowLeft size={18} />
             <span className="text-sm font-semibold">Go to Chat</span>
           </Link>
-        </nav>
 
-        <div className="p-4 border-t border-slate-800">
           <button
             onClick={handleLogout}
-            className="w-full px-4 py-2.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg flex items-center gap-3 transition-colors text-sm font-bold"
+            className="w-full px-3 py-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg flex items-center gap-3 transition-colors mt-2"
           >
             <LogOut size={18} />
-            Logout
+            <span className="text-sm font-semibold">Logout</span>
           </button>
-        </div>
+        </nav>
       </aside>
 
       {/* Main Area */}
@@ -600,7 +595,7 @@ export default function AdminDashboard() {
                   <div className="h-[250px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={roleData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                        <Pie data={roleData} innerRadius={60} outerRadius={80} dataKey="value" stroke="none">
                           {roleData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
@@ -618,7 +613,7 @@ export default function AdminDashboard() {
                   <div className="h-[250px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={statusData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                        <Pie data={statusData} innerRadius={60} outerRadius={80} dataKey="value" stroke="none">
                           {statusData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}

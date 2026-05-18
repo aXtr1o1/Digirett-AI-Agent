@@ -1,8 +1,8 @@
 import React from "react";
 import EscalationStatusCard from "../chat/EscalationStatusCard";
-import { Gavel, Info } from "lucide-react";
+import { Gavel, Info, X } from "lucide-react";
 
-const LegalPanel = ({ conversationId, theme = "dark" }) => {
+const LegalPanel = ({ conversationId, theme = "dark", onClose }) => {
   const isDark = theme === "dark";
   console.log("[LegalPanel] Render | conversationId:", conversationId);
 
@@ -33,20 +33,25 @@ const LegalPanel = ({ conversationId, theme = "dark" }) => {
       <div className="flex flex-col h-full">
         {/* Header */}
         <div className={`px-6 py-5 border-b ${isDark ? "border-white/5" : "border-slate-200"}`}>
-          <div className="flex items-center gap-3">
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-              isDark ? "bg-indigo-500/20 text-indigo-400" : "bg-indigo-100 text-indigo-600"
-            }`}>
-              <Gavel size={18} />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div>
+                <h3 className={`text-sm font-black tracking-tight ${isDark ? "text-white" : "text-slate-900"}`}>
+                  Legal Assistant
+                </h3>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 opacity-70">
+                  Active Escalation
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className={`text-sm font-black tracking-tight ${isDark ? "text-white" : "text-slate-900"}`}>
-                Legal Assistant
-              </h3>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 opacity-70">
-                Active Escalation
-              </p>
-            </div>
+            {onClose && (
+              <button 
+                onClick={onClose} 
+                className={`p-1.5 rounded-lg transition-colors ${isDark ? "text-slate-400 hover:text-white hover:bg-white/10" : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
+              >
+                <X size={18} />
+              </button>
+            )}
           </div>
         </div>
 

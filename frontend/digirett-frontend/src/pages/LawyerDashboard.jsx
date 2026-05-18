@@ -91,7 +91,10 @@ export default function LawyerDashboard() {
       const currentDismissed = savedDismissed ? JSON.parse(savedDismissed) : [];
 
       console.log("[LawyerDashboard] Checking queue for notifications...");
-      const queueData = await hitlService.getQueue();
+      const [queueData, activeData] = await Promise.all([
+        hitlService.getQueue(),
+        hitlService.getActiveTickets()
+      ]);
 
       if (!Array.isArray(queueData)) {
         console.warn("[LawyerDashboard] Queue data is not an array:", queueData);
@@ -115,6 +118,27 @@ export default function LawyerDashboard() {
           });
         }
       });
+
+      if (Array.isArray(activeData)) {
+        activeData.forEach(ticket => {
+          if (ticket.status === "booked" && ticket.booking_confirmed_at) {
+            const ticketId = ticket.ticket_id || ticket.id;
+            const eventId = `booked_${ticketId}`;
+
+            if (!currentDismissed.includes(eventId)) {
+              const userName = ticket.user_name || ticket.user_email || ticket.user_identifier || "A client";
+              const meetingTime = new Date(ticket.booking_confirmed_at).toLocaleString();
+              newNotifications.push({
+                id: eventId,
+                type: 'meeting_booked',
+                caseRef: ticketId,
+                message: `Meeting Scheduled: ${userName} has booked a consultation for ${meetingTime}.`,
+                view: 'pending'
+              });
+            }
+          }
+        });
+      }
 
       console.log(`[LawyerDashboard] Showing ${newNotifications.length} new notifications.`);
       setNotifications(newNotifications);
@@ -230,7 +254,6 @@ export default function LawyerDashboard() {
 
   const handleWorkOn = (ticketId) => {
     localStorage.setItem("lawyer_current_intake_id", ticketId);
-    // Recalculate view based on currently fetched activeTickets
     const intake = activeTickets.find(t => t.ticket_id === ticketId);
     if (intake) {
       setIntakeTicket(intake);
@@ -272,7 +295,7 @@ export default function LawyerDashboard() {
   const allTickets = [...queueTickets, ...activeTickets, ...resolvedTickets];
 
   const allocationData = [
-    { name: 'Available', value: queueTickets.length, color: '#6366f1' },
+    { name: 'Active', value: activeTickets.length, color: '#6366f1' },
     { name: 'Resolved', value: resolvedTickets.length, color: '#10b981' }
   ];
 
@@ -307,7 +330,7 @@ export default function LawyerDashboard() {
     { label: "Resolved", value: resolvedTickets.length, icon: CheckCircle2, color: "emerald" },
     { label: "Active Matters", value: activeTickets.length, icon: Activity, color: "blue" },
     { label: "Queue Load", value: queueTickets.length, icon: Ticket, color: "indigo" },
-    { label: "Pending Review", value: activeTickets.length, icon: Clock, color: "amber" }
+    { label: "Pending Review", value: pendingTickets.length, icon: Clock, color: "amber" }
   ];
 
   return (
@@ -324,7 +347,7 @@ export default function LawyerDashboard() {
               <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center">
                 <img src="/digirett-logo.png" alt="Logo" className="w-full h-full object-contain p-0.5" />
               </div>
-              <h1 className="text-sm font-bold tracking-tight text-white uppercase italic tracking-tighter">Lawyer Panel</h1>
+              <span className="font-bold text-lg tracking-tight text-white">Lawyer Panel</span>
             </div>
             <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden ml-auto text-slate-400">
               <X size={18} />
@@ -338,18 +361,18 @@ export default function LawyerDashboard() {
               <nav className="space-y-1">
                 <button
                   onClick={() => { setActiveView("dashboard"); setIsSidebarOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-bold transition-all ${activeView === "dashboard" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "dashboard" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
                     }`}
                 >
-                  <LayoutDashboard size={16} />
+                  <LayoutDashboard size={18} />
                   Dashboard
                 </button>
                 <button
                   onClick={() => { setActiveView("queue"); setIsSidebarOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-bold transition-all ${activeView === "queue" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "queue" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
                     }`}
                 >
-                  <ClipboardList size={16} />
+                  <ClipboardList size={18} />
                   Matter Queue
                   <span className="ml-auto bg-white/10 text-white px-1.5 py-0.5 rounded text-[10px]">{queueTickets.length}</span>
                 </button>
@@ -361,19 +384,19 @@ export default function LawyerDashboard() {
               <nav className="space-y-1">
                 <button
                   onClick={() => { setActiveView("intake"); setIsSidebarOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-bold transition-all ${activeView === "intake" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "intake" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
                     }`}
                 >
-                  <Inbox size={16} />
+                  <Inbox size={18} />
                   My Intake
                   {intakeTicket && <span className="ml-auto bg-emerald-500 w-2 h-2 rounded-full"></span>}
                 </button>
                 <button
                   onClick={() => { setActiveView("pending"); setIsSidebarOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-bold transition-all ${activeView === "pending" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "pending" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
                     }`}
                 >
-                  <Layers size={16} />
+                  <Layers size={18} />
                   Pending Matters
                   {pendingTickets.length > 0 && <span className="ml-auto bg-white/10 text-white px-1.5 py-0.5 rounded text-[10px]">{pendingTickets.length}</span>}
                 </button>
@@ -385,50 +408,47 @@ export default function LawyerDashboard() {
               <nav className="space-y-1">
                 <button
                   onClick={() => { setActiveView("resolved"); setIsSidebarOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-bold transition-all ${activeView === "resolved" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "resolved" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
                     }`}
                 >
-                  <CheckCircle size={16} />
+                  <CheckCircle size={18} />
                   Resolved History
                   <span className="ml-auto text-slate-500 text-[10px]">{resolvedTickets.length}</span>
                 </button>
                 <button
                   onClick={() => { setActiveView("notes"); setIsSidebarOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-bold transition-all ${activeView === "notes" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "notes" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
                     }`}
                 >
-                  <Bookmark size={16} />
+                  <Bookmark size={18} />
                   Notes
                 </button>
                 <Link
                   to="/chat"
-                  className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+                  className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition-all"
                 >
-                  <ArrowLeft size={16} />
+                  <ArrowLeft size={18} />
                   Go to Chat
                 </Link>
                 {clerkUser?.publicMetadata?.role === "admin" && (
                   <Link
                     to="/admin"
-                    className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-bold text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/5 transition-all border border-indigo-500/20 mt-4"
+                    className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/5 transition-all border border-indigo-500/20 mt-4"
                   >
-                    <Shield size={16} />
+                    <Shield size={18} />
                     Admin Dashboard
                   </Link>
                 )}
+
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-bold text-slate-400 hover:text-red-400 hover:bg-red-500/5 transition-all mt-2"
+                >
+                  <LogOut size={18} />
+                  Logout
+                </button>
               </nav>
             </div>
-          </div>
-
-          {/* Sidebar Footer */}
-          <div className="mt-auto border-t border-white/5 p-3">
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-xs font-bold text-slate-400 hover:text-red-400 hover:bg-red-500/5 transition-all"
-            >
-              <LogOut size={16} />
-              Logout
-            </button>
           </div>
         </div>
       </aside>
@@ -444,11 +464,8 @@ export default function LawyerDashboard() {
                 <Menu size={24} />
               </button>
               <div className="flex items-center gap-3">
-                <div className={`p-1 rounded-2xl overflow-hidden ${isDark ? "bg-white/90" : "bg-white border"}`}>
-                  <img src="/digirett-logo.png" alt="Logo" className="h-9 w-9 object-contain" />
-                </div>
                 <div>
-                  <h1 className={`text-lg font-black tracking-widest uppercase ${isDark ? "text-white" : "text-gray-900"}`}>
+                  <h1 className={`text-lg font-bold capitalize ${isDark ? "text-white" : "text-gray-900"}`}>
                     Lawyer Dashboard
                   </h1>
                 </div>
@@ -570,7 +587,7 @@ export default function LawyerDashboard() {
                   <div className="h-[200px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={allocationData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                        <Pie data={allocationData} innerRadius={60} outerRadius={80} dataKey="value" stroke="none">
                           {allocationData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
@@ -914,8 +931,8 @@ export default function LawyerDashboard() {
         notifications={notifications}
         onDismiss={handleDismissNotification}
         onNavigate={(view) => {
-          if (view === 'queue') {
-            setActiveView('queue');
+          if (view) {
+            setActiveView(view === "pending" ? "intake" : view); // Redirect pending notifications to intake page as requested
             setIsSidebarOpen(false);
           }
         }}

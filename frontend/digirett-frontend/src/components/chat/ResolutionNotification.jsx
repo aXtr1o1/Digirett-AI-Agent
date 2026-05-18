@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { CheckCircle, X, Scale, Bell } from "lucide-react";
 
 const SystemNotification = ({ notifications, onDismiss, onNavigate, isDark }) => {
-  const [isOpen, setIsOpen] = useState(true); // Default to open for immediate visibility of new items
+  const [isOpen, setIsOpen] = useState(false); // Default to closed, requiring click to view
+
 
   if (!notifications || notifications.length === 0) return null;
 
@@ -74,7 +75,7 @@ const SystemNotification = ({ notifications, onDismiss, onNavigate, isDark }) =>
         onMouseLeave={(e) => (e.currentTarget.style.transform = isOpen ? "scale(1)" : "scale(1.1)")}
       >
         <Bell size={24} className={count > 0 ? "animate-bounce" : ""} />
-        
+
         {count > 0 && (
           <div
             style={{

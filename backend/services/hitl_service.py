@@ -115,7 +115,7 @@ class HitlService:
                     "booking_cal_booking_id": None,
                     "booking_url": None,
                     "booking_confirmed_at": None,
-                    "outcome_notes": "[BOTH-NO-SHOW] Automated: Meeting missed by both parties."
+                    "outcome_notes": "Automated: Meeting missed by both parties."
                 }
                 
                 self._supabase.table("hitl_tickets").update(update_payload).eq("ticket_id", ticket["ticket_id"]).execute()
@@ -375,7 +375,8 @@ class HitlService:
                     "users!hitl_tickets_user_id_fkey("
                     "  user_id, email, user_name, "
                     "  user_profiles(display_name, phone_number)"
-                    ")"
+                    "), "
+                    "hitl_responses(content)"
                 )
                 .eq("ticket_id", ticket_id)
                 .execute()
@@ -404,6 +405,13 @@ class HitlService:
                 "display_name": raw_profile.get("display_name"),
                 "phone_number": raw_profile.get("phone_number"),
             }
+
+            # Flatten response content if available
+            responses = ticket.pop("hitl_responses", []) or []
+            if responses:
+                ticket["lawyer_response"] = responses[0].get("content")
+            else:
+                ticket["lawyer_response"] = None
 
             # Apply auto no-show check
             self._auto_handle_no_show(ticket)
