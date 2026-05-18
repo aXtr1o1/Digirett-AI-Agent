@@ -10,10 +10,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _user_service = None
+_email_service = None
 
-def set_services(user_service) -> None:
-    global _user_service
+def set_services(user_service, email_service=None) -> None:
+    global _user_service, _email_service
     _user_service = user_service
+    _email_service = email_service
 
 
 @router.post(
@@ -28,7 +30,7 @@ async def clerk_webhook(
     svix_signature: str = Header(None, alias="svix-signature"),
 ):
     """
-    Webhook handler for Clerk events (user.created, user.updated).
+    Webhook handler for Clerk events (user.created, user.updated, email.created).
     Requires Svix signature verification to prevent spoofing.
     """
     if not settings.CLERK_WEBHOOK_SECRET:
@@ -71,6 +73,40 @@ async def clerk_webhook(
     event_type = evt.get("type")
     data = evt.get("data", {})
     logger.info(f"📩 Received Clerk webhook: {event_type}")
+
+    if event_type == "email.created":
+        # Handle custom email delivery from Clerk
+        delivered_by_clerk = data.get("delivered_by_clerk")
+        
+        # Only process if Clerk is NOT delivering it
+        if delivered_by_clerk is False:
+            to_email = data.get("to_email_address")
+            subject = data.get("subject", "Notification from Digirett")
+            body_html = data.get("body", "")
+            body_plain = data.get("body_plain", "")
+            
+            if to_email and _email_service:
+                logger.info(f"📧 Sending custom Clerk email | to={to_email} | subject={subject}")
+                success = await _email_service.send_clerk_email(
+                    to_email=to_email,
+                    subject=subject,
+                    html_content=body_html,
+                    plain_content=body_plain,
+                )
+                if not success:
+                    logger.error("❌ Failed to send custom Clerk email via SMTP")
+                    # Even if it fails, return 200 so Clerk doesn't keep retrying indefinitely,
+                    # or return 500 if we want Clerk to retry. Returning 500 is safer for delivery guarantees.
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to send custom email",
+                    )
+                return {"status": "success", "message": "Custom email sent"}
+            else:
+                logger.warning("⚠️ Email payload missing recipient or email_service not initialized")
+                return {"status": "error", "reason": "Missing data or service"}
+        else:
+            return {"status": "ignored", "reason": "delivered_by_clerk is true"}
 
     if event_type == "user.created":
         clerk_user_id = data.get("id")
@@ -121,3 +157,4 @@ async def clerk_webhook(
 
     # Ignore other events
     return {"status": "ignored", "reason": f"Unhandled event type: {event_type}"}
+

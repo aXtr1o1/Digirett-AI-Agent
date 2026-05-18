@@ -89,7 +89,7 @@ function App() {
 
             {/* Sign In */}
             <Route
-              path="/sign-in"
+              path="/sign-in/*"
               element={
                 <>
                   <SignedIn>
@@ -104,7 +104,7 @@ function App() {
 
             {/* Sign Up */}
             <Route
-              path="/sign-up"
+              path="/sign-up/*"
               element={
                 <>
                   <SignedIn>

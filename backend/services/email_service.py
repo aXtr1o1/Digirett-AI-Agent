@@ -245,11 +245,29 @@ class EmailService:
             html_content=html_content,
         )
 
+    async def send_clerk_email(
+        self,
+        to_email: str,
+        subject: str,
+        html_content: str,
+        plain_content: str,
+    ) -> bool:
+        """
+        Sent from the Clerk webhook when a custom email delivery is triggered 
+        (e.g., verification code, password reset).
+        """
+        return await self._send(
+            to_email=to_email,
+            subject=subject,
+            html_content=html_content,
+            plain_content=plain_content,
+        )
+
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # INTERNAL — shared SMTP sender
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    async def _send(self, to_email: str, subject: str, html_content: str) -> bool:
+    async def _send(self, to_email: str, subject: str, html_content: str, plain_content: Optional[str] = None) -> bool:
         """Shared SMTP send helper used by all email methods."""
         if not self._smtp_pass:
             logger.error("❌ Cannot send email: SMTP_PASS is not configured.")
@@ -259,6 +277,10 @@ class EmailService:
         msg["Subject"] = subject
         msg["From"] = self._from_email
         msg["To"] = to_email
+        
+        if plain_content:
+            msg.attach(MIMEText(plain_content, "plain"))
+            
         msg.attach(MIMEText(html_content, "html"))
 
         try:
