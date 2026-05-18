@@ -178,6 +178,7 @@ async def lifespan(app: FastAPI):
         )
         webhooks.set_services(
             user_service=user_service,
+            email_service=email_service,
         )
         admin.set_services(
             user_svc=user_service,
