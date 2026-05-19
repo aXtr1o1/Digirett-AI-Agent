@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import Sidebar from "./Sidebar";
 import BackgroundLayer from "../common/BackgroundLayer";
 import { useTheme } from "../../providers/ThemeProvider";
-import { Menu } from "lucide-react";
+import { PanelLeftOpen } from "lucide-react";
 
 const MainLayout = ({
   children,
@@ -32,15 +32,14 @@ const MainLayout = ({
     <div className="relative flex h-screen w-screen overflow-hidden">
       {/* Background Layer - Fixed behind everything (both themes) */}
       <BackgroundLayer theme={theme} />
-      
+
       {/* Main Content Container with padding on all sides */}
       <div
-        className={`relative flex h-full w-full p-2 gap-2 ${
-          isDark ? "text-gray-200" : "text-gray-900"
-        }`}
+        className={`relative flex h-full w-full p-2 gap-2 ${isDark ? "text-gray-200" : "text-gray-900"
+          }`}
       >
         {/* SIDEBAR — fixed, never shrinks */}
-        <div 
+        <div
           style={{
             width: isSidebarOpen ? "260px" : "0px",
             minWidth: isSidebarOpen ? "260px" : "0px",
@@ -96,7 +95,7 @@ const MainLayout = ({
                 e.currentTarget.style.backgroundColor = isDark ? "rgba(30, 30, 30, 0.8)" : "rgba(255, 255, 255, 0.8)";
               }}
             >
-              <Menu size={20} />
+              <PanelLeftOpen size={20} />
             </button>
           )}
 

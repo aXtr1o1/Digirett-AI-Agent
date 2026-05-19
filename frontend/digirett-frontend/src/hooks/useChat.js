@@ -318,7 +318,11 @@ const useChat = (
           },
           (err) => {
             console.error("[useChat] stream error:", err);
-            setError(err?.message || "Failed to generate response");
+            let errMsg = err?.message || "Failed to generate response";
+            if (errMsg.includes("Connection lost") || errMsg.includes("Connection error") || errMsg.includes("Stream error")) {
+              errMsg = "Message limit reached. Your session resets every 4 hours.";
+            }
+            setError(errMsg);
             setIsStreaming(false);
             setStreamingMessage("");
             setIsProcessingDoc(false);
@@ -379,7 +383,11 @@ const useChat = (
         },
         (err) => {
           console.error("[useChat] stream error:", err);
-          setError(err?.message || "Failed to generate response");
+          let errMsg = err?.message || "Failed to generate response";
+          if (errMsg.includes("Connection lost") || errMsg.includes("Connection error") || errMsg.includes("Stream error")) {
+            errMsg = "Message limit reached. Your session resets every 4 hours.";
+          }
+          setError(errMsg);
           setIsStreaming(false);
           setStreamingMessage("");
         }
@@ -427,7 +435,7 @@ const useChat = (
   // Initial load / Sync conversation transitions
   useEffect(() => {
     const isAutoCreateTransition = prevConversationIdRef.current === null && conversationId !== null;
-    
+
     // Update the ref to track current conversationId for next render
     prevConversationIdRef.current = conversationId;
 

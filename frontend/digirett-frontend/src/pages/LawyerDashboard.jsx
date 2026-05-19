@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import hitlService from "../services/hitlService";
+import notesService from "../services/notesService";
 import { useUser, useClerk } from "@clerk/clerk-react";
 import {
   Ticket,
@@ -58,6 +59,93 @@ export default function LawyerDashboard() {
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [queueMsg, setQueueMsg] = useState(null);
   const [notes, setNotes] = useState("");
+  const [notesList, setNotesList] = useState([]);
+  const [currentNoteId, setCurrentNoteId] = useState(null);
+  const [noteTitle, setNoteTitle] = useState("");
+
+  const notesRef = useRef(null);
+
+  useEffect(() => {
+    if (notesRef.current && activeView === "notes") {
+      notesRef.current.style.height = "auto";
+      notesRef.current.style.height = `${notesRef.current.scrollHeight}px`;
+    }
+  }, [notes, activeView]);
+
+  const fetchNotes = useCallback(async () => {
+    try {
+      const data = await notesService.getNotes();
+      setNotesList(data || []);
+    } catch (err) {
+      console.error("Failed to fetch notes:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeView === "notes") {
+      fetchNotes();
+    }
+  }, [activeView, fetchNotes]);
+
+  const handleSaveNote = async () => {
+    if (!noteTitle.trim()) {
+      alert("Please enter a title for the note.");
+      return;
+    }
+    if (!notes.trim()) {
+      alert("Please enter content for the note.");
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      if (currentNoteId) {
+        await notesService.updateNote(currentNoteId, noteTitle, notes);
+        setQueueMsg({ type: "success", text: "Legal note updated successfully." });
+      } else {
+        await notesService.createNote(noteTitle, notes);
+        setQueueMsg({ type: "success", text: "Legal note saved successfully." });
+      }
+      setNotes("");
+      setNoteTitle("");
+      setCurrentNoteId(null);
+      await fetchNotes();
+    } catch (err) {
+      console.error("Failed to save note:", err);
+      setQueueMsg({ type: "error", text: err.message || "Failed to save note." });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleEditNote = (note) => {
+    setCurrentNoteId(note.id);
+    setNoteTitle(note.title);
+    setNotes(note.content);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteNote = async (noteId) => {
+    if (!window.confirm("Are you sure you want to delete this note?")) return;
+    try {
+      await notesService.deleteNote(noteId);
+      setQueueMsg({ type: "success", text: "Legal note deleted successfully." });
+      if (currentNoteId === noteId) {
+        setNotes("");
+        setNoteTitle("");
+        setCurrentNoteId(null);
+      }
+      await fetchNotes();
+    } catch (err) {
+      console.error("Failed to delete note:", err);
+      setQueueMsg({ type: "error", text: err.message || "Failed to delete note." });
+    }
+  };
+
+  const handleCreateNewNote = () => {
+    setCurrentNoteId(null);
+    setNoteTitle("");
+    setNotes("");
+  };
 
   // Intake and Pending Matters
   const [activeTickets, setActiveTickets] = useState([]);
@@ -867,26 +955,140 @@ export default function LawyerDashboard() {
 
           {/* VIEW: NOTES */}
           {activeView === "notes" && (
-            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                <div className="flex items-center gap-4 mb-8">
-                  <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
-                    <Bookmark size={24} />
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300 pb-10">
+              <div className="flex flex-col md:flex-row gap-8">
+                
+                {/* NOTE EDITOR (Left Column / Main Section) */}
+                <div className={`flex-1 p-8 rounded-2xl border shadow-sm h-fit ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                  <div className="flex items-center justify-between mb-8">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
+                        <Bookmark size={24} />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold">{currentNoteId ? "Edit Legal Note" : "Create Legal Note"}</h2>
+                        <p className="text-xs text-slate-500 mt-1">Personal workspace for drafting thoughts and case references.</p>
+                      </div>
+                    </div>
+                    {currentNoteId && (
+                      <button
+                        onClick={handleCreateNewNote}
+                        className={`px-4 py-2 text-xs font-bold rounded-xl border transition-all ${isDark ? "border-slate-700 text-slate-300 hover:bg-slate-800" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                      >
+                        Create New Note
+                      </button>
+                    )}
                   </div>
-                  <div>
-                    <h2 className="text-xl font-bold">Legal Notes & Reminders</h2>
-                    <p className="text-xs text-slate-500 mt-1">Personal workspace for drafting thoughts and case references.</p>
+
+                  {queueMsg && (
+                    <div className={`mb-6 p-4 rounded-xl flex items-center justify-between text-sm font-bold animate-in fade-in zoom-in-95 ${queueMsg.type === 'success'
+                      ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                      : 'bg-red-500/10 text-red-500 border border-red-500/20'
+                      }`}>
+                      <div className="flex items-center gap-3">
+                        {queueMsg.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
+                        {queueMsg.text}
+                      </div>
+                      <button onClick={() => setQueueMsg(null)} className="text-lg opacity-50 hover:opacity-100">&times;</button>
+                    </div>
+                  )}
+
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Note Title</label>
+                      <input
+                        type="text"
+                        value={noteTitle}
+                        onChange={(e) => setNoteTitle(e.target.value)}
+                        placeholder="Enter note title..."
+                        className={`w-full px-5 py-3.5 rounded-xl border text-sm font-medium focus:ring-0 focus:outline-none transition-all ${isDark ? "bg-slate-950/50 border-slate-800 text-white focus:border-indigo-500" : "bg-slate-50 border-slate-200 text-slate-800 focus:border-indigo-500"}`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Note Content</label>
+                      <textarea
+                        ref={notesRef}
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="Type your note details here..."
+                        style={{ height: 'auto', minHeight: '120px' }}
+                        className={`w-full p-6 rounded-2xl border text-sm bg-transparent focus:ring-0 resize-none overflow-hidden font-medium leading-relaxed focus:outline-none focus:border-indigo-500 ${isDark ? "bg-slate-950/50 border-slate-800 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-600"}`}
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-3 mt-6">
+                      <button
+                        onClick={handleSaveNote}
+                        disabled={isProcessing}
+                        className="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-indigo-600/20 transition-all disabled:opacity-50"
+                      >
+                        {isProcessing ? "Saving..." : currentNoteId ? "Update Note" : "Save Legal Note"}
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Type your first note here..."
-                  className={`w-full h-[400px] p-6 rounded-2xl border border-dashed text-sm bg-transparent focus:ring-0 resize-none font-medium leading-relaxed ${isDark ? "bg-slate-950/50 border-slate-800 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-600"}`}
-                />
-                <div className="flex justify-end mt-6">
-                  <button className="px-10 py-4 bg-indigo-600 text-white rounded-2xl text-sm font-bold shadow-xl shadow-indigo-600/20 hover:bg-indigo-700 transition-all">Save Legal Note</button>
+
+                {/* PAST NOTES HISTORY (Right Column / Sidebar) */}
+                <div className="w-full md:w-[380px] space-y-6">
+                  <div className={`p-6 rounded-2xl border shadow-sm max-h-[640px] flex flex-col ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-4">Past Notes</h3>
+                    
+                    <div className="overflow-y-auto space-y-4 pr-1 flex-1">
+                      {notesList.length === 0 ? (
+                        <div className="py-20 text-center text-slate-400">
+                          <Bookmark size={28} className="mx-auto mb-4 opacity-20" />
+                          <p className="text-[10px] font-black uppercase tracking-widest">No saved notes found</p>
+                        </div>
+                      ) : (
+                        notesList.map((note) => (
+                          <div
+                            key={note.id}
+                            onClick={() => handleEditNote(note)}
+                            className={`p-4 rounded-xl border transition-all flex flex-col justify-between gap-3 cursor-pointer ${
+                              currentNoteId === note.id
+                                ? (isDark ? "bg-indigo-500/10 border-indigo-500/50" : "bg-indigo-50 border-indigo-300")
+                                : (isDark ? "bg-slate-950/40 border-slate-800/80 hover:border-slate-700" : "bg-slate-50/50 border-slate-100 hover:border-slate-200")
+                            }`}
+                          >
+                            <div>
+                              <div className="flex items-start justify-between gap-2">
+                                <h4 className="text-xs font-bold truncate max-w-[180px]">{note.title}</h4>
+                                <span className="text-[9px] text-slate-400 font-medium whitespace-nowrap">{formatDate(note.updated_at)}</span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 mt-2 line-clamp-3 leading-relaxed">
+                                {note.content}
+                              </p>
+                            </div>
+                            <div className="flex items-center justify-end gap-2 border-t pt-3 border-slate-100 dark:border-slate-800/80">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditNote(note);
+                                }}
+                                className={`px-2.5 py-1 rounded text-[9px] font-black uppercase tracking-widest transition-all ${
+                                  isDark ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                }`}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteNote(note.id);
+                                }}
+                                className="px-2.5 py-1 rounded text-[9px] font-black uppercase tracking-widest bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
                 </div>
+
               </div>
             </div>
           )}
