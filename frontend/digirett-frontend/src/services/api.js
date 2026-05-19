@@ -63,6 +63,9 @@ api.interceptors.response.use(
       if (status === 401) {
         const isExpired = detailStr.includes("expired") || detailStr.includes("jwt") || detailStr.includes("signature");
         message = isExpired ? "Session expired. Please sign in again to continue." : "Authentication required. Please sign in.";
+        if (isExpired && window.Clerk) {
+          window.Clerk.signOut();
+        }
       } else if (status === 403) {
         message = "Access denied. You do not have permission for this action.";
       } else if (status === 429) {
@@ -79,7 +82,7 @@ api.interceptors.response.use(
     const finalError = new Error(String(message));
     finalError.status = error.response?.status;
     finalError.data = error.response?.data;
-    
+
     return Promise.reject(finalError);
   }
 );

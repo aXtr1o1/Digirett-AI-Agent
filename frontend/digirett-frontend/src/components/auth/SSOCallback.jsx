@@ -9,32 +9,38 @@ const SSOCallback = () => {
   const navigate = useNavigate();
   const [error, setError] = useState(null);
 
+  const hasProcessed = React.useRef(false);
+
   useEffect(() => {
+    if (hasProcessed.current) return;
+    if (!signUpLoaded || !signInLoaded) return;
+    hasProcessed.current = true;
+
     const processCallback = async () => {
       try {
         // 1. Let Clerk handle the low-level OAuth handshake
         // This will populate the signUp or signIn objects
-          await handleRedirectCallback({
-            afterSignInUrl: '/',
-            afterSignUpUrl: '/',
-            continueSignUpUrl: '/sign-up',
-          });
+        await handleRedirectCallback({
+          afterSignInUrl: '/',
+          afterSignUpUrl: '/',
+          continueSignUpUrl: '/sign-up',
+        });
 
         // 2. Check for missing requirements (specifically Username)
-        if (signUpLoaded && signUp && signUp.status === 'missing_requirements') {
+        if (signUp && signUp.status === 'missing_requirements') {
           if (signUp.missingFields.includes('username')) {
             console.log("Auto-generating username from email...");
-            
+
             // Derive username from email prefix
             const email = signUp.emailAddress || '';
             let derivedUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-            
+
             // Add a small random suffix to avoid collisions
             if (derivedUsername.length < 3) derivedUsername += Math.floor(Math.random() * 1000);
 
             try {
               const result = await signUp.update({ username: derivedUsername });
-              
+
               if (result.status === 'complete') {
                 await setSignUpActive({ session: result.createdSessionId });
                 navigate('/');
@@ -59,9 +65,7 @@ const SSOCallback = () => {
       }
     };
 
-    if (signUpLoaded && signInLoaded) {
-      processCallback();
-    }
+    processCallback();
   }, [handleRedirectCallback, signUp, signUpLoaded, signIn, signInLoaded, setSignUpActive, setSignInActive, navigate]);
 
   if (error) {
