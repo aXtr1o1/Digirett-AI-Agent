@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     VERSION: str = "2.0.0"
     DEBUG: bool = False
     ALLOWED_ORIGINS: List[str]
+    ROOT_PATH: str = ""
 
     # ── Azure OpenAI ─────────────────────────────────────────────────────
     AZURE_OPENAI_ENDPOINT: str
@@ -150,7 +151,7 @@ class Settings(BaseSettings):
     # ── Admin Notifications ───────────────────────────────────────────────────
     # Email to receive alerts about unassigned HITL tickets
     ADMIN_ALERT_EMAIL: Optional[str]
-
+    ROOT_PATH: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
