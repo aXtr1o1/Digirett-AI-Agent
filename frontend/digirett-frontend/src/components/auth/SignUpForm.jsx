@@ -95,7 +95,7 @@ const SignUpForm = () => {
         {!needsVerification ? (
           <div className="space-y-4">
             <h1 className="text-3xl font-bold text-center mb-6">Create Account</h1>
-            
+
             {/* Google Signup - PRIMARY ACTION */}
             <div className="mb-6">
               <button
@@ -126,39 +126,39 @@ const SignUpForm = () => {
             <form onSubmit={handleSignUp} className="space-y-4">
               {error && <p className="text-red-400 text-center text-sm bg-red-400/10 py-2 rounded-lg">{error}</p>}
 
-            <input
-              placeholder="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-[#1a1a1a] p-3 rounded-xl"
-              required
-            />
+              <input
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full bg-[#1a1a1a] p-3 rounded-xl"
+                required
+              />
 
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-[#1a1a1a] p-3 rounded-xl"
-              required
-            />
+              <input
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-[#1a1a1a] p-3 rounded-xl"
+                required
+              />
 
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-[#1a1a1a] p-3 rounded-xl"
-              required
-            />
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-[#1a1a1a] p-3 rounded-xl"
+                required
+              />
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-white text-black py-3 rounded-xl font-semibold hover:bg-gray-100 transition-all"
-            >
-              {loading ? 'Creating account…' : 'Create Account'}
-            </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-white text-black py-3 rounded-xl font-semibold hover:bg-gray-100 transition-all"
+              >
+                {loading ? 'Creating account…' : 'Create Account'}
+              </button>
 
             </form>
           </div>

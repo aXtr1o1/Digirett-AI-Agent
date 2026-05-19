@@ -10,7 +10,7 @@ from slowapi.util import get_remote_address
 
 from api.routes import admin, auth, chat, conversations, documents, health, hitl, invite, messages, webhooks
 from api.routes import cal as cal_routes
-from api.routes import cal_webhooks
+from api.routes import cal_webhooks, notes
 from config import settings
 from db.milvus_client import get_milvus
 from db.redis_client import get_redis
@@ -26,6 +26,7 @@ from services.lovdata_title_fetcher import LovdataTitleFetcher
 from services.message_service import MessageService
 from services.rag_service import RAGService
 from services.user_service import UserService
+from services.notes_service import NotesService
 from config import settings
 from db.milvus_client import get_milvus
 from db.redis_client import get_redis
@@ -128,6 +129,9 @@ async def lifespan(app: FastAPI):
         logger.info("Initializing Cal.com service...")
         cal_service = CalService()
 
+        logger.info("Initializing Notes service...")
+        notes_service = NotesService(supabase_client=supabase_client)
+
         # ── Title fetcher must be created BEFORE MessageService ──────────
         # It resolves Lovdata URLs to human-readable Norwegian titles using
         # a 3-layer cache: Redis (L1) → Supabase lovdata_url_titles (L2)
@@ -204,6 +208,10 @@ async def lifespan(app: FastAPI):
         )
         auth.set_services(
             user_service=user_service,
+        )
+        notes.set_services(
+            notes_svc=notes_service,
+            user_svc=user_service,
         )
 
         logger.info("All services ready — server is live")
@@ -334,6 +342,7 @@ app.include_router(hitl.router,            prefix="/api/v1")
 app.include_router(cal_routes.router,      prefix="/api/v1")
 app.include_router(invite.router,          prefix="/api/v1")
 app.include_router(auth.router,            prefix="/api/v1")
+app.include_router(notes.router,           prefix="/api/v1")
 
 logger.info("FastAPI app created")
 
