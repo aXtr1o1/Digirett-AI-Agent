@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     VERSION: str = "2.0.0"
     DEBUG: bool = False
     ALLOWED_ORIGINS: List[str]
+    ROOT_PATH: str = ""
 
     # ── Azure OpenAI ─────────────────────────────────────────────────────
     AZURE_OPENAI_ENDPOINT: str

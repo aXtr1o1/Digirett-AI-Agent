@@ -275,6 +275,7 @@ app = FastAPI(
     ),
     version=settings.VERSION,
     lifespan=lifespan,
+    root_path=settings.ROOT_PATH,
 )
 
 app.state.limiter = limiter
