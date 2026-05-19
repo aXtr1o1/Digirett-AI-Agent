@@ -213,8 +213,24 @@ async def admin_suspend_user(
     current_admin: ClerkUser = Depends(require_db_role("admin")),
 ):
     try:
-        _user_service._supabase.table("users").update({"status": "suspended"}).eq("user_id", user_id).execute()
+        success = _user_service.suspend_user(user_id)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to suspend user and sync to Clerk.")
         return {"status": "success", "message": "User suspended."}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.patch("/users/{user_id}/activate", summary="Unsuspend a user account")
+async def admin_unsuspend_user(
+    user_id: str,
+    current_admin: ClerkUser = Depends(require_db_role("admin")),
+):
+    try:
+        success = _user_service.reactivate_user(user_id)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to unsuspend user and sync to Clerk.")
+        return {"status": "success", "message": "User suspension revoked."}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
