@@ -335,3 +335,7 @@
   display: none;
   /* Chrome, Safari, Opera */
 }
+
+cl-navbarMobileMenuRow__security {
+  display: none !important;
+}

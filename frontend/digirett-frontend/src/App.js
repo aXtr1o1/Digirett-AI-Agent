@@ -8,7 +8,7 @@ import ProtectedRoute from "./components/auth/ProtectedRoute";
 import RoleGuard from "./components/auth/RoleGuard";
 
 import SignInPage from "./pages/SignInPage";
-import SignUpPage from "./pages/SignUpPage";
+import SignUpForm from "./components/auth/SignUpForm";
 import ChatPage from "./pages/ChatPage";
 import InvitePage from "./pages/InvitePage";
 import AdminDashboard from "./pages/AdminDashboard";
@@ -111,7 +111,7 @@ function App() {
                     <HomeRedirect />
                   </SignedIn>
                   <SignedOut>
-                    <SignUpPage />
+                    <SignUpForm />
                   </SignedOut>
                 </>
               }
@@ -200,4 +200,3 @@ function App() {
 }
 
 export default App;
-

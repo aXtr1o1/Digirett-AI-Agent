@@ -86,10 +86,10 @@ async def check_user_status(identifier: str):
             user_status = resp.data[0].get("status")
             return {"status": user_status, "is_suspended": user_status == "suspended"}
         
-        return {"status": "not_found", "is_suspended": false}
+        return {"status": "not_found", "is_suspended": False}
     except Exception as exc:
         logger.error(f"❌ check_user_status failed | {exc}")
-        return {"status": "error", "is_suspended": false}
+        return {"status": "error", "is_suspended": False}
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

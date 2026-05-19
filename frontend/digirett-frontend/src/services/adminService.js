@@ -56,6 +56,14 @@ const adminService = {
   },
 
   /**
+   * Unsuspend / Activate a user
+   */
+  activateUser: async (userId) => {
+    const response = await api.patch(API_ENDPOINTS.ADMIN.ACTIVATE_USER(userId));
+    return response.data;
+  },
+
+  /**
    * Get Audit Logs
    */
   getAuditLogs: async (limit = 100) => {
