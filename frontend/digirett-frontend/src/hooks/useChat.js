@@ -35,6 +35,7 @@ const useChat = (
 
   const activeConversationIdRef = useRef(conversationId);
   const abortRef = useRef(null);
+  const prevConversationIdRef = useRef(conversationId);
 
   const {
     uploadDocument,
@@ -131,7 +132,7 @@ const useChat = (
           console.error("[useChat] Fallback fetch also failed:", fallbackErr);
         }
       }
-      
+
       console.error("[useChat] loadMessages error:", err);
       setError(err.message || "Failed to load messages");
     } finally {
@@ -371,7 +372,7 @@ const useChat = (
           if (data.conversationId) {
             activeConversationIdRef.current = data.conversationId;
             const backendTitle = data.metadata?.conversation_title || null;
-            if (onConversationCreated) onConversationCreated(data.conversationId, backendTitle);
+            if (!conversationId && onConversationCreated) onConversationCreated(data.conversationId, backendTitle);
             if (moveConversationToTop) moveConversationToTop(data.conversationId);
             fetchSessionStatus(data.conversationId);
           }
@@ -423,10 +424,20 @@ const useChat = (
     setIsProcessingDoc(false);
   }, []);
 
-  // Initial load
+  // Initial load / Sync conversation transitions
   useEffect(() => {
+    const isAutoCreateTransition = prevConversationIdRef.current === null && conversationId !== null;
+    
+    // Update the ref to track current conversationId for next render
+    prevConversationIdRef.current = conversationId;
+
+    if (isAutoCreateTransition) {
+      console.log("[useChat] Transitioning from new chat to auto-created conversation. Skipping reload.");
+      return;
+    }
+
     loadMessages();
-  }, [loadMessages]);
+  }, [loadMessages, conversationId]);
 
   useEffect(() => {
     if (conversationId) {

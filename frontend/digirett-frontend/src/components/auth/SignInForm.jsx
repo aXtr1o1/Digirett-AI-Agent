@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useSignIn, useClerk, useAuth, useUser } from '@clerk/clerk-react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, AlertTriangle } from 'lucide-react';
-import hitlService from '../../services/hitlService';
+import hitlService from '../services/hitlService';
 // We'll use a simple fallback if LoadingSpinner isn't available
 // import LoadingSpinner from '../common/LoadingSpinner';
 

@@ -142,16 +142,16 @@ export default function TicketDetailsPage() {
       {/* 1) REFINED SIDEBAR (2nd SS Style) */}
       <aside className="w-[260px] flex-shrink-0 flex flex-col bg-[#0F172A] text-white relative h-full z-50">
         <div className="p-6 flex items-center gap-3 mb-2">
-          <div className="h-9 w-9 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/20">
-            <ScaleIcon className="h-5 w-5 text-white" />
+          <div className="h-7 w-7 overflow-hidden flex items-center justify-center bg-transparent">
+            <img src="/digirett-logo.png" alt="Digirett Logo" className="w-full h-full object-contain" />
           </div>
           <div>
-            <h1 className="font-bold text-base tracking-tight leading-none">Lawyer Panel</h1>
+            <h1 className="font-bold text-base tracking-tight leading-none text-white">Lawyer Panel</h1>
           </div>
         </div>
 
         <div className="px-3 py-4 flex-1 space-y-1">
-          <p className="px-4 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Main Console</p>
+          <p className="px-4 py-2 text-[10px] font-black text-gray-500 uppercase tracking-widest opacity-50">Main Console</p>
 
           <button
             onClick={() => setCurrentView("details")}
@@ -159,7 +159,7 @@ export default function TicketDetailsPage() {
               }`}
           >
             <User size={18} />
-            <span className="text-xs font-semibold tracking-wide">User Details</span>
+            <span className="text-sm font-semibold tracking-wide">User Details</span>
           </button>
 
           <button
@@ -168,7 +168,7 @@ export default function TicketDetailsPage() {
               }`}
           >
             <CheckCircle2 size={18} />
-            <span className="text-xs font-semibold tracking-wide">Resolve Matter</span>
+            <span className="text-sm font-semibold tracking-wide">Resolve Matter</span>
           </button>
 
           <button
@@ -176,7 +176,7 @@ export default function TicketDetailsPage() {
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group text-gray-400 hover:bg-red-500/10 hover:text-red-400"
           >
             <UserX size={18} />
-            <span className="text-xs font-semibold tracking-wide">Mark No-Show</span>
+            <span className="text-sm font-semibold tracking-wide">Mark No-Show</span>
           </button>
 
           <button
@@ -186,7 +186,7 @@ export default function TicketDetailsPage() {
           >
             <div className="flex items-center gap-3">
               <MessageSquare size={18} />
-              <span className="text-xs font-semibold tracking-wide">Context Details</span>
+              <span className="text-sm font-semibold tracking-wide">Context Details</span>
             </div>
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-400"></div>
           </button>
@@ -196,7 +196,7 @@ export default function TicketDetailsPage() {
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-gray-400 hover:bg-white/5 hover:text-white"
           >
             <LayoutDashboard size={18} />
-            <span className="text-xs font-semibold tracking-wide">Go to Dashboard</span>
+            <span className="text-sm font-semibold tracking-wide">Go to Dashboard</span>
           </button>
 
         </div>
@@ -204,7 +204,7 @@ export default function TicketDetailsPage() {
         <div className="p-4 border-t border-white/5">
           <button
             onClick={() => signOut()}
-            className="w-full flex items-center gap-3 px-4 py-3 text-gray-400 hover:text-white hover:bg-white/5 rounded-xl transition-all text-xs font-semibold"
+            className="w-full flex items-center gap-3 px-4 py-3 text-gray-400 hover:text-white hover:bg-white/5 rounded-xl transition-all text-sm font-bold"
           >
             <LogOut size={16} />
             Logout
@@ -217,9 +217,11 @@ export default function TicketDetailsPage() {
         {/* COMPACT TOP BAR */}
         <header className={`px-8 h-16 border-b flex items-center justify-between z-10 shrink-0 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
           <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">
-            <span>Matter Review</span>
+            <button onClick={() => navigate("/lawyer")} className={`transition-colors ${isDark ? "hover:text-white" : "hover:text-gray-900"}`}>
+              Matter Review
+            </button>
             <ChevronRight size={12} />
-            <span className="text-blue-600">User Details</span>
+            <span className="text-blue-600">{currentView === "details" ? "User Details" : currentView === "resolve" ? "Resolve Matter" : currentView === "context" ? "Context Details" : "User Details"}</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -295,6 +297,17 @@ export default function TicketDetailsPage() {
                       </div>
                     ))}
                   </div>
+
+                  {ticket.conversation_summary && (
+                    <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800 space-y-4">
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Summary of the matter</h4>
+                      <div className={`p-6 rounded-2xl ${isDark ? "bg-slate-950/50" : "bg-slate-50"}`}>
+                        <p className="text-sm leading-relaxed text-slate-500 italic">
+                          {ticket.conversation_summary}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

@@ -67,7 +67,12 @@ api.interceptors.response.use(
           window.Clerk.signOut();
         }
       } else if (status === 403) {
-        message = "Access denied. You do not have permission for this action.";
+        if (detailStr.includes("suspended") || detailStr.includes("restricted")) {
+          message = "Your account has been suspended. Please contact support.";
+          window.location.href = "/suspended";
+        } else {
+          message = "Access denied. You do not have permission for this action.";
+        }
       } else if (status === 429) {
         message = detail || "Too many requests. Please try again later.";
       } else {

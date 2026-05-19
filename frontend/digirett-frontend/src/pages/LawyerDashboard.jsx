@@ -296,7 +296,8 @@ export default function LawyerDashboard() {
 
   const allocationData = [
     { name: 'Active', value: activeTickets.length, color: '#6366f1' },
-    { name: 'Resolved', value: resolvedTickets.length, color: '#10b981' }
+    { name: 'Resolved', value: resolvedTickets.length, color: '#10b981' },
+    { name: 'Queue Load', value: queueTickets.length, color: '#f97316' }
   ];
 
   // Group by date for Intake Performance
@@ -345,7 +346,7 @@ export default function LawyerDashboard() {
           <div className="h-16 flex items-center px-6 border-b border-white/5">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center">
-                <img src="/digirett-logo.png" alt="Logo" className="w-full h-full object-contain p-0.5" />
+                <img src="/user-chat-logo.png" alt="Logo" className="w-full h-full object-contain p-0.5" />
               </div>
               <span className="font-bold text-lg tracking-tight text-white">Lawyer Panel</span>
             </div>
@@ -439,16 +440,19 @@ export default function LawyerDashboard() {
                     Admin Dashboard
                   </Link>
                 )}
-
-                <button
-                  onClick={handleLogout}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-bold text-slate-400 hover:text-red-400 hover:bg-red-500/5 transition-all mt-2"
-                >
-                  <LogOut size={18} />
-                  Logout
-                </button>
               </nav>
             </div>
+          </div>
+
+          {/* Bottom Fixed Action */}
+          <div className="p-4 border-t border-white/5 mt-auto">
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-bold text-slate-400 hover:text-red-400 hover:bg-red-500/5 transition-all"
+            >
+              <LogOut size={18} />
+              Logout
+            </button>
           </div>
         </div>
       </aside>
@@ -473,13 +477,6 @@ export default function LawyerDashboard() {
             </div>
 
             <div className="flex items-center gap-4">
-              <button
-                onClick={() => fetchData(true)}
-                className={`p-2 rounded-xl transition-all ${isDark ? "bg-gray-800 text-gray-400 hover:bg-gray-700" : "bg-gray-50 text-gray-500 hover:bg-gray-100"}`}
-                title="Refresh Global Data"
-              >
-                <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
-              </button>
               <button
                 onClick={toggleTheme}
                 className={`p-2 rounded-xl transition-all ${isDark ? "bg-gray-800 text-blue-400 hover:bg-gray-700" : "bg-gray-50 text-gray-500 hover:bg-gray-100"}`}
@@ -592,7 +589,7 @@ export default function LawyerDashboard() {
                             <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
                         </Pie>
-                        <Tooltip />
+                        <Tooltip cursor={false} />
                         <Legend iconType="circle" />
                       </PieChart>
                     </ResponsiveContainer>
@@ -609,6 +606,7 @@ export default function LawyerDashboard() {
                         <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
                         <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
                         <Tooltip
+                          cursor={false}
                           contentStyle={{
                             backgroundColor: isDark ? '#0f172a' : '#fff',
                             border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
