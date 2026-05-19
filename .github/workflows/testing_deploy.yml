@@ -66,6 +66,11 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
+    - name: Verify deploy secrets
+      run: |
+        if [ -z "${{ secrets.EC2_HOST }}" ]; then echo "::error::Secret EC2_HOST is not set."; exit 1; fi
+        if [ -z "${{ secrets.EC2_SSH_KEY }}" ]; then echo "::error::Secret EC2_SSH_KEY is not set."; exit 1; fi
+        echo "Required secrets are set."
 
     - name: Deploy to EC2
       uses: appleboy/ssh-action@v1.0.3
@@ -75,19 +80,21 @@ jobs:
         key: ${{ secrets.EC2_SSH_KEY }}
         port: 22
         script: |
-          set -e
-          cd ~/Digirett-AI-Agent
+          set -ex
+          whoami
+          pwd
+          cd /home/ubuntu/Digirett-AI-Agent
           git reset --hard
           git checkout Testing
           echo "Pulling latest code..."
           git fetch origin
-          git pull origin 
+          git pull origin Testing 
 
           python3 -m venv venv
           source venv/bin/activate
           pip install --upgrade pip
           echo "Installing dependencies..."
-          pip3 install -r requirements.txt
+          pip install -r requirements.txt
           
 
           sudo systemctl daemon-reload
@@ -97,7 +104,7 @@ jobs:
           deactivate
 
           # ── FRONTEND deployment ───────────────────────────────
-          cd ~/Digirett-AI-Agent/frontend/digirett-frontend
+          cd /home/ubuntu/Digirett-AI-Agent/frontend/digirett-frontend
           npm ci --prefer-offline --no-audit || npm install
           npm run build   # produces ./dist or ./build folder
 
