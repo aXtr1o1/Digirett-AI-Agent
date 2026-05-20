@@ -122,9 +122,12 @@ async def clerk_webhook(
         if not email and email_addresses:
             email = email_addresses[0].get("email_address", "")
 
-        first_name = data.get("first_name", "")
-        last_name = data.get("last_name", "")
-        display_name = f"{first_name} {last_name}".strip()
+        first_name = data.get("first_name") or ""
+        last_name = data.get("last_name") or ""
+        username = data.get("username") or ""
+
+        # Use first + last name if they exist, otherwise use the username
+        display_name = f"{first_name} {last_name}".strip() or username
         if not display_name:
             display_name = email.split("@")[0] if email else "User"
 
