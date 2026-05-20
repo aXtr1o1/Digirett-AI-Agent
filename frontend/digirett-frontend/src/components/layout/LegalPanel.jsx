@@ -36,12 +36,9 @@ const LegalPanel = ({ conversationId, theme = "dark", onClose }) => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div>
-                <h3 className={`text-sm font-black tracking-tight ${isDark ? "text-white" : "text-slate-900"}`}>
-                  Legal Assistant
-                </h3>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 opacity-70">
+                <h3 className={`text-sm font-black uppercase tracking-wider ${isDark ? "text-white" : "text-slate-900"}`}>
                   Active Escalation
-                </p>
+                </h3>
               </div>
             </div>
             {onClose && (

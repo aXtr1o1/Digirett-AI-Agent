@@ -376,6 +376,7 @@ class HitlService:
                     "  user_id, email, user_name, "
                     "  user_profiles(display_name, phone_number)"
                     "), "
+                    "conversations!hitl_tickets_conversation_id_fkey(conversation_summary), "
                     "hitl_responses(content)"
                 )
                 .eq("ticket_id", ticket_id)
@@ -405,6 +406,10 @@ class HitlService:
                 "display_name": raw_profile.get("display_name"),
                 "phone_number": raw_profile.get("phone_number"),
             }
+
+            # Flatten conversation summary
+            conv_data = ticket.pop("conversations", {}) or {}
+            ticket["conversation_summary"] = conv_data.get("conversation_summary")
 
             # Flatten response content if available
             responses = ticket.pop("hitl_responses", []) or []

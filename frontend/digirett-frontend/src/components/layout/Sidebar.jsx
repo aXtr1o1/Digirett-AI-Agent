@@ -31,6 +31,7 @@ const Sidebar = ({
   onDeleteConversation,
   theme = "dark",
   onToggleTheme,
+  onCollapseSidebar,
 }) => {
   const isDark = theme === "dark";
   const [activeFeature, setActiveFeature] = useState("chat");
@@ -134,7 +135,7 @@ const Sidebar = ({
         marginBottom: "8px",
       }}
     >
-      {/* APP BRANDING with Hamburger Menu */}
+      {/* APP BRANDING with Hamburger Menu & User Profile */}
       <div style={{
         padding: "20px 16px 16px",
         display: "flex",
@@ -159,7 +160,7 @@ const Sidebar = ({
               flexShrink: 0,
             }}
           >
-            <img src="/user-chat-logo.png" alt="DigiRett Logo" style={{ width: "32px", height: "32px" }} />
+            <img src="/digirett-logo.png" alt="DigiRett Logo" style={{ width: "32px", height: "32px" }} />
           </div>
           <span style={{
             fontSize: "16px",
@@ -170,10 +171,221 @@ const Sidebar = ({
           </span>
         </div>
 
-        {/* Hamburger Menu Button */}
-        <div ref={menuRef} style={{ position: "relative" }}>
+        {/* Controls: Profile Avatar & Hamburger Collapse Button */}
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          {/* User Profile Avatar */}
+          <div ref={menuRef} style={{ position: "relative" }}>
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              style={{
+                width: "32px",
+                height: "32px",
+                borderRadius: "50%",
+                backgroundColor: "transparent",
+                border: "none",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                overflow: "hidden",
+                transition: "all 0.2s",
+                border: isDark ? "1px solid rgba(255, 255, 255, 0.1)" : "1px solid rgba(0, 0, 0, 0.1)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "scale(1.05)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "scale(1)";
+              }}
+              title="User Account"
+            >
+              {user?.imageUrl ? (
+                <img src={user.imageUrl} alt="Profile" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : (
+                <div style={{
+                  width: "100%",
+                  height: "100%",
+                  backgroundColor: isDark ? "rgba(59, 130, 246, 0.2)" : "rgba(59, 130, 246, 0.15)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: isDark ? "#3B82F6" : "#2563EB",
+                }}>
+                  <User size={16} />
+                </div>
+              )}
+            </button>
+
+            {/* Dropdown Menu */}
+            {menuOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  right: 0,
+                  marginTop: "8px",
+                  width: "180px",
+                  borderRadius: "12px",
+                  backgroundColor: isDark
+                    ? "rgba(26, 26, 26, 0.95)"
+                    : "rgba(255, 255, 255, 0.95)",
+                  border: isDark
+                    ? "1px solid rgba(42, 42, 42, 0.5)"
+                    : "1px solid rgba(229, 231, 235, 0.5)",
+                  backdropFilter: "blur(20px)",
+                  WebkitBackdropFilter: "blur(20px)",
+                  boxShadow: "0 4px 20px rgba(0, 0, 0, 0.3)",
+                  zIndex: 1000,
+                  overflow: "hidden",
+                }}
+              >
+                {/* User Profile Section */}
+                <div
+                  style={{
+                    padding: "16px",
+                    borderBottom: isDark
+                      ? "1px solid rgba(42, 42, 42, 0.5)"
+                      : "1px solid rgba(229, 231, 235, 0.5)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "40px",
+                      height: "40px",
+                      borderRadius: "50%",
+                      backgroundColor: isDark
+                        ? "rgba(59, 130, 246, 0.2)"
+                        : "rgba(59, 130, 246, 0.15)",
+                      border: isDark
+                        ? "2px solid rgba(59, 130, 246, 0.4)"
+                        : "2px solid rgba(59, 130, 246, 0.3)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: isDark ? "#3B82F6" : "#2563EB",
+                      flexShrink: 0,
+                      overflow: "hidden",
+                    }}
+                  >
+                    {user?.imageUrl ? (
+                      <img src={user.imageUrl} alt="Profile" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    ) : (
+                      <User size={20} />
+                    )}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: "14px",
+                      fontWeight: "600",
+                      color: isDark ? "#ffffff" : "#111827",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }} title={displayName}>
+                      {displayName}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <div style={{
+                  height: "1px",
+                  backgroundColor: isDark
+                    ? "rgba(42, 42, 42, 0.5)"
+                    : "rgba(229, 231, 235, 0.5)",
+                  margin: "0",
+                }} />
+
+                {/* Theme Toggle */}
+                <button
+                  onClick={() => {
+                    if (onToggleTheme) onToggleTheme();
+                    setMenuOpen(false);
+                  }}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    padding: "12px 16px",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    color: isDark ? "#ffffff" : "#111827",
+                    fontSize: "14px",
+                    transition: "background-color 0.2s",
+                    textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = isDark
+                      ? "rgba(42, 42, 42, 0.5)"
+                      : "rgba(243, 244, 246, 0.8)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                  }}
+                >
+                  {isDark ? (
+                    <>
+                      <Sun size={18} />
+                      <span>Light Mode</span>
+                    </>
+                  ) : (
+                    <>
+                      <Moon size={18} />
+                      <span>Dark Mode</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Divider */}
+                <div style={{
+                  height: "1px",
+                  backgroundColor: isDark
+                    ? "rgba(42, 42, 42, 0.5)"
+                    : "rgba(229, 231, 235, 0.5)",
+                  margin: "4px 0",
+                }} />
+
+                {/* Logout Button */}
+                <button
+                  onClick={handleLogout}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    padding: "12px 16px",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "#ef4444",
+                    fontSize: "14px",
+                    transition: "background-color 0.2s",
+                    textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = isDark
+                      ? "rgba(239, 68, 68, 0.1)"
+                      : "rgba(239, 68, 68, 0.05)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                  }}
+                >
+                  <LogOut size={18} />
+                  <span>Logout</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Hamburger Menu Close Button */}
           <button
-            onClick={() => setMenuOpen(!menuOpen)}
+            onClick={onCollapseSidebar}
             style={{
               width: "32px",
               height: "32px",
@@ -195,175 +407,10 @@ const Sidebar = ({
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = "transparent";
             }}
+            title="Collapse Sidebar"
           >
             <Menu size={20} />
           </button>
-
-          {/* Dropdown Menu */}
-          {menuOpen && (
-            <div
-              style={{
-                position: "absolute",
-                top: "100%",
-                right: 0,
-                marginTop: "8px",
-                width: "180px",
-                borderRadius: "12px",
-                backgroundColor: isDark
-                  ? "rgba(26, 26, 26, 0.95)"
-                  : "rgba(255, 255, 255, 0.95)",
-                border: isDark
-                  ? "1px solid rgba(42, 42, 42, 0.5)"
-                  : "1px solid rgba(229, 231, 235, 0.5)",
-                backdropFilter: "blur(20px)",
-                WebkitBackdropFilter: "blur(20px)",
-                boxShadow: "0 4px 20px rgba(0, 0, 0, 0.3)",
-                zIndex: 1000,
-                overflow: "hidden",
-              }}
-            >
-              {/* User Profile Section */}
-              <div
-                style={{
-                  padding: "16px",
-                  borderBottom: isDark
-                    ? "1px solid rgba(42, 42, 42, 0.5)"
-                    : "1px solid rgba(229, 231, 235, 0.5)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "12px",
-                }}
-              >
-                <div
-                  style={{
-                    width: "40px",
-                    height: "40px",
-                    borderRadius: "50%",
-                    backgroundColor: isDark
-                      ? "rgba(59, 130, 246, 0.2)"
-                      : "rgba(59, 130, 246, 0.15)",
-                    border: isDark
-                      ? "2px solid rgba(59, 130, 246, 0.4)"
-                      : "2px solid rgba(59, 130, 246, 0.3)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: isDark ? "#3B82F6" : "#2563EB",
-                    flexShrink: 0,
-                    overflow: "hidden",
-                  }}
-                >
-                  {user?.imageUrl ? (
-                    <img src={user.imageUrl} alt="Profile" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  ) : (
-                    <User size={20} />
-                  )}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: "14px",
-                    fontWeight: "600",
-                    color: isDark ? "#ffffff" : "#111827",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }} title={displayName}>
-                    {displayName}
-                  </div>
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div style={{
-                height: "1px",
-                backgroundColor: isDark
-                  ? "rgba(42, 42, 42, 0.5)"
-                  : "rgba(229, 231, 235, 0.5)",
-                margin: " 0",
-              }} />
-
-              {/* Theme Toggle */}
-              <button
-                onClick={() => {
-                  if (onToggleTheme) onToggleTheme();
-                  setMenuOpen(false);
-                }}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "12px",
-                  padding: "12px 16px",
-                  background: "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                  color: isDark ? "#ffffff" : "#111827",
-                  fontSize: "14px",
-                  transition: "background-color 0.2s",
-                  textAlign: "left",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark
-                    ? "rgba(42, 42, 42, 0.5)"
-                    : "rgba(243, 244, 246, 0.8)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "transparent";
-                }}
-              >
-                {isDark ? (
-                  <>
-                    <Sun size={18} />
-                    <span>Light Mode</span>
-                  </>
-                ) : (
-                  <>
-                    <Moon size={18} />
-                    <span>Dark Mode</span>
-                  </>
-                )}
-              </button>
-
-              {/* Divider */}
-              <div style={{
-                height: "1px",
-                backgroundColor: isDark
-                  ? "rgba(42, 42, 42, 0.5)"
-                  : "rgba(229, 231, 235, 0.5)",
-                margin: "4px 0",
-              }} />
-
-              {/* Logout Button */}
-              <button
-                onClick={handleLogout}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "12px",
-                  padding: "12px 16px",
-                  background: "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                  color: "#ef4444",
-                  fontSize: "14px",
-                  transition: "background-color 0.2s",
-                  textAlign: "left",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = isDark
-                    ? "rgba(239, 68, 68, 0.1)"
-                    : "rgba(239, 68, 68, 0.05)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "transparent";
-                }}
-              >
-                <LogOut size={18} />
-                <span>Logout</span>
-              </button>
-            </div>
-          )}
         </div>
       </div>
 

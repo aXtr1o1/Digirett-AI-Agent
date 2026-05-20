@@ -151,7 +151,7 @@ class Settings(BaseSettings):
     # ── Admin Notifications ───────────────────────────────────────────────────
     # Email to receive alerts about unassigned HITL tickets
     ADMIN_ALERT_EMAIL: Optional[str]
-
+    ROOT_PATH: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

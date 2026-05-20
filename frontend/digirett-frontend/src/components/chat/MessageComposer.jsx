@@ -212,7 +212,7 @@ const MessageComposer = ({
               <div style={{
                 position: "absolute",
                 bottom: "calc(100% + 12px)",
-                right: "0",
+                left: "0",
                 width: "256px",
                 padding: "16px",
                 borderRadius: "16px",
