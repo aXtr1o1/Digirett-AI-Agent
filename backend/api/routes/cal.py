@@ -297,3 +297,49 @@ async def create_booking(
         "status": booking_result.get("status"),
         "message": "Booking created. You will receive a confirmation email with the Google Meet link shortly.",
     }
+
+
+class CalConfigUpdateRequest(BaseModel):
+    cal_event_type_id: str
+    cal_api_key: str
+
+@router.get(
+    "/lawyer/config",
+    summary="Get the current lawyer's Cal.com configuration",
+    description="Retrieves the cal_event_type_id and cal_api_key for the logged-in lawyer.",
+)
+async def get_lawyer_cal_config(
+    current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
+):
+    lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
+    if not lawyer_id:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    config = _user_service.get_lawyer_cal_config(lawyer_id)
+    if not config:
+        return {"cal_event_type_id": "", "cal_api_key": ""}
+    
+    return config
+
+@router.put(
+    "/lawyer/config",
+    summary="Update the current lawyer's Cal.com configuration",
+    description="Updates the cal_event_type_id and cal_api_key for the logged-in lawyer.",
+)
+async def update_lawyer_cal_config(
+    req: CalConfigUpdateRequest,
+    current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
+):
+    lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
+    if not lawyer_id:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    success = _user_service.update_lawyer_cal_config(
+        lawyer_id, 
+        event_type_id=req.cal_event_type_id, 
+        api_key=req.cal_api_key
+    )
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update configuration")
+        
+    return {"message": "Configuration updated successfully"}
