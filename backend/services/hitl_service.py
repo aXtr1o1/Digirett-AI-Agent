@@ -270,7 +270,7 @@ class HitlService:
                 return False
 
             logger.info(f"🎫 Ticket assigned | ticket={ticket_id} | lawyer={lawyer_id}")
-            self._log_audit("lawyer.ticket_claimed", lawyer_id, {"ticket_id": ticket_id})
+            self._log_audit("lawyer.ticketclaimed", lawyer_id, {"ticket_id": ticket_id})
             return True
         except Exception as exc:
             logger.error(f"❌ Failed to assign ticket {ticket_id} | {exc}")

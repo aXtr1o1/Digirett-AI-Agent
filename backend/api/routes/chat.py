@@ -335,33 +335,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
     try:
         logger.info(f"💬 WS query: '{chat_request.query[:80]}'")
 
-        # ── Step 1: Get or create conversation ────────────────
-        conversation_id = chat_request.conversation_id
-
-        if not conversation_id:
-            conversation      = _conversation_service.create_conversation(
-                user_id=user_id, title=None,
-            )
-            conversation_id   = conversation["conversation_id"]
-            is_first_exchange = True
-            logger.info(f"✅ Auto-created conversation: {conversation_id}")
-        else:
-            # Add authorization check for existing conversation
-            existing_conv = _conversation_service.get_conversation(conversation_id)
-            if not existing_conv:
-                await websocket.send_json({"type": "error", "message": "Conversation not found"})
-                return
-            if existing_conv.get("user_id") != user_id and clerk_user.role != "admin":
-                await websocket.send_json({"type": "error", "message": "Not authorized to access this conversation"})
-                return
-
-            existing = _message_service.get_conversation_messages(
-                conversation_id=conversation_id, limit=1,
-            )
-            is_first_exchange = len(existing) == 0
-
-        # ── Step 1.5: Enforce Quotas ───────────────────────────
-        # Check turn count and token count from DocumentService session (Authoritative for User)
+        # ── Step 1: Enforce Quotas FIRST (Before creating a conversation) ─────
         if _document_service:
             role = clerk_user.role
             # 1. Check Turn Limit
@@ -385,6 +359,31 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
                     "message": f"Token limit reached. Your session resets every 4 hours."
                 })
                 return
+
+        # ── Step 2: Get or create conversation ────────────────
+        conversation_id = chat_request.conversation_id
+
+        if not conversation_id:
+            conversation      = _conversation_service.create_conversation(
+                user_id=user_id, title=None,
+            )
+            conversation_id   = conversation["conversation_id"]
+            is_first_exchange = True
+            logger.info(f"✅ Auto-created conversation: {conversation_id}")
+        else:
+            # Add authorization check for existing conversation
+            existing_conv = _conversation_service.get_conversation(conversation_id)
+            if not existing_conv:
+                await websocket.send_json({"type": "error", "message": "Conversation not found"})
+                return
+            if existing_conv.get("user_id") != user_id and clerk_user.role != "admin":
+                await websocket.send_json({"type": "error", "message": "Not authorized to access this conversation"})
+                return
+
+            existing = _message_service.get_conversation_messages(
+                conversation_id=conversation_id, limit=1,
+            )
+            is_first_exchange = len(existing) == 0
 
     
         async for event in _rag_service.process_query(
