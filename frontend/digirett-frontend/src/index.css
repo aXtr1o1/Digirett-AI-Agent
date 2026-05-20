@@ -206,6 +206,15 @@
   }
 }
 
+/* Remove default focus outline from Recharts */
+.recharts-wrapper,
+.recharts-wrapper *,
+.recharts-wrapper svg,
+.recharts-surface {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 /* Clerk component customization removed to allow dynamic theming via React props */
 
 /* Scrollbar — visible in both light and dark mode */

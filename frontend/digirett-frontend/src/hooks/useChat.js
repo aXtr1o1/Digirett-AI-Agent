@@ -312,7 +312,7 @@ const useChat = (
               activeConversationIdRef.current = data.conversationId;
               const backendTitle = data.metadata?.conversation_title || null;
               if (!conversationId && onConversationCreated) onConversationCreated(data.conversationId, backendTitle);
-              if (moveConversationToTop) moveConversationToTop(data.conversationId);
+              if (moveConversationToTop) moveConversationToTop(data.conversationId, backendTitle);
               fetchSessionStatus(data.conversationId);
             }
           },
@@ -377,7 +377,7 @@ const useChat = (
             activeConversationIdRef.current = data.conversationId;
             const backendTitle = data.metadata?.conversation_title || null;
             if (!conversationId && onConversationCreated) onConversationCreated(data.conversationId, backendTitle);
-            if (moveConversationToTop) moveConversationToTop(data.conversationId);
+            if (moveConversationToTop) moveConversationToTop(data.conversationId, backendTitle);
             fetchSessionStatus(data.conversationId);
           }
         },
@@ -430,6 +430,10 @@ const useChat = (
     setStreamingMessage("");
     setError(null);
     setIsProcessingDoc(false);
+  }, []);
+
+  const clearError = useCallback(() => {
+    setError(null);
   }, []);
 
   // Initial load / Sync conversation transitions
@@ -489,6 +493,7 @@ const useChat = (
     isUploading,
     uploadError,
     clearUploadError,
+    clearError,
     uploadedDocs,
     sessionStatus,
     isUploadDisabled,

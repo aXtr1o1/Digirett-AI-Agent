@@ -202,15 +202,14 @@ class UserService:
                         resp = client.get(clerk_url, headers={"Authorization": f"Bearer {settings.CLERK_SECRET_KEY}"})
                         if resp.status_code == 200:
                             data = resp.json()
+                            print(data)
                             email_addresses = data.get("email_addresses", [])
                             if email_addresses:
                                 real_email = email_addresses[0].get("email_address")
                                 logger.info(f"📧 Fetched email: {real_email}")
                             
-                            first_name = data.get("first_name") or ""
-                            last_name = data.get("last_name") or ""
                             username = data.get("username")
-                            display_name = username or f"{first_name} {last_name}".strip() or None
+                            display_name = username
                         else:
                             logger.error(f"❌ Clerk API returned {resp.status_code}: {resp.text}")
                 except Exception as e:
@@ -552,6 +551,31 @@ class UserService:
             return True
         except Exception as exc:
             logger.error(f"❌ enable_lawyer_dashboard_for_admin failed | {user_id} | {exc}")
+            return False
+
+    def get_lawyer_cal_config(self, lawyer_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve the Cal.com configuration for a lawyer."""
+        try:
+            resp = self._supabase.table("lawyer_profiles").select("cal_event_type_id, cal_api_key").eq("lawyer_id", lawyer_id).execute()
+            if resp.data:
+                return resp.data[0]
+            return None
+        except Exception as exc:
+            logger.error(f"❌ get_lawyer_cal_config failed | {lawyer_id} | {exc}")
+            return None
+
+    def update_lawyer_cal_config(self, lawyer_id: str, event_type_id: str, api_key: str) -> bool:
+        """Update the Cal.com configuration for a lawyer."""
+        try:
+            self._supabase.table("lawyer_profiles").update({
+                "cal_event_type_id": event_type_id,
+                "cal_api_key": api_key,
+                "updated_at": datetime.utcnow().isoformat()
+            }).eq("lawyer_id", lawyer_id).execute()
+            logger.info(f"✅ Updated Cal.com config for lawyer | {lawyer_id}")
+            return True
+        except Exception as exc:
+            logger.error(f"❌ update_lawyer_cal_config failed | {lawyer_id} | {exc}")
             return False
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

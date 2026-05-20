@@ -93,6 +93,22 @@ const hitlService = {
     const response = await api.get(`/hitl/check-status?identifier=${encodeURIComponent(identifier)}`);
     return response.data;
   },
+
+  /**
+   * Get lawyer Cal.com configuration
+   */
+  getCalConfig: async () => {
+    const response = await api.get("/cal/lawyer/config");
+    return response.data;
+  },
+
+  /**
+   * Update lawyer Cal.com configuration
+   */
+  updateCalConfig: async (configData) => {
+    const response = await api.put("/cal/lawyer/config", configData);
+    return response.data;
+  },
 };
 
 export default hitlService;
