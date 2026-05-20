@@ -217,6 +217,16 @@ class DocumentService:
             for page_num in range(len(doc)):
                 page = doc.load_page(page_num)
                 text = page.get_text("text")
+                
+                # Safe OCR Fallback: Check if text has a "unicode problem" (garbled text)
+                if text and (text.count('\ufffd') / len(text) > 0.05 or ("cid:" in text and text.count("cid:") > 5)):
+                    try:
+                        logger.info(f"🔍 Garbled text detected on page {page_num}. Attempting OCR fallback...")
+                        # Try OCR (Requires Tesseract installed on the host)
+                        text = page.get_text("text", textpage=page.get_textpage_ocr(flags=0, language="eng+nor"))
+                    except Exception as ocr_exc:
+                        logger.warning(f"⚠️ OCR fallback failed or not installed on page {page_num}: {ocr_exc}")
+
                 if text.strip():
                     pages.append(f"[Page {page_num + 1}]\n{text.strip()}")
             doc.close()
