@@ -131,7 +131,7 @@ const useChat = (
           console.error("[useChat] Fallback fetch also failed:", fallbackErr);
         }
       }
-      
+
       console.error("[useChat] loadMessages error:", err);
       setError(err.message || "Failed to load messages");
     } finally {

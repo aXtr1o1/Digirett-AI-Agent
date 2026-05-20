@@ -242,8 +242,8 @@ const ChatPage = () => {
               <button
                 onClick={() => setIsLegalPanelOpen(true)}
                 className={`absolute top-4 right-4 z-50 px-4 py-2.5 text-sm font-bold rounded-xl border shadow-lg transition-all animate-in zoom-in duration-300 flex items-center gap-2 ${isDark
-                    ? "bg-indigo-500/20 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/30 hover:text-white"
-                    : "bg-indigo-50 border-indigo-100 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800"
+                  ? "bg-indigo-500/20 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/30 hover:text-white"
+                  : "bg-indigo-50 border-indigo-100 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-800"
                   }`}
               >
                 <span className="relative flex h-2 w-2">
