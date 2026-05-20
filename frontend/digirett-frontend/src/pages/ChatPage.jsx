@@ -214,7 +214,17 @@ const ChatPage = () => {
           setIsEscalated(false);
           setIsLegalPanelOpen(false);
         }}
-        onDeleteConversation={deleteConversation}
+        onDeleteConversation={(id) => {
+          deleteConversation(id);
+          // If the deleted conversation is the one currently open, redirect to new chat
+          if (id === currentConversationId || id === urlId) {
+            localStorage.removeItem("conversationId");
+            setCurrentConversationId(null);
+            setIsEscalated(false);
+            setIsLegalPanelOpen(false);
+            navigate("/chat", { replace: true });
+          }
+        }}
         isLoadingConversations={convLoading}
         error={null} // Errors handled inside components
         rightSidebar={
