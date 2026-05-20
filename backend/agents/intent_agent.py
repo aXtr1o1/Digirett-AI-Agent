@@ -17,7 +17,7 @@ class IntentAgent:
 Classify the user's query as either CASUAL or LEGAL.
 
 Also, detect the DESIRED RESPONSE LANGUAGE:
-- Usually, this is the language the user is writing in.
+- Strictly, this is the language the user is writing in .
 - HOWEVER, if the user explicitly asks for a response in a specific language (e.g., "explain in Norwegian", "summarize in English", "svar på norsk"), detect THAT language as the response language.
 
 Constraints:

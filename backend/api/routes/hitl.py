@@ -75,15 +75,24 @@ async def check_user_status(identifier: str):
         from db.supabase_client import get_supabase
         supabase = get_supabase()
         
-        # Check by email or username
+        # Check by email or username (case-insensitive first)
         resp = supabase.table("users") \
-            .select("status") \
-            .or_(f"email.eq.{identifier},user_name.eq.{identifier}") \
+            .select("status, user_name, email") \
+            .or_(f"email.ilike.{identifier},user_name.ilike.{identifier}") \
             .limit(1) \
             .execute()
             
         if resp.data:
-            user_status = resp.data[0].get("status")
+            user_record = resp.data[0]
+            user_status = user_record.get("status")
+            db_user_name = user_record.get("user_name")
+            db_email = user_record.get("email")
+            
+            # Enforce case sensitivity for username
+            if db_user_name and db_user_name.lower() == identifier.lower():
+                if db_user_name != identifier:
+                    return {"status": "case_mismatch", "is_suspended": False}
+                    
             return {"status": user_status, "is_suspended": user_status == "suspended"}
         
         return {"status": "not_found", "is_suspended": False}
