@@ -62,7 +62,17 @@ const useDocumentUpload = (conversationId, userId, addMessage) => {
 
     } catch (err) {
       console.error("[useDocumentUpload] uploadDocument error:", err);
-      setUploadError(err.message || "Network error. Please try again.");
+      const msg = err.message || "";
+      if (
+        msg.toLowerCase().includes("unreadable") ||
+        msg.toLowerCase().includes("no text") ||
+        msg.toLowerCase().includes("could not extract") ||
+        msg.toLowerCase().includes("standard pdf")
+      ) {
+        setUploadError("This document contains unreadable text. Please upload a standard PDF.");
+      } else {
+        setUploadError(msg || "Network error. Please try again.");
+      }
       return null;
     } finally {
       setIsUploading(false);
