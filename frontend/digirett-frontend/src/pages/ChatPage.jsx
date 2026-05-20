@@ -21,7 +21,7 @@ const ChatPage = () => {
   const navigate = useNavigate();
   const { user } = useUser();
   const [isEscalated, setIsEscalated] = useState(false);
-  const [isLegalPanelOpen, setIsLegalPanelOpen] = useState(true);
+  const [isLegalPanelOpen, setIsLegalPanelOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [dismissedEvents, setDismissedEvents] = useState(() => {
     const seen = localStorage.getItem("dismissed_system_events");
@@ -46,6 +46,11 @@ const ChatPage = () => {
       selectConversation(urlId);
     }
   }, [urlId, selectConversation, currentConversationId]);
+
+  const handleConversationCreated = useCallback((newId, title) => {
+    handleAutoCreatedConversation(newId, title);
+    navigate(`/chat/${newId}`, { replace: true });
+  }, [handleAutoCreatedConversation, navigate]);
 
   // Persistence: Check if current conversation is already escalated on load/change
   useEffect(() => {
@@ -202,12 +207,12 @@ const ChatPage = () => {
           navigate("/chat");
           setCurrentConversationId(null);
           setIsEscalated(false);
-          setIsLegalPanelOpen(true);
+          setIsLegalPanelOpen(false);
         }}
         onSelectConversation={(id) => {
           navigate(`/chat/${id}`);
           setIsEscalated(false);
-          setIsLegalPanelOpen(true);
+          setIsLegalPanelOpen(false);
         }}
         onDeleteConversation={deleteConversation}
         isLoadingConversations={convLoading}
@@ -226,7 +231,7 @@ const ChatPage = () => {
           <div className="relative w-full h-full flex flex-col">
             <ChatContainer
               conversationId={currentConversationId}
-              onConversationCreated={handleAutoCreatedConversation}
+              onConversationCreated={handleConversationCreated}
               moveConversationToTop={moveConversationToTop}
               userId={user?.id}
               theme={isDark ? "dark" : "light"}
@@ -234,7 +239,7 @@ const ChatPage = () => {
                 setIsEscalated(status);
                 if (status && currentConversationId) {
                   updateEscalationStatus(currentConversationId, true);
-                  setIsLegalPanelOpen(true);
+                  setIsLegalPanelOpen(false);
                 }
               }}
             />
@@ -250,7 +255,7 @@ const ChatPage = () => {
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                 </span>
-                Open Legal Assistant
+                Human Escalation
               </button>
             )}
           </div>

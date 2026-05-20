@@ -6,7 +6,10 @@ const ErrorMessage = ({ message, onRetry, className = "" }) => {
   
   if (!message) return null;
 
-  const messageText = typeof message === 'string' ? message : message.message || String(message);
+  let messageText = typeof message === 'string' ? message : message.message || String(message);
+  if (messageText.includes("Connection lost") || messageText.includes("Connection error") || messageText.includes("Stream error")) {
+    messageText = "Message limit reached. Your session resets every 4 hours.";
+  }
 
   // Re-open if the error message changes
   useEffect(() => {

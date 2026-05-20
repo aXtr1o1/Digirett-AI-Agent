@@ -35,6 +35,7 @@ const useChat = (
 
   const activeConversationIdRef = useRef(conversationId);
   const abortRef = useRef(null);
+  const prevConversationIdRef = useRef(conversationId);
 
   const {
     uploadDocument,
@@ -317,7 +318,11 @@ const useChat = (
           },
           (err) => {
             console.error("[useChat] stream error:", err);
-            setError(err?.message || "Failed to generate response");
+            let errMsg = err?.message || "Failed to generate response";
+            if (errMsg.includes("Connection lost") || errMsg.includes("Connection error") || errMsg.includes("Stream error")) {
+              errMsg = "Message limit reached. Your session resets every 4 hours.";
+            }
+            setError(errMsg);
             setIsStreaming(false);
             setStreamingMessage("");
             setIsProcessingDoc(false);
@@ -371,14 +376,18 @@ const useChat = (
           if (data.conversationId) {
             activeConversationIdRef.current = data.conversationId;
             const backendTitle = data.metadata?.conversation_title || null;
-            if (onConversationCreated) onConversationCreated(data.conversationId, backendTitle);
+            if (!conversationId && onConversationCreated) onConversationCreated(data.conversationId, backendTitle);
             if (moveConversationToTop) moveConversationToTop(data.conversationId);
             fetchSessionStatus(data.conversationId);
           }
         },
         (err) => {
           console.error("[useChat] stream error:", err);
-          setError(err?.message || "Failed to generate response");
+          let errMsg = err?.message || "Failed to generate response";
+          if (errMsg.includes("Connection lost") || errMsg.includes("Connection error") || errMsg.includes("Stream error")) {
+            errMsg = "Message limit reached. Your session resets every 4 hours.";
+          }
+          setError(errMsg);
           setIsStreaming(false);
           setStreamingMessage("");
         }
@@ -423,10 +432,20 @@ const useChat = (
     setIsProcessingDoc(false);
   }, []);
 
-  // Initial load
+  // Initial load / Sync conversation transitions
   useEffect(() => {
+    const isAutoCreateTransition = prevConversationIdRef.current === null && conversationId !== null;
+
+    // Update the ref to track current conversationId for next render
+    prevConversationIdRef.current = conversationId;
+
+    if (isAutoCreateTransition) {
+      console.log("[useChat] Transitioning from new chat to auto-created conversation. Skipping reload.");
+      return;
+    }
+
     loadMessages();
-  }, [loadMessages]);
+  }, [loadMessages, conversationId]);
 
   useEffect(() => {
     if (conversationId) {

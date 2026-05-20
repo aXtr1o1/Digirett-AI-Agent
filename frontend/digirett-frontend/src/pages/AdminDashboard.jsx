@@ -5,7 +5,7 @@ import {
   UserPlus, CheckCircle, ArrowLeft, LogOut,
   LayoutDashboard, Menu, Plus, X, Calendar, User,
   ShieldCheck, Scale, Crown, Clock, AlertTriangle, Send,
-  UserX, UserCheck, Trash2
+  UserX, UserCheck, Trash2, Sun, Moon, RefreshCw
 } from "lucide-react";
 import { useTheme } from "../providers/ThemeProvider";
 import { Link, useNavigate, useSearchParams, useLocation } from "react-router-dom";
@@ -18,7 +18,7 @@ import {
 import SystemNotification from "../components/chat/ResolutionNotification";
 
 export default function AdminDashboard() {
-  const { theme, isDark } = useTheme();
+  const { theme, isDark, toggleTheme } = useTheme();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -227,6 +227,16 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleUnsuspendUser = async (userId) => {
+    try {
+      await adminService.activateUser(userId);
+      setUsersMsg({ type: "success", text: "User access restored successfully." });
+      fetchDashboardData();
+    } catch (err) {
+      setUsersMsg({ type: "error", text: "Failed to restore user access." });
+    }
+  };
+
   const handleAssignTicket = async (ticketId, lawyerId) => {
     if (!lawyerId) return;
     try {
@@ -385,108 +395,109 @@ export default function AdminDashboard() {
   const selectedRole = roleInfo[inviteRole] || roleInfo.lawyer;
 
   return (
-    <div className={`flex h-screen overflow-hidden ${isDark ? "bg-[#0f172a] text-slate-200" : "bg-[#f3f4f6] text-slate-900"}`}>
+    <div className={`flex h-screen overflow-hidden ${isDark ? "bg-[#020617] text-slate-200" : "bg-[#f1f5f9] text-slate-900"}`}>
 
       {/* Sidebar */}
-      <aside className={`fixed lg:relative z-50 inset-y-0 left-0 w-64 transition-transform duration-300 transform bg-[#0f172a] text-white flex flex-col ${isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-        } shadow-2xl`}>
-        <div className="p-6 flex items-center justify-between border-b border-slate-800">
+      <aside className={`fixed lg:relative z-50 inset-y-0 left-0 w-64 transform transition-transform duration-300 ease-in-out border-r flex flex-col ${isDark ? "bg-slate-900 border-slate-800" : "bg-[#0f172a] border-slate-800"} ${isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
+        <div className="h-16 flex items-center px-6 border-b border-white/5">
           <div className="flex items-center gap-3">
-            <span className="font-bold text-lg tracking-tight">Admin Panel</span>
+            <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center">
+              <img src="/user-chat-logo.png" alt="Logo" className="w-full h-full object-contain p-0.5" />
+            </div>
+            <span className="font-bold text-lg tracking-tight text-white">Admin Panel</span>
           </div>
-          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400">
-            <X size={20} />
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden ml-auto text-slate-400">
+            <X size={18} />
           </button>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
-          <p className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Navigation</p>
+        <nav className="flex-1 px-3 py-6 space-y-1 overflow-y-auto">
+          <p className="px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 mb-4 opacity-50 font-bold">Navigation</p>
 
           <button
-            onClick={() => setActiveView("dashboard")}
-            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "dashboard" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
-              }`}
+            onClick={() => { setActiveView("dashboard"); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "dashboard" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
           >
             <LayoutDashboard size={18} />
-            <span className="text-sm font-semibold">Dashboard</span>
+            Dashboard
           </button>
 
           <button
-            onClick={() => setActiveView("invite")}
-            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "invite" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
-              }`}
+            onClick={() => { setActiveView("invite"); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "invite" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
           >
             <UserPlus size={18} />
-            <span className="text-sm font-semibold">Invite Team</span>
+            Invite Team
           </button>
 
           <button
-            onClick={() => setActiveView("users")}
-            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "users" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
-              }`}
+            onClick={() => { setActiveView("users"); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "users" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
           >
             <Users size={18} />
-            <span className="text-sm font-semibold">System Users</span>
+            System Users
           </button>
 
           <button
-            onClick={() => setActiveView("queue")}
-            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "queue" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
-              }`}
+            onClick={() => { setActiveView("queue"); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "queue" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
           >
             <Mail size={18} />
-            <span className="text-sm font-semibold">Matter Queue</span>
+            Matter Queue
           </button>
 
           <button
-            onClick={() => setActiveView("calendar")}
-            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "calendar" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
-              }`}
+            disabled
+            title="Feature coming soon"
+            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all text-slate-500 opacity-40 cursor-not-allowed"
           >
             <Calendar size={18} />
-            <span className="text-sm font-semibold">Calendar</span>
+            Calendar
           </button>
 
           <button
-            onClick={() => setActiveView("settings")}
-            className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all ${activeView === "settings" ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:text-white hover:bg-slate-800"
-              }`}
+            onClick={() => { setActiveView("settings"); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "settings" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
           >
             <ShieldCheck size={18} />
-            <span className="text-sm font-semibold">Admin Settings</span>
+            Admin Settings
           </button>
 
           {hasLawyerDashboard && (
             <Link
               to="/lawyer"
-              className={`w-full px-3 py-2.5 rounded-lg flex items-center gap-3 transition-all text-slate-400 hover:text-white hover:bg-slate-800 mt-2 border border-indigo-500/20 bg-indigo-500/5`}
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all text-slate-400 hover:text-white hover:bg-white/5 mt-2 border border-indigo-500/20 bg-indigo-500/5"
             >
               <Scale size={18} className="text-indigo-400" />
-              <span className="text-sm font-semibold">Lawyer Dashboard</span>
+              Lawyer Dashboard
             </Link>
           )}
 
-          <Link to="/chat" className="px-3 py-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg flex items-center gap-3 transition-colors group mt-6 border-t border-slate-800 pt-6">
-            <ArrowLeft size={18} />
-            <span className="text-sm font-semibold">Go to Chat</span>
-          </Link>
+          <div className="pt-6 mt-6 border-t border-white/5 space-y-1">
+            <Link to="/chat" className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all text-slate-400 hover:text-white hover:bg-white/5 group">
+              <ArrowLeft size={18} />
+              Go to Chat
+            </Link>
+          </div>
+        </nav>
 
+        {/* Bottom Fixed Action */}
+        <div className="p-4 border-t border-white/5 mt-auto">
           <button
             onClick={handleLogout}
-            className="w-full px-3 py-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg flex items-center gap-3 transition-colors mt-2"
+            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all text-slate-400 hover:text-red-400 hover:bg-red-500/10"
           >
             <LogOut size={18} />
-            <span className="text-sm font-semibold">Logout</span>
+            Logout
           </button>
-        </nav>
+        </div>
       </aside>
 
       {/* Main Area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
 
-        {/* Header */}
-        <header className={`h-16 flex items-center justify-between px-6 border-b sticky top-0 z-40 ${isDark ? "bg-slate-900/80 border-slate-800 backdrop-blur-md" : "bg-white/80 border-slate-200 backdrop-blur-md"
-          }`}>
+        {/* Top Bar */}
+        <header className={`h-16 border-b flex items-center justify-between px-8 z-40 ${isDark ? "bg-slate-900/50 border-slate-800" : "bg-white border-slate-200"}`}>
           <div className="flex items-center gap-4 flex-1">
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden text-slate-500">
               <Menu size={24} />
@@ -496,65 +507,74 @@ export default function AdminDashboard() {
             </h2>
           </div>
 
-          <div className="relative">
-            <div
-              onClick={() => setShowProfileDropdown(!showProfileDropdown)}
-              className="flex items-center gap-3 pl-2 cursor-pointer group"
+          <div className="flex items-center gap-4">
+            <button
+              onClick={toggleTheme}
+              className={`p-2 rounded-xl transition-all ${isDark ? "bg-gray-800 text-blue-400 hover:bg-gray-700" : "bg-gray-50 text-gray-500 hover:bg-gray-100"}`}
             >
-              <div className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-xs transition-transform group-hover:scale-105 ${isDark ? "bg-indigo-500/20 text-indigo-400" : "bg-indigo-100 text-indigo-700"
-                }`}>
-                {clerkUser?.firstName?.charAt(0) || "A"}
-              </div>
-              <div className="hidden sm:block text-left">
-                <p className="text-xs font-bold leading-none">{clerkUser?.fullName || "Admin"}</p>
-                <p className="text-[10px] text-slate-500 mt-1 tracking-wider uppercase font-black">Logged In</p>
-              </div>
-            </div>
-
-            {showProfileDropdown && (
-              <div className={`absolute top-full right-0 mt-2 w-48 rounded-xl border shadow-2xl z-[100] overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
-                }`}>
-                <div className="p-2 space-y-1">
-                  <button
-                    onClick={() => { openUserProfile(); setShowProfileDropdown(false); }}
-                    className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-slate-300 hover:bg-slate-800" : "text-slate-600 hover:bg-slate-50"
-                      }`}
-                  >
-                    <User size={14} />
-                    Account
-                  </button>
-
-                  {hasLawyerDashboard ? (
-                    <Link
-                      to="/lawyer"
-                      onClick={() => setShowProfileDropdown(false)}
-                      className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-indigo-400 hover:bg-indigo-500/10" : "text-indigo-600 hover:bg-indigo-50"
-                        }`}
-                    >
-                      <Scale size={14} />
-                      Lawyer Dashboard
-                    </Link>
-                  ) : (
-                    <button
-                      onClick={() => { setActiveView("settings"); setShowProfileDropdown(false); }}
-                      className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-indigo-400 hover:bg-indigo-500/10" : "text-indigo-600 hover:bg-indigo-50"
-                        }`}
-                    >
-                      <Plus size={14} />
-                      Enable Lawyer Features
-                    </button>
-                  )}
-                  <button
-                    onClick={handleLogout}
-                    className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-red-400 hover:bg-red-500/10" : "text-red-600 hover:bg-red-50"
-                      }`}
-                  >
-                    <LogOut size={14} />
-                    Log out
-                  </button>
+              {isDark ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <div className="h-8 w-[1px] bg-gray-200 dark:bg-gray-800 mx-1"></div>
+            <div className="relative">
+              <div
+                onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+                className="flex items-center gap-3 pl-2 cursor-pointer group"
+              >
+                <div className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-xs transition-transform group-hover:scale-105 ${isDark ? "bg-indigo-500/20 text-indigo-400" : "bg-indigo-100 text-indigo-700"
+                  }`}>
+                  {clerkUser?.firstName?.charAt(0) || "A"}
+                </div>
+                <div className="hidden sm:block text-left">
+                  <p className="text-xs font-bold leading-none">{clerkUser?.fullName || "Admin"}</p>
+                  <p className="text-[10px] text-slate-500 mt-1 tracking-wider uppercase font-black">Logged In</p>
                 </div>
               </div>
-            )}
+
+              {showProfileDropdown && (
+                <div className={`absolute top-full right-0 mt-2 w-48 rounded-xl border shadow-2xl z-[100] overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                  }`}>
+                  <div className="p-2 space-y-1">
+                    <button
+                      onClick={() => { openUserProfile(); setShowProfileDropdown(false); }}
+                      className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-slate-300 hover:bg-slate-800" : "text-slate-600 hover:bg-slate-50"
+                        }`}
+                    >
+                      <User size={14} />
+                      Profile
+                    </button>
+
+                    {hasLawyerDashboard ? (
+                      <Link
+                        to="/lawyer"
+                        onClick={() => setShowProfileDropdown(false)}
+                        className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-indigo-400 hover:bg-indigo-500/10" : "text-indigo-600 hover:bg-indigo-50"
+                          }`}
+                      >
+                        <Scale size={14} />
+                        Lawyer Dashboard
+                      </Link>
+                    ) : (
+                      <button
+                        onClick={() => { setActiveView("settings"); setShowProfileDropdown(false); }}
+                        className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-indigo-400 hover:bg-indigo-500/10" : "text-indigo-600 hover:bg-indigo-50"
+                          }`}
+                      >
+                        <Plus size={14} />
+                        Enable Lawyer Features
+                      </button>
+                    )}
+                    <button
+                      onClick={handleLogout}
+                      className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-red-400 hover:bg-red-500/10" : "text-red-600 hover:bg-red-50"
+                        }`}
+                    >
+                      <LogOut size={14} />
+                      Log out
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -600,7 +620,7 @@ export default function AdminDashboard() {
                             <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
                         </Pie>
-                        <Tooltip />
+                        <Tooltip cursor={false} />
                         <Legend iconType="circle" />
                       </PieChart>
                     </ResponsiveContainer>
@@ -618,7 +638,7 @@ export default function AdminDashboard() {
                             <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
                         </Pie>
-                        <Tooltip />
+                        <Tooltip cursor={false} />
                         <Legend iconType="circle" />
                       </PieChart>
                     </ResponsiveContainer>
@@ -634,7 +654,7 @@ export default function AdminDashboard() {
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#1e293b" : "#f1f5f9"} />
                         <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                         <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <Tooltip />
+                        <Tooltip cursor={false} />
                         <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={3} dot={{ r: 4 }} />
                       </LineChart>
                     </ResponsiveContainer>
@@ -652,7 +672,7 @@ export default function AdminDashboard() {
                       <BarChart data={ticketStatusData} layout="vertical">
                         <XAxis type="number" hide />
                         <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <Tooltip />
+                        <Tooltip cursor={false} />
                         <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
                           {ticketStatusData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
@@ -672,7 +692,7 @@ export default function AdminDashboard() {
                         <BarChart data={lawyerWorkloadData()}>
                           <XAxis dataKey="name" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                           <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                          <Tooltip />
+                          <Tooltip cursor={false} />
                           <Bar dataKey="tickets" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
                         </BarChart>
                       </ResponsiveContainer>
@@ -697,6 +717,7 @@ export default function AdminDashboard() {
                         <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                         <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                         <Tooltip
+                          cursor={false}
                           contentStyle={{
                             backgroundColor: isDark ? '#0f172a' : '#fff',
                             border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
@@ -721,6 +742,7 @@ export default function AdminDashboard() {
                         <XAxis type="number" hide />
                         <YAxis dataKey="action" type="category" tick={{ fontSize: 9 }} width={100} axisLine={false} tickLine={false} />
                         <Tooltip
+                          cursor={false}
                           contentStyle={{
                             backgroundColor: isDark ? '#0f172a' : '#fff',
                             border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
@@ -1031,8 +1053,8 @@ export default function AdminDashboard() {
                             </td>
                             <td className="px-8 py-6">
                               <div className="flex items-center gap-2">
-                                <div className={`h-1.5 w-1.5 rounded-full ${user.status !== 'inactive' ? "bg-emerald-500" : "bg-slate-400"}`} />
-                                <span className={`text-[10px] font-black uppercase tracking-widest ${user.status !== 'inactive' ? "text-emerald-500" : "text-slate-400"}`}>
+                                <div className={`h-1.5 w-1.5 rounded-full ${(user.status !== 'inactive' && user.status !== 'suspended') ? "bg-emerald-500" : "bg-slate-400"}`} />
+                                <span className={`text-[10px] font-black uppercase tracking-widest ${(user.status !== 'inactive' && user.status !== 'suspended') ? "text-emerald-500" : "text-slate-400"}`}>
                                   {user.status === 'inactive' ? 'Inactive' : (user.status || 'Active')}
                                 </span>
                               </div>
@@ -1051,9 +1073,12 @@ export default function AdminDashboard() {
                                   <button disabled className="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed">
                                     Current User
                                   </button>
-                                ) : user.status === 'inactive' ? (
-                                  <button disabled className="px-4 py-2 rounded-lg text-xs font-bold bg-slate-50 text-slate-400 border border-slate-200 cursor-not-allowed">
-                                    Suspended
+                                ) : (user.status === 'suspended' || user.status === 'inactive') ? (
+                                  <button
+                                    onClick={() => handleUnsuspendUser(user.user_id)}
+                                    className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/5`}
+                                  >
+                                    Revoke
                                   </button>
                                 ) : (
                                   <button
@@ -1127,12 +1152,12 @@ export default function AdminDashboard() {
                             <td className="px-8 py-6">
                               {!ticket.assigned_lawyer_id && ticket.conversation_summary ? (
                                 <div className="max-w-xs">
-                                  <p className="text-[11px] text-slate-500 italic leading-relaxed line-clamp-2">
+                                  <p className="text-[11px] text-slate-600 dark:text-slate-400 italic leading-relaxed line-clamp-2">
                                     "{ticket.conversation_summary}"
                                   </p>
                                 </div>
                               ) : (
-                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest opacity-30">
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">
                                   {ticket.assigned_lawyer_id ? "Matter in Progress" : "No Summary"}
                                 </span>
                               )}
