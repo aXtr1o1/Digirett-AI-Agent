@@ -39,23 +39,6 @@ AI-powered Norwegian legal assistant with RAG pipeline, Lovdata integration, and
 │   └── workflows/      # CI/CD pipelines
 ```
 
-## 🌿 Branch Strategy
-
-| Branch | Purpose | CI/CD | Deploy Target |
-|--------|---------|-------|---------------|
-| `production` | Production-ready code (default) | ✅ | Production environment |
-| `testing` | Integration testing & QA | ✅ | Testing environment |
-| `frontend` | Frontend development | ❌ | - |
-| `backend` | Backend development | ❌ | - |
-| `ingestion` | Data pipeline development | ❌ | - |
-
-### Workflow
-
-1. **Development**: Work on `frontend`, `backend`, or `ingestion` branches
-2. **Integration**: Merge all feature branches → `testing`
-3. **Testing**: Run comprehensive tests, raise issues, document
-4. **Production**: After successful testing → merge to `production`
-
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -82,10 +65,6 @@ git checkout
 
 - [Frontend Documentation](./frontend/README.md)
 - [Backend Documentation](./backend/README.md)
-- [Ingestion Pipeline Documentation](./ingestion/README.md)
-- [Deployment Guide](./docs/DEPLOYMENT.md)
-- [API Documentation](./docs/API.md)
-- [Contributing Guidelines](./docs/CONTRIBUTING.md)
 
 ## 🔐 Environment Variables
 
@@ -97,39 +76,6 @@ Create `.env` files in respective directories. See `.env.example` files for requ
 - `REDIS_URL`: Cache and session storage
 - `SUPABASE_URL`: Database connection
 - `AUTH_SECRET`: Authentication secret
-
-## 🧪 Testing
-
-```bash
-# Run all tests
-make test
-
-# Run specific test suites
-make test-frontend
-make test-backend
-make test-ingestion
-make test-e2e
-```
-
-## 📦 Deployment
-
-### Production Deployment
-
-```bash
-# Automated via CI/CD on merge to production
-git checkout production
-git merge testing
-git push origin production
-```
-
-### Manual Deployment
-
-```bash
-# Frontend (Vercel)
-cd frontend && vercel --prod
-
-# Backend & Ingestion (Docker)
-docker-compose -f docker/production.yml up -d
 ```
 
 ## 🛠️ Technology Stack
@@ -153,17 +99,6 @@ docker-compose -f docker/production.yml up -d
 - **API**: Lovdata API
 - **Embeddings**: OpenAI / Azure OpenAI
 - **Scheduling**: Cron / APScheduler
-
-
-## 🗺️ Roadmap
-
-### Phase 1 (Current)
-- ✅ Core RAG pipeline
-- ✅ Lovdata integration
-- ✅ Basic UI
-- 🔄 Human-in-the-loop workflow
-- 🔄 Audit logging
-
 
 ---
 
