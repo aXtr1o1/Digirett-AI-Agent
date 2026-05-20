@@ -4,6 +4,7 @@ import {
   MessageSquare,
   Archive,
   Menu,
+  PanelLeftClose,
   FolderPlus,
   Image as ImageIcon,
   FileText,
@@ -409,7 +410,7 @@ const Sidebar = ({
             }}
             title="Collapse Sidebar"
           >
-            <Menu size={20} />
+            <PanelLeftClose size={20} />
           </button>
         </div>
       </div>

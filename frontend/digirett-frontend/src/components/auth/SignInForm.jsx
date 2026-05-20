@@ -221,13 +221,13 @@ const SignInForm = () => {
           {/* Username */}
           <div>
             <label className="block text-sm font-medium text-white mb-2">
-              Username or Email
+              Username
             </label>
             <input
               type="text"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="Enter your username or email"
+              placeholder="Enter your username"
               className="w-full bg-[#1a1a1a] border border-gray-800 rounded-xl
                          px-4 py-3.5 text-white placeholder-gray-500"
               required

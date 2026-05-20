@@ -30,6 +30,7 @@ const ChatContainer = ({
     loadMessages,
     stopStreaming,
     clearMessages,
+    clearError,
     isUploading,
     uploadError,
     clearUploadError,
@@ -58,13 +59,31 @@ const ChatContainer = ({
     }
   }, [isEscalated]);
 
+  // ✅ PREVENT INPUT CLEARING DURING AUTO-CREATE TRANSITION
+  const prevConvIdRef = React.useRef(conversationId);
+  const [composerKey, setComposerKey] = React.useState(conversationId || "new-chat");
+
+  React.useEffect(() => {
+    const prev = prevConvIdRef.current;
+    prevConvIdRef.current = conversationId;
+
+    if (prev === null && conversationId !== null) {
+      // Transitioning from New Chat to Auto-Created Chat.
+      // Do NOT change the key, so the composer does NOT remount and wipe typed text.
+      return; 
+    } else if (prev !== conversationId) {
+      // Switched to a different chat from the sidebar. Change key to clear input.
+      setComposerKey(conversationId || "new-chat");
+    }
+  }, [conversationId]);
+
   return (
     <div className="flex flex-col h-full w-full bg-transparent">
       {(error || uploadError) && (
         <div className="px-6 pt-4">
           <ErrorMessage
             message={error || uploadError}
-            onRetry={error ? loadMessages : clearUploadError}
+            onRetry={error ? clearError : clearUploadError}
           />
         </div>
       )}
@@ -90,7 +109,7 @@ const ChatContainer = ({
       <div className="flex-shrink-0 bg-transparent">
         <div className="max-w-2xl mx-auto w-full px-4 py-4">
           <MessageComposer
-            key={conversationId || "new-chat"}
+            key={composerKey}
             onSend={sendMessage}
             disabled={isLoading || isChatDisabled}
             isStreaming={isStreaming}
