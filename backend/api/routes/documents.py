@@ -148,13 +148,17 @@ async def upload_document(
                 yield token
 
         logger.info(f"📝 Streaming auto-summary | doc_id={doc_meta['document_id']}")
+        
+        import urllib.parse
+        filename_encoded = urllib.parse.quote(filename)
+        
         return StreamingResponse(
             stream_summary(),
             media_type="text/plain",
             headers={
                 # Frontend reads these headers to know the upload succeeded
                 "X-Document-Id":   doc_meta["document_id"],
-                "X-File-Name":     filename,
+                "X-File-Name":     filename_encoded,
                 "X-File-Type":     doc_meta["file_type"],
                 "X-Docs-Remaining": str(doc_meta["docs_remaining"]),
                 # Allow frontend JS to read these custom headers
