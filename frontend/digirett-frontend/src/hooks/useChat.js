@@ -36,6 +36,7 @@ const useChat = (
   const activeConversationIdRef = useRef(conversationId);
   const abortRef = useRef(null);
   const prevConversationIdRef = useRef(conversationId);
+  const isAutoCreatingRef = useRef(false);
 
   const {
     uploadDocument,
@@ -251,6 +252,7 @@ const useChat = (
 
           // For new conversations, trigger creation AFTER first message is in DB
           if (!conversationId && onConversationCreated) {
+            isAutoCreatingRef.current = true;
             onConversationCreated(convId, null);
           }
         } catch (err) {
@@ -311,7 +313,10 @@ const useChat = (
             if (data.conversationId) {
               activeConversationIdRef.current = data.conversationId;
               const backendTitle = data.metadata?.conversation_title || null;
-              if (!conversationId && onConversationCreated) onConversationCreated(data.conversationId, backendTitle);
+              if (!conversationId && onConversationCreated) {
+                isAutoCreatingRef.current = true;
+                onConversationCreated(data.conversationId, backendTitle);
+              }
               if (moveConversationToTop) moveConversationToTop(data.conversationId, backendTitle);
               fetchSessionStatus(data.conversationId);
             }
@@ -326,6 +331,8 @@ const useChat = (
             setIsStreaming(false);
             setStreamingMessage("");
             setIsProcessingDoc(false);
+            // Remove the optimistic user message since it failed to send
+            setMessages((prev) => prev.filter(msg => msg.id !== fileMsgId));
           },
           { skipSaveUser: true }
         );
@@ -334,10 +341,11 @@ const useChat = (
       }
 
       // ── Text only path ──────────────────────────────────────────────────
+      const userMessageId = crypto.randomUUID();
       setMessages((prev) => [
         ...prev,
         {
-          id: crypto.randomUUID(),
+          id: userMessageId,
           role: MESSAGE_ROLES.USER,
           content: messageText,
           sources: [],
@@ -376,7 +384,10 @@ const useChat = (
           if (data.conversationId) {
             activeConversationIdRef.current = data.conversationId;
             const backendTitle = data.metadata?.conversation_title || null;
-            if (!conversationId && onConversationCreated) onConversationCreated(data.conversationId, backendTitle);
+            if (!conversationId && onConversationCreated) {
+              isAutoCreatingRef.current = true;
+              onConversationCreated(data.conversationId, backendTitle);
+            }
             if (moveConversationToTop) moveConversationToTop(data.conversationId, backendTitle);
             fetchSessionStatus(data.conversationId);
           }
@@ -390,6 +401,8 @@ const useChat = (
           setError(errMsg);
           setIsStreaming(false);
           setStreamingMessage("");
+          // Remove the optimistic user message since it failed to send
+          setMessages((prev) => prev.filter(msg => msg.id !== userMessageId));
         }
       );
     },
@@ -438,13 +451,12 @@ const useChat = (
 
   // Initial load / Sync conversation transitions
   useEffect(() => {
-    const isAutoCreateTransition = prevConversationIdRef.current === null && conversationId !== null;
-
     // Update the ref to track current conversationId for next render
     prevConversationIdRef.current = conversationId;
 
-    if (isAutoCreateTransition) {
+    if (isAutoCreatingRef.current) {
       console.log("[useChat] Transitioning from new chat to auto-created conversation. Skipping reload.");
+      isAutoCreatingRef.current = false; // Reset flag
       return;
     }
 
