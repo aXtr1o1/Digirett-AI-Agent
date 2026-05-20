@@ -1,154 +1,133 @@
-# Lovdata RAG API
+# Digirett Backend / Lovdata RAG API
 
-A backend API that answers questions about Norwegian law using AI.
-You ask a question, it finds the relevant law, and gives you a structured answer with sources.
-
----
-
-## What You Need Before Starting
-
-Make sure you have these installed on your computer:
-
-| Tool | How to check | Download link |
-|---|---|---|
-| Python 3.11+ | Run `python --version` in terminal | https://www.python.org/downloads/ |
-| pip | Run `pip --version` in terminal | Comes with Python |
-| Git (optional) | Run `git --version` in terminal | https://git-scm.com/ |
+Welcome to the backend service for **Digirett**, an AI-powered Norwegian legal assistant. Built with Python and FastAPI, this service orchestrates a sophisticated Retrieval-Augmented Generation (RAG) pipeline, multi-agent AI workflows, and strict role-based access control to provide accurate, source-backed legal answers.
 
 ---
 
-## Step 1 — Get the Code
+## 🌟 Key Features
 
-If you have Git:
+*   **Hybrid RAG Pipeline**: Combines vector search via **Milvus** with relational metadata from **Supabase** (PostgreSQL) to retrieve precise legal excerpts from Lovdata.
+*   **Multi-Agent AI System**: Uses **Azure OpenAI** and **LangChain** to orchestrate specialized agents (Document Classifier, RAG QA, Intent Detection).
+*   **Document Intelligence**: Users can upload PDFs and DOCX files. Includes robust text extraction, fallback OCR using PyMuPDF, and auto-summarization.
+*   **Role-Based Access Control (RBAC)**: Deeply integrated with **Clerk**, providing JWT-based authentication for Users, Admins, and Lawyers.
+*   **Human-in-the-Loop (HITL)**: Workflow for escalating complex legal questions to human lawyers, including ticket management and notifications.
+*   **Webhooks**: Synchronizes user creation via Clerk webhooks and handles Cal.com booking events.
+*   **Caching & Rate Limiting**: Utilizes **Redis** to cache LLM responses, manage conversational history, and enforce quotas.
+
+---
+
+## 🏗️ Project Structure
+
+```text
+backend/
+├── agents/          # LangChain AI agents (Generator, Intent, Memory, Classifier)
+├── api/
+│   └── routes/      # FastAPI endpoints (auth, chat, documents, hitl, webhooks)
+├── core/            # Core configuration, Clerk authentication middleware
+├── db/              # Database clients (Supabase, Redis, Milvus wrapper)
+├── schemas/         # Pydantic models for request/response validation
+├── services/        # Business logic (LLM, RAG, Document processing, Email)
+├── telemetry/       # OpenTelemetry and logging interceptors
+├── tests/           # Pytest test suites and local test scenarios
+├── config.py        # Environment variables and BaseSettings
+└── main.py          # FastAPI application entry point
+```
+
+---
+
+## 🚀 Getting Started
+
+### 1. Prerequisites
+
+Make sure you have the following installed on your system:
+*   **Python 3.11+**
+*   **pip** (Python package manager)
+*   Access to external services (Supabase, Milvus, Redis, Azure OpenAI, Clerk).
+
+### 2. Installation
+
+Clone the repository and set up your Python virtual environment to keep dependencies isolated:
+
 ```bash
-git clone <your-repo-url>
+# Navigate to the backend directory
 cd backend
-```
 
-If you downloaded a ZIP file:
-- Unzip it
-- Open your terminal and navigate into the `backend` folder
-
-```bash
-cd path/to/backend
-```
-
----
-
-## Step 2 — Create a Virtual Environment
-
-A virtual environment keeps this project's packages separate from the rest of your computer.
-
-```bash
-# Create the virtual environment
+# Create a virtual environment
 python -m venv venv
 
-# Activate it — choose the right command for your OS:
-
-# On Mac or Linux:
+# Activate the virtual environment
+# On Mac/Linux:
 source venv/bin/activate
-
 # On Windows (Command Prompt):
 venv\Scripts\activate.bat
-
 # On Windows (PowerShell):
 venv\Scripts\Activate.ps1
 ```
 
-You will see `(venv)` appear at the start of your terminal line. That means it worked.
-
----
-
-## Step 3 — Install Dependencies
+Once the virtual environment is activated, install the required packages:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-This installs all the Python packages the project needs. It may take 1–2 minutes.
+### 3. Configuration
 
----
+The application requires various API keys and connection strings to operate. Create a `.env` file in the root of the `backend/` directory.
 
-## Step 4 — Create the .env File
-
-The project needs secret keys and connection details. These go in a file called `.env` inside the `backend/` folder.
-
-Create a new file called `.env` and paste this inside it, filling in your own values:
+Here is a template of the required variables:
 
 ```env
-# ── App ──────────────────────────────────────────────
-ALLOWED_ORIGINS=["http://localhost:3000","http://localhost:5173"]
+# ── App Settings ──────────────────────────────────────────
+ALLOWED_ORIGINS=["http://localhost:3000"]
 
-# ── Azure OpenAI (your AI model) ─────────────────────
-AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
-AZURE_OPENAI_API_KEY=your-api-key-here
+# ── Azure OpenAI ──────────────────────────────────────────
+AZURE_OPENAI_ENDPOINT=https://<your-resource>.openai.azure.com/
+AZURE_OPENAI_API_KEY=<your-api-key>
 AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
 AZURE_OPENAI_API_VERSION=2024-02-15-preview
-OPENAI_TEMPERATURE=0.7
 
-# ── Azure OpenAI Embeddings ───────────────────────────
-AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small
-AZURE_OPENAI_EMBEDDING_API_VERSION=2024-02-15-preview
-
-# ── Milvus (vector database) ─────────────────────────
-MILVUS_HOST=your-milvus-host
+# ── Vector Database (Milvus) ──────────────────────────────
+MILVUS_HOST=<milvus-host>
 MILVUS_PORT=19530
 MILVUS_COLLECTION=lovdata_hierarchical_aoai_v1
-DIMENSION=1536
 
-# ── Supabase (main database) ─────────────────────────
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-supabase-anon-key
+# ── Relational Database (Supabase) ────────────────────────
+SUPABASE_URL=https://<your-project>.supabase.co
+SUPABASE_KEY=<your-anon-key>
 
-# ── Redis (caching) — already configured ─────────────
-REDIS_HOST=
-REDIS_DB=0
-REDIS_PORT=
-REDIS_PASSWORD=
-ENABLE_CACHE=true
+# ── Caching (Redis) ───────────────────────────────────────
+REDIS_HOST=<redis-host>
+REDIS_PORT=6379
 
-# ── RAG Settings ─────────────────────────────────────
-DEFAULT_TOP_K=3
-MAX_TOP_K=10
-MIN_SIMILARITY_SCORE=0.0
-CONTEXT_MAX_LENGTH=80000
+# ── Authentication (Clerk) ────────────────────────────────
+CLERK_SECRET_KEY=<your-clerk-secret-key>
+CLERK_JWKS_URL=https://<clerk-instance>/.well-known/jwks.json
+CLERK_WEBHOOK_SECRET=<svix-webhook-secret>
+
+# ── Notifications / Email ─────────────────────────────────
+SMTP_HOST=smtp.resend.com
+SMTP_PORT=587
+SMTP_USER=resend
+SMTP_PASS=<your-resend-api-key>
 ```
+> **Note:** Never commit your `.env` file to version control.
 
-> **Note:** Never share your `.env` file with anyone. Never commit it to Git.
+### 4. Running the Server
 
----
-
-## Step 5 — Run the Server
+Start the FastAPI application using Uvicorn. The `--reload` flag will automatically restart the server when you make code changes.
 
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-You should see output like this:
+When the server starts successfully, you will see output confirming connections to Milvus, Redis, and Supabase.
 
-```
-INFO  | Starting Lovdata RAG API...
-INFO  | Connected to Milvus
-INFO  | Redis connected
-INFO  | Supabase connected
-INFO  | All services ready — server is live
-INFO  | Uvicorn running on http://0.0.0.0:8000
-```
+### 5. Verify the API is Running
 
-Your API is now running at: **http://localhost:8000**
+Visit the Health Check endpoint in your browser:
+[http://localhost:8000/api/v1/health](http://localhost:8000/api/v1/health)
 
----
-
-## Step 6 — Verify It Works
-
-Open your browser and go to:
-
-```
-http://localhost:8000/api/v1/health
-```
-
-You should see something like:
-
+You should see a JSON response verifying the health of all connected services:
 ```json
 {
   "status": "healthy",
@@ -160,94 +139,33 @@ You should see something like:
 }
 ```
 
-If `status` is `"healthy"` — everything is working. ✅
+---
+
+## 📚 API Documentation
+
+FastAPI automatically generates interactive Swagger documentation. Once your server is running, navigate to:
+
+👉 **[http://localhost:8000/docs](http://localhost:8000/docs)**
+
+From here, you can view all available routes, see required authentication headers, and test the endpoints directly from your browser.
+
+### Key API Routes:
+*   `POST /api/v1/chat/stream`: Main conversational endpoint. Streams AI responses based on legal context.
+*   `POST /api/v1/documents/upload`: Uploads a PDF/DOCX for document-grounded Q&A.
+*   `GET /api/v1/hitl/lawyer/tickets`: Retrieves open human-in-the-loop escalation tickets (Requires Lawyer role).
+*   `POST /api/v1/webhooks/clerk`: Secure endpoint for receiving Clerk user updates.
 
 ---
 
-## How to Use the API
+## 🧪 Testing
 
-### Interactive API Docs (easiest way)
-
-Go to: **http://localhost:8000/docs**
-
-This opens a visual interface where you can test every endpoint by clicking and typing — no code needed.
-
----
-
-### Main Endpoints
-
-#### Ask a Question (Streaming)
-```
-POST /api/v1/chat/stream
-```
-Send a question, get a streamed AI answer with sources.
-
-**Request body:**
-```json
-{
-  "query": "Hva er reglene for aksjeselskap i Norge?",
-  "conversation_id": "optional-existing-id",
-  "user_id": "your-user-id",
-  "top_k": 3
-}
-```
-
-#### Create a Conversation
-```
-POST /api/v1/conversations
-```
-```json
-{
-  "user_id": "your-user-id",
-  "title": "My first conversation"
-}
-```
-
-#### Get All Messages in a Conversation
-```
-GET /api/v1/messages/{conversation_id}
-```
-
-#### Get All Conversations for a User
-```
-GET /api/v1/conversations/user/{user_id}
-```
-
-#### Delete a Conversation
-```
-DELETE /api/v1/conversations/{conversation_id}
-```
-
-#### Health Check
-```
-GET /api/v1/health
-```
-
----
-
-## Running the Tests
-
-Make sure the server is running first (Step 5), then open a second terminal:
+To run the automated test suite, ensure your virtual environment is activated and your `.env` file is properly configured.
 
 ```bash
-# Activate the virtual environment first
-source venv/bin/activate   # Mac/Linux
-# or
-venv\Scripts\activate.bat  # Windows
-
-# Run tests
-pytest tests/test_api.py -v
+pytest tests/ -v
 ```
 
-Expected output:
+For executing local ad-hoc test scenarios without running the full server, you can use the provided scenario runner:
+```bash
+python tests/run_test_scenarios.py
 ```
-PASSED tests/test_api.py::test_health
-PASSED tests/test_api.py::test_create_conversation
-PASSED tests/test_api.py::test_stream_legal_query
-PASSED tests/test_api.py::test_messages_persisted
-PASSED tests/test_api.py::test_get_conversation
-PASSED tests/test_api.py::test_get_user_conversations
-PASSED tests/test_api.py::test_delete_conversation
-```
-
----

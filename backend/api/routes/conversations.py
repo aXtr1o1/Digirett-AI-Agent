@@ -30,18 +30,20 @@ _conversation_service = None
 _message_service = None
 _user_service = None
 _hitl_service = None
+_document_service = None
 
 
 def _is_valid_uuid(value: str) -> bool:
     return bool(_UUID_RE.match(value.strip())) if value else False
 
 
-def set_services(conversation_service, message_service, user_service, hitl_service) -> None:
-    global _conversation_service, _message_service, _user_service, _hitl_service
+def set_services(conversation_service, message_service, user_service, hitl_service, document_service=None) -> None:
+    global _conversation_service, _message_service, _user_service, _hitl_service, _document_service
     _conversation_service = conversation_service
     _message_service = message_service
     _user_service = user_service
     _hitl_service = hitl_service
+    _document_service = document_service
 
 
 
@@ -73,6 +75,23 @@ async def create_conversation(
         )
 
     try:
+        if _document_service:
+            role = getattr(user, 'role', 'user')
+            
+            allowed_turn, _ = _document_service.check_turn_limit(internal_user_id, user_role=role)
+            if not allowed_turn:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Message limit reached. Your session resets every 4 hours.",
+                )
+
+            allowed_token, _ = _document_service.check_token_limit(internal_user_id, user_role=role)
+            if not allowed_token:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Token limit reached. Your session resets every 4 hours.",
+                )
+
         conversation = _conversation_service.create_conversation(
             user_id=internal_user_id,
             title=body.title,
