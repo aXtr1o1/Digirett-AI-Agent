@@ -112,8 +112,6 @@ digirett-frontend/
 
 ## Local Development & Quick Start
 
-### Prerequisites
-Make sure you have [Node.js (v18.x or higher)](https://nodejs.org/) installed on your machine.
 
 ### 1. Installation
 Clone this repository and run the package manager inside the root of this frontend folder:
@@ -167,3 +165,31 @@ This compiles your React application into the `./build` folder. The production a
 *   **Ref-Latched Auth Handshakes**: Prevents duplicate multi-redirect cycles on Google login inside the SSO callback.
 *   **Asynchronous Webhook offloading support**: Coupled with the backend background task queuing model, eliminating block-times during user syncing.
 *   **Decoupled Service Layers**: Fully optimized Axios API bridges with cached token injections, avoiding unnecessary token fetch handshakes.
+
+## Login Details
+
+--Admin
+
+Username: admin 
+Pass : DigirettAdmin@123 
+
+--Admin with lawyer access
+
+Username : adminlawyer
+Pass : DigirettAdminLawyer@123
+
+--Lawyer
+
+Username: lawyer1
+Pass: DigirettLawyer@123
+
+--Users
+
+Username: tamiluser
+Pass: tamiluser@123
+
+Username: pragauser
+Pass: pragauser@123
+
+Username: vineeshuser
+Pass: vineeshuser@123
