@@ -82,10 +82,17 @@ const SignInForm = () => {
       // We check our DB status before even trying to authenticate with Clerk
       try {
         const statusCheck = await hitlService.checkStatus(identifier);
-        if (statusCheck && statusCheck.is_suspended) {
-          setError('This account has been restricted. Please contact support@digirett.com for more information.');
-          setIsLoading(false);
-          return;
+        if (statusCheck) {
+          if (statusCheck.status === 'case_mismatch') {
+            setError('Invalid username or password');
+            setIsLoading(false);
+            return;
+          }
+          if (statusCheck.is_suspended) {
+            setError('This account has been restricted. Please contact support@digirett.com for more information.');
+            setIsLoading(false);
+            return;
+          }
         }
       } catch (checkErr) {
         // We log but don't block if the status check fails (e.g. backend down)
