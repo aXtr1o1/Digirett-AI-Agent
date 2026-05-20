@@ -62,6 +62,9 @@ export default function LawyerDashboard() {
   const [notesList, setNotesList] = useState([]);
   const [currentNoteId, setCurrentNoteId] = useState(null);
   const [noteTitle, setNoteTitle] = useState("");
+  const [calEventTypeId, setCalEventTypeId] = useState("");
+  const [calApiKey, setCalApiKey] = useState("");
+  const [isCalSaving, setIsCalSaving] = useState(false);
 
   const notesRef = useRef(null);
 
@@ -86,6 +89,22 @@ export default function LawyerDashboard() {
       fetchNotes();
     }
   }, [activeView, fetchNotes]);
+
+  const handleSaveCalConfig = async () => {
+    setIsCalSaving(true);
+    try {
+      await hitlService.updateCalConfig({
+        cal_event_type_id: calEventTypeId,
+        cal_api_key: calApiKey
+      });
+      setQueueMsg({ type: "success", text: "Cal.com configuration saved successfully." });
+    } catch (err) {
+      console.error("Failed to save Cal.com config:", err);
+      setQueueMsg({ type: "error", text: err.message || "Failed to save configuration." });
+    } finally {
+      setIsCalSaving(false);
+    }
+  };
 
   const handleSaveNote = async () => {
     if (!noteTitle.trim()) {
@@ -599,6 +618,14 @@ export default function LawyerDashboard() {
                         Profile
                       </button>
                       <button
+                        onClick={() => { setActiveView("settings"); setShowProfileDropdown(false); }}
+                        className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-slate-300 hover:bg-slate-800" : "text-slate-600 hover:bg-slate-50"
+                          }`}
+                      >
+                        <Settings size={14} />
+                        Settings
+                      </button>
+                      <button
                         onClick={handleLogout}
                         className={`w-full px-3 py-2 flex items-center gap-3 rounded-lg text-xs font-bold transition-colors ${isDark ? "text-red-400 hover:bg-red-500/10" : "text-red-600 hover:bg-red-50"
                           }`}
@@ -1089,6 +1116,84 @@ export default function LawyerDashboard() {
                   </div>
                 </div>
 
+              </div>
+            </div>
+          )}
+
+          {/* VIEW: SETTINGS */}
+          {activeView === "settings" && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="h-12 w-12 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
+                    <Settings size={24} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold tracking-tight">Integration Settings</h2>
+                    <p className="text-sm text-slate-500 mt-1">Configure your personal calendar via Cal.com</p>
+                  </div>
+                </div>
+
+                {queueMsg && activeView === "settings" && (
+                  <div className={`mb-6 p-4 rounded-xl flex items-center justify-between text-sm font-bold animate-in fade-in zoom-in-95 ${queueMsg.type === 'success'
+                    ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                    : 'bg-red-500/10 text-red-500 border border-red-500/20'
+                    }`}>
+                    <div className="flex items-center gap-3">
+                      {queueMsg.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
+                      {queueMsg.text}
+                    </div>
+                    <button onClick={() => setQueueMsg(null)} className="text-lg opacity-50 hover:opacity-100">&times;</button>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Event Type ID</label>
+                      <input
+                        type="text"
+                        value={calEventTypeId}
+                        onChange={(e) => setCalEventTypeId(e.target.value)}
+                        placeholder="Enter your Event Type ID"
+                        autoComplete="off"
+                        className={`w-full px-4 py-3 rounded-xl border text-sm transition-all focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 ${isDark ? "bg-slate-950 border-slate-800 text-white placeholder-slate-600" : "bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400"}`}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Cal.com API Key</label>
+                      <input
+                        type="password"
+                        value={calApiKey}
+                        onChange={(e) => setCalApiKey(e.target.value)}
+                        placeholder="Enter your API Key"
+                        autoComplete="new-password"
+                        className={`w-full px-4 py-3 rounded-xl border text-sm transition-all focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 ${isDark ? "bg-slate-950 border-slate-800 text-white placeholder-slate-600" : "bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400"}`}
+                      />
+                    </div>
+                    <button
+                      onClick={handleSaveCalConfig}
+                      disabled={isCalSaving}
+                      className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50"
+                    >
+                      {isCalSaving ? "Saving..." : "Save Configuration"}
+                    </button>
+                  </div>
+
+                  <div className={`p-6 rounded-2xl border ${isDark ? "bg-indigo-500/5 border-indigo-500/10 text-indigo-200" : "bg-indigo-50 border-indigo-100 text-indigo-900"}`}>
+                    <h3 className="font-bold flex items-center gap-2 mb-4">
+                      <ExternalLink size={18} />
+                      How to configure your Cal.com schedule
+                    </h3>
+                    <ol className="list-decimal list-inside space-y-3 text-sm font-medium opacity-80 leading-relaxed">
+                      <li>Sign up for a free personal account at <a href="https://cal.com" target="_blank" rel="noreferrer" className="underline font-bold">Cal.com</a>.</li>
+                      <li>Connect your preferred calendar (Google/Outlook) in Cal.com Settings.</li>
+                      <li>Create a new Event Type (e.g., "Legal Consultation").</li>
+                      <li>Go to <b>Settings &gt; Security &gt; API Keys</b> and generate an API key. Paste it in the API Key field here.</li>
+                      <li>Find your <b>Event Type ID</b> (the number at the end of the URL when editing the event type in Cal.com) and paste it here.</li>
+                    </ol>
+                  </div>
+                </div>
               </div>
             </div>
           )}

@@ -27,9 +27,10 @@ const documentService = {
     }
 
     // Extract metadata from headers
+    const rawFileName = response.headers.get("X-File-Name");
     const meta = {
       documentId: response.headers.get("X-Document-Id"),
-      fileName: response.headers.get("X-File-Name") || file.name,
+      fileName: rawFileName ? decodeURIComponent(rawFileName) : file.name,
       fileType: response.headers.get("X-File-Type"),
       docsRemaining: response.headers.get("X-Docs-Remaining"),
     };

@@ -3,7 +3,7 @@ import { AlertTriangle } from "lucide-react";
 
 const ErrorMessage = ({ message, onRetry, className = "" }) => {
   const [isOpen, setIsOpen] = useState(true);
-  
+
   if (!message) return null;
 
   let messageText = typeof message === 'string' ? message : message.message || String(message);
@@ -46,10 +46,10 @@ const ErrorMessage = ({ message, onRetry, className = "" }) => {
     <div className="fixed inset-0 bg-black/40 z-[9999] flex items-center justify-center p-4">
       {/* Click outside to close (standard premium modal feature) */}
       <div className="absolute inset-0" onClick={handleClose} />
-      
+
       {/* Premium Dialog Card */}
       <div className="relative bg-[#0d0d0d] border border-red-500/10 max-w-md w-full rounded-[28px] p-6 sm:p-8 shadow-2xl flex flex-col items-center text-center space-y-6 animate-in fade-in zoom-in duration-200">
-        
+
         {/* Animated Warning Icon with Glow */}
         <div className="bg-[#ff4444]/10 p-4 rounded-full border border-[#ff4444]/20 text-[#ff4444] shadow-[0_0_20px_rgba(255,68,68,0.15)]">
           <AlertTriangle className="h-8 w-8 animate-pulse" />

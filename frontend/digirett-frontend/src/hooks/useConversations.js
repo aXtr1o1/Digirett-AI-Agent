@@ -160,20 +160,8 @@ const useConversations = () => {
       );
 
       if (currentConversationId === conversationId) {
-
-        const remaining = conversations.filter(
-          conv => conv.conversation_id !== conversationId
-        );
-
-        // ✅ If chats exist → open latest
-        if (remaining.length > 0) {
-          setCurrentConversationId(remaining[0].conversation_id);
-        }
-        // ✅ If no chats → go to welcome page
-        else {
-          setCurrentConversationId(null);
-          localStorage.removeItem("conversationId");
-        }
+        setCurrentConversationId(null);
+        localStorage.removeItem("conversationId");
       }
 
       // ── Then call backend (errors are swallowed — UI already updated) ──
@@ -198,7 +186,7 @@ const useConversations = () => {
   /**
    * Move conversation to top after message
    */
-  const moveConversationToTop = useCallback((conversationId) => {
+  const moveConversationToTop = useCallback((conversationId, backendTitle) => {
 
     setConversations(prev => {
 
@@ -216,6 +204,10 @@ const useConversations = () => {
         updated_at:
           new Date().toISOString()
       };
+
+      if (backendTitle) {
+        updated.title = backendTitle;
+      }
 
       const others =
         prev.filter(
