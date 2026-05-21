@@ -343,12 +343,22 @@ export default function AdminDashboard() {
   const auditTypeData = () => {
     const counts = {};
     auditLogs.forEach(log => {
-      counts[log.action] = (counts[log.action] || 0) + 1;
+      const cleanAction = log.action.replace('admin.', '').replace('user.', '').replace('ticket.', '');
+      counts[cleanAction] = (counts[cleanAction] || 0) + 1;
     });
-    return Object.keys(counts).map(action => ({
-      action: action.replace('admin.', '').replace('user.', ''),
-      count: counts[action]
-    })).sort((a, b) => b.count - a.count).slice(0, 5);
+
+    const predefinedEvents = [
+      { key: "user_invited", label: "User Invited" },
+      { key: "invite_accepted", label: "Invite Accepted" },
+      { key: "user_promoted", label: "Role Promoted" },
+      { key: "dual_role_enabled", label: "Dual Role" },
+      { key: "signup_from_invite", label: "New Signup" }
+    ];
+
+    return predefinedEvents.map(event => ({
+      action: event.label,
+      count: counts[event.key] || 0
+    }));
   };
 
   const lawyerWorkloadData = () => {
@@ -1525,6 +1535,7 @@ export default function AdminDashboard() {
       {/* System Notifications (Global Overlay) */}
       <SystemNotification
         notifications={notifications}
+        currentView={activeView}
         onDismiss={handleDismissNotification}
         onNavigate={(view) => {
           setActiveView(view);

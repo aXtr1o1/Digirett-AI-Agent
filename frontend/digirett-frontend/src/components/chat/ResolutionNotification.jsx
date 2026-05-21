@@ -1,10 +1,13 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { CheckCircle, X, Scale, Bell } from "lucide-react";
 
-const SystemNotification = ({ notifications, onDismiss, onNavigate, isDark }) => {
+const SystemNotification = ({ notifications, onDismiss, onNavigate, isDark, currentView }) => {
   const [isOpen, setIsOpen] = useState(false); // Default to closed, requiring click to view
 
-
+  // Close the dropdown when the view changes
+  useEffect(() => {
+    setIsOpen(false);
+  }, [currentView]);
   if (!notifications || notifications.length === 0) return null;
 
   const count = notifications.length;

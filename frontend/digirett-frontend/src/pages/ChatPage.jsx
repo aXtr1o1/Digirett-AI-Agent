@@ -275,6 +275,7 @@ const ChatPage = () => {
       {/* System Notifications (Global Overlay) */}
       <SystemNotification
         notifications={notifications}
+        currentView={currentConversationId}
         onDismiss={handleDismissNotification}
         onNavigate={(target) => {
           if (target === 'queue') {
