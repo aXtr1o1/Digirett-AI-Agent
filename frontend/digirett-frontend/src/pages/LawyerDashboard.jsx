@@ -1234,6 +1234,7 @@ export default function LawyerDashboard() {
       {/* Real-time Notifications Overlay */}
       <SystemNotification
         notifications={notifications}
+        currentView={activeView}
         onDismiss={handleDismissNotification}
         onNavigate={(view) => {
           if (view) {

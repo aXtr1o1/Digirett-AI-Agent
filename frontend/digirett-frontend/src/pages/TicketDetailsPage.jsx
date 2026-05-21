@@ -133,6 +133,27 @@ export default function TicketDetailsPage() {
     );
   }
 
+  if (error && !ticket) {
+    return (
+      <div className={`min-h-screen flex flex-col items-center justify-center relative overflow-hidden ${isDark ? "bg-[#020617] text-white" : "bg-[#f1f5f9] text-gray-900"}`}>
+        <BackgroundLayer theme={theme} />
+        <div className={`relative z-10 p-8 rounded-2xl border max-w-md text-center shadow-xl ${isDark ? "bg-slate-900/80 border-red-500/30" : "bg-white border-red-200"}`}>
+          <div className="h-16 w-16 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center mx-auto mb-6">
+            <AlertTriangle size={32} />
+          </div>
+          <h2 className="text-xl font-bold mb-2">Error Loading Ticket</h2>
+          <p className={`text-sm font-medium mb-8 ${isDark ? "text-red-400" : "text-red-600"}`}>{error}</p>
+          <button
+            onClick={() => navigate("/lawyer")}
+            className="h-11 px-8 rounded-xl bg-blue-600 text-white font-bold text-xs uppercase tracking-widest shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all"
+          >
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const userInfo = ticket?.user_info || {};
   const initials = (userInfo.display_name || "U").split(' ').map(n => n[0]).join('').toUpperCase();
 
@@ -249,6 +270,17 @@ export default function TicketDetailsPage() {
 
         <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
           <div className="max-w-4xl mx-auto">
+
+            {/* ERROR BANNER FOR PARTIAL FAILURES (e.g., messages failed to load) */}
+            {error && ticket && (
+              <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
+                <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-sm font-bold text-red-500">Partial Data Load Error</h4>
+                  <p className="text-xs text-red-400/90 mt-1 font-medium">{error}</p>
+                </div>
+              </div>
+            )}
 
             {/* VIEW 1: USER DETAILS */}
             {currentView === "details" && (
@@ -401,6 +433,13 @@ export default function TicketDetailsPage() {
                 </div>
 
                 <div className="space-y-6">
+                  {messages.length === 0 && !error && (
+                    <div className={`p-8 rounded-2xl border text-center ${isDark ? "bg-slate-900/50 border-slate-800" : "bg-gray-50 border-gray-100"}`}>
+                      <MessageSquare className="h-10 w-10 mx-auto text-gray-400 mb-4 opacity-50" />
+                      <h3 className={`text-sm font-bold ${isDark ? "text-slate-300" : "text-gray-700"}`}>No messages found</h3>
+                      <p className="text-xs text-gray-500 mt-1">This conversation has no chat history.</p>
+                    </div>
+                  )}
                   {messages.map((m, idx) => (
                     <div key={m.message_id || idx} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
                       <div className={`max-w-[80%] rounded-2xl p-6 text-sm font-medium leading-relaxed ${m.role === 'user'

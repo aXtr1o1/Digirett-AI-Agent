@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { SignUp, useUser } from "@clerk/clerk-react";
+import { SignUp, SignIn, useUser } from "@clerk/clerk-react";
 import inviteService from "../services/inviteService";
 import { CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 
@@ -10,6 +10,7 @@ export default function InvitePage() {
   const [invite, setInvite] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isSignInMode, setIsSignInMode] = useState(false);
   const { isSignedIn, isLoaded } = useUser();
   const navigate = useNavigate();
 
@@ -133,38 +134,75 @@ export default function InvitePage() {
           </div>
         </div>
 
-        {/* Right Side: Clerk Signup */}
-        <div className="flex-shrink-0 w-full md:w-auto flex justify-center scale-95 origin-top">
-          <SignUp
-            routing="hash"
-            signInUrl="/sign-in"
-            redirectUrl={`/provisioning?target=${invite.role}&token=${token}`}
-            appearance={{
-              variables: {
-                colorPrimary: "#4f46e5",
-                colorText: "#1f2937",
-                colorBackground: "#ffffff",
-                colorInputBackground: "#f9fafb",
-                colorInputText: "#1f2937",
-                borderRadius: "1.25rem",
-                spacingUnit: "0.75rem", // Reduce overall spacing
-              },
-              elements: {
-                card: "shadow-[0_15px_40px_rgba(0,0,0,0.08)] border border-gray-100 max-w-[400px]",
-                headerTitle: "text-xl font-black text-gray-900",
-                headerSubtitle: "text-sm text-gray-500",
-                socialButtonsBlockButton: "border-gray-200 hover:bg-gray-50 h-10",
-                formButtonPrimary: "bg-indigo-600 hover:bg-indigo-700 text-sm py-2.5 h-11",
-                footerActionLink: "text-indigo-600 hover:text-indigo-700 font-semibold text-sm",
-                formFieldLabel: "text-xs font-bold text-gray-600 mb-1",
-                formFieldInput: "h-10 text-sm",
-                rootBox: "mx-auto",
-              }
-            }}
-            initialValues={{
-              emailAddress: invite.masked_email || "",
-            }}
-          />
+        {/* Right Side: Clerk Signup / Signin */}
+        <div className="flex-shrink-0 w-full md:w-auto flex flex-col items-center justify-center scale-95 origin-top">
+          {isSignInMode ? (
+            <SignIn
+              routing="hash"
+              redirectUrl={`/provisioning?target=${invite.role}&token=${token}`}
+              appearance={{
+                variables: {
+                  colorPrimary: "#4f46e5",
+                  colorText: "#1f2937",
+                  colorBackground: "#ffffff",
+                  colorInputBackground: "#f9fafb",
+                  colorInputText: "#1f2937",
+                  borderRadius: "1.25rem",
+                  spacingUnit: "0.75rem",
+                },
+                elements: {
+                  card: "shadow-[0_15px_40px_rgba(0,0,0,0.08)] border border-gray-100 max-w-[400px]",
+                  headerTitle: "text-xl font-black text-gray-900",
+                  headerSubtitle: "text-sm text-gray-500",
+                  socialButtonsBlockButton: "border-gray-200 hover:bg-gray-50 h-10",
+                  formButtonPrimary: "bg-indigo-600 hover:bg-indigo-700 text-sm py-2.5 h-11",
+                  footerActionLink: "hidden", // Hide native link to prevent external redirect
+                  formFieldLabel: "text-xs font-bold text-gray-600 mb-1",
+                  formFieldInput: "h-10 text-sm",
+                  rootBox: "mx-auto",
+                }
+              }}
+            />
+          ) : (
+            <SignUp
+              routing="hash"
+              redirectUrl={`/provisioning?target=${invite.role}&token=${token}`}
+              appearance={{
+                variables: {
+                  colorPrimary: "#4f46e5",
+                  colorText: "#1f2937",
+                  colorBackground: "#ffffff",
+                  colorInputBackground: "#f9fafb",
+                  colorInputText: "#1f2937",
+                  borderRadius: "1.25rem",
+                  spacingUnit: "0.75rem",
+                },
+                elements: {
+                  card: "shadow-[0_15px_40px_rgba(0,0,0,0.08)] border border-gray-100 max-w-[400px]",
+                  headerTitle: "text-xl font-black text-gray-900",
+                  headerSubtitle: "text-sm text-gray-500",
+                  socialButtonsBlockButton: "border-gray-200 hover:bg-gray-50 h-10",
+                  formButtonPrimary: "bg-indigo-600 hover:bg-indigo-700 text-sm py-2.5 h-11",
+                  footerActionLink: "hidden", // Hide native link to prevent external redirect
+                  formFieldLabel: "text-xs font-bold text-gray-600 mb-1",
+                  formFieldInput: "h-10 text-sm",
+                  rootBox: "mx-auto",
+                }
+              }}
+            />
+          )}
+
+          <div className="mt-6 text-center">
+            <p className="text-sm text-gray-600">
+              {isSignInMode ? "Need to create a new account?" : "Already have an account?"}
+            </p>
+            <button
+              onClick={() => setIsSignInMode(!isSignInMode)}
+              className="mt-1 text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors border-b border-transparent hover:border-indigo-600"
+            >
+              {isSignInMode ? "Sign up to accept invitation" : "Sign in to accept invitation"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

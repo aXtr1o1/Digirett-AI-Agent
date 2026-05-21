@@ -20,6 +20,14 @@ const MessageComposer = ({
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [localEscalated, setLocalEscalated] = useState(false);
 
+  // Sync localEscalated state with parent isEscalated prop
+  useEffect(() => {
+    if (!isEscalated) {
+      setLocalEscalated(false);
+      setShowEscalateConfirm(false);
+    }
+  }, [isEscalated]);
+
   const isBusy = disabled || isProcessingDoc;
   const isInputBlocked = isBusy || (disabled && !isStreaming);
 
