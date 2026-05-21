@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import documentService from "../services/documentService";
 
 /**
@@ -22,6 +22,14 @@ const useDocumentUpload = (conversationId, userId, addMessage) => {
       setSessionStatus(data);
     } catch (err) {
       console.error("[useDocumentUpload] fetchSessionStatus error:", err);
+    }
+  }, [conversationId]);
+
+  // Clear session status when conversation changes to prevent stale state
+  useEffect(() => {
+    setSessionStatus(null);
+    if (!conversationId) {
+      setUploadedDocs([]);
     }
   }, [conversationId]);
 

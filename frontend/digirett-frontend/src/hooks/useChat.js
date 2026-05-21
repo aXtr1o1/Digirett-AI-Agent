@@ -78,7 +78,7 @@ const useChat = (
 
       const { data: msgs, error: sbError } = await authClient
         .from("messages")
-        .select("message_id, role, content, sources, created_at, type, file_name, metadata")
+        .select("message_id, role, content, sources, created_at, metadata")
         .eq("conversation_id", conversationId)
         .eq("is_deleted", false)
         .order("created_at", { ascending: true })
@@ -120,8 +120,8 @@ const useChat = (
             content: m.content || "",
             sources: m.sources || [],
             timestamp: m.created_at || new Date().toISOString(),
-            type: m.type || "text",
-            fileName: m.file_name || null,
+            type: m.metadata?.type || "text",
+            fileName: m.metadata?.file_name || null,
             documentId: m.metadata?.document_id || null,
           }));
           setMessages(normalized);
@@ -472,7 +472,10 @@ const useChat = (
   // Sync escalation status from backend sessionStatus or dedicated check
   useEffect(() => {
     const checkEscalation = async () => {
-      if (!isUuid(conversationId)) return;
+      if (!isUuid(conversationId)) {
+        setIsEscalated(false);
+        return;
+      }
       try {
         const data = await hitlService.getEscalationStatus(conversationId);
         console.log("[useChat] checkEscalation result:", data);
@@ -484,7 +487,7 @@ const useChat = (
 
     checkEscalation();
 
-    if (sessionStatus && sessionStatus.is_escalated !== undefined) {
+    if (isUuid(conversationId) && sessionStatus && sessionStatus.is_escalated !== undefined) {
       setIsEscalated(sessionStatus.is_escalated);
     }
   }, [sessionStatus, conversationId]);
