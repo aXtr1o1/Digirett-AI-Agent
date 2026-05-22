@@ -78,7 +78,7 @@ const useChat = (
 
       const { data: msgs, error: sbError } = await authClient
         .from("messages")
-        .select("message_id, role, content, sources, created_at, metadata")
+        .select("message_id, role, content, sources, created_at, metadata, type, file_name")
         .eq("conversation_id", conversationId)
         .eq("is_deleted", false)
         .order("created_at", { ascending: true })
@@ -93,8 +93,8 @@ const useChat = (
         sources: m.sources || [],
         timestamp: m.created_at || new Date().toISOString(),
         // ✅ Restore file messages correctly from DB
-        type: m.type || "text",
-        fileName: m.file_name || null,
+        type: m.type || m.metadata?.type || "text",
+        fileName: m.file_name || m.metadata?.file_name || null,
         documentId: m.metadata?.document_id || null,
       }));
       setMessages(normalized);
@@ -120,8 +120,8 @@ const useChat = (
             content: m.content || "",
             sources: m.sources || [],
             timestamp: m.created_at || new Date().toISOString(),
-            type: m.metadata?.type || "text",
-            fileName: m.metadata?.file_name || null,
+            type: m.type || m.metadata?.type || "text",
+            fileName: m.file_name || m.metadata?.file_name || null,
             documentId: m.metadata?.document_id || null,
           }));
           setMessages(normalized);

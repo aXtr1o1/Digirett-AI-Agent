@@ -149,6 +149,7 @@ async def clerk_webhook(
                 email=email,
                 tenant_id=tenant_id,
                 display_name=display_name,
+                username=username,
             )
             return {"status": "success", "message": "User created"}
         except Exception as exc:

@@ -39,6 +39,7 @@ class UserService:
         tenant_id: str,
         display_name: Optional[str] = None,
         phone: Optional[str] = None,
+        username: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Create a new user + user_profiles row from Clerk webhook data.
@@ -74,7 +75,7 @@ class UserService:
                 "clerk_user_id": clerk_user_id,
                 "email": email,
                 "mail_id": email,
-                "user_name": display_name or email.split("@")[0],
+                "user_name": username or display_name or email.split("@")[0],
                 "role": assigned_role,
                 "status": "active",
                 "tenant_id": safe_tenant_id,
@@ -234,7 +235,8 @@ class UserService:
                 clerk_user_id=clerk_user_id,
                 email=fallback_email,
                 tenant_id=None,
-                display_name=display_name
+                display_name=display_name,
+                username=display_name # we set username to display_name in fallback
             )
             logger.info(f"🎉 Successfully auto-created user: {new_user.get('user_id')}")
             return new_user.get("user_id")
