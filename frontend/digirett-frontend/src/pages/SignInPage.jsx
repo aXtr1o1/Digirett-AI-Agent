@@ -77,6 +77,13 @@ const SignInForm = () => {
     setIsLoading(true);
     setError('');
 
+    const passwordRegex = /^[A-Z](?=.*\d)(?=.*[^a-zA-Z0-9]).{7,}$/;
+    if (!passwordRegex.test(password)) {
+      setError('Password must be at least 8 characters, start with a capital letter, and include a number and special character.');
+      setIsLoading(false);
+      return;
+    }
+
     try {
       // 🛡️ 1. PRE-LOGIN SUSPENSION CHECK
       // We check our DB status before even trying to authenticate with Clerk

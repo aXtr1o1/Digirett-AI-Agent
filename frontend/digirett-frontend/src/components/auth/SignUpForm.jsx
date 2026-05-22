@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSignUp } from '@clerk/clerk-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
@@ -15,9 +15,23 @@ const SignUpForm = () => {
   const [needsVerification, setNeedsVerification] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resendTimer, setResendTimer] = useState(30);
+  const [canResend, setCanResend] = useState(false);
   
   // UI State
   const [showPassword, setShowPassword] = useState(false);
+
+  // Timer Effect
+  useEffect(() => {
+    if (needsVerification && resendTimer > 0) {
+      const timerId = setTimeout(() => {
+        setResendTimer(resendTimer - 1);
+      }, 1000);
+      return () => clearTimeout(timerId);
+    } else if (resendTimer === 0) {
+      setCanResend(true);
+    }
+  }, [needsVerification, resendTimer]);
 
   // STEP 1: CREATE ACCOUNT
   const handleSignUp = async (e) => {
@@ -26,6 +40,13 @@ const SignUpForm = () => {
 
     setLoading(true);
     setError('');
+
+    const passwordRegex = /^[A-Z](?=.*\d)(?=.*[^a-zA-Z0-9]).{7,}$/;
+    if (!passwordRegex.test(password)) {
+      setError('Password must be at least 8 characters, start with a capital letter, and include a number and special character.');
+      setLoading(false);
+      return;
+    }
 
     try {
       const createdSignUp = await signUp.create({
@@ -61,12 +82,16 @@ const SignUpForm = () => {
 
   // STEP 1.5: RESEND CODE
   const handleResendCode = async () => {
+    if (!canResend) return;
     setError('');
     try {
       await signUp.prepareEmailAddressVerification({
         strategy: 'email_code',
       });
-      alert('Verification code resent successfully!');
+      setResendTimer(30);
+      setCanResend(false);
+      // Optional friendly alert, but usually visual feedback is enough
+      // alert('Verification code resent successfully!');
     } catch (err) {
       console.log('Resend error:', err);
       setError(err.errors?.[0]?.message || 'Failed to resend code');
@@ -251,9 +276,10 @@ const SignUpForm = () => {
                   <button 
                     type="button" 
                     onClick={handleResendCode}
-                    className="text-gray-500 hover:text-gray-300 font-bold text-[11px] transition-colors"
+                    disabled={!canResend}
+                    className={`font-bold text-[11px] transition-colors ${canResend ? 'text-gray-400 hover:text-white' : 'text-gray-700 cursor-not-allowed'}`}
                   >
-                    Didn't receive a code? Resend
+                    {canResend ? "Didn't receive a code? Resend" : `Resend code in ${resendTimer}s`}
                   </button>
                 </div>
               </form>
