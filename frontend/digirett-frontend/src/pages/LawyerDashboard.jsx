@@ -65,6 +65,7 @@ export default function LawyerDashboard() {
   const [calEventTypeId, setCalEventTypeId] = useState("");
   const [calApiKey, setCalApiKey] = useState("");
   const [isCalSaving, setIsCalSaving] = useState(false);
+  const [isCalConfigured, setIsCalConfigured] = useState(true);
 
   const notesRef = useRef(null);
 
@@ -98,6 +99,7 @@ export default function LawyerDashboard() {
         cal_api_key: calApiKey
       });
       setQueueMsg({ type: "success", text: "Cal.com configuration saved successfully." });
+      setIsCalConfigured(true);
     } catch (err) {
       console.error("Failed to save Cal.com config:", err);
       setQueueMsg({ type: "error", text: err.message || "Failed to save configuration." });
@@ -267,14 +269,19 @@ export default function LawyerDashboard() {
     if (isManual) setRefreshing(true);
     setGlobalError(null);
     try {
-      const [queueData, resolvedData, activeData] = await Promise.all([
+      const [queueData, resolvedData, activeData, calConfig] = await Promise.all([
         hitlService.getQueue(),
         hitlService.getResolvedHistory(),
-        hitlService.getActiveTickets()
+        hitlService.getActiveTickets(),
+        hitlService.getCalConfig().catch(() => null)
       ]);
       setQueueTickets(queueData || []);
       setResolvedTickets(resolvedData || []);
       setActiveTickets(activeData || []);
+      
+      if (calConfig) {
+        setIsCalConfigured(!!calConfig.cal_event_type_id && !!calConfig.cal_api_key);
+      }
 
     } catch (err) {
       console.error("Dashboard fetch error:", err);
@@ -663,6 +670,29 @@ export default function LawyerDashboard() {
 
         {/* Content Section */}
         <main className="flex-1 overflow-y-auto p-6 md:p-8">
+
+          {/* Cal.com Configuration Warning Banner */}
+          {!isCalConfigured && activeView !== "settings" && (
+            <div className={`mb-8 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border animate-in fade-in slide-in-from-top-4 duration-300 ${isDark ? "bg-amber-500/10 border-amber-500/20" : "bg-amber-50 border-amber-200"}`}>
+              <div className="flex items-center gap-3">
+                <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${isDark ? "bg-amber-500/20 text-amber-500" : "bg-amber-100 text-amber-600"}`}>
+                  <AlertTriangle size={20} />
+                </div>
+                <div>
+                  <h3 className={`font-bold text-sm ${isDark ? "text-amber-400" : "text-amber-800"}`}>Action Required: Calendar Configuration Missing</h3>
+                  <p className={`text-xs mt-0.5 ${isDark ? "text-amber-500/80" : "text-amber-700/80"}`}>
+                    Your Cal.com scheduling integration is incomplete. Please configure it so users can book consultations.
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setActiveView("settings")}
+                className={`px-4 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition-all shadow-sm ${isDark ? "bg-amber-500 text-amber-950 hover:bg-amber-400" : "bg-amber-500 text-white hover:bg-amber-600"}`}
+              >
+                Configure Now
+              </button>
+            </div>
+          )}
 
           {/* VIEW: DASHBOARD */}
           {activeView === "dashboard" && (
