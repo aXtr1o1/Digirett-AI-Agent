@@ -505,93 +505,19 @@ class RAGService:
             return
  
         # ── [6] Build RAG context ──────────────────────────────────────────
-        rag_context = self._build_context(search_results)
+        # Reduce chunks to top 10 to prevent massive LLM context bloat and speed up TTFT
+        rag_context = self._build_context(search_results[:10])
         if len(rag_context) > settings.CONTEXT_MAX_LENGTH:
             rag_context = rag_context[:settings.CONTEXT_MAX_LENGTH]
             logger.warning(f"⚠️  RAG context truncated to {settings.CONTEXT_MAX_LENGTH} chars")
  
-        # ── [7] Score gate — score the answer before streaming ────────────
-        # generate_legal_answer() calls the LLM once (non-streaming) to get
-        # the score. If score < 0.5, the chunks do not support the query —
-        # block the answer so the user never sees hallucinated legal content.
-        score_result = await self._llm.generate_legal_answer(
-            query=query,
-            rag_context=rag_context,
-            language=language,
-            conversation_history=history,
-            response_style=response_style,
-        )
-        score       = score_result["score"]
-        confidence  = score_result["confidence"]
-        scored_answer = score_result["answer"]
- 
-        logger.info(
-            f"📊 Score={score} | Confidence={confidence} | chunks={len(search_results)}"
-        )
- 
-        if score < 0.5:
-            logger.warning(
-                f"⚠️  Score={score} < 0.5 — blocking answer | "
-                f"statute={primary_statute_id}"
-            )
-            yield {"type": "sources", "data": []}
-            no_support = (
-                "Jeg finner ingen relevante juridiske utdrag fra min kunnskap."
-                if language == "norwegian"
-                else "I cannot find any relevant legal excerpts from my knowledge."
-            )
-            for char in no_support:
-                yield {"type": "token", "data": char}
-            yield {
-                "type": "complete",
-                "metadata": {
-                    "intent": "LEGAL",
-                    "language": language,
-                    "primary_statute_id": primary_statute_id,
-                    "chunks_retrieved": len(search_results),
-                    "tokens_generated": len(no_support),
-                    "score": score,
-                    "confidence": confidence,
-                    "full_answer": no_support,
-                    "rag_chunks": [],
-                },
-            }
-            return
- 
-        # ── [8] Emit sources (score ≥ 0.5 only) with section_ref ──────────
-        # Build URLs with section anchor so frontend shows exact paragraph links
-        # 🔥 CHANGED: emit {url, doc_title} dicts so message_service can
-        # display the document title (korttittel) instead of raw URLs.
-        seen_urls: set = set()
-        visible_sources: List[Dict[str, Any]] = []
-        for chunk in search_results:
-            base_url    = chunk.get("source_doc_url") or chunk.get("url") or ""
-            section_ref = (chunk.get("section_ref") or "").strip()
-            doc_title   = chunk.get("doc_title") or ""
-            # Full URL with section anchor: "https://lovdata.no/.../lov/YYYY-MM-DD-N/§6-1"
-            full_url = f"{base_url}/{section_ref}" if section_ref else base_url
-            if full_url and full_url not in seen_urls:
-                seen_urls.add(full_url)
-                visible_sources.append({
-                    "url": full_url, 
-                    "doc_title": doc_title,
-                    "section_ref": section_ref
-                })
-            # Also emit base URL so frontend shows the law itself
-            if base_url and base_url not in seen_urls:
-                seen_urls.add(base_url)
-                visible_sources.append({
-                    "url": base_url, 
-                    "doc_title": doc_title
-                })
-
-        yield {"type": "sources", "data": visible_sources}
-        logger.info(f"✅ Emitted {len(visible_sources)} source URLs (section_ref included)")
- 
-        # ── [9] Stream answer ─────────────────────────────────────────────
+        # ── [7] Score gate & Stream answer ────────────────────────────────
+        score = 0.5
+        confidence = "Partially supported by sources"
         full_answer = ""
         token_count = 0
- 
+        first_token = True
+
         async for token in self._llm.generate_legal_stream(
             query=query,
             rag_context=rag_context,
@@ -599,10 +525,65 @@ class RAGService:
             conversation_history=history,
             response_style=response_style,
         ):
+            if first_token and token.startswith("__SCORE__"):
+                first_token = False
+                try:
+                    score = float(token.split("__")[2])
+                    confidence = _score_to_confidence(score)
+                except Exception:
+                    pass
+
+                logger.info(f"📊 Score={score} | Confidence={confidence} | chunks={len(search_results)}")
+
+                if score < 0.5:
+                    logger.warning(f"⚠️ Score={score} < 0.5 — blocking answer | statute={primary_statute_id}")
+                    yield {"type": "sources", "data": []}
+                    no_support = (
+                        "Jeg finner ingen relevante juridiske utdrag fra min kunnskap."
+                        if language == "norwegian"
+                        else "I cannot find any relevant legal excerpts from my knowledge."
+                    )
+                    for char in no_support:
+                        yield {"type": "token", "data": char}
+                    yield {
+                        "type": "complete",
+                        "metadata": {
+                            "intent": "LEGAL",
+                            "language": language,
+                            "primary_statute_id": primary_statute_id,
+                            "chunks_retrieved": len(search_results),
+                            "tokens_generated": len(no_support),
+                            "score": score,
+                            "confidence": confidence,
+                            "full_answer": no_support,
+                            "rag_chunks": [],
+                        },
+                    }
+                    return
+                else:
+                    # Score is good, emit the sources
+                    seen_urls = set()
+                    visible_sources = []
+                    for chunk in search_results:
+                        base_url    = chunk.get("source_doc_url") or chunk.get("url") or ""
+                        section_ref = (chunk.get("section_ref") or "").strip()
+                        doc_title   = chunk.get("doc_title") or ""
+                        full_url = f"{base_url}/{section_ref}" if section_ref else base_url
+                        if full_url and full_url not in seen_urls:
+                            seen_urls.add(full_url)
+                            visible_sources.append({"url": full_url, "doc_title": doc_title, "section_ref": section_ref})
+                        if base_url and base_url not in seen_urls:
+                            seen_urls.add(base_url)
+                            visible_sources.append({"url": base_url, "doc_title": doc_title})
+
+                    yield {"type": "sources", "data": visible_sources}
+                    logger.info(f"✅ Emitted {len(visible_sources)} source URLs (section_ref included)")
+                continue
+
+            first_token = False
             token_count += 1
             full_answer += token
             yield {"type": "token", "data": token}
- 
         yield {
             "type": "complete",
             "metadata": {
@@ -613,7 +594,7 @@ class RAGService:
                 "tokens_generated": token_count,
                 "score": score,
                 "confidence": confidence,
-                "full_answer": scored_answer,
+                "full_answer": full_answer,
                 "rag_chunks": search_results,
             },
         }
@@ -750,8 +731,9 @@ class RAGService:
             statute_from_registry=False,
         )
 
-        rag_context = self._build_context(search_results) if search_results else ""
-
+        # Reduce chunks to top 10 to prevent massive LLM context bloat and speed up TTFT
+        rag_context = self._build_context(search_results[:10]) if search_results else ""
+        
         seen_urls: set = set()
         visible_sources: List[Dict[str, Any]] = []
         for chunk in (search_results or []):

@@ -150,12 +150,14 @@ class LLMService:
                 if language == "norwegian"
                 else "I cannot find any relevant legal excerpts from my knowledge."
             )
+            yield "__SCORE__0.1__"
             for char in error_msg:
                 yield char
             return
 
-        score_re = re.compile(r"\[SCORE:\s*[0-9.]+\]")
+        score_re = re.compile(r"\[SCORE:\s*([0-9.]+)\]")
         buffer = ""
+        score_emitted = False
 
         async with llm_span("legal_stream"):
             async for token in self._generator_agent.stream_legal(
@@ -166,26 +168,32 @@ class LLMService:
                 temperature=temperature,
                 response_style=response_style,
             ):
-                buffer += token
+                if not score_emitted:
+                    buffer += token
+                    match = score_re.search(buffer)
+                    if match:
+                        score_val = float(match.group(1))
+                        yield f"__SCORE__{score_val}__"
+                        score_emitted = True
+                        
+                        clean = score_re.sub("", buffer).lstrip()
+                        if clean:
+                            yield clean
+                        buffer = ""
+                    elif len(buffer) > 25 and "[" not in buffer:
+                        # Model missed the tag at the start! Default to 0.5
+                        yield "__SCORE__0.5__"
+                        score_emitted = True
+                        yield buffer
+                        buffer = ""
+                else:
+                    yield token
 
-                # Full score tag arrived — flush clean text, stop streaming
-                if score_re.search(buffer):
-                    clean = score_re.split(buffer)[0].rstrip("\n")
-                    if clean:
-                        yield clean
-                    logger.info("✅ Legal stream complete (score tag detected)")
-                    return
-
-                # Yield everything except the tail guard (catches partial tags)
-                if len(buffer) > 15:
-                    yield buffer[:-15]
-                    buffer = buffer[-15:]
-
-            # Flush remaining buffer (model might not append the tag)
-            if buffer:
-                clean = score_re.sub("", buffer).rstrip("\n")
-                if clean:
-                    yield clean
+            if not score_emitted:
+                # Fallback if stream ended and no score found
+                yield "__SCORE__0.5__"
+                if buffer:
+                    yield buffer
 
         logger.info(" Legal stream complete")
 

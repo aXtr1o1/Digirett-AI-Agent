@@ -64,9 +64,16 @@ class ConversationService:
                 # 🔥 Update updated_at even if coming from cache
                 now = datetime.utcnow().isoformat()
 
-                self._supabase.table("conversations").update({
-                    "updated_at": now
-                }).eq("conversation_id", conversation_id).execute()
+                def _touch():
+                    try:
+                        self._supabase.table("conversations").update({
+                            "updated_at": now
+                        }).eq("conversation_id", conversation_id).execute()
+                    except Exception:
+                        pass
+                
+                import threading
+                threading.Thread(target=_touch, daemon=True).start()
 
                 cached["updated_at"] = now
                 self._cache.set_conversation_meta(conversation_id, cached)
@@ -90,9 +97,16 @@ class ConversationService:
             # 🔥 Update updated_at when accessed
             now = datetime.utcnow().isoformat()
 
-            self._supabase.table("conversations").update({
-                "updated_at": now
-            }).eq("conversation_id", conversation_id).execute()
+            def _touch2():
+                try:
+                    self._supabase.table("conversations").update({
+                        "updated_at": now
+                    }).eq("conversation_id", conversation_id).execute()
+                except Exception:
+                    pass
+            
+            import threading
+            threading.Thread(target=_touch2, daemon=True).start()
 
             conversation["updated_at"] = now
 
@@ -128,8 +142,15 @@ class ConversationService:
             ids = [c["conversation_id"] for c in conversations]
             self._cache.set_user_conversations(user_id, ids)
 
-            for conv in conversations:
-                self._cache.set_conversation_meta(conv["conversation_id"], conv)
+            def _warm_cache():
+                for conv in conversations:
+                    try:
+                        self._cache.set_conversation_meta(conv["conversation_id"], conv)
+                    except Exception:
+                        pass
+            
+            import threading
+            threading.Thread(target=_warm_cache, daemon=True).start()
 
             logger.info(f" Loaded {len(conversations)} conversations for user {user_id}")
             return conversations

@@ -161,7 +161,7 @@ async def verify_token(token: str) -> ClerkUser:
                 detail="Token signing key not found",
             )
 
-        # Verify and decode the JWT
+        # Verify and decode the JWT with leeway to prevent race conditions
         payload = jwt.decode(
             token,
             rsa_key,
@@ -169,6 +169,7 @@ async def verify_token(token: str) -> ClerkUser:
             options={
                 "verify_aud": False,  # Clerk doesn't always set audience
                 "verify_iss": False,  # We validate via JWKS instead
+                "leeway": 60,         # Prevent 401 Signature Expired errors due to clock skew
             },
         )
 
@@ -240,15 +241,19 @@ async def get_current_user(request: Request) -> ClerkUser:
     user = await verify_token(auth_header)
     
     # 2. Authoritative check against Supabase
+    import asyncio
     from db.supabase_client import get_supabase
     supabase = get_supabase()
     try:
-        # Check status and role
-        resp = supabase.table("users") \
-            .select("user_id, role, status") \
-            .eq("clerk_user_id", user.clerk_user_id) \
-            .limit(1) \
-            .execute()
+        # Check status and role using a background thread to prevent event loop blocking
+        def fetch_user_status():
+            return supabase.table("users") \
+                .select("user_id, role, status") \
+                .eq("clerk_user_id", user.clerk_user_id) \
+                .limit(1) \
+                .execute()
+        
+        resp = await asyncio.to_thread(fetch_user_status)
         
         if resp.data:
             db_user = resp.data[0]
@@ -316,10 +321,14 @@ def require_db_role(*allowed_roles: str):
         
         # Fallback in case get_current_user's enrichment failed (unlikely)
         if not db_role:
+            import asyncio
             from db.supabase_client import get_supabase
             supabase = get_supabase()
             try:
-                resp = supabase.table("users").select("role").eq("clerk_user_id", user.clerk_user_id).single().execute()
+                def fetch_fallback_role():
+                    return supabase.table("users").select("role").eq("clerk_user_id", user.clerk_user_id).single().execute()
+                
+                resp = await asyncio.to_thread(fetch_fallback_role)
                 db_role = resp.data.get("role") if resp.data else None
             except Exception as exc:
                 logger.error(f"❌ DB role check fallback failed for {user.clerk_user_id} | {exc}")
