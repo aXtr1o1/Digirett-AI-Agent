@@ -222,20 +222,53 @@ async def verify_token(token: str) -> ClerkUser:
 # FastAPI dependencies
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async def get_current_user(request: Request) -> ClerkUser:
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Request, WebSocket
+
+class WebSocketFriendlyBearer(HTTPBearer):
+    async def __call__(self, request: Request = None, websocket: WebSocket = None) -> Optional[HTTPAuthorizationCredentials]:
+        req = request or websocket
+        auth_header = req.headers.get("Authorization")
+        if not auth_header and getattr(req, "query_params", None):
+            auth_header = req.query_params.get("token")
+            
+        if auth_header:
+            return HTTPAuthorizationCredentials(scheme="Bearer", credentials=auth_header.replace("Bearer ", ""))
+        return None
+
+security_bearer = WebSocketFriendlyBearer(auto_error=False)
+
+async def get_current_user(request: Request = None, websocket: WebSocket = None, credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)) -> ClerkUser:
     """
-    FastAPI dependency — extracts and verifies the Clerk JWT from the
-    Authorization header. Returns a ClerkUser dict.
+    FastAPI dependency — extracts and verifies the Clerk JWT or Static API Key from the
+    Authorization header (or query param for WebSockets). Returns a ClerkUser dict.
     
     Now also verifies the user's status in the database to enforce 
     suspensions and role authoritative state.
     """
-    auth_header = request.headers.get("Authorization", "")
+    req = request or websocket
+    auth_header = req.headers.get("Authorization", "")
+    if not auth_header and getattr(req, "query_params", None):
+        auth_header = req.query_params.get("token", "")
+
     if not auth_header:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authorization header is required",
         )
+    
+    token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else auth_header
+    
+    # 0. Check for Static API Key (for Swagger/Admin)
+    if hasattr(settings, "BACKEND_API_KEY") and token == settings.BACKEND_API_KEY:
+        return ClerkUser({
+            "clerk_user_id": "swagger_admin",
+            "email": "admin@digirett.no",
+            "role": "admin",
+            "db_user_id": "swagger_admin",
+            "db_role": "admin",
+            "status": "active"
+        })
     
     # 1. Verify Clerk JWT
     user = await verify_token(auth_header)
