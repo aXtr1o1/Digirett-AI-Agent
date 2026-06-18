@@ -57,20 +57,11 @@ RESPONSE STRUCTURE:
 
 
 OUTPUT FORMAT:
-{
-  "answer": {
-    "Regnskap og bokføringsplikt": "...",
-    "Skattebetaling": "...",
-    "Arbeidstakeres rettigheter": "...",
-    "Konsekvenser av brudd": "...",
-    "Regulerende lover": "..."
-  },
-  "score": 0.0
-}
-
-Then on the very last line append EXACTLY:
+First, on the very first line, you MUST output the score exactly like this:
 [SCORE:0.9]
 (Replace 0.9 with actual score 0.0-1.0 based on how well sources answer the query)
+
+Then, starting from the next line, provide your detailed legal answer in plain text. DO NOT USE JSON.
 
 SCORING GUIDE:
 - 0.9-1.0: Sources fully and directly answer the query
@@ -108,8 +99,12 @@ LANGUAGE RULE:
         # Build system prompt with language instruction
         system_prompt = self.CASUAL_SYSTEM_PROMPT
         if language:
-            lang_name = "Norwegian" if language == "norwegian" else "English"
-            system_prompt += f"\n\nIMPORTANT: Respond ONLY in {lang_name}. Do not translate or mix languages."
+            lang_name = language.capitalize()
+            system_prompt += (
+                f"\n\nCRITICAL LANGUAGE INSTRUCTION:\n"
+                f"You MUST respond ONLY in {lang_name}. Do NOT use Norwegian unless {lang_name} is Norwegian.\n"
+                f"Even though the legal sources (KILDER) are in Norwegian, you must write your entire explanation, analysis, and response in {lang_name}."
+            )
 
         messages = [SystemMessage(content=system_prompt)]
 
@@ -171,13 +166,15 @@ LANGUAGE RULE:
         # e.g. "Brief overview requested. Keep under 150 words."
         style_block = f"RESPONSE STYLE INSTRUCTION:\n{response_style}\n\n" if response_style else ""
 
+        lang_name = language.capitalize() if language else "the requested language"
         user_prompt = (
             f"{style_block}"
             f"CRITICAL: Answer ONLY from the sources below.\n\n"
             f"KILDER (Sources):\n{rag_context}\n\n"
             f"SPØRSMÅL (Question):\n{query}\n\n"
-            f"Respond in {language}. Be direct and cite sources.\n"
-            f"Append [SCORE:x.x] on the very last line."
+            f"CRITICAL LANGUAGE INSTRUCTION: You MUST respond entirely in {lang_name} UNLESS the user explicitly requested a different language in their QUESTION.\n"
+            f"Even though the sources (KILDER) are in Norwegian, you must write your entire explanation and analysis in {lang_name}.\n"
+            f"Prepend [SCORE:x.x] on the very first line.\n"
             f"Respond in **normal readable text**, not JSON. Keep it human-readable for the frontend."
         )
         messages.append(HumanMessage(content=user_prompt))

@@ -109,7 +109,8 @@ SCORING:
         user_prompt = (
             f"DOCUMENT TEXT:\n{truncated_doc}\n\n"
             f"QUESTION: {query}\n\n"
-            f"Respond in {language} UNLESS the user explicitly requests a different language in their QUESTION.\n"
+            f"CRITICAL: You MUST respond entirely in {language.upper()} UNLESS the user explicitly requested a different language in their QUESTION.\n"
+            f"Even if the DOCUMENT TEXT is in another language, your response MUST be in {language.upper()}.\n"
             f"Append [SCORE:x.x] on the very last line."
         )
         messages.append(HumanMessage(content=user_prompt))
@@ -160,7 +161,8 @@ SCORING:
             f"LEGAL SOURCES (from Lovdata):\n{rag_context}\n\n"
             f"---\n\n"
             f"QUESTION: {query}\n\n"
-            f"Respond in {language} UNLESS the user explicitly requests a different language in their QUESTION.\n"
+            f"CRITICAL: You MUST respond entirely in {language.upper()} UNLESS the user explicitly requested a different language in their QUESTION.\n"
+            f"Even if the sources are in another language, your response MUST be in {language.upper()}.\n"
             f"Cross-reference both sources.\n"
             f"Append [SCORE:x.x] on the very last line."
         )

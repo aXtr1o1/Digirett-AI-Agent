@@ -66,7 +66,7 @@ class NoShowRequest(BaseModel):
     "/check-status",
     summary="Publicly check if a user is suspended (before login)",
 )
-async def check_user_status(identifier: str):
+def check_user_status(identifier: str):
     """
     Checks if a user is suspended based on email or username.
     Publicly accessible to allow the login form to block restricted users.
@@ -109,7 +109,7 @@ async def check_user_status(identifier: str):
     "/escalate",
     summary="User triggers escalation for a conversation",
 )
-async def escalate_conversation(
+def escalate_conversation(
     req: EscalateRequest,
     current_user: ClerkUser = Depends(require_db_role("user", "lawyer", "admin")),
 ):
@@ -157,7 +157,7 @@ async def escalate_conversation(
     "/queue",
     summary="Get open ticket queue (lawyers and admins)",
 )
-async def get_ticket_queue(
+def get_ticket_queue(
     current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
 ):
     """
@@ -181,7 +181,7 @@ async def get_ticket_queue(
     "/tickets/{ticket_id}/assign",
     summary="Lawyer self-assigns a ticket from the queue",
 )
-async def assign_ticket(
+def assign_ticket(
     ticket_id: str,
     background_tasks: BackgroundTasks,
     current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
@@ -256,7 +256,7 @@ async def _send_assignment_notification(ticket_id: str, lawyer_id: str):
     "/tickets/{ticket_id}/details",
     summary="Get full ticket details including user profile and summary",
 )
-async def get_ticket_details(
+def get_ticket_details(
     ticket_id: str,
     current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
 ):
@@ -288,7 +288,7 @@ async def get_ticket_details(
     "/tickets/{ticket_id}/respond",
     summary="Lawyer submits response and resolves the ticket",
 )
-async def respond_to_ticket(
+def respond_to_ticket(
     ticket_id: str,
     req: RespondRequest,
     current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
@@ -333,7 +333,7 @@ async def respond_to_ticket(
     "/tickets/{ticket_id}/no-show",
     summary="Lawyer marks the user as a no-show",
 )
-async def mark_no_show(
+def mark_no_show(
     ticket_id: str,
     req: NoShowRequest = NoShowRequest(),
     current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
@@ -362,7 +362,7 @@ async def mark_no_show(
     "/my-tickets",
     summary="User views their own escalation tickets",
 )
-async def get_my_tickets(
+def get_my_tickets(
     current_user: ClerkUser = Depends(require_db_role("user", "lawyer", "admin")),
 ):
     """
@@ -381,7 +381,7 @@ async def get_my_tickets(
     "/my-active-tickets",
     summary="Lawyer views their own active (assigned/booked) tickets",
 )
-async def get_my_active_tickets(
+def get_my_active_tickets(
     current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
 ):
     """
@@ -397,7 +397,7 @@ async def get_my_active_tickets(
     "/my-resolved-tickets",
     summary="Lawyer views their resolved ticket history",
 )
-async def get_my_resolved_history(
+def get_my_resolved_history(
     current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
 ):
     """
@@ -412,7 +412,7 @@ async def get_my_resolved_history(
     "/status/{conversation_id}",
     summary="Check if a conversation is already escalated",
 )
-async def get_escalation_status(
+def get_escalation_status(
     conversation_id: str,
     current_user: ClerkUser = Depends(require_db_role("user", "lawyer", "admin")),
 ):

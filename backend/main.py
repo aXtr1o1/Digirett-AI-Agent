@@ -2,8 +2,13 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+import secrets
+from fastapi import FastAPI, Depends, Request, status, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -40,7 +45,22 @@ logging.basicConfig(
 )
 logger = setup_logger(__name__, level=settings.LOG_LEVEL)
 
-limiter = Limiter(key_func=get_remote_address)
+def get_rate_limit_key(request: Request) -> str:
+    """Rate limit by Clerk user ID if available, otherwise fallback to IP."""
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        try:
+            from jose import jwt
+            unverified_claims = jwt.get_unverified_claims(token)
+            clerk_id = unverified_claims.get("sub")
+            if clerk_id:
+                return clerk_id
+        except Exception:
+            pass
+    return get_remote_address(request)
+
+limiter = Limiter(key_func=get_rate_limit_key)
 
 
 @asynccontextmanager
@@ -301,6 +321,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content={"message": exc.detail if isinstance(exc.detail, str) else str(exc.detail)},
+        headers=getattr(exc, "headers", None),
     )
 
 
@@ -331,19 +352,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    # HSTS for 1 year, including subdomains
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    # Prevent MIME type sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    # Prevent clickjacking (framing)
+    response.headers["X-Frame-Options"] = "DENY"
+    # Simple Content Security Policy
+    response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+    # XSS Protection (older browsers)
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
+
+
+
+
+from core.auth import get_current_user
+
+# Public / Webhook routes (no global token required)
 app.include_router(health.router,          prefix="/api/v1")
-app.include_router(chat.router,            prefix="/api/v1")
-app.include_router(conversations.router,   prefix="/api/v1")
-app.include_router(messages.router,        prefix="/api/v1")
-app.include_router(documents.router,       prefix="/api/v1")
 app.include_router(webhooks.router,        prefix="/api/v1/webhooks")
 app.include_router(cal_webhooks.router,    prefix="/api/v1/webhooks")
-app.include_router(admin.router,           prefix="/api/v1")
-app.include_router(hitl.router,            prefix="/api/v1")
-app.include_router(cal_routes.router,      prefix="/api/v1")
-app.include_router(invite.router,          prefix="/api/v1")
-app.include_router(auth.router,            prefix="/api/v1")
-app.include_router(notes.router,           prefix="/api/v1")
+
+# Protected business logic routes (require token: Clerk JWT or Static API Key)
+protected_deps = [Depends(get_current_user)]
+app.include_router(chat.router,            prefix="/api/v1", dependencies=protected_deps)
+app.include_router(conversations.router,   prefix="/api/v1", dependencies=protected_deps)
+app.include_router(messages.router,        prefix="/api/v1", dependencies=protected_deps)
+app.include_router(documents.router,       prefix="/api/v1", dependencies=protected_deps)
+app.include_router(admin.router,           prefix="/api/v1", dependencies=protected_deps)
+app.include_router(hitl.router,            prefix="/api/v1", dependencies=protected_deps)
+app.include_router(cal_routes.router,      prefix="/api/v1", dependencies=protected_deps)
+app.include_router(invite.router,          prefix="/api/v1", dependencies=protected_deps)
+app.include_router(auth.router,            prefix="/api/v1", dependencies=protected_deps)
+app.include_router(notes.router,           prefix="/api/v1", dependencies=protected_deps)
 
 logger.info("FastAPI app created")
 

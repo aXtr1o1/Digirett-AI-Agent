@@ -23,6 +23,7 @@ from typing import Dict, List
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from langchain_core.messages import HumanMessage, SystemMessage
+import asyncio
 
 from core.auth import verify_ws_token
 from schemas.requests import ChatRequest
@@ -275,7 +276,11 @@ async def chat_websocket(websocket: WebSocket):
     
     internal_user_id = None
     if _user_service:
-        internal_user_id = _user_service.get_user_id_from_clerk_id(clerk_user.clerk_user_id, email=clerk_user.email)
+        internal_user_id = await asyncio.to_thread(
+            _user_service.get_user_id_from_clerk_id, 
+            clerk_user.clerk_user_id, 
+            clerk_user.email
+        )
         
     if not internal_user_id:
         logger.warning(f"⛔ WS connection rejected (User not found) | clerk_id={clerk_user.clerk_user_id}")
@@ -404,73 +409,64 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
                 await websocket.send_json(event)          
 
             elif event_type == "sources":
-                # visible_sources: list of {url, doc_title} dicts from rag_service.
-                # Includes both section-anchor URLs (§7) and base URLs — all 6 of them.
-                # rag_chunks (set later from complete event) only has 3 base-URL chunks.
-                # We resolve titles HERE so the user sees titles immediately as the
-                # sources panel appears — before the answer even starts streaming.
-                #
-                # WHY TRANSLATE HERE (not at 'complete'):
-                # The intent agent emits the 'intent' event BEFORE this 'sources' event,
-                # so `language` is already set by the time we get here.
-                # Translating at 'sources' means the frontend receives translated titles
-                # immediately — users see the right language from the very first render.
                 visible_sources = event.get("data", [])
                 rag_chunks = visible_sources  # keep rag_chunks in sync for legacy code
 
-                # ── Step A: Resolve Norwegian titles from Lovdata HTML / cache ──
-                _src_urls = [
-                    s["url"] for s in visible_sources
-                    if isinstance(s, dict) and s.get("url")
-                ]
-                _title_map_live: dict = {}
-                if _src_urls:
+                async def _translate_sources_bg(vs_list, lang, llm, fetcher, cache):
                     try:
-                        _fetcher_live = getattr(_message_service, "_title_fetcher", None)
-                        if _fetcher_live is not None:
-                            _title_map_live = await _fetcher_live.resolve_titles(_src_urls)
-                    except Exception as _sf_exc:
-                        logger.warning(f"Sources title resolve failed (non-fatal) | {_sf_exc}")
+                        _src_urls = [s["url"] for s in vs_list if isinstance(s, dict) and s.get("url")]
+                        _title_map_live = {}
+                        if _src_urls and fetcher:
+                            try:
+                                _title_map_live = await fetcher.resolve_titles(_src_urls)
+                            except Exception as e:
+                                logger.warning(f"Sources title resolve failed: {e}")
 
-                # Build the list of Norwegian titles (one per source, in order)
-                _norwegian_titles = [
-                    _title_map_live.get(s["url"]) or s["url"]
-                    if isinstance(s, dict) and s.get("url")
-                    else ""
-                    for s in visible_sources
-                ]
+                        _norwegian_titles = [
+                            _title_map_live.get(s["url"]) or s["url"] if isinstance(s, dict) and s.get("url") else ""
+                            for s in vs_list
+                        ]
 
-                # ── Step B: ONE batched LLM call to translate into response language ──
-                # `language` was set when the 'intent' event arrived (always before
-                # 'sources'), so we already know whether to translate or not.
-                # Redis is checked per-URL first; only cache-miss URLs hit the LLM.
-                _translated_titles = await _translate_titles_for_language(
-                    titles=_norwegian_titles,
-                    language=language,
-                    llm=_llm_service._llm,
-                    urls=_src_urls,
-                    redis_client=getattr(_message_service, "_cache", None),
+                        _translated = await _translate_titles_for_language(
+                            titles=_norwegian_titles,
+                            language=lang,
+                            llm=llm,
+                            urls=_src_urls,
+                            redis_client=cache,
+                        )
+
+                        ts = []
+                        for idx, s in enumerate(vs_list):
+                            if isinstance(s, dict) and s.get("url"):
+                                final_t = _translated[idx]
+                                if s.get("section_ref"):
+                                    final_t = f"{final_t} - {s['section_ref']}"
+                                ts.append({"title": final_t, "url": s["url"], "section_ref": s.get("section_ref")})
+                            else:
+                                ts.append(s)
+                        return ts
+                    except Exception as e:
+                        logger.error(f"Translation task failed: {e}")
+                        return vs_list
+
+                # Launch translation in background without blocking the token stream
+                translation_task = asyncio.create_task(
+                    _translate_sources_bg(
+                        visible_sources, 
+                        language, 
+                        _llm_service._llm, 
+                        getattr(_message_service, "_title_fetcher", None),
+                        getattr(_message_service, "_cache", None)
+                    )
                 )
 
-                # ── Step C: Rebuild source list with translated titles ─────────
-                titled_sources = []
-                for idx, s in enumerate(visible_sources):
-                    if isinstance(s, dict) and s.get("url"):
-                        final_title = _translated_titles[idx]
-                        if s.get("section_ref"):
-                            final_title = f"{final_title} - {s['section_ref']}"
-                        
-                        titled_sources.append({
-                            "title": final_title,
-                            "url":   s["url"],
-                            "section_ref": s.get("section_ref"),
-                        })
-                    else:
-                        titled_sources.append(s)
-
-                await websocket.send_json({"type": "sources", "data": titled_sources})
-
             elif event_type == "complete":
+                # Ensure translation is done before completing
+                titled_sources = []
+                if "translation_task" in locals():
+                    titled_sources = await translation_task
+                    await websocket.send_json({"type": "sources", "data": titled_sources})
+
                 metadata    = event["metadata"]
                 full_answer = metadata.get("full_answer", full_answer)
                 rag_chunks  = metadata.get("rag_chunks") or rag_chunks

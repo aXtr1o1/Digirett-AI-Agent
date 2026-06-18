@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ALLOWED_ORIGINS: List[str]
     ROOT_PATH: str = ""
+    DOCS_USERNAME: str = "admin"
+    DOCS_PASSWORD: str = "DigirettAdmin@123"
+    BACKEND_API_KEY: str = "super_secret_dev_key"
 
     # ── Azure OpenAI ─────────────────────────────────────────────────────
     AZURE_OPENAI_ENDPOINT: str
