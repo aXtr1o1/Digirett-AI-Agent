@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import MainLayout from "../components/layout/MainLayout";
 import ChatContainer from "../components/chat/ChatContainer";
@@ -169,11 +169,18 @@ const ChatPage = () => {
     }
   }, [user?.id, user?.publicMetadata?.role, conversations, currentConversationId]);
 
+  const checkMatterStatusRef = useRef(checkMatterStatus);
   useEffect(() => {
-    const interval = setInterval(checkMatterStatus, 10000); // Check every 10s for faster updates
-    checkMatterStatus(); // Initial check
-    return () => clearInterval(interval);
+    checkMatterStatusRef.current = checkMatterStatus;
   }, [checkMatterStatus]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      checkMatterStatusRef.current();
+    }, 10000); // Check every 10s for faster updates
+    checkMatterStatusRef.current(); // Initial check
+    return () => clearInterval(interval);
+  }, []);
 
   const handleDismissNotification = useCallback((notifId) => {
     // 1. Update General System Dismissals

@@ -59,6 +59,20 @@ class SupabaseClient:
             logger.error(f" Supabase health check failed | {exc}")
             return False
 
+    def _execute_with_retry(self, query, max_retries: int = 3):
+        import time
+        import httpx
+        import httpcore
+        last_exc = None
+        for attempt in range(max_retries):
+            try:
+                return query.execute()
+            except (httpx.RemoteProtocolError, httpcore.RemoteProtocolError, httpx.NetworkError) as exc:
+                last_exc = exc
+                logger.warning(f"⚠️ Supabase connection dropped (attempt {attempt+1}/{max_retries}) | {exc}")
+                time.sleep(0.5)
+        raise last_exc
+
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # CONVERSATIONS
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -189,7 +203,7 @@ class SupabaseClient:
             clean_sources = None
             if role == "assistant" and sources:
                 clean_sources = self._deduplicate_sources(sources)
-            self._get().table("messages").insert({
+            query = self._get().table("messages").insert({
                 "message_id": message_id,
                 "conversation_id": conversation_id,
                 "role": role,
@@ -197,12 +211,14 @@ class SupabaseClient:
                 "sources": clean_sources,
                 "metadata": metadata,
                 "created_at": now,
-            }).execute()
+            })
+            self._execute_with_retry(query)
 
             # Keep conversation updated_at current
-            self._get().table("conversations").update({
+            update_query = self._get().table("conversations").update({
                 "updated_at": now,
-            }).eq("conversation_id", conversation_id).execute()
+            }).eq("conversation_id", conversation_id)
+            self._execute_with_retry(update_query)
 
             logger.debug(f" Saved {role} message {message_id}")
             return message_id
@@ -222,7 +238,7 @@ class SupabaseClient:
     ) -> bool:
         """Insert a row into message_metadata."""
         try:
-            self._get().table("message_metadata").insert({
+            query = self._get().table("message_metadata").insert({
                 "message_id": message_id,
                 "model_name": model_name,
                 "token_input": token_input,
@@ -230,7 +246,8 @@ class SupabaseClient:
                 "latency_ms": latency_ms,
                 "is_cached": is_cached,
                 "created_at": datetime.utcnow().isoformat(),
-            }).execute()
+            })
+            self._execute_with_retry(query)
             return True
         except Exception as exc:
             logger.error(f" save_message_metadata failed | {exc}")
@@ -254,9 +271,12 @@ class SupabaseClient:
                 }
                 for idx, chunk in enumerate(chunks, start=1)
             ]
-            if rows:
-                self._get().table("rag_retrievals").insert(rows).execute()
-                logger.debug(f"✅ Saved {len(rows)} RAG retrievals for message {message_id}")
+            if not rows:
+                return True
+
+            query = self._get().table("rag_retrievals").insert(rows)
+            self._execute_with_retry(query)
+            logger.debug(f"✅ Saved {len(rows)} RAG retrievals for message {message_id}")
             return True
         except Exception as exc:
             logger.error(f" save_rag_retrievals failed | {exc}")

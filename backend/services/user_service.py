@@ -15,6 +15,7 @@ import httpx
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 from uuid import uuid4
+from functools import lru_cache
 from config import settings
 
 from db.supabase_client import SupabaseClient
@@ -177,6 +178,7 @@ class UserService:
             logger.error(f"❌ get_user_by_id failed | {exc}")
             return None
 
+    @lru_cache(maxsize=1000)
     def get_user_id_from_clerk_id(self, clerk_user_id: str, email: str = None) -> Optional[str]:
         """
         Quick lookup: Clerk user ID -> Supabase user_id.
