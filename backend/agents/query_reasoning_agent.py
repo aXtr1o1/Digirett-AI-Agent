@@ -15,7 +15,7 @@ _registry = get_registry()
 # ── Allowed domains (must match Milvus `domain` field values) ──────────────
 _ALLOWED_DOMAINS = frozenset({
     "arbeidsrett",
-    "arsregnskap_og_selskapsrapporte",
+    "arsregnskap_og_selskapsrapportering",
     "avtalerett",
     "inkasso_og_tvangsfullbyrdelse",
     "konkursrett_og_insolvens",
@@ -23,7 +23,7 @@ _ALLOWED_DOMAINS = frozenset({
     "obligasjonsrett",
     "panterett_og_sikkerhetsrett",
     "pengekravsrett_fordringer",
-    "personvern_gdpr_business_compli",
+    "personvern_gdpr_business_compliance",
     "selskapsrett",
     "tvistelosning_smb",
 })
@@ -280,7 +280,7 @@ ALLOWED LEGAL DOMAIN VALUES (use EXACTLY these keys)
 
 Mapping guidance (use mechanism, not entity type) for reference:
   - Employment contracts, dismissal, working conditions → arbeidsrett
-  - Annual accounts, bookkeeping, audit, financial reporting → arsregnskap_og_selskapsrapporte
+  - Annual accounts, bookkeeping, audit, financial reporting → arsregnskap_og_selskapsrapportering
   - Contract formation, validity, breach, general obligations → avtalerett
   - Debt collection, enforcement, attachment, forced sale → inkasso_og_tvangsfullbyrdelse
   - Bankruptcy, insolvency, reconstruction, creditor protection → konkursrett_og_insolvens
@@ -288,7 +288,7 @@ Mapping guidance (use mechanism, not entity type) for reference:
   - Obligations, claims, creditor/debtor relationship → obligasjonsrett
   - Pledge, mortgage, collateral, security interests → panterett_og_sikkerhetsrett
   - Receivables, claims assignment, negotiable instruments → pengekravsrett_fordringer
-  - GDPR, data protection, processor agreements, privacy → personvern_gdpr_business_compli
+  - GDPR, data protection, processor agreements, privacy → personvern_gdpr_business_compliance
   - Company governance, board, shareholders, corporate structure → selskapsrett
   - Dispute resolution, arbitration, litigation, SMB conflicts → tvistelosning_smb
 

@@ -18,7 +18,7 @@ from typing import Optional, Set
 
 DOMAINS_CANONICAL: Set[str] = {
     "arbeidsrett",
-    "arsregnskap_og_selskapsrapporte",
+    "arsregnskap_og_selskapsrapportering",
     "avtalerett",
     "inkasso_og_tvangsfullbyrdelse",
     "konkursrett_og_insolvens",
@@ -26,7 +26,7 @@ DOMAINS_CANONICAL: Set[str] = {
     "obligasjonsrett",
     "panterett_og_sikkerhetsrett",
     "pengekravsrett_fordringer",
-    "personvern_gdpr_business_compli",
+    "personvern_gdpr_business_compliance",
     "selskapsrett",
     "tvistelosning_smb",
 }
@@ -37,7 +37,7 @@ DOMAINS_CANONICAL: Set[str] = {
 
 DOMAIN_ROUTER_TO_CANONICAL = {
     "Arbeidsrett": "arbeidsrett",
-    "Arsregnskap_og_selskapsrapportering_dataset": "arsregnskap_og_selskapsrapporte",
+    "Arsregnskap_og_selskapsrapportering_dataset": "arsregnskap_og_selskapsrapportering",
     "Avtalerett": "avtalerett",
     "Inkasso_og_tvangsfullbyrdelse_dataset": "inkasso_og_tvangsfullbyrdelse",
     "Konkursrett_og_insolvens_dataset": "konkursrett_og_insolvens",
@@ -45,7 +45,7 @@ DOMAIN_ROUTER_TO_CANONICAL = {
     "Obligasjonrett": "obligasjonsrett",
     "Panterett_og_sikkerhetsrett_dataset": "panterett_og_sikkerhetsrett",
     "Pengekravsrett_fordringer_dataset": "pengekravsrett_fordringer",
-    "Personvern_GDPR_business_compliance_dataset": "personvern_gdpr_business_compli",
+    "Personvern_GDPR_business_compliance_dataset": "personvern_gdpr_business_compliance",
     "Selskapsrett": "selskapsrett",
     "Tvistelosning_SMB_dataset": "tvistelosning_smb",
 }

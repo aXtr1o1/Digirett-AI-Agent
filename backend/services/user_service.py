@@ -368,6 +368,8 @@ class UserService:
             elif role == "admin":
                 full_name = user_info.get("user_name") if user_info else "Admin"
                 success = self.promote_to_admin(user_id=user_id, admin_id="system", full_name=full_name)
+            elif role == "system_admin":
+                success = self.promote_to_system_admin(user_id=user_id, admin_id="system")
                 
             if not success:
                 return False
@@ -395,7 +397,7 @@ class UserService:
             if existing_user_resp.data:
                 existing_role = existing_user_resp.data[0].get("role", "user")
                 # Allow Admin to invite themselves as a Lawyer
-                if existing_role == "lawyer" or (existing_role == "admin" and role == "admin"):
+                if existing_role == "lawyer" or (existing_role == "admin" and role == "admin") or (existing_role == "system_admin" and role == "system_admin"):
                     logger.warning(f"⚠️ User {email} already has role {existing_role}. Invitation blocked.")
                     raise ValueError(f"An account with this email is already registered as a {existing_role.capitalize()}. Duplicate invitations are restricted.")
 
@@ -523,6 +525,31 @@ class UserService:
             return True
         except Exception as exc:
             logger.error(f"❌ promote_to_admin failed | {user_id} | {exc}")
+            return False
+
+    def promote_to_system_admin(self, user_id: str, admin_id: str) -> bool:
+        """Promotes a user to System Admin role."""
+        try:
+            user = self.get_user_by_id(user_id)
+            if not user: return False
+            
+            now = datetime.utcnow().isoformat()
+            
+            # 1. Update users table
+            self._supabase.table("users").update({
+                "role": "system_admin",
+                "updated_at": now
+            }).eq("user_id", user_id).execute()
+            
+            # 2. Sync Clerk
+            self._sync_clerk_role(user["clerk_user_id"], "system_admin")
+            
+            # 3. Audit
+            self._log_audit("admin.user_promoted", admin_id, {"target_user_id": user_id, "new_role": "system_admin"})
+            
+            return True
+        except Exception as exc:
+            logger.error(f"❌ promote_to_system_admin failed | {user_id} | {exc}")
             return False
 
     def enable_lawyer_dashboard_for_admin(self, user_id: str, admin_id: str) -> bool:

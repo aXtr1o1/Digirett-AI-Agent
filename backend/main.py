@@ -404,3 +404,4 @@ if __name__ == "__main__":
         loop="asyncio",
         log_level="info",
     )
+# Reload trigger comment to refresh settings and clear schema caches.
