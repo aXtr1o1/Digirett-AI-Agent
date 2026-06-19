@@ -101,17 +101,7 @@ jobs:
           sudo systemctl enable digirett-backend
           sudo systemctl restart digirett-backend
           echo "✅ Backend deployed successfully"
-          deactivate
-
-          # ── FRONTEND deployment ───────────────────────────────
-          cd /home/ubuntu/Digirett-AI-Agent/frontend/digirett-frontend
-          npm ci --prefer-offline --no-audit || npm install
-          npm run build   # produces ./dist or ./build folder
-
-          sudo systemctl daemon-reload
-          sudo systemctl enable digirett-frontend
-          sudo systemctl restart digirett-frontend
-          echo "✅ Frontend deployed successfully"
+          
 
 
 

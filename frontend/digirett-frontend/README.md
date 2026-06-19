@@ -6,7 +6,7 @@ Featuring stunning dark-mode aesthetics, custom micro-animations, glowing backgr
 
 ---
 
-## Core Architecture & Features
+## Core Architecture 
 
 *   **Real-time RAG Legal Assistant**: Context-aware, multi-turn Norwegian law assistant using WebSocket streaming, typing animations, and source citation links.
 *   **Role-Based Access Control (RBAC)**: Secure routing mapped dynamically through Clerk user metadata roles (`user`, `lawyer`, `admin`) to automatically redirect clients to their chat dashboard, lawyers to their active queues, and administrators to the management portal.
