@@ -5,3 +5,5 @@ env/*
 
 .venv
 venv/
+
+.digirett_venv/
