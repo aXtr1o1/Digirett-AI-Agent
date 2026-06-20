@@ -5,7 +5,7 @@ import {
   UserPlus, CheckCircle, ArrowLeft, LogOut,
   LayoutDashboard, Menu, Plus, X, Calendar, User,
   ShieldCheck, Scale, Crown, Clock, AlertTriangle, Send,
-  UserX, UserCheck, Trash2, Sun, Moon, RefreshCw
+  UserX, UserCheck, Trash2, Sun, Moon, RefreshCw, BarChart3
 } from "lucide-react";
 import { useTheme } from "../providers/ThemeProvider";
 import { Link, useNavigate, useSearchParams, useLocation } from "react-router-dom";
@@ -16,6 +16,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import SystemNotification from "../components/chat/ResolutionNotification";
+import CalendarView from "../components/common/CalendarView";
 
 export default function AdminDashboard() {
   const { theme, isDark, toggleTheme } = useTheme();
@@ -27,7 +28,7 @@ export default function AdminDashboard() {
   const [enablingLawyer, setEnablingLawyer] = useState(false);
   const [message, setMessage] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 1024);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
 
   // Local sub-navigation state (Synced with URL for refresh persistence & back-button support)
@@ -44,6 +45,9 @@ export default function AdminDashboard() {
   const [dashboardLoading, setDashboardLoading] = useState(true);
 
   const { user: clerkUser } = useUser();
+  const userRole = clerkUser?.publicMetadata?.role || "admin";
+  const isSystemAdmin = userRole === "system_admin";
+  const [domainAnalytics, setDomainAnalytics] = useState(null);
   const { signOut, openUserProfile } = useClerk();
   const navigate = useNavigate();
   const [confirmModal, setConfirmModal] = useState({ show: false, user: null });
@@ -66,6 +70,7 @@ export default function AdminDashboard() {
   };
 
   const checkInvitationStatus = React.useCallback(async () => {
+    if (!isSystemAdmin) return;
     try {
       const savedDismissed = localStorage.getItem("dismissed_admin_events");
       const currentDismissed = savedDismissed ? JSON.parse(savedDismissed) : [];
@@ -109,12 +114,13 @@ export default function AdminDashboard() {
   const fetchDashboardData = async () => {
     try {
       setDashboardLoading(true);
-      const [usersData, invitesData, ticketsData, logsData, healthData] = await Promise.all([
+      const [usersData, invitesData, ticketsData, logsData, healthData, domainData] = await Promise.all([
         adminService.listUsers(),
         adminService.listInvitations(),
         adminService.getAllTickets(),
         adminService.getAuditLogs(100),
-        adminService.getHealthStatus()
+        adminService.getHealthStatus(),
+        adminService.getDomainAnalytics()
       ]);
 
       setUsers(usersData.filter(u => u.email));
@@ -122,6 +128,7 @@ export default function AdminDashboard() {
       setTickets(ticketsData);
       setAuditLogs(logsData);
       setHealthStatus(healthData);
+      setDomainAnalytics(domainData);
 
       // Also check for new notifications during main fetch
       checkInvitationStatus();
@@ -143,6 +150,18 @@ export default function AdminDashboard() {
       clearInterval(notifInterval);
     };
   }, [checkInvitationStatus]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setIsSidebarOpen(true);
+      } else {
+        setIsSidebarOpen(false);
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     setMessage(null);
@@ -255,10 +274,27 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleEnableLawyerFeatures = () => {
-    setInviteEmail(clerkUser?.primaryEmailAddress?.emailAddress || "");
-    setInviteRole("lawyer");
-    setActiveView("invite");
+  const handleEnableLawyerFeatures = async () => {
+    setEnablingLawyer(true);
+    setGlobalMsg(null);
+    const selfEmail = clerkUser?.primaryEmailAddress?.emailAddress;
+    if (!selfEmail) {
+      setGlobalMsg({ type: "error", text: "Failed to locate email address on your profile." });
+      setEnablingLawyer(false);
+      return;
+    }
+    try {
+      await adminService.inviteUser(selfEmail, "lawyer");
+      setGlobalMsg({
+        type: "success",
+        text: `Invitation initiated. Please check your inbox at ${selfEmail} to accept the lawyer role and complete activation.`
+      });
+      fetchDashboardData();
+    } catch (err) {
+      setGlobalMsg({ type: "error", text: err.message || "Failed to trigger self-invitation." });
+    } finally {
+      setEnablingLawyer(false);
+    }
   };
 
   const hasLawyerDashboard = clerkUser?.publicMetadata?.has_lawyer_dashboard === true;
@@ -407,6 +443,14 @@ export default function AdminDashboard() {
   return (
     <div className={`flex h-screen overflow-hidden ${isDark ? "bg-[#020617] text-slate-200" : "bg-[#f1f5f9] text-slate-900"}`}>
 
+      {/* Sidebar Overlay for Mobile */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-slate-950/60 z-40 lg:hidden backdrop-blur-sm transition-opacity duration-300"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <aside className={`fixed lg:relative z-50 inset-y-0 left-0 w-64 transform transition-transform duration-300 ease-in-out border-r flex flex-col ${isDark ? "bg-slate-900 border-slate-800" : "bg-[#0f172a] border-slate-800"} ${isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
         <div className="h-16 flex items-center px-6 border-b border-white/5">
@@ -414,7 +458,9 @@ export default function AdminDashboard() {
             <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center">
               <img src="/user-chat-logo.png" alt="Logo" className="w-full h-full object-contain p-0.5" />
             </div>
-            <span className="font-bold text-lg tracking-tight text-white">Admin Panel</span>
+            <span className="font-bold text-lg tracking-tight text-white">
+              {isSystemAdmin ? "System Admin Panel" : "Admin Panel"}
+            </span>
           </div>
           <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden ml-auto text-slate-400">
             <X size={18} />
@@ -437,7 +483,7 @@ export default function AdminDashboard() {
             className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "invite" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
           >
             <UserPlus size={18} />
-            Invite Team
+            {isSystemAdmin ? "Invite Team" : "Invitation List"}
           </button>
 
           <button
@@ -457,20 +503,29 @@ export default function AdminDashboard() {
           </button>
 
           <button
-            disabled
-            title="Feature coming soon"
-            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all text-slate-500 opacity-40 cursor-not-allowed"
+            onClick={() => { setActiveView("distribution"); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "distribution" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
           >
-            <Calendar size={18} />
-            Calendar
+            <BarChart3 size={18} />
+            Inquiry Distribution
           </button>
+
+          {isSystemAdmin && (
+            <button
+              onClick={() => { setActiveView("calendar"); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "calendar" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
+            >
+              <Calendar size={18} />
+              Calendar
+            </button>
+          )}
 
           <button
             onClick={() => { setActiveView("settings"); setIsSidebarOpen(false); }}
             className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "settings" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
           >
             <ShieldCheck size={18} />
-            Admin Settings
+            {isSystemAdmin ? "System Admin Settings" : "Admin Settings"}
           </button>
 
           {hasLawyerDashboard && (
@@ -513,7 +568,13 @@ export default function AdminDashboard() {
               <Menu size={24} />
             </button>
             <h2 className="text-lg font-bold capitalize">
-              {activeView === 'dashboard' ? 'Admin Dashboard' : activeView.replace('-', ' ')}
+              {activeView === 'dashboard'
+                ? (isSystemAdmin ? 'System Admin Dashboard' : 'Admin Dashboard')
+                : activeView === 'settings'
+                  ? (isSystemAdmin ? 'System Admin Settings' : 'Admin Settings')
+                  : activeView === 'calendar'
+                    ? 'System Admin Schedule'
+                    : activeView.replace('-', ' ')}
             </h2>
           </div>
 
@@ -535,8 +596,10 @@ export default function AdminDashboard() {
                   {clerkUser?.firstName?.charAt(0) || "A"}
                 </div>
                 <div className="hidden sm:block text-left">
-                  <p className="text-xs font-bold leading-none">{clerkUser?.fullName || "Admin"}</p>
-                  <p className="text-[10px] text-slate-500 mt-1 tracking-wider uppercase font-black">Logged In</p>
+                  <p className="text-xs font-bold leading-none">{clerkUser?.fullName || (isSystemAdmin ? "System Admin" : "Admin")}</p>
+                  <p className="text-[10px] text-slate-500 mt-1 tracking-wider uppercase font-black">
+                    {isSystemAdmin ? "System Admin" : "Admin"}
+                  </p>
                 </div>
               </div>
 
@@ -767,6 +830,38 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
+              {/* Row 4: Inquiry Domain Distribution */}
+              <div className="grid grid-cols-1 gap-8">
+                {/* Inquiry Domain Distribution Section */}
+                <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">User Inquiry Domain Distribution</h3>
+                  <div className="h-[300px] w-full">
+                    {domainAnalytics && domainAnalytics.distribution && domainAnalytics.distribution.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={domainAnalytics.distribution} layout="vertical">
+                          <XAxis type="number" hide />
+                          <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} width={150} axisLine={false} tickLine={false} />
+                          <Tooltip
+                            cursor={false}
+                            contentStyle={{
+                              backgroundColor: isDark ? '#0f172a' : '#fff',
+                              border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
+                              borderRadius: '8px',
+                              fontSize: '10px'
+                            }}
+                          />
+                          <Bar dataKey="queries" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={20} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-slate-500 text-xs font-bold italic opacity-40">
+                        No classified user queries recorded yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
             </div>
           )}
 
@@ -775,148 +870,151 @@ export default function AdminDashboard() {
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
               {/* Header Card */}
               <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                <h1 className="text-2xl font-bold">Team Invitations</h1>
+                <h1 className="text-2xl font-bold">{isSystemAdmin ? "Team Invitations" : "Invitation List"}</h1>
                 <p className="mt-1 text-sm text-slate-500">
-                  Send secure invitation links to lawyers and administrators with controlled role-based access.
+                  {isSystemAdmin
+                    ? "Send secure invitation links to lawyers and administrators with controlled role-based access."
+                    : "View active and accepted role invitations."}
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 gap-6">
-                {/* Left Form Card */}
-                <div className={`border rounded-2xl shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                  <div className={`px-7 py-6 border-b ${isDark ? "border-slate-800" : "border-slate-100"}`}>
-                    <div className="flex items-start gap-4">
-                      <div className="w-11 h-11 rounded-xl bg-indigo-600/10 text-indigo-500 flex items-center justify-center">
-                        <UserPlus className="w-5 h-5" />
+              {isSystemAdmin && (
+                <div className="grid grid-cols-1 gap-6">
+                  {/* Left Form Card */}
+                  <div className={`border rounded-2xl shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                    <div className={`px-7 py-6 border-b ${isDark ? "border-slate-800" : "border-slate-100"}`}>
+                      <div className="flex items-start gap-4">
+                        <div className="w-11 h-11 rounded-xl bg-indigo-600/10 text-indigo-500 flex items-center justify-center">
+                          <UserPlus className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h2 className="text-xl font-bold">Send Official Invitation</h2>
+                          <p className="mt-1 text-sm text-slate-500">
+                            Invite a verified legal professional or administrator to join the platform.
+                          </p>
+                        </div>
                       </div>
+                    </div>
+                    <form onSubmit={handleInvite} className="px-7 py-7 space-y-6">
+                      {/* Email */}
                       <div>
-                        <h2 className="text-xl font-bold">Send Official Invitation</h2>
-                        <p className="mt-1 text-sm text-slate-500">
-                          Invite a verified legal professional or administrator to join the platform.
-                        </p>
+                        <label className="block text-xs font-bold tracking-wide text-slate-500 uppercase mb-2">
+                          Email Address
+                        </label>
+                        <div className="relative">
+                          <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                          <input
+                            type="email"
+                            value={inviteEmail}
+                            onChange={(e) => setInviteEmail(e.target.value)}
+                            placeholder="professional@company.com"
+                            className={`w-full h-14 pl-12 pr-4 rounded-xl border text-sm outline-none transition-all focus:ring-2 focus:ring-indigo-500 ${isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-white border-slate-300 text-slate-950"}`}
+                            required
+                          />
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                  <form onSubmit={handleInvite} className="px-7 py-7 space-y-6">
-                    {/* Email */}
-                    <div>
-                      <label className="block text-xs font-bold tracking-wide text-slate-500 uppercase mb-2">
-                        Email Address
-                      </label>
-                      <div className="relative">
-                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                        <input
-                          type="email"
-                          value={inviteEmail}
-                          onChange={(e) => setInviteEmail(e.target.value)}
-                          placeholder="professional@company.com"
-                          className={`w-full h-14 pl-12 pr-4 rounded-xl border text-sm outline-none transition-all focus:ring-2 focus:ring-indigo-500 ${isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-white border-slate-300 text-slate-950"
-                            }`}
-                          required
-                        />
+                      {/* Role */}
+                      <div>
+                        <label className="block text-xs font-bold tracking-wide text-slate-500 uppercase mb-2">
+                          Assign Role
+                        </label>
+                        <select
+                          value={inviteRole}
+                          onChange={(e) => setInviteRole(e.target.value)}
+                          className={`w-full h-14 px-4 rounded-xl border text-sm outline-none appearance-none transition-all focus:ring-2 focus:ring-indigo-500 ${isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-white border-slate-300 text-slate-950"}`}
+                        >
+                          <option value="lawyer">Lawyer</option>
+                          <option value="admin">Administrator</option>
+                        </select>
                       </div>
-                    </div>
-                    {/* Role */}
-                    <div>
-                      <label className="block text-xs font-bold tracking-wide text-slate-500 uppercase mb-2">
-                        Assign Role
-                      </label>
-                      <select
-                        value={inviteRole}
-                        onChange={(e) => setInviteRole(e.target.value)}
-                        className={`w-full h-14 px-4 rounded-xl border text-sm outline-none appearance-none transition-all focus:ring-2 focus:ring-indigo-500 ${isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-white border-slate-300 text-slate-950"
-                          }`}
+                      {/* Security Box */}
+                      <div className={`rounded-xl border px-4 py-4 flex items-start gap-3 ${isDark ? "bg-amber-900/10 border-amber-900/20" : "bg-amber-50 border-amber-200"}`}>
+                        <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5" />
+                        <div>
+                          <p className={`text-sm font-semibold ${isDark ? "text-amber-400" : "text-amber-900"}`}>
+                            Secure invitation required
+                          </p>
+                          <p className={`mt-1 text-sm leading-6 ${isDark ? "text-amber-500/80" : "text-amber-800"}`}>
+                            Invitation links should expire within 24–72 hours and must only be accepted by the invited email address.
+                          </p>
+                        </div>
+                      </div>
+                      {/* Button */}
+                      <button
+                        type="submit"
+                        disabled={inviteLoading}
+                        className="w-full h-14 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold flex items-center justify-center gap-2 transition shadow-xl shadow-indigo-600/20"
                       >
-                        <option value="lawyer">Lawyer</option>
-                        <option value="admin">Administrator</option>
-                      </select>
-                    </div>
-                    {/* Security Box */}
-                    <div className={`rounded-xl border px-4 py-4 flex items-start gap-3 ${isDark ? "bg-amber-900/10 border-amber-900/20" : "bg-amber-50 border-amber-200"
-                      }`}>
-                      <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5" />
-                      <div>
-                        <p className={`text-sm font-semibold ${isDark ? "text-amber-400" : "text-amber-900"}`}>
-                          Secure invitation required
-                        </p>
-                        <p className={`mt-1 text-sm leading-6 ${isDark ? "text-amber-500/80" : "text-amber-800"}`}>
-                          Invitation links should expire within 24–72 hours and must only be accepted by the invited email address.
-                        </p>
-                      </div>
-                    </div>
-                    {/* Button */}
-                    <button
-                      type="submit"
-                      disabled={inviteLoading}
-                      className="w-full h-14 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold flex items-center justify-center gap-2 transition shadow-xl shadow-indigo-600/20"
-                    >
-                      {inviteLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                      Send Invitation
-                    </button>
+                        {inviteLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                        Send Invitation
+                      </button>
 
-                    {showConfirmInvite && !message && (
-                      <div className={`mt-4 p-5 rounded-xl border animate-in fade-in slide-in-from-top-2 duration-300 ${isDark ? "bg-amber-500/5 border-amber-500/20" : "bg-amber-50 border-amber-200"}`}>
-                        <div className="flex items-start gap-4">
-                          <div className={`mt-1 p-2 rounded-lg ${isDark ? "bg-amber-500/10" : "bg-amber-100"}`}>
-                            <AlertTriangle className="w-5 h-5 text-amber-500" />
-                          </div>
-                          <div className="flex-1">
-                            <h4 className="text-sm font-bold">Duplicate Invitation</h4>
-                            <p className="text-xs text-slate-500 mt-1 leading-5">
-                              This user already has a pending invite for <strong>{inviteRole}</strong>.
-                              Are you sure you want to send another one?
-                            </p>
-                            <div className="mt-4 flex items-center gap-3">
-                              <button
-                                onClick={() => handleInvite(null, true)}
-                                className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-colors"
-                              >
-                                Yes, Send Again
-                              </button>
-                              <button
-                                onClick={() => setShowConfirmInvite(false)}
-                                className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${isDark ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
-                              >
-                                Cancel
-                              </button>
+                      {showConfirmInvite && !message && (
+                        <div className={`mt-4 p-5 rounded-xl border animate-in fade-in slide-in-from-top-2 duration-300 ${isDark ? "bg-amber-500/5 border-amber-500/20" : "bg-amber-50 border-amber-200"}`}>
+                          <div className="flex items-start gap-4">
+                            <div className={`mt-1 p-2 rounded-lg ${isDark ? "bg-amber-500/10" : "bg-amber-100"}`}>
+                              <AlertTriangle className="w-5 h-5 text-amber-500" />
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="text-sm font-bold">Duplicate Invitation</h4>
+                              <p className="text-xs text-slate-500 mt-1 leading-5">
+                                This user already has a pending invite for <strong>{inviteRole}</strong>.
+                                Are you sure you want to send another one?
+                              </p>
+                              <div className="mt-4 flex items-center gap-3">
+                                <button
+                                  onClick={() => handleInvite(null, true)}
+                                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-colors"
+                                >
+                                  Yes, Send Again
+                                </button>
+                                <button
+                                  onClick={() => setShowConfirmInvite(false)}
+                                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${isDark ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    {inviteMsg && (
-                      <div className={`mt-4 p-4 rounded-xl flex items-center justify-between text-sm font-bold animate-in fade-in zoom-in-95 ${inviteMsg.type === 'success'
-                        ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
-                        : 'bg-red-500/10 text-red-500 border border-red-500/20'
-                        }`}>
-                        <div className="flex items-center gap-3">
-                          {inviteMsg.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
-                          <div>
-                            <p>{inviteMsg.text}</p>
-                            {inviteMsg.type === 'error' && (inviteMsg.text.toLowerCase().includes("sign in") || inviteMsg.text.toLowerCase().includes("expired")) && (
-                              <button
-                                onClick={() => navigate("/sign-in")}
-                                className="mt-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-[10px] uppercase tracking-widest font-black transition-all"
-                              >
-                                Sign In Now
-                              </button>
-                            )}
+                      {inviteMsg && (
+                        <div className={`mt-4 p-4 rounded-xl flex items-center justify-between text-sm font-bold animate-in fade-in zoom-in-95 ${inviteMsg.type === 'success'
+                          ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                          : 'bg-red-500/10 text-red-500 border border-red-500/20'
+                          }`}>
+                          <div className="flex items-center gap-3">
+                            {inviteMsg.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
+                            <div>
+                              <p>{inviteMsg.text}</p>
+                              {inviteMsg.type === 'error' && (inviteMsg.text.toLowerCase().includes("sign in") || inviteMsg.text.toLowerCase().includes("expired")) && (
+                                <button
+                                  onClick={() => navigate("/sign-in")}
+                                  className="mt-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-[10px] uppercase tracking-widest font-black transition-all"
+                                >
+                                  Sign In Now
+                                </button>
+                              )}
+                            </div>
                           </div>
+                          <button onClick={() => setInviteMsg(null)} className="text-lg opacity-50 hover:opacity-100">&times;</button>
                         </div>
-                        <button onClick={() => setInviteMsg(null)} className="text-lg opacity-50 hover:opacity-100">&times;</button>
-                      </div>
-                    )}
-                  </form>
-                </div>
+                      )}
+                    </form>
+                  </div>
 
-              </div>
+                </div>
+              )}
 
               {/* Pending Invitations Table */}
               <div className={`border rounded-2xl shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
                 <div className={`px-7 py-5 border-b ${isDark ? "border-slate-800" : "border-slate-100"}`}>
-                  <h2 className="text-lg font-bold">Pending Invitations</h2>
-                  <p className="mt-1 text-sm text-slate-500">Track invitations that are sent but not yet accepted.</p>
+                  <h2 className="text-lg font-bold">{isSystemAdmin ? "Pending Invitations" : "Sent Invitations"}</h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {isSystemAdmin ? "Track invitations that are sent but not yet accepted." : "Track invitations that have been sent."}
+                  </p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -926,19 +1024,19 @@ export default function AdminDashboard() {
                         <th className="text-left px-7 py-4 font-semibold text-slate-500">Role</th>
                         <th className="text-left px-7 py-4 font-semibold text-slate-500">Status</th>
                         <th className="text-left px-7 py-4 font-semibold text-slate-500">Sent On</th>
-                        <th className="text-right px-7 py-4 font-semibold text-slate-500">Action</th>
+                        {isSystemAdmin && <th className="text-right px-7 py-4 font-semibold text-slate-500">Action</th>}
                       </tr>
                     </thead>
                     <tbody className={`divide-y ${isDark ? "divide-slate-800" : "divide-slate-100"}`}>
                       {invitesLoading ? (
                         <tr>
-                          <td colSpan="5" className="px-7 py-12 text-center">
+                          <td colSpan={isSystemAdmin ? "5" : "4"} className="px-7 py-12 text-center">
                             <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mx-auto opacity-20" />
                           </td>
                         </tr>
                       ) : invitations.length === 0 ? (
                         <tr>
-                          <td colSpan="5" className="px-7 py-12 text-center text-slate-500">
+                          <td colSpan={isSystemAdmin ? "5" : "4"} className="px-7 py-12 text-center text-slate-500">
                             No active invitations found in the system.
                           </td>
                         </tr>
@@ -958,31 +1056,33 @@ export default function AdminDashboard() {
                             <td className="px-7 py-4 text-slate-500">
                               {new Date(invite.created_at).toLocaleDateString()}
                             </td>
-                            <td className="px-7 py-4 text-right">
-                              {invite.status === 'pending' ? (
-                                <div className="flex items-center justify-end gap-3">
-                                  <button
-                                    onClick={async () => {
-                                      setInviteEmail(invite.email);
-                                      setInviteRole(invite.role);
-                                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                                    }}
-                                    className="text-indigo-500 hover:text-indigo-400 font-bold"
-                                  >
-                                    Resend
-                                  </button>
-                                  <button
-                                    onClick={() => handleRevokeInvite(invite.invite_id)}
-                                    className="text-red-500 hover:text-red-400 p-1"
-                                    title="Revoke Invitation"
-                                  >
-                                    <Trash2 size={16} />
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="text-[10px] text-slate-600 font-bold uppercase">Accepted</span>
-                              )}
-                            </td>
+                            {isSystemAdmin && (
+                              <td className="px-7 py-4 text-right">
+                                {invite.status === 'pending' ? (
+                                  <div className="flex items-center justify-end gap-3">
+                                    <button
+                                      onClick={async () => {
+                                        setInviteEmail(invite.email);
+                                        setInviteRole(invite.role);
+                                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                                      }}
+                                      className="text-indigo-500 hover:text-indigo-400 font-bold"
+                                    >
+                                      Resend
+                                    </button>
+                                    <button
+                                      onClick={() => handleRevokeInvite(invite.invite_id)}
+                                      className="p-1 transition-all text-red-500 hover:text-red-400"
+                                      title="Revoke Invitation"
+                                    >
+                                      <Trash2 size={16} />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] text-slate-600 font-bold uppercase">Accepted</span>
+                                )}
+                              </td>
+                            )}
                           </tr>
                         ))
                       )}
@@ -1025,24 +1125,22 @@ export default function AdminDashboard() {
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Access Role</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Status</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">User Details</th>
-                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Actions</th>
+                        {isSystemAdmin && <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Actions</th>}
                       </tr>
                     </thead>
                     <tbody className={`divide-y ${isDark ? "divide-slate-800" : "divide-slate-100"}`}>
                       {loading ? (
                         <tr>
-                          <td colSpan="5" className="px-8 py-20 text-center">
+                          <td colSpan={isSystemAdmin ? 5 : 4} className="px-8 py-20 text-center">
                             <Loader2 size={32} className="animate-spin text-indigo-500 mx-auto opacity-20" />
                           </td>
                         </tr>
                       ) : (
                         filteredUsers.map((user) => (
-                          <tr key={user.user_id} className={`group transition-colors ${isDark ? "hover:bg-slate-800/30" : "hover:bg-slate-50/50"
-                            }`}>
+                          <tr key={user.user_id} className={`group transition-colors ${isDark ? "hover:bg-slate-800/30" : "hover:bg-slate-50/50"}`}>
                             <td className="px-8 py-6">
                               <div className="flex items-center gap-5">
-                                <div className={`h-11 w-11 rounded-xl flex items-center justify-center font-bold text-sm ${isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"
-                                  }`}>
+                                <div className={`h-11 w-11 rounded-xl flex items-center justify-center font-bold text-sm ${isDark ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"}`}>
                                   {(user.user_profiles?.display_name || user.email || "?").charAt(0).toUpperCase()}
                                 </div>
                                 <div className="min-w-0">
@@ -1077,29 +1175,33 @@ export default function AdminDashboard() {
                                 View Profile
                               </button>
                             </td>
-                            <td className="px-8 py-6 text-right">
-                              <div className="flex items-center justify-end">
-                                {clerkUser?.id === user.clerk_user_id ? (
-                                  <button disabled className="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed">
-                                    Current User
-                                  </button>
-                                ) : (user.status === 'suspended' || user.status === 'inactive') ? (
-                                  <button
-                                    onClick={() => handleUnsuspendUser(user.user_id)}
-                                    className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/5`}
-                                  >
-                                    Revoke
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={() => setConfirmModal({ show: true, user: user })}
-                                    className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all text-red-500 border-red-500/20 hover:bg-red-500/5`}
-                                  >
-                                    Suspend
-                                  </button>
-                                )}
-                              </div>
-                            </td>
+                            {isSystemAdmin && (
+                              <td className="px-8 py-6 text-right">
+                                <div className="flex items-center justify-end">
+                                  {clerkUser?.id === user.clerk_user_id ? (
+                                    <button disabled className="px-4 py-2 rounded-lg text-xs font-bold bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed">
+                                      Current User
+                                    </button>
+                                  ) : (user.status === 'suspended' || user.status === 'inactive') ? (
+                                    <button
+                                      onClick={() => handleUnsuspendUser(user.user_id)}
+                                      className="px-4 py-2 rounded-lg text-xs font-bold border transition-all text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/5"
+                                      title="Revoke Suspension"
+                                    >
+                                      Revoke
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => setConfirmModal({ show: true, user: user })}
+                                      className="px-4 py-2 rounded-lg text-xs font-bold border transition-all text-red-500 border-red-500/20 hover:bg-red-500/5"
+                                      title="Suspend User"
+                                    >
+                                      Suspend
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            )}
                           </tr>
                         ))
                       )}
@@ -1179,18 +1281,21 @@ export default function AdminDashboard() {
                                   {users.find(u => u.user_id === ticket.assigned_lawyer_id)?.user_profiles?.display_name || "Legal Team"}
                                 </div>
                               ) : (
-                                <select
-                                  onChange={(e) => handleAssignTicket(ticket.ticket_id, e.target.value)}
-                                  className={`text-xs font-bold py-2 px-3 rounded-lg border outline-none ${isDark ? "bg-slate-950 border-slate-800 text-slate-300" : "bg-white border-slate-200 text-slate-600"
-                                    }`}
-                                >
-                                  <option value="">Assign Lawyer...</option>
-                                  {users.filter(u => u.role?.toLowerCase() === 'lawyer').map(lawyer => (
-                                    <option key={lawyer.user_id} value={lawyer.user_id}>
-                                      {lawyer.user_profiles?.display_name || lawyer.email}
-                                    </option>
-                                  ))}
-                                </select>
+                                isSystemAdmin ? (
+                                  <select
+                                    onChange={(e) => handleAssignTicket(ticket.ticket_id, e.target.value)}
+                                    className={`text-xs font-bold py-2 px-3 rounded-lg border outline-none ${isDark ? "bg-slate-950 border-slate-800 text-slate-300" : "bg-white border-slate-200 text-slate-600"}`}
+                                  >
+                                    <option value="">Assign Lawyer...</option>
+                                    {users.filter(u => u.role?.toLowerCase() === 'lawyer').map(lawyer => (
+                                      <option key={lawyer.user_id} value={lawyer.user_id}>
+                                        {lawyer.user_profiles?.display_name || lawyer.email}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <span className="text-xs text-slate-500 font-semibold italic">Unassigned</span>
+                                )
                               )}
                             </td>
                           </tr>
@@ -1203,80 +1308,73 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* VIEW: CALENDAR */}
-          {activeView === "calendar" && (
-            <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
+          {/* VIEW: INQUIRY DISTRIBUTION */}
+          {activeView === "distribution" && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
               <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-                  <div>
-                    <h1 className="text-2xl font-bold">Legal Schedule</h1>
-                    <p className="text-sm text-slate-500 mt-1">Manage court dates, client consultations, and team meetings.</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button className={`p-2 rounded-lg border ${isDark ? "border-slate-800 hover:bg-slate-800" : "border-slate-200 hover:bg-slate-50"}`}>
-                      <ArrowLeft size={16} />
-                    </button>
-                    <span className="font-bold text-sm px-4">May 2026</span>
-                    <button className={`p-2 rounded-lg border ${isDark ? "border-slate-800 hover:bg-slate-800" : "border-slate-200 hover:bg-slate-50"}`}>
-                      <Plus size={16} className="rotate-45" />
-                    </button>
-                    <button className="ml-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2">
-                      <Plus size={16} />
-                      Add Event
-                    </button>
-                  </div>
-                </div>
+                <h1 className="text-2xl font-bold">User Inquiry Domain Distribution</h1>
+                <p className="mt-1 text-sm text-slate-500">
+                  Analyze the classified domain distribution of all user queries and system interactions.
+                </p>
+              </div>
 
-                {/* Calendar Grid */}
-                <div className="grid grid-cols-7 gap-px bg-slate-200 dark:bg-slate-800 rounded-xl overflow-hidden border dark:border-slate-800">
-                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                    <div key={day} className={`py-3 text-center text-[10px] font-black uppercase tracking-widest ${isDark ? "bg-slate-950 text-slate-500" : "bg-slate-50 text-slate-400"}`}>
-                      {day}
+              <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Classified Categories</h3>
+                <div className="h-[400px] w-full">
+                  {domainAnalytics && domainAnalytics.distribution && domainAnalytics.distribution.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={domainAnalytics.distribution} layout="vertical">
+                        <XAxis type="number" hide />
+                        <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} width={150} axisLine={false} tickLine={false} />
+                        <Tooltip
+                          cursor={false}
+                          contentStyle={{
+                            backgroundColor: isDark ? '#0f172a' : '#fff',
+                            border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
+                            borderRadius: '8px',
+                            fontSize: '10px'
+                          }}
+                        />
+                        <Bar dataKey="queries" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={20} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-slate-500 text-xs font-bold italic opacity-40">
+                      No classified user queries recorded yet.
                     </div>
-                  ))}
-
-                  {/* Empty slots for start of month (May 2026 starts on Friday) */}
-                  {[...Array(5)].map((_, i) => (
-                    <div key={`empty-${i}`} className={`h-32 p-4 ${isDark ? "bg-slate-900/50" : "bg-slate-50/50"}`} />
-                  ))}
-
-                  {/* Days of Month */}
-                  {[...Array(31)].map((_, i) => {
-                    const day = i + 1;
-                    const isToday = day === 12;
-
-                    return (
-                      <div key={day} className={`h-32 p-4 transition-colors relative group ${isDark ? "bg-slate-900 hover:bg-slate-800/50" : "bg-white hover:bg-slate-50"}`}>
-                        <div className="flex items-center justify-between">
-                          <span className={`text-sm font-bold ${isToday ? "h-7 w-7 rounded-full bg-indigo-600 text-white flex items-center justify-center -mt-1 -ml-1" : "text-slate-500"}`}>
-                            {day}
-                          </span>
-                        </div>
-                        <button className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg bg-indigo-600 text-white shadow-lg">
-                          <Plus size={12} />
-                        </button>
-                      </div>
-                    );
-                  })}
-
-                  {/* Empty slots for end of month */}
-                  {[...Array(6)].map((_, i) => (
-                    <div key={`end-${i}`} className={`h-32 p-4 ${isDark ? "bg-slate-900/50" : "bg-slate-50/50"}`} />
-                  ))}
+                  )}
                 </div>
               </div>
             </div>
+          )}
+
+          {/* VIEW: CALENDAR */}
+          {activeView === "calendar" && isSystemAdmin && (
+            <CalendarView tickets={tickets} role="admin" />
           )}
 
           {/* VIEW: ADMIN SETTINGS */}
           {activeView === "settings" && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                <h1 className="text-2xl font-bold">Admin Settings</h1>
+                <h1 className="text-2xl font-bold">{isSystemAdmin ? "System Admin Settings" : "Admin Settings"}</h1>
                 <p className="mt-1 text-sm text-slate-500">
                   Manage your administrative profile and platform-level configuration.
                 </p>
               </div>
+
+              {globalMsg && (
+                <div className={`p-4 rounded-xl flex items-center justify-between text-sm font-bold ${globalMsg.type === 'success'
+                  ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                  : 'bg-red-500/10 text-red-500 border border-red-500/20'
+                  }`}>
+                  <div className="flex items-center gap-3">
+                    {globalMsg.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
+                    <p>{globalMsg.text}</p>
+                  </div>
+                  <button onClick={() => setGlobalMsg(null)} className="text-lg opacity-50 hover:opacity-100">&times;</button>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {/* Profile Card */}
@@ -1533,16 +1631,18 @@ export default function AdminDashboard() {
       )}
 
       {/* System Notifications (Global Overlay) */}
-      <SystemNotification
-        notifications={notifications}
-        currentView={activeView}
-        onDismiss={handleDismissNotification}
-        onNavigate={(view) => {
-          setActiveView(view);
-          // Optional: handle dismiss on navigate if desired
-        }}
-        isDark={isDark}
-      />
+      {isSystemAdmin && (
+        <SystemNotification
+          notifications={notifications}
+          currentView={activeView}
+          onDismiss={handleDismissNotification}
+          onNavigate={(view) => {
+            setActiveView(view);
+            // Optional: handle dismiss on navigate if desired
+          }}
+          isDark={isDark}
+        />
+      )}
     </div>
   );
 }
