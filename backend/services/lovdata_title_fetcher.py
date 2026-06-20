@@ -34,6 +34,16 @@ _REDIS_TTL   = 604_800   # 7 days in seconds
 _HTTP_TIMEOUT = 6.0      # seconds per fetch
 
 
+def normalize_and_redirect_url(url: str) -> str:
+    """Redirect known invalid or experimental Lovdata URLs to their canonical, working versions."""
+    if not url:
+        return url
+    # Redirect experimental inkassoforskriften URL (which 404s) to the canonical working Lovdata page
+    if "1989-12-14-1153" in url:
+        return url.replace("1989-12-14-1153", "1989-07-14-562").replace("lovdata.no/forskrift/", "lovdata.no/dokument/SF/forskrift/")
+    return url
+
+
 def _base_url(url: str) -> str:
     """Strip section anchor so /§7 and /§13 resolve to the same cache key."""
     return _ANCHOR_RE.sub("", url.rstrip("/"))
@@ -105,7 +115,8 @@ class LovdataTitleFetcher:
 
         # Layer 1 (Redis) then Layer 2 (Supabase)
         for url in urls:
-            base  = _base_url(url)
+            redirected = normalize_and_redirect_url(url)
+            base  = _base_url(redirected)
             title = self._redis_get(base)
             if title:
                 result[url] = title
@@ -124,7 +135,8 @@ class LovdataTitleFetcher:
         # Layer 3: HTTP fetch — deduplicated by base URL
         fetched_bases: Dict[str, str] = {}   # base_url -> resolved title
         for url in need_fetch:
-            base = _base_url(url)
+            redirected = normalize_and_redirect_url(url)
+            base = _base_url(redirected)
             if base in fetched_bases:
                 result[url] = fetched_bases[base]
                 continue
@@ -137,8 +149,8 @@ class LovdataTitleFetcher:
                 result[url] = title
                 logger.info(f"L3 fetched | {base} -> '{title[:70]}'")
             else:
-                fetched_bases[base] = url   # raw URL as last resort
-                result[url] = url
+                fetched_bases[base] = redirected   # use redirected URL as last resort
+                result[url] = redirected
                 logger.warning(f"Title fetch failed | {base} — using raw URL")
 
         return result

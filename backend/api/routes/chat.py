@@ -27,8 +27,7 @@ import asyncio
 
 from core.auth import verify_ws_token
 from schemas.requests import ChatRequest
-
-from schemas.requests import ChatRequest
+from services.lovdata_title_fetcher import normalize_and_redirect_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

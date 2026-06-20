@@ -53,7 +53,7 @@ def set_services(
 
 class InviteRequest(BaseModel):
     email: EmailStr
-    role: str  # 'lawyer' | 'admin'
+    role: str  # 'lawyer' | 'admin' | 'system_admin'
 
 
 class PromoteLawyerRequest(BaseModel):
@@ -78,13 +78,36 @@ class AdminCloseTicketRequest(BaseModel):
 @router.post("/invite", summary="Invite a new lawyer or admin via email")
 async def invite_user(
     req: InviteRequest,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
-    if req.role not in ["lawyer", "admin"]:
-        raise HTTPException(status_code=400, detail="Invalid role. Must be 'lawyer' or 'admin'.")
+    is_sys_admin = current_admin.db_role == "system_admin"
+    
+    # Standard admins can only invite themselves to the lawyer role
+    if not is_sys_admin:
+        admin_email_val = current_admin.email
+        if not admin_email_val:
+            # Fallback to fetch email from Supabase if not present in Clerk JWT
+            from db.supabase_client import get_supabase
+            supabase = get_supabase()
+            try:
+                db_res = supabase.table("users").select("email").eq("clerk_user_id", current_admin.clerk_user_id).single().execute()
+                if db_res.data:
+                    admin_email_val = db_res.data.get("email")
+            except Exception as e:
+                logger.error(f"Failed to fetch admin email from DB: {e}")
+        
+        if not admin_email_val or req.email.lower() != admin_email_val.lower():
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied. Administrators can only invite themselves.")
+        if req.role != "lawyer":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied. Administrators can only invite themselves to the Lawyer role.")
+
+    if req.role not in ["lawyer", "admin", "system_admin"]:
+        raise HTTPException(status_code=400, detail="Invalid role. Must be 'lawyer', 'admin', or 'system_admin'.")
 
     admin_id = _user_service.get_user_id_from_clerk_id(current_admin.clerk_user_id)
     admin_email = current_admin.email
+    if not admin_email and 'admin_email_val' in locals() and admin_email_val:
+        admin_email = admin_email_val
 
     try:
         success = await _user_service.invite_user(
@@ -104,7 +127,7 @@ async def invite_user(
 
 @router.get("/invitations", summary="List all pending/active role invitations")
 async def list_invitations(
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     """
     Fetches all invitation records from the role_invites table.
@@ -116,7 +139,7 @@ async def list_invitations(
 @router.delete("/invitations/{invite_id}", summary="Revoke a sent invitation")
 async def revoke_invitation(
     invite_id: str,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("system_admin")),
 ):
     """
     Deletes a pending invitation record from the database.
@@ -132,7 +155,7 @@ async def revoke_invitation(
 
 @router.get("/users", summary="List all users in the system")
 async def list_users(
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     try:
         response = (
@@ -150,7 +173,7 @@ async def list_users(
 async def get_audit_logs(
     limit: int = 50,
     offset: int = 0,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     logs = _user_service.get_audit_logs(limit=limit, offset=offset)
     return logs
@@ -159,7 +182,7 @@ async def get_audit_logs(
 @router.post("/promote/lawyer", summary="Promote a user to Lawyer role")
 async def promote_to_lawyer(
     req: PromoteLawyerRequest,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("system_admin")),
 ):
     admin_id = _user_service.get_user_id_from_clerk_id(current_admin.clerk_user_id)
     success = await _user_service.promote_to_lawyer(
@@ -176,7 +199,7 @@ async def promote_to_lawyer(
 @router.post("/promote/admin", summary="Promote a user to Admin role")
 async def promote_to_admin(
     req: PromoteAdminRequest,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("system_admin")),
 ):
     admin_id = _user_service.get_user_id_from_clerk_id(current_admin.clerk_user_id)
     success = await _user_service.promote_to_admin(
@@ -192,7 +215,7 @@ async def promote_to_admin(
 @router.patch("/users/{user_id}/demote", summary="Demote a lawyer back to user")
 async def admin_demote_user(
     user_id: str,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("system_admin")),
 ):
     try:
         user_info = _user_service.get_user_by_id(user_id)
@@ -210,7 +233,7 @@ async def admin_demote_user(
 @router.patch("/users/{user_id}/suspend", summary="Suspend a user account")
 async def admin_suspend_user(
     user_id: str,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("system_admin")),
 ):
     try:
         success = _user_service.suspend_user(user_id)
@@ -224,7 +247,7 @@ async def admin_suspend_user(
 @router.patch("/users/{user_id}/activate", summary="Unsuspend a user account")
 async def admin_unsuspend_user(
     user_id: str,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("system_admin")),
 ):
     try:
         success = _user_service.reactivate_user(user_id)
@@ -244,7 +267,7 @@ async def admin_unsuspend_user(
     summary="Admin view of ALL tickets across all statuses",
 )
 async def admin_get_all_tickets(
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     """
     Phase 5: Admin sees the full case queue with all statuses:
@@ -270,7 +293,7 @@ async def admin_assign_ticket(
     ticket_id: str,
     lawyer_id: str,
     background_tasks: BackgroundTasks,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("system_admin")),
 ):
     """
     Phase 5: Admin can force-assign a ticket to any lawyer regardless of
@@ -335,7 +358,7 @@ async def _send_admin_assignment_notification(ticket_id: str, lawyer_id: str):
 )
 async def admin_unassign_ticket(
     ticket_id: str,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("system_admin")),
 ):
     """
     Phase 5: Admin removes the current lawyer from a ticket and resets it
@@ -359,7 +382,7 @@ async def admin_unassign_ticket(
 async def admin_close_ticket(
     ticket_id: str,
     req: AdminCloseTicketRequest = AdminCloseTicketRequest(),
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("system_admin")),
 ):
     """
     Phase 8: Admin closes a ticket from any status.
@@ -382,7 +405,7 @@ async def admin_close_ticket(
     summary="Admin fetches list of all lawyers (for assignment dropdowns)",
 )
 async def admin_list_lawyers(
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     """
     Returns all users with role='lawyer' for use in the admin assignment dropdown.
@@ -423,7 +446,7 @@ async def admin_set_lawyer_cal_credentials(
     lawyer_id: str,
     cal_api_key: str,
     cal_event_type_id: str,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("system_admin")),
 ):
     """
     Admin sets the Cal.com API key and event type ID for a specific lawyer.
@@ -450,5 +473,38 @@ async def admin_set_lawyer_cal_credentials(
         return {"status": "success", "message": "Cal.com credentials saved."}
     except HTTPException:
         raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/domain-analytics", summary="Get user query domain distribution analytics")
+async def get_domain_analytics(
+    current_user: ClerkUser = Depends(require_db_role("admin", "system_admin")),
+):
+    try:
+        resp = _user_service._supabase.table("messages")\
+            .select("metadata")\
+            .eq("role", "assistant")\
+            .execute()
+        
+        counts = {}
+        total = 0
+        for msg in (resp.data or []):
+            meta = msg.get("metadata") or {}
+            domain = meta.get("detected_domain")
+            if domain:
+                counts[domain] = counts.get(domain, 0) + 1
+                total += 1
+        
+        distribution = []
+        for domain, count in counts.items():
+            distribution.append({
+                "name": domain,
+                "queries": count,
+                "percentage": round((count / total) * 100, 1) if total > 0 else 0
+            })
+        
+        distribution.sort(key=lambda x: x["queries"], reverse=True)
+        return {"total": total, "distribution": distribution}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

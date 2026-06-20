@@ -329,14 +329,20 @@ def require_role(*allowed_roles: str):
             ...
     """
     async def _role_checker(user: ClerkUser = Depends(get_current_user)) -> ClerkUser:
-        if user.role not in allowed_roles:
+        allowed = list(allowed_roles)
+        if "admin" in allowed and "system_admin" not in allowed:
+            allowed.append("system_admin")
+        if "lawyer" in allowed and "system_admin" not in allowed:
+            allowed.append("system_admin")
+
+        if user.role not in allowed:
             logger.warning(
                 f"⛔ Access denied | user={user.clerk_user_id} "
-                f"role={user.role} | required={allowed_roles}"
+                f"role={user.role} | required={allowed}"
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access denied. Required role: {', '.join(allowed_roles)}",
+                detail=f"Access denied. Required role: {', '.join(allowed)}",
             )
         return user
 
@@ -367,13 +373,20 @@ def require_db_role(*allowed_roles: str):
                 logger.error(f"❌ DB role check fallback failed for {user.clerk_user_id} | {exc}")
                 db_role = None
 
-        if db_role not in allowed_roles:
+        # Allow system_admin to access admin and lawyer endpoints as well
+        allowed = list(allowed_roles)
+        if "admin" in allowed and "system_admin" not in allowed:
+            allowed.append("system_admin")
+        if "lawyer" in allowed and "system_admin" not in allowed:
+            allowed.append("system_admin")
+
+        if db_role not in allowed:
             logger.warning(
-                f"⛔ Access denied (DB role) | user={user.clerk_user_id} role={db_role} required={allowed_roles}"
+                f"⛔ Access denied (DB role) | user={user.clerk_user_id} role={db_role} required={allowed}"
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access denied. Required role: {', '.join(allowed_roles)}",
+                detail=f"Access denied. Required role: {', '.join(allowed)}",
             )
         return user
     return _db_role_checker

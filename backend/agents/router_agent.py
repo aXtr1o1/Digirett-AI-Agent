@@ -35,7 +35,7 @@ KEYWORDS: ansette, arbeidsavtale, oppsigelse av ansatt, arbeidstid, overtid, fer
   permittering, virksomhetsoverdragelse, drøftelsesmøte, usaklig oppsigelse, prøvetid,
   diskriminering, likestilling, pensjon, tariffavtale, allmenngjøring, sjøfolk, skip
 
-DOMAIN: Arsregnskap_og_selskapsrapporte
+DOMAIN: Arsregnskap_og_selskapsrapportering
 SUBDOMAINS (use EXACTLY these labels):
   - Annual Accounts & Notes
   - Audit: Duty / Opting Out
@@ -89,7 +89,7 @@ SUBDOMAINS (use EXACTLY these labels):
 KEYWORDS: pengekrav, fordring, gjeldsbrev, rente, forsinkelsesrente, cesjon,
   gjeldsoverføring, kausjon, regresskrav, motregning
 
-DOMAIN: Personvern_gdpr_business_compli
+DOMAIN: Personvern_gdpr_business_compliance
 SUBDOMAINS (use EXACTLY these labels):
   - Lawful Basis & Internal Control
   - Data Subject Rights
@@ -138,7 +138,7 @@ class RouterAgent:
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         "CANONICAL DOMAIN KEYS — you MUST output one of these EXACTLY:\n"
         "  arbeidsrett\n"
-        "  arsregnskap_og_selskapsrapporte\n"
+        "  arsregnskap_og_selskapsrapportering\n"
         "  avtalerett\n"
         "  inkasso_og_tvangsfullbyrdelse\n"
         "  konkursrett_og_insolvens\n"
@@ -146,7 +146,7 @@ class RouterAgent:
         "  obligasjonsrett\n"
         "  panterett_og_sikkerhetsrett\n"
         "  pengekravsrett_fordringer\n"
-        "  personvern_gdpr_business_compli\n"
+        "  personvern_gdpr_business_compliance\n"
         "  selskapsrett\n"
         "  tvistelosning_smb\n\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -189,7 +189,7 @@ class RouterAgent:
             "Business Transfers (Virksomhetsoverdragelse)",
             "Termination & Dismissal Procedure",
         ],
-        "arsregnskap_og_selskapsrapporte": [
+        "arsregnskap_og_selskapsrapportering": [
             "Annual Accounts & Notes",
             "Audit: Duty / Opting Out",
             "Accounting Duty & Reporting",
@@ -222,7 +222,7 @@ class RouterAgent:
             "Interest & Late Interest",
             "Assignment / Cessio & Debtor Change",
         ],
-        "personvern_gdpr_business_compli": [
+        "personvern_gdpr_business_compliance": [
             "Lawful Basis & Internal Control",
             "Data Subject Rights",
             "Processor Agreements (DPA)",
