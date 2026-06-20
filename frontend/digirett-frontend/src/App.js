@@ -59,7 +59,7 @@ const HomeRedirect = () => {
 
   if (role === "suspended") {
     return <Navigate to="/suspended" replace />;
-  } else if (role === "admin") {
+  } else if (role === "admin" || role === "system_admin") {
     return <Navigate to="/admin" replace />;
   } else if (role === "lawyer") {
     return <Navigate to="/lawyer" replace />;
@@ -156,7 +156,7 @@ function App() {
             <Route
               path="/admin"
               element={
-                <RoleGuard allowedRoles={["admin"]}>
+                <RoleGuard allowedRoles={["admin", "system_admin"]}>
                   <AdminDashboard />
                 </RoleGuard>
               }
@@ -167,7 +167,7 @@ function App() {
             <Route
               path="/lawyer"
               element={
-                <RoleGuard allowedRoles={["lawyer", "admin"]}>
+                <RoleGuard allowedRoles={["lawyer", "admin", "system_admin"]}>
                   <LawyerDashboard />
                 </RoleGuard>
               }
@@ -176,7 +176,7 @@ function App() {
             <Route
               path="/lawyer/tickets/:id"
               element={
-                <RoleGuard allowedRoles={["lawyer", "admin"]}>
+                <RoleGuard allowedRoles={["lawyer", "admin", "system_admin"]}>
                   <TicketDetailsPage />
                 </RoleGuard>
               }

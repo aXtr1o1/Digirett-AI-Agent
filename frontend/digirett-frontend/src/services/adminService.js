@@ -131,6 +131,15 @@ const adminService = {
     const response = await api.get(API_ENDPOINTS.HEALTH);
     return response.data;
   },
+
+  /**
+   * Get User Query Domain Distribution Analytics
+   * GET /api/v1/admin/domain-analytics
+   */
+  getDomainAnalytics: async () => {
+    const response = await api.get(API_ENDPOINTS.ADMIN.DOMAIN_ANALYTICS);
+    return response.data;
+  },
 };
 
 export default adminService;

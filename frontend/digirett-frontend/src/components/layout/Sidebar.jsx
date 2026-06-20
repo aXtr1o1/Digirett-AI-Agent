@@ -84,8 +84,13 @@ const Sidebar = ({
     { id: "library", label: "Library", icon: Menu },
   ];
 
-  if (role === "admin") {
-    features.push({ id: "admin", label: "Admin Dashboard", icon: Shield, path: "/admin" });
+  if (role === "admin" || role === "system_admin") {
+    features.push({
+      id: "admin",
+      label: role === "system_admin" ? "System Admin Dashboard" : "Admin Dashboard",
+      icon: Shield,
+      path: "/admin"
+    });
   }
   if (role === "lawyer") {
     features.push({ id: "lawyer", label: "Lawyer Dashboard", icon: FileText, path: "/lawyer" });
