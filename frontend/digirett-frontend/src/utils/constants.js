@@ -52,6 +52,7 @@ export const API_ENDPOINTS = {
     SUSPEND_USER: (userId) => `/admin/users/${userId}/suspend`,
     ACTIVATE_USER: (userId) => `/admin/users/${userId}/activate`,
     REVOKE_INVITATION: (inviteId) => `/admin/invitations/${inviteId}`,
+    DOMAIN_ANALYTICS: "/admin/domain-analytics",
   },
   INVITE: {
     VERIFY: "/invite/verify",

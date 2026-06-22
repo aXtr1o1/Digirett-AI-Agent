@@ -133,18 +133,40 @@ class CalService:
         """
         Helper to find the Google Meet or Video URL in a Cal.com booking payload.
         Handles both v1 and v2 webhook formats.
+        Prioritizes actual Google Meet/Zoom links, and uses Cal.com branded
+        video links for Cal Video (Daily) rather than direct Daily.co links.
         """
-        # 1. Check v2 'meetingUrl' directly if present
-        if booking_payload.get("meetingUrl"):
-            return booking_payload["meetingUrl"]
-
-        # 2. Check 'references' array (standard for both versions)
+        # 1. Check references for external integrations (Google Meet, Zoom, etc.)
         references = booking_payload.get("references", [])
         for ref in references:
-            if "meetingUrl" in ref:
-                return ref["meetingUrl"]
-            if "url" in ref and "meet.google.com" in ref["url"]:
-                return ref["url"]
+            ref_url = ref.get("meetingUrl") or ref.get("url") or ""
+            if ref_url:
+                # If it's Google Meet, Zoom, or Teams, return it immediately
+                if "meet.google.com" in ref_url or "zoom.us" in ref_url or "teams.microsoft.com" in ref_url:
+                    return ref_url
 
-        # 3. Check videoCallUrl (older versions)
-        return booking_payload.get("videoCallUrl")
+        # 2. Check for Cal Video / Daily.co
+        # If it's a daily.co link, we want to redirect to the Cal.com video page instead
+        uid = booking_payload.get("uid")
+        metadata = booking_payload.get("metadata") or {}
+        
+        # If there is a videoCallUrl in metadata, use it
+        video_call_url = metadata.get("videoCallUrl")
+        if video_call_url and "cal.com" in video_call_url:
+            return video_call_url
+
+        # Otherwise, if we have a uid, we can construct the Cal.com video link
+        if uid:
+            return f"https://app.cal.com/video/{uid}"
+
+        # 3. Fallback to any meetingUrl in references (even if it's daily.co)
+        for ref in references:
+            ref_url = ref.get("meetingUrl") or ref.get("url")
+            if ref_url:
+                return ref_url
+
+        # 4. Fallback to top level meetingUrl or videoCallUrl
+        if booking_payload.get("meetingUrl"):
+            return booking_payload["meetingUrl"]
+            
+        return booking_payload.get("videoCallUrl") or booking_payload.get("video_call_url")

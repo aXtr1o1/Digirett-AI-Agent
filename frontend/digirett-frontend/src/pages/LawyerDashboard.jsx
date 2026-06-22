@@ -3,7 +3,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import hitlService from "../services/hitlService";
 import notesService from "../services/notesService";
 import { useUser, useClerk } from "@clerk/clerk-react";
+import CalendarView from "../components/common/CalendarView";
 import {
+  Calendar,
   Ticket,
   Clock,
   CheckCircle2,
@@ -55,7 +57,7 @@ export default function LawyerDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeView = searchParams.get("view") || "dashboard";
   const setActiveView = (view) => setSearchParams({ view });
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 1024);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [queueMsg, setQueueMsg] = useState(null);
   const [notes, setNotes] = useState("");
@@ -278,7 +280,7 @@ export default function LawyerDashboard() {
       setQueueTickets(queueData || []);
       setResolvedTickets(resolvedData || []);
       setActiveTickets(activeData || []);
-      
+
       if (calConfig) {
         setIsCalConfigured(!!calConfig.cal_event_type_id && !!calConfig.cal_api_key);
       }
@@ -328,6 +330,18 @@ export default function LawyerDashboard() {
     fetchData();
     const interval = setInterval(() => fetchData(), 30000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setIsSidebarOpen(true);
+      } else {
+        setIsSidebarOpen(false);
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   const handleClaim = async (ticketId) => {
@@ -451,6 +465,14 @@ export default function LawyerDashboard() {
   return (
     <div className={`flex h-screen overflow-hidden ${isDark ? "bg-[#020617] text-slate-200" : "bg-[#f1f5f9] text-slate-900"}`}>
 
+      {/* Sidebar Overlay for Mobile */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-slate-950/60 z-40 lg:hidden backdrop-blur-sm transition-opacity duration-300"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* SIDEBAR */}
       <aside className={`fixed lg:relative z-50 inset-y-0 left-0 w-64 transform transition-transform duration-300 ease-in-out border-r ${isDark ? "bg-slate-900 border-slate-800" : "bg-[#0f172a] border-slate-800"
         } ${isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
@@ -529,6 +551,13 @@ export default function LawyerDashboard() {
                   <CheckCircle size={18} />
                   Resolved History
                   <span className="ml-auto text-slate-500 text-[10px]">{resolvedTickets.length}</span>
+                </button>
+                <button
+                  onClick={() => { setActiveView("calendar"); setIsSidebarOpen(false); }}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "calendar" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
+                >
+                  <Calendar size={18} />
+                  My Schedule
                 </button>
                 <button
                   onClick={() => { setActiveView("notes"); setIsSidebarOpen(false); }}
@@ -685,7 +714,7 @@ export default function LawyerDashboard() {
                   </p>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => setActiveView("settings")}
                 className={`px-4 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition-all shadow-sm ${isDark ? "bg-amber-500 text-amber-950 hover:bg-amber-400" : "bg-amber-500 text-white hover:bg-amber-600"}`}
               >
@@ -1014,7 +1043,7 @@ export default function LawyerDashboard() {
           {activeView === "notes" && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300 pb-10">
               <div className="flex flex-col md:flex-row gap-8">
-                
+
                 {/* NOTE EDITOR (Left Column / Main Section) */}
                 <div className={`flex-1 p-8 rounded-2xl border shadow-sm h-fit ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
                   <div className="flex items-center justify-between mb-8">
@@ -1090,7 +1119,7 @@ export default function LawyerDashboard() {
                 <div className="w-full md:w-[380px] space-y-6">
                   <div className={`p-6 rounded-2xl border shadow-sm max-h-[640px] flex flex-col ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
                     <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-4">Past Notes</h3>
-                    
+
                     <div className="overflow-y-auto space-y-4 pr-1 flex-1">
                       {notesList.length === 0 ? (
                         <div className="py-20 text-center text-slate-400">
@@ -1102,11 +1131,10 @@ export default function LawyerDashboard() {
                           <div
                             key={note.id}
                             onClick={() => handleEditNote(note)}
-                            className={`p-4 rounded-xl border transition-all flex flex-col justify-between gap-3 cursor-pointer ${
-                              currentNoteId === note.id
+                            className={`p-4 rounded-xl border transition-all flex flex-col justify-between gap-3 cursor-pointer ${currentNoteId === note.id
                                 ? (isDark ? "bg-indigo-500/10 border-indigo-500/50" : "bg-indigo-50 border-indigo-300")
                                 : (isDark ? "bg-slate-950/40 border-slate-800/80 hover:border-slate-700" : "bg-slate-50/50 border-slate-100 hover:border-slate-200")
-                            }`}
+                              }`}
                           >
                             <div>
                               <div className="flex items-start justify-between gap-2">
@@ -1123,9 +1151,8 @@ export default function LawyerDashboard() {
                                   e.stopPropagation();
                                   handleEditNote(note);
                                 }}
-                                className={`px-2.5 py-1 rounded text-[9px] font-black uppercase tracking-widest transition-all ${
-                                  isDark ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                                }`}
+                                className={`px-2.5 py-1 rounded text-[9px] font-black uppercase tracking-widest transition-all ${isDark ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                  }`}
                               >
                                 Edit
                               </button>
@@ -1226,6 +1253,11 @@ export default function LawyerDashboard() {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* VIEW: CALENDAR */}
+          {activeView === "calendar" && (
+            <CalendarView tickets={activeTickets} role="lawyer" />
           )}
 
         </main>
