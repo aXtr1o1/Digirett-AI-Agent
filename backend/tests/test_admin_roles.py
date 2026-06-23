@@ -32,7 +32,15 @@ for _m in [
     sys.modules.setdefault(_m, MagicMock())
 
 # Stub config settings
-_s = MagicMock()
+if "config" in sys.modules:
+    import config
+    _s = config.settings
+else:
+    _s = MagicMock()
+    _fake_config = types.ModuleType("config")
+    _fake_config.settings = _s
+    sys.modules["config"] = _fake_config
+
 _s.AZURE_OPENAI_ENDPOINT = "https://fake.openai.azure.com"
 _s.AZURE_OPENAI_API_KEY = "fake-key"
 _s.AZURE_OPENAI_DEPLOYMENT = "gpt-4o-mini"
@@ -60,9 +68,6 @@ _s.DOC_SESSION_TTL_SECONDS = 14400
 _s.INVITE_FROM_EMAIL = "noreply@digirett.no"
 _s.ADMIN_ALERT_EMAIL = "admin@digirett.no"
 _s.OPENAI_TEMPERATURE = 0.4
-_fake_config = types.ModuleType("config")
-_fake_config.settings = _s
-sys.modules["config"] = _fake_config
 
 from fastapi.testclient import TestClient
 from main import app
