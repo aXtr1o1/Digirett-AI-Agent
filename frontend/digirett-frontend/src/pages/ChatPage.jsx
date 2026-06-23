@@ -139,7 +139,7 @@ const ChatPage = () => {
       // 3. If User is a Lawyer, also monitor the Matter Queue
       const userRole = user?.publicMetadata?.role || (user?.unsafeMetadata?.role);
 
-      if (userRole === "lawyer" || userRole === "admin") {
+      if (userRole === "lawyer" || userRole === "admin" || userRole === "system_admin") {
         try {
           const queueTickets = await hitlService.getQueue(); // Corrected function name
           if (Array.isArray(queueTickets)) {
