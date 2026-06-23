@@ -44,4 +44,9 @@ class CoRetrievalResolver:
                 final_targets.add("EL-04")
                 final_targets.add("MA-01")
 
+            # 4. Database Alignment Bridge: EL-04 -> MA-03
+            if sub_id == "EL-04":
+                logger.info("🔗 Co-retrieval hit (DB Bridge): 'EL-04' -> adding 'MA-03' (Chapter 16 storage in DB)")
+                final_targets.add("MA-03")
+
         return list(final_targets)
