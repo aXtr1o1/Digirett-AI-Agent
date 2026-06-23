@@ -32,7 +32,15 @@ for _m in [
     sys.modules.setdefault(_m, MagicMock())
 
 # Stub config settings
-_s = MagicMock()
+if "config" in sys.modules:
+    import config
+    _s = config.settings
+else:
+    _s = MagicMock()
+    _fake_config = types.ModuleType("config")
+    _fake_config.settings = _s
+    sys.modules["config"] = _fake_config
+
 _s.AZURE_OPENAI_ENDPOINT = "https://fake.openai.azure.com"
 _s.AZURE_OPENAI_API_KEY = "fake-key"
 _s.AZURE_OPENAI_DEPLOYMENT = "gpt-4o-mini"
@@ -53,12 +61,13 @@ _s.SMTP_HOST = "localhost"
 _s.SMTP_PORT = 25
 _s.SMTP_USER = ""
 _s.SMTP_PASS = ""
+_s.DOC_MAX_PER_SESSION = 2
+_s.DOC_MAX_TURNS_PER_SESSION = 10
+_s.DOC_MAX_TOKENS_PER_SESSION = 100000
+_s.DOC_SESSION_TTL_SECONDS = 14400
 _s.INVITE_FROM_EMAIL = "noreply@digirett.no"
 _s.ADMIN_ALERT_EMAIL = "admin@digirett.no"
 _s.OPENAI_TEMPERATURE = 0.4
-_fake_config = types.ModuleType("config")
-_fake_config.settings = _s
-sys.modules["config"] = _fake_config
 
 from fastapi.testclient import TestClient
 from main import app
@@ -277,6 +286,91 @@ class TestAdminRolesComprehensive(unittest.TestCase):
         }
         response = self.client.patch("/api/v1/admin/users/lawyer_id/suspend", headers={"Authorization": "Bearer token"})
         self.assertEqual(response.status_code, 200)
+
+    def test_sla_report(self):
+        """Verify SLA calculations, active breaches, and lawyer performance reporting."""
+        # Mock tickets
+        self.mock_user_svc._supabase.table("hitl_tickets").select().execute.return_value = MagicMock(data=[
+            {
+                "ticket_id": "ticket_breach_1",
+                "status": "open",
+                "created_at": "2026-06-20T12:00:00Z", # Old (breach!)
+                "assigned_at": None,
+                "resolved_at": None,
+                "booking_confirmed_at": None,
+                "assigned_lawyer_id": None
+            },
+            {
+                "ticket_id": "ticket_ok",
+                "status": "resolved",
+                "created_at": "2026-06-23T12:00:00Z",
+                "assigned_at": "2026-06-23T12:30:00Z",
+                "resolved_at": "2026-06-23T14:30:00Z",
+                "booking_confirmed_at": "2026-06-23T13:00:00Z",
+                "assigned_lawyer_id": "lawyer_abc"
+            }
+        ])
+        
+        # Mock lawyers list
+        self.mock_user_svc._supabase.table("users").select().eq().execute.return_value = MagicMock(data=[
+            {
+                "user_id": "lawyer_abc",
+                "email": "john@smith.com",
+                "user_name": "johnsmith",
+                "user_profiles": {"display_name": "John Smith"}
+            }
+        ])
+        
+        self._set_performer(self.admin_user)
+        response = self.client.get("/api/v1/admin/sla-report", headers={"Authorization": "Bearer token"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        # Assertions
+        self.assertIn("active_breaches", data)
+        self.assertIn("average_response_times", data)
+        self.assertIn("lawyer_performance", data)
+        
+        self.assertEqual(len(data["active_breaches"]), 1)
+        self.assertEqual(data["active_breaches"][0]["ticket_id"], "ticket_breach_1")
+        
+        self.assertEqual(data["average_response_times"]["avg_claim_hours"], 0.5) # 30 min
+        
+        self.assertEqual(len(data["lawyer_performance"]), 1)
+        self.assertEqual(data["lawyer_performance"][0]["name"], "John Smith")
+        self.assertEqual(data["lawyer_performance"][0]["tickets"], 1)
+
+    def test_quota_session_status(self):
+        """Verify the session status endpoint returns token and reset details."""
+        from api.routes import documents
+        mock_doc_svc = MagicMock()
+        documents.set_services(
+            document_service=mock_doc_svc,
+            user_service=self.mock_user_svc
+        )
+        
+        self.mock_user_svc.get_user_id_from_clerk_id.return_value = "user_123"
+        mock_doc_svc.get_quota_session.return_value = {
+            "session_id": "session_abc",
+            "doc_count": 1,
+            "turn_count": 3,
+            "token_count": 12000,
+            "session_start": 1782136000.0 # Unix timestamp
+        }
+        mock_doc_svc.get_or_create_session.return_value = {
+            "docs": []
+        }
+        mock_doc_svc.has_documents.return_value = False
+        
+        self._set_performer(self.standard_user)
+        response = self.client.get("/api/v1/documents/session/conv_123", headers={"Authorization": "Bearer token"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        self.assertEqual(data["token_count"], 12000)
+        self.assertIn("tokens_remaining", data)
+        self.assertIn("reset_at", data)
+        self.assertTrue(data["reset_at"].endswith("Z"))
 
 if __name__ == "__main__":
     unittest.main()
