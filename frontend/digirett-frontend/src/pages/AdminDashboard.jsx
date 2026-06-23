@@ -47,6 +47,17 @@ export default function AdminDashboard() {
   const { user: clerkUser } = useUser();
   const userRole = clerkUser?.publicMetadata?.role || "admin";
   const isSystemAdmin = userRole === "system_admin";
+  const isAuthorized = userRole === "admin" || userRole === "system_admin";
+
+  const canModify = (currentUserRole, targetUserRole) => {
+    if (currentUserRole === "admin") return true;
+    if (currentUserRole === "system_admin") {
+      const targetRole = targetUserRole || "user";
+      return targetRole !== "admin" && targetRole !== "system_admin";
+    }
+    return false;
+  };
+
   const [domainAnalytics, setDomainAnalytics] = useState(null);
   const { signOut, openUserProfile } = useClerk();
   const navigate = useNavigate();
@@ -70,7 +81,7 @@ export default function AdminDashboard() {
   };
 
   const checkInvitationStatus = React.useCallback(async () => {
-    if (!isSystemAdmin) return;
+    if (!isAuthorized) return;
     try {
       const savedDismissed = localStorage.getItem("dismissed_admin_events");
       const currentDismissed = savedDismissed ? JSON.parse(savedDismissed) : [];
@@ -231,7 +242,7 @@ export default function AdminDashboard() {
       setInviteMsg({ type: "success", text: "Invitation revoked successfully" });
       fetchDashboardData();
     } catch (err) {
-      setInviteMsg({ type: "error", text: "Failed to revoke invitation" });
+      setInviteMsg({ type: "error", text: err.message || "Failed to revoke invitation" });
     }
   };
 
@@ -242,7 +253,7 @@ export default function AdminDashboard() {
       setConfirmModal({ show: false, user: null });
       fetchDashboardData();
     } catch (err) {
-      setUsersMsg({ type: "error", text: "Failed to suspend user access." });
+      setUsersMsg({ type: "error", text: err.message || "Failed to suspend user access." });
     }
   };
 
@@ -252,7 +263,7 @@ export default function AdminDashboard() {
       setUsersMsg({ type: "success", text: "User access restored successfully." });
       fetchDashboardData();
     } catch (err) {
-      setUsersMsg({ type: "error", text: "Failed to restore user access." });
+      setUsersMsg({ type: "error", text: err.message || "Failed to restore user access." });
     }
   };
 
@@ -270,7 +281,7 @@ export default function AdminDashboard() {
       // Auto-clear message after 8 seconds
       setTimeout(() => setQueueMsg(null), 8000);
     } catch (err) {
-      setQueueMsg({ type: "error", text: "Failed to link the lawyer to this matter. Please try again." });
+      setQueueMsg({ type: "error", text: err.message || "Failed to link the lawyer to this matter. Please try again." });
     }
   };
 
@@ -483,7 +494,7 @@ export default function AdminDashboard() {
             className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "invite" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
           >
             <UserPlus size={18} />
-            {isSystemAdmin ? "Invite Team" : "Invitation List"}
+            {isSystemAdmin ? "Invite Team" : "Invite Team"}
           </button>
 
           <button
@@ -510,7 +521,7 @@ export default function AdminDashboard() {
             Inquiry Distribution
           </button>
 
-          {isSystemAdmin && (
+          {isAuthorized && (
             <button
               onClick={() => { setActiveView("calendar"); setIsSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "calendar" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
@@ -870,15 +881,15 @@ export default function AdminDashboard() {
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
               {/* Header Card */}
               <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                <h1 className="text-2xl font-bold">{isSystemAdmin ? "Team Invitations" : "Invitation List"}</h1>
+                <h1 className="text-2xl font-bold">{isAuthorized ? "Team Invitations" : "Invitation List"}</h1>
                 <p className="mt-1 text-sm text-slate-500">
-                  {isSystemAdmin
+                  {isAuthorized
                     ? "Send secure invitation links to lawyers and administrators with controlled role-based access."
                     : "View active and accepted role invitations."}
                 </p>
               </div>
 
-              {isSystemAdmin && (
+              {isAuthorized && (
                 <div className="grid grid-cols-1 gap-6">
                   {/* Left Form Card */}
                   <div className={`border rounded-2xl shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
@@ -1011,9 +1022,9 @@ export default function AdminDashboard() {
               {/* Pending Invitations Table */}
               <div className={`border rounded-2xl shadow-sm overflow-hidden ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
                 <div className={`px-7 py-5 border-b ${isDark ? "border-slate-800" : "border-slate-100"}`}>
-                  <h2 className="text-lg font-bold">{isSystemAdmin ? "Pending Invitations" : "Sent Invitations"}</h2>
+                  <h2 className="text-lg font-bold">{isAuthorized ? "Pending Invitations" : "Sent Invitations"}</h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    {isSystemAdmin ? "Track invitations that are sent but not yet accepted." : "Track invitations that have been sent."}
+                    {isAuthorized ? "Track invitations that are sent but not yet accepted." : "Track invitations that have been sent."}
                   </p>
                 </div>
                 <div className="overflow-x-auto">
@@ -1024,19 +1035,19 @@ export default function AdminDashboard() {
                         <th className="text-left px-7 py-4 font-semibold text-slate-500">Role</th>
                         <th className="text-left px-7 py-4 font-semibold text-slate-500">Status</th>
                         <th className="text-left px-7 py-4 font-semibold text-slate-500">Sent On</th>
-                        {isSystemAdmin && <th className="text-right px-7 py-4 font-semibold text-slate-500">Action</th>}
+                        {isAuthorized && <th className="text-right px-7 py-4 font-semibold text-slate-500">Action</th>}
                       </tr>
                     </thead>
                     <tbody className={`divide-y ${isDark ? "divide-slate-800" : "divide-slate-100"}`}>
                       {invitesLoading ? (
                         <tr>
-                          <td colSpan={isSystemAdmin ? "5" : "4"} className="px-7 py-12 text-center">
+                          <td colSpan={isAuthorized ? "5" : "4"} className="px-7 py-12 text-center">
                             <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mx-auto opacity-20" />
                           </td>
                         </tr>
                       ) : invitations.length === 0 ? (
                         <tr>
-                          <td colSpan={isSystemAdmin ? "5" : "4"} className="px-7 py-12 text-center text-slate-500">
+                          <td colSpan={isAuthorized ? "5" : "4"} className="px-7 py-12 text-center text-slate-500">
                             No active invitations found in the system.
                           </td>
                         </tr>
@@ -1056,7 +1067,7 @@ export default function AdminDashboard() {
                             <td className="px-7 py-4 text-slate-500">
                               {new Date(invite.created_at).toLocaleDateString()}
                             </td>
-                            {isSystemAdmin && (
+                            {isAuthorized && (
                               <td className="px-7 py-4 text-right">
                                 {invite.status === 'pending' ? (
                                   <div className="flex items-center justify-end gap-3">
@@ -1125,13 +1136,13 @@ export default function AdminDashboard() {
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Access Role</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Status</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">User Details</th>
-                        {isSystemAdmin && <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Actions</th>}
+                        {isAuthorized && <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Actions</th>}
                       </tr>
                     </thead>
                     <tbody className={`divide-y ${isDark ? "divide-slate-800" : "divide-slate-100"}`}>
                       {loading ? (
                         <tr>
-                          <td colSpan={isSystemAdmin ? 5 : 4} className="px-8 py-20 text-center">
+                          <td colSpan={isAuthorized ? 5 : 4} className="px-8 py-20 text-center">
                             <Loader2 size={32} className="animate-spin text-indigo-500 mx-auto opacity-20" />
                           </td>
                         </tr>
@@ -1175,7 +1186,7 @@ export default function AdminDashboard() {
                                 View Profile
                               </button>
                             </td>
-                            {isSystemAdmin && (
+                            {isAuthorized && (
                               <td className="px-8 py-6 text-right">
                                 <div className="flex items-center justify-end">
                                   {clerkUser?.id === user.clerk_user_id ? (
@@ -1184,16 +1195,18 @@ export default function AdminDashboard() {
                                     </button>
                                   ) : (user.status === 'suspended' || user.status === 'inactive') ? (
                                     <button
+                                      disabled={!canModify(userRole, user.role)}
                                       onClick={() => handleUnsuspendUser(user.user_id)}
-                                      className="px-4 py-2 rounded-lg text-xs font-bold border transition-all text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/5"
+                                      className="px-4 py-2 rounded-lg text-xs font-bold border transition-all text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/5 disabled:opacity-50 disabled:cursor-not-allowed"
                                       title="Revoke Suspension"
                                     >
                                       Revoke
                                     </button>
                                   ) : (
                                     <button
+                                      disabled={!canModify(userRole, user.role)}
                                       onClick={() => setConfirmModal({ show: true, user: user })}
-                                      className="px-4 py-2 rounded-lg text-xs font-bold border transition-all text-red-500 border-red-500/20 hover:bg-red-500/5"
+                                      className="px-4 py-2 rounded-lg text-xs font-bold border transition-all text-red-500 border-red-500/20 hover:bg-red-500/5 disabled:opacity-50 disabled:cursor-not-allowed"
                                       title="Suspend User"
                                     >
                                       Suspend
@@ -1281,7 +1294,7 @@ export default function AdminDashboard() {
                                   {users.find(u => u.user_id === ticket.assigned_lawyer_id)?.user_profiles?.display_name || "Legal Team"}
                                 </div>
                               ) : (
-                                isSystemAdmin ? (
+                                isAuthorized ? (
                                   <select
                                     onChange={(e) => handleAssignTicket(ticket.ticket_id, e.target.value)}
                                     className={`text-xs font-bold py-2 px-3 rounded-lg border outline-none ${isDark ? "bg-slate-950 border-slate-800 text-slate-300" : "bg-white border-slate-200 text-slate-600"}`}
@@ -1349,7 +1362,7 @@ export default function AdminDashboard() {
           )}
 
           {/* VIEW: CALENDAR */}
-          {activeView === "calendar" && isSystemAdmin && (
+          {activeView === "calendar" && isAuthorized && (
             <CalendarView tickets={tickets} role="admin" />
           )}
 
@@ -1631,7 +1644,7 @@ export default function AdminDashboard() {
       )}
 
       {/* System Notifications (Global Overlay) */}
-      {isSystemAdmin && (
+      {isAuthorized && (
         <SystemNotification
           notifications={notifications}
           currentView={activeView}
