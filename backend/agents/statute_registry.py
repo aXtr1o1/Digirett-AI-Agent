@@ -385,6 +385,8 @@ _STATUTE_TABLE: Dict[str, Dict] = {
 
     "gjeldsinformasjonsloven": {"id": "LOV-2017-06-16-47", "domain": "personvern_gdpr_business_compliance"},
     "lov om gjeldsinformasjon ved kredittvurdering av privatpersoner": {"id": "LOV-2017-06-16-47", "domain": "personvern_gdpr_business_compliance"},
+    "ekomloven": {"id": "LOV-2024-12-13-76", "domain": "personvern_gdpr_business_compliance"},
+    "lov om elektronisk kommunikasjon": {"id": "LOV-2024-12-13-76", "domain": "personvern_gdpr_business_compliance"},
 
     # Personvern — forskrifter
     "ehandelsforskriften": {"id": "FORSKRIFT-2003-06-12-744", "domain": "personvern_gdpr_business_compliance"},

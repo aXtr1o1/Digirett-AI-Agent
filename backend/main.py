@@ -376,6 +376,7 @@ from core.auth import get_current_user
 app.include_router(health.router,          prefix="/api/v1")
 app.include_router(webhooks.router,        prefix="/api/v1/webhooks")
 app.include_router(cal_webhooks.router,    prefix="/api/v1/webhooks")
+app.include_router(invite.router,          prefix="/api/v1")
 
 # Protected business logic routes (require token: Clerk JWT or Static API Key)
 protected_deps = [Depends(get_current_user)]
@@ -386,7 +387,6 @@ app.include_router(documents.router,       prefix="/api/v1", dependencies=protec
 app.include_router(admin.router,           prefix="/api/v1", dependencies=protected_deps)
 app.include_router(hitl.router,            prefix="/api/v1", dependencies=protected_deps)
 app.include_router(cal_routes.router,      prefix="/api/v1", dependencies=protected_deps)
-app.include_router(invite.router,          prefix="/api/v1", dependencies=protected_deps)
 app.include_router(auth.router,            prefix="/api/v1", dependencies=protected_deps)
 app.include_router(notes.router,           prefix="/api/v1", dependencies=protected_deps)
 
@@ -404,4 +404,4 @@ if __name__ == "__main__":
         loop="asyncio",
         log_level="info",
     )
-# Reload trigger comment to refresh settings and clear schema caches.
+# Reload trigger comment to refresh settings and clear schema caches.

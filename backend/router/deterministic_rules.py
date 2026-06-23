@@ -50,4 +50,9 @@ class DeterministicRules:
         if any(sig in q_lower for sig in employment_inj_signals):
             return "EL-05"
 
+        # ── 6. Standalone VO boundary ──
+        if any(sig in q_lower for sig in ["selge virksomhet", "salg av virksomhet", "selger virksomheten"]):
+            if "fusjon" not in q_lower and "fisjon" not in q_lower:
+                return "EL-04"
+
         return None
