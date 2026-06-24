@@ -27,7 +27,8 @@ import {
   Sun,
   Moon,
   UserX,
-  LayoutDashboard
+  LayoutDashboard,
+  Star
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import useDocumentUpload from "../hooks/useDocumentUpload";
@@ -43,6 +44,7 @@ export default function TicketDetailsPage() {
   // State
   const [ticket, setTicket] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [ticketRating, setTicketRating] = useState(null);
   const [response, setResponse] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -63,6 +65,13 @@ export default function TicketDetailsPage() {
 
       const convData = await conversationService.getConversationWithMessages(ticketData.conversation_id);
       setMessages(convData.messages || []);
+
+      // Pull ratings to support localStorage fallback mapping
+      const ratingsData = await hitlService.getLawyerRatings().catch(() => []);
+      const ratingInfo = ratingsData.find(r => r.ticket_id === id);
+      if (ratingInfo) {
+        setTicketRating(ratingInfo);
+      }
     } catch (err) {
       console.error("Failed to fetch details:", err);
       setError(err.message || "Unauthorized or not found");
@@ -192,6 +201,17 @@ export default function TicketDetailsPage() {
             <span className="text-sm font-semibold tracking-wide">Resolve Matter</span>
           </button>
 
+          {(ticket?.status === 'resolved' || ticket?.status === 'closed') && (
+            <button
+              onClick={() => setCurrentView("feedback")}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${currentView === "feedback" ? "bg-blue-600/90 text-white shadow-lg shadow-blue-600/20" : "text-gray-400 hover:bg-white/5 hover:text-white"
+                }`}
+            >
+              <Star size={18} />
+              <span className="text-sm font-semibold tracking-wide">Client Feedback</span>
+            </button>
+          )}
+
           <button
             onClick={() => setShowNoShowConfirm(true)}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group text-gray-400 hover:bg-red-500/10 hover:text-red-400"
@@ -242,7 +262,7 @@ export default function TicketDetailsPage() {
               Matter Review
             </button>
             <ChevronRight size={12} />
-            <span className="text-blue-600">{currentView === "details" ? "User Details" : currentView === "resolve" ? "Resolve Matter" : currentView === "context" ? "Context Details" : "User Details"}</span>
+            <span className="text-blue-600">{currentView === "details" ? "User Details" : currentView === "resolve" ? "Resolve Matter" : currentView === "context" ? "Context Details" : currentView === "feedback" ? "Client Feedback" : "User Details"}</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -419,6 +439,56 @@ export default function TicketDetailsPage() {
                     </div>
                   </>
                 )}
+              </div>
+            )}
+
+            {/* VIEW: CLIENT FEEDBACK */}
+            {currentView === "feedback" && (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 mb-4">Client Feedback</p>
+                <div className={`rounded-2xl border p-8 shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-gray-100"}`}>
+                  <div className="flex items-center gap-4 mb-6">
+                    <div>
+                      <h3 className={`text-lg font-bold ${isDark ? "text-white" : "text-gray-900"}`}>Consultation Rating</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">Submitted by the client after resolution</p>
+                    </div>
+                  </div>
+
+                  {(ticket.rating || ticketRating) ? (
+                    <>
+                      <div className="flex items-center gap-1.5 mb-6">
+                        {[1, 2, 3, 4, 5].map((star) => {
+                          const currentRating = ticket.rating || ticketRating?.rating || 0;
+                          return (
+                            <Star
+                              key={star}
+                              size={20}
+                              fill={star <= currentRating ? "#f59e0b" : "none"}
+                              color={star <= currentRating ? "#f59e0b" : "#475569"}
+                            />
+                          );
+                        })}
+                        <span className="ml-2 font-bold text-lg text-amber-500">
+                          {(ticket.rating || ticketRating?.rating || 0).toFixed(1)} / 5.0
+                        </span>
+                      </div>
+
+                      {(ticket.comment || ticket.rating_comment || ticketRating?.comment) ? (
+                        <div className={`p-6 rounded-2xl border ${isDark ? "bg-[#0b1329] border-white/5 text-slate-300" : "bg-slate-50 border-slate-100 text-slate-700"} italic leading-relaxed text-sm`}>
+                          "{ticket.comment || ticket.rating_comment || ticketRating?.comment}"
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400 italic">No written comment was provided for this rating.</p>
+                      )}
+                    </>
+                  ) : (
+                    <div className="py-10 text-center text-slate-400 dark:text-slate-500">
+                      <Star size={36} className="mx-auto mb-3 opacity-20" />
+                      <p className="text-xs font-bold uppercase tracking-wider">Awaiting Client Feedback</p>
+                      <p className="text-[10px] mt-1">The client has not rated this consultation yet.</p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

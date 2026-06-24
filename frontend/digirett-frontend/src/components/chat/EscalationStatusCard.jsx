@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import hitlService from "../../services/hitlService";
 import BookingSystem from "./BookingSystem";
-import { Loader2, Scale, CheckCircle2, Clock, Calendar, ExternalLink, ShieldCheck, AlertCircle, AlertTriangle, ChevronLeft, X, Quote } from "lucide-react";
+import { Loader2, Scale, CheckCircle2, Clock, Calendar, ExternalLink, ShieldCheck, AlertCircle, AlertTriangle, ChevronLeft, X, Quote, Star } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 export default function EscalationStatusCard({ conversationId, theme = "dark", isSidebar = false }) {
@@ -11,7 +11,54 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
   const [cancellationNotice, setCancellationNotice] = useState(false);
   const isDark = theme === "dark";
 
+  const [rating, setRating] = useState(0);
+  const [ratingHover, setRatingHover] = useState(0);
+  const [ratingComment, setRatingComment] = useState("");
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
+  const [submittingRating, setSubmittingRating] = useState(false);
+  const [ratingError, setRatingError] = useState(null);
+
   const prevStatusRef = React.useRef();
+
+  useEffect(() => {
+    const t = statusData?.ticket;
+    if (t?.ticket_id) {
+      if (t.rating) {
+        setRating(t.rating);
+        setRatingComment(t.comment || t.rating_comment || "");
+        setRatingSubmitted(true);
+      } else {
+        const cached = localStorage.getItem(`rated_ticket_${t.ticket_id}`);
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            setRating(parsed.rating);
+            setRatingComment(parsed.comment || "");
+            setRatingSubmitted(true);
+          } catch (e) {
+            console.error("Failed to parse cached rating", e);
+          }
+        }
+      }
+    }
+  }, [statusData]);
+
+  const handleRatingSubmit = async (e) => {
+    e.preventDefault();
+    const t = statusData?.ticket;
+    if (rating === 0 || !t?.ticket_id) return;
+    setSubmittingRating(true);
+    setRatingError(null);
+    try {
+      await hitlService.submitRating(t.ticket_id, rating, ratingComment);
+      setRatingSubmitted(true);
+      fetchStatus();
+    } catch (err) {
+      setRatingError(err.message || "Failed to submit rating");
+    } finally {
+      setSubmittingRating(false);
+    }
+  };
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -245,6 +292,107 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
                 {ticket.lawyer_response || ticket.outcome_notes || "No specific feedback notes were recorded for this resolution."}
               </ReactMarkdown>
             </div>
+          </div>
+
+          {/* Rating Section */}
+          <div className={`mt-6 p-6 rounded-3xl border ${
+            isDark ? "bg-[#0b1329]/60 border-white/5" : "bg-white border-slate-100"
+          } shadow-sm transition-all duration-300`}>
+            {ratingSubmitted ? (
+              <div className="flex flex-col items-center text-center">
+                <h5 className={`text-xs font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
+                  Feedback Submitted
+                </h5>
+                <p className="text-[10px] text-slate-500 font-medium mb-3">
+                  Thank you for rating your consultation!
+                </p>
+                <div className="flex gap-1 mb-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star
+                      key={star}
+                      size={14}
+                      fill={star <= rating ? "#f59e0b" : "none"}
+                      color={star <= rating ? "#f59e0b" : "#64748b"}
+                    />
+                  ))}
+                </div>
+                {ratingComment && (
+                  <p className="text-[10px] text-slate-400 italic max-w-xs leading-relaxed mt-2 border-t border-white/5 pt-2 w-full">
+                    "{ratingComment}"
+                  </p>
+                )}
+              </div>
+            ) : (
+              <form onSubmit={handleRatingSubmit} className="space-y-4">
+                <div className="text-center">
+                  <h5 className={`text-xs font-black uppercase tracking-widest ${isDark ? "text-indigo-400" : "text-indigo-600"} mb-1`}>
+                    Rate Your Consultation
+                  </h5>
+                  <p className="text-[9px] text-slate-500 font-medium">
+                    How was your discussion with {ticket.assigned_lawyer_name || "your lawyer"}?
+                  </p>
+                </div>
+
+                {/* Stars Selector */}
+                <div className="flex justify-center gap-2 py-2">
+                  {[1, 2, 3, 4, 5].map((star) => {
+                    const isLit = star <= (ratingHover || rating);
+                    return (
+                      <button
+                        type="button"
+                        key={star}
+                        onMouseEnter={() => setRatingHover(star)}
+                        onMouseLeave={() => setRatingHover(0)}
+                        onClick={() => setRating(star)}
+                        className="transition-transform duration-150 hover:scale-125 focus:outline-none"
+                      >
+                        <Star
+                          size={24}
+                          fill={isLit ? "#f59e0b" : "none"}
+                          color={isLit ? "#f59e0b" : "#475569"}
+                          className="cursor-pointer"
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Comment field */}
+                <div className="space-y-1">
+                  <textarea
+                    value={ratingComment}
+                    onChange={(e) => setRatingComment(e.target.value)}
+                    placeholder="Describe your experience (optional)..."
+                    rows={2}
+                    className={`w-full p-3 rounded-xl border text-xs font-medium resize-none transition-all outline-none ${
+                      isDark
+                        ? "bg-slate-950 border-white/5 focus:border-indigo-500/30 text-slate-300"
+                        : "bg-slate-50 border-slate-200 focus:border-indigo-600/30 text-slate-900 focus:bg-white"
+                    }`}
+                  />
+                </div>
+
+                {ratingError && (
+                  <p className="text-[10px] text-red-500 text-center font-semibold">
+                    {ratingError}
+                  </p>
+                )}
+
+                <div className="flex justify-center">
+                  <button
+                    type="submit"
+                    disabled={rating === 0 || submittingRating}
+                    className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all shadow-md ${
+                      rating === 0
+                        ? "bg-slate-800 text-slate-500 cursor-not-allowed opacity-50"
+                        : "bg-indigo-600 hover:bg-indigo-500 active:scale-95"
+                    }`}
+                  >
+                    {submittingRating ? "Submitting..." : "Submit Feedback"}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
 
           <div className="pt-2 flex flex-col items-center gap-2">

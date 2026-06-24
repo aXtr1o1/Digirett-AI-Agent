@@ -495,6 +495,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
                             "score":            metadata.get("score", 1.0),
                             "confidence":       metadata.get("confidence", "Unknown"),
                             "chunks_retrieved": metadata.get("chunks_retrieved", 0),
+                            "detected_domain":  metadata.get("detected_domain"),
                         },
                         rag_chunks=chunks_to_save,
                         skip_save_user=chat_request.skip_save_user,

@@ -38,7 +38,8 @@ import {
   ClipboardList,
   Sun,
   Moon,
-  UserX
+  UserX,
+  Star
 } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -52,6 +53,7 @@ export default function LawyerDashboard() {
   const { theme, isDark, toggleTheme } = useTheme();
   const [queueTickets, setQueueTickets] = useState([]);
   const [resolvedTickets, setResolvedTickets] = useState([]);
+  const [ratings, setRatings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -271,15 +273,17 @@ export default function LawyerDashboard() {
     if (isManual) setRefreshing(true);
     setGlobalError(null);
     try {
-      const [queueData, resolvedData, activeData, calConfig] = await Promise.all([
+      const [queueData, resolvedData, activeData, calConfig, ratingsData] = await Promise.all([
         hitlService.getQueue(),
         hitlService.getResolvedHistory(),
         hitlService.getActiveTickets(),
-        hitlService.getCalConfig().catch(() => null)
+        hitlService.getCalConfig().catch(() => null),
+        hitlService.getLawyerRatings().catch(() => [])
       ]);
       setQueueTickets(queueData || []);
       setResolvedTickets(resolvedData || []);
       setActiveTickets(activeData || []);
+      setRatings(ratingsData || []);
 
       if (calConfig) {
         setIsCalConfigured(!!calConfig.cal_event_type_id && !!calConfig.cal_api_key);
@@ -455,11 +459,17 @@ export default function LawyerDashboard() {
   const activeVelocityData = resolutionTrend.map(d => ({
     ...d,
     active: activeTickets.length // Simplified for real-time overview
-  })); const stats = [
+  }));
+
+  const totalRating = ratings.reduce((sum, r) => sum + r.rating, 0);
+  const avgRating = ratings.length > 0 ? (totalRating / ratings.length).toFixed(1) : "N/A";
+
+  const stats = [
     { label: "Resolved", value: resolvedTickets.length, icon: CheckCircle2, color: "emerald" },
     { label: "Active Matters", value: activeTickets.length, icon: Activity, color: "blue" },
     { label: "Queue Load", value: queueTickets.length, icon: Ticket, color: "indigo" },
-    { label: "Pending Review", value: pendingTickets.length, icon: Clock, color: "amber" }
+    { label: "Pending Review", value: pendingTickets.length, icon: Clock, color: "amber" },
+    { label: "Average Rating", value: avgRating, icon: Star, color: "amber" }
   ];
 
   return (
@@ -735,16 +745,16 @@ export default function LawyerDashboard() {
               </div>
 
               {/* KPI Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
                 {stats.map((stat, idx) => (
-                  <div key={idx} className={`p-6 rounded-2xl border shadow-sm flex flex-col gap-2 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                  <div key={idx} className={`p-4 rounded-xl border shadow-sm flex flex-col gap-1.5 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
                     }`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{stat.label}</span>
-                      <stat.icon size={14} className="text-slate-300" />
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">{stat.label}</span>
+                      <stat.icon size={13} className="text-slate-400" />
                     </div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-3xl font-black tracking-tighter">{stat.value}</span>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-2xl font-black tracking-tighter">{stat.value}</span>
                     </div>
                   </div>
                 ))}
@@ -1006,27 +1016,40 @@ export default function LawyerDashboard() {
                       <tr className="text-left border-b border-slate-100 dark:border-slate-800">
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Matter</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Resolved At</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Rating</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {resolvedTickets.map((t) => (
-                        <tr key={t.ticket_id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="px-8 py-6">
-                            <div className="flex items-center gap-4">
-                              <div className="h-10 w-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-bold">{(t.user_display_name || "U").charAt(0)}</div>
-                              <div>
-                                <p className="text-sm font-bold">{t.user_display_name || "Anonymous"}</p>
-                                <p className="text-[10px] text-slate-500">{t.user_email}</p>
+                      {resolvedTickets.map((t) => {
+                        const ticketRating = ratings.find(r => r.ticket_id === t.ticket_id);
+                        return (
+                          <tr key={t.ticket_id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-8 py-6">
+                              <div className="flex items-center gap-4">
+                                <div className="h-10 w-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-bold">{(t.user_display_name || "U").charAt(0)}</div>
+                                <div>
+                                  <p className="text-sm font-bold">{t.user_display_name || "Anonymous"}</p>
+                                  <p className="text-[10px] text-slate-500">{t.user_email}</p>
+                                </div>
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-8 py-6 text-xs font-medium text-slate-500">{formatDate(t.resolved_at)}</td>
-                          <td className="px-8 py-6 text-right">
-                            <button onClick={() => navigate(`/lawyer/tickets/${t.ticket_id}`)} className="text-indigo-500 text-xs font-bold hover:underline">View Details</button>
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="px-8 py-6 text-xs font-medium text-slate-500">{formatDate(t.resolved_at)}</td>
+                            <td className="px-8 py-6 text-center">
+                              {ticketRating ? (
+                                <div className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-500 px-2.5 py-0.5 rounded-lg text-xs font-bold border border-amber-500/20">
+                                  <span>{ticketRating.rating}</span>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-slate-400 font-medium">—</span>
+                              )}
+                            </td>
+                            <td className="px-8 py-6 text-right">
+                              <button onClick={() => navigate(`/lawyer/tickets/${t.ticket_id}`)} className="text-indigo-500 text-xs font-bold hover:underline">View Details</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

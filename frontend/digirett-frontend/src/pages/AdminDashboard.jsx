@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Menu, Plus, X, Calendar, User,
   ShieldCheck, Scale, Crown, Clock, AlertTriangle, Send,
   UserX, UserCheck, Trash2, Sun, Moon, RefreshCw, BarChart3,
-  Activity
+  Activity, Star
 } from "lucide-react";
 import { useTheme } from "../providers/ThemeProvider";
 import { Link, useNavigate, useSearchParams, useLocation } from "react-router-dom";
@@ -14,11 +14,27 @@ import { useClerk, useUser } from "@clerk/clerk-react";
 import hitlService from "../services/hitlService";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  LabelList
 } from 'recharts';
 import SystemNotification from "../components/chat/ResolutionNotification";
 import CalendarView from "../components/common/CalendarView";
 import SlaView from "../components/admin/SlaView";
+
+const COLORS = [
+  '#6366f1', // Indigo
+  '#10b981', // Emerald
+  '#3b82f6', // Blue
+  '#ec4899', // Pink
+  '#f59e0b', // Amber
+  '#8b5cf6', // Violet
+  '#f43f5e', // Rose
+  '#06b6d4', // Cyan
+  '#14b8a6', // Teal
+  '#eab308', // Yellow
+  '#ef4444', // Red
+  '#a855f7', // Purple
+];
 
 export default function AdminDashboard() {
   const { theme, isDark, toggleTheme } = useTheme();
@@ -861,20 +877,33 @@ export default function AdminDashboard() {
                   <div className="h-[300px] w-full">
                     {domainAnalytics && domainAnalytics.distribution && domainAnalytics.distribution.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={domainAnalytics.distribution} layout="vertical">
-                          <XAxis type="number" hide />
-                          <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} width={150} axisLine={false} tickLine={false} />
+                        <PieChart>
+                          <Pie
+                            data={domainAnalytics.distribution}
+                            innerRadius={50}
+                            outerRadius={75}
+                            dataKey="queries"
+                            nameKey="name"
+                            stroke="none"
+                            label={({ name, percentage }) => `${name} (${percentage}%)`}
+                          >
+                            {domainAnalytics.distribution.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                          </Pie>
                           <Tooltip
-                            cursor={false}
                             contentStyle={{
                               backgroundColor: isDark ? '#0f172a' : '#fff',
                               border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
                               borderRadius: '8px',
                               fontSize: '10px'
                             }}
+                            formatter={(value, name, entry) => [
+                              `${value} (${entry.payload?.percentage ?? 0}%)`,
+                              "Queries"
+                            ]}
                           />
-                          <Bar dataKey="queries" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={20} />
-                        </BarChart>
+                        </PieChart>
                       </ResponsiveContainer>
                     ) : (
                       <div className="h-full flex items-center justify-center text-slate-500 text-xs font-bold italic opacity-40">
@@ -1190,6 +1219,7 @@ export default function AdminDashboard() {
                                 </span>
                               </div>
                             </td>
+
                             <td className="px-8 py-6 text-right">
                               <button
                                 onClick={() => setViewUser(user)}
@@ -1345,26 +1375,35 @@ export default function AdminDashboard() {
 
               <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
                 <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Classified Categories</h3>
-                <div className="h-[400px] w-full">
+                <div className="w-full">
                   {domainAnalytics && domainAnalytics.distribution && domainAnalytics.distribution.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={domainAnalytics.distribution} layout="vertical">
-                        <XAxis type="number" hide />
-                        <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} width={150} axisLine={false} tickLine={false} />
-                        <Tooltip
-                          cursor={false}
-                          contentStyle={{
-                            backgroundColor: isDark ? '#0f172a' : '#fff',
-                            border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
-                            borderRadius: '8px',
-                            fontSize: '10px'
-                          }}
-                        />
-                        <Bar dataKey="queries" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={20} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                    <div className="w-full overflow-y-auto pr-2 max-h-[450px] space-y-6">
+                      {domainAnalytics.distribution.map((entry, index) => {
+                        const pct = entry.percentage ?? 0;
+                        const color = COLORS[index % COLORS.length];
+                        return (
+                          <div key={index} className="space-y-2">
+                            <div className="flex items-center justify-between text-xs font-semibold">
+                              <span className={isDark ? "text-slate-200" : "text-slate-700"}>{entry.name}</span>
+                              <span className={isDark ? "text-slate-400" : "text-slate-500"}>
+                                {entry.queries} queries ({pct}%)
+                              </span>
+                            </div>
+                            <div className={`w-full h-3 rounded-full ${isDark ? "bg-slate-800" : "bg-slate-100"}`}>
+                              <div
+                                className="h-full rounded-full transition-all duration-500"
+                                style={{
+                                  width: `${pct}%`,
+                                  backgroundColor: color
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   ) : (
-                    <div className="h-full flex items-center justify-center text-slate-500 text-xs font-bold italic opacity-40">
+                    <div className="h-[300px] flex items-center justify-center text-slate-500 text-xs font-bold italic opacity-40">
                       No classified user queries recorded yet.
                     </div>
                   )}
