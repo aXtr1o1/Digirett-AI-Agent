@@ -15,6 +15,8 @@ export async function getSupabaseClient(getToken) {
   
   if (!token) return supabase;
 
+  console.log("CLERK JWT FOR SUPABASE:", token);
+
   return createClient(supabaseUrl, supabaseAnonKey, {
     global: {
       headers: {

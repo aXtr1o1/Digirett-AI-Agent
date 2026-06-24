@@ -23,6 +23,7 @@ import { useNavigate } from "react-router-dom";
 import hitlService from "../../services/hitlService";
 import conversationService from "../../services/conversationService";
 import UpgradeCard from "../common/UpgradeCard";
+import QuotaPanel from "../chat/QuotaPanel";
 
 const Sidebar = ({
   conversations,
@@ -468,182 +469,203 @@ const Sidebar = ({
         </button>
       </div>
 
-      {/* FEATURES SECTION */}
-      <div style={{ flexShrink: 0, marginBottom: "8px" }}>
-        <div style={{
-          padding: "0 16px 8px",
-          fontSize: "11px",
-          fontWeight: "600",
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-          color: isDark ? "#6b7280" : "#9ca3af",
-        }}>
-          Features
-        </div>
-        <div style={{ padding: "4px 8px" }}>
-          {features.map((feature) => {
-            const Icon = feature.icon;
-            const isActive = activeFeature === feature.id;
-            return (
-              <button
-                key={feature.id}
-                onClick={() => {
-                  handleFeatureClick(feature);
-                }}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "10px 12px",
-                  borderRadius: "10px",
-                  fontSize: "13px",
-                  fontWeight: "500",
-                  backgroundColor: isActive
-                    ? isDark
-                      ? "rgba(59, 130, 246, 0.15)"
-                      : "rgba(59, 130, 246, 0.1)"
-                    : "transparent",
-                  color: isActive
-                    ? isDark ? "#3B82F6" : "#2563EB"
-                    : isDark ? "#d1d5db" : "#374151",
-                  border: "none",
-                  cursor: "pointer",
-                  transition: "all 0.15s",
-                  textAlign: "left",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isActive) {
-                    e.currentTarget.style.backgroundColor = isDark
-                      ? "rgba(42, 42, 42, 0.5)"
-                      : "rgba(243, 244, 246, 0.8)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) {
-                    e.currentTarget.style.backgroundColor = "transparent";
-                  }
-                }}
-              >
-                <Icon
-                  size={16}
-                  style={{
-                    flexShrink: 0,
-                    color: isActive
-                      ? (isDark ? "#3B82F6" : "#2563EB")
-                      : (isDark ? "#d1d5db" : "#374151")
-                  }}
-                />
-                <span>{feature.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      {/* ── SCROLLABLE MIDDLE SECTION ─────────────────────────────────────
+           Everything between New Chat and Beta Version lives here.
+           One scroll area = no space competition between QuotaPanel + Features + Conv list.
+      ──────────────────────────────────────────────────────────────────── */}
+      <div
+        className="sidebar-scrollbar-hidden"
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          overflowX: "hidden",
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
+        }}
+      >
 
-      {/* CHAT HISTORY (when Chat feature is active) */}
-      {activeFeature === "chat" && (
-        <div
-          className="sidebar-scrollbar-hidden"
-          style={{
-            flex: conversations.length > 0 ? 1 : "none",
-            overflowY: conversations.length > 0 ? "scroll" : "hidden",
-            overflowX: "hidden",
-            padding: "4px 8px",
-            minHeight: 0,
-            scrollbarWidth: "none", /* Firefox */
-            msOverflowStyle: "none", /* IE and Edge */
+        {/* QUOTA PANEL — top of scrollable area */}
+        {activeFeature === "chat" && (
+          <QuotaPanel
+            conversationId={currentConversationId}
+            isDark={isDark}
+          />
+        )}
+
+        {/* FEATURES SECTION */}
+        <div style={{ flexShrink: 0, marginBottom: "8px" }}>
+          <div style={{
+            padding: "0 16px 8px",
+            fontSize: "11px",
+            fontWeight: "600",
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            color: isDark ? "#6b7280" : "#9ca3af",
           }}>
-          {conversations.length === 0 ? (
-            <div style={{
-              padding: "16px 12px",
-              textAlign: "center",
-              fontSize: "12px",
-              color: isDark ? "#6b7280" : "#9ca3af",
-            }}>
-              No conversations yet
-            </div>
-          ) : (
-            conversations.map((c) => (
-              <div
-                key={c.conversation_id}
-                onClick={() => onSelectConversation(c.conversation_id)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "8px",
-                  padding: "10px 12px",
-                  borderRadius: "10px",
-                  cursor: "pointer",
-                  marginBottom: "2px",
-                  backgroundColor:
-                    c.conversation_id === currentConversationId
+            Features
+          </div>
+          <div style={{ padding: "4px 8px" }}>
+            {features.map((feature) => {
+              const Icon = feature.icon;
+              const isActive = activeFeature === feature.id;
+              return (
+                <button
+                  key={feature.id}
+                  onClick={() => {
+                    handleFeatureClick(feature);
+                  }}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    padding: "10px 12px",
+                    borderRadius: "10px",
+                    fontSize: "13px",
+                    fontWeight: "500",
+                    backgroundColor: isActive
                       ? isDark
                         ? "rgba(59, 130, 246, 0.15)"
                         : "rgba(59, 130, 246, 0.1)"
                       : "transparent",
-                  color: c.conversation_id === currentConversationId
-                    ? isDark ? "#3B82F6" : "#2563EB"
-                    : isDark ? "#d1d5db" : "#374151",
-                  transition: "all 0.15s",
-                }}
-                onMouseEnter={(e) => {
-                  if (c.conversation_id !== currentConversationId) {
-                    e.currentTarget.style.backgroundColor = isDark
-                      ? "rgba(42, 42, 42, 0.5)"
-                      : "rgba(243, 244, 246, 0.8)";
-                  }
-                  const trash = e.currentTarget.querySelector(".trash-icon");
-                  if (trash) trash.style.opacity = "1";
-                }}
-                onMouseLeave={(e) => {
-                  if (c.conversation_id !== currentConversationId) {
-                    e.currentTarget.style.backgroundColor = "transparent";
-                  }
-                  const trash = e.currentTarget.querySelector(".trash-icon");
-                  if (trash) trash.style.opacity = "0";
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0, flex: 1 }}>
-                  <MessageSquare size={13} style={{
-                    flexShrink: 0, color: c.conversation_id === currentConversationId
-                      ? (isDark ? "#3B82F6" : "#2563EB")
-                      : (isDark ? "#6b7280" : "#9ca3af")
-                  }} />
-                  <span style={{
-                    fontSize: "13px",
-                    lineHeight: "1.4",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}>
-                    {c.title || "New Conversation"}
-                  </span>
-                </div>
-
-                <Trash2
-                  size={13}
-                  className="trash-icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteConversation(c.conversation_id);
-                  }}
-                  style={{
-                    flexShrink: 0,
-                    opacity: 0,
+                    color: isActive
+                      ? isDark ? "#3B82F6" : "#2563EB"
+                      : isDark ? "#d1d5db" : "#374151",
+                    border: "none",
                     cursor: "pointer",
-                    color: isDark ? "#6b7280" : "#9ca3af",
-                    transition: "opacity 0.15s, color 0.15s",
+                    transition: "all 0.15s",
+                    textAlign: "left",
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = "#ef4444"}
-                  onMouseLeave={(e) => e.currentTarget.style.color = isDark ? "#6b7280" : "#9ca3af"}
-                />
-              </div>
-            ))
-          )}
+                  onMouseEnter={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.backgroundColor = isDark
+                        ? "rgba(42, 42, 42, 0.5)"
+                        : "rgba(243, 244, 246, 0.8)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.backgroundColor = "transparent";
+                    }
+                  }}
+                >
+                  <Icon
+                    size={16}
+                    style={{
+                      flexShrink: 0,
+                      color: isActive
+                        ? (isDark ? "#3B82F6" : "#2563EB")
+                        : (isDark ? "#d1d5db" : "#374151")
+                    }}
+                  />
+                  <span>{feature.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      )}
+
+        {/* CHAT HISTORY (when Chat feature is active) */}
+        {activeFeature === "chat" && (
+          <div
+            style={{
+              padding: "4px 8px",
+            }}>
+            {conversations.length === 0 ? (
+              <div style={{
+                padding: "16px 12px",
+                textAlign: "center",
+                fontSize: "12px",
+                color: isDark ? "#6b7280" : "#9ca3af",
+              }}>
+                No conversations yet
+              </div>
+            ) : (
+              conversations.map((c) => (
+                <div
+                  key={c.conversation_id}
+                  onClick={() => onSelectConversation(c.conversation_id)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "8px",
+                    padding: "10px 12px",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    marginBottom: "2px",
+                    backgroundColor:
+                      c.conversation_id === currentConversationId
+                        ? isDark
+                          ? "rgba(59, 130, 246, 0.15)"
+                          : "rgba(59, 130, 246, 0.1)"
+                        : "transparent",
+                    color: c.conversation_id === currentConversationId
+                      ? isDark ? "#3B82F6" : "#2563EB"
+                      : isDark ? "#d1d5db" : "#374151",
+                    transition: "all 0.15s",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (c.conversation_id !== currentConversationId) {
+                      e.currentTarget.style.backgroundColor = isDark
+                        ? "rgba(42, 42, 42, 0.5)"
+                        : "rgba(243, 244, 246, 0.8)";
+                    }
+                    const trash = e.currentTarget.querySelector(".trash-icon");
+                    if (trash) trash.style.opacity = "1";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (c.conversation_id !== currentConversationId) {
+                      e.currentTarget.style.backgroundColor = "transparent";
+                    }
+                    const trash = e.currentTarget.querySelector(".trash-icon");
+                    if (trash) trash.style.opacity = "0";
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0, flex: 1 }}>
+                    <MessageSquare size={13} style={{
+                      flexShrink: 0, color: c.conversation_id === currentConversationId
+                        ? (isDark ? "#3B82F6" : "#2563EB")
+                        : (isDark ? "#6b7280" : "#9ca3af")
+                    }} />
+                    <span style={{
+                      fontSize: "13px",
+                      lineHeight: "1.4",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}>
+                      {c.title || "New Conversation"}
+                    </span>
+                  </div>
+
+                  <Trash2
+                    size={13}
+                    className="trash-icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteConversation(c.conversation_id);
+                    }}
+                    style={{
+                      flexShrink: 0,
+                      opacity: 0,
+                      cursor: "pointer",
+                      color: isDark ? "#6b7280" : "#9ca3af",
+                      transition: "opacity 0.15s, color 0.15s",
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = "#ef4444"}
+                    onMouseLeave={(e) => e.currentTarget.style.color = isDark ? "#6b7280" : "#9ca3af"}
+                  />
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+      </div>{/* end scrollable middle section */}
 
       {/* YET TO BE IMPLEMENTED MESSAGE (for Archived and Library) */}
       {(activeFeature === "archived" || activeFeature === "library") && (

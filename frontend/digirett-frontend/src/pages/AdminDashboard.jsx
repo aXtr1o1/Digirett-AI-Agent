@@ -5,7 +5,8 @@ import {
   UserPlus, CheckCircle, ArrowLeft, LogOut,
   LayoutDashboard, Menu, Plus, X, Calendar, User,
   ShieldCheck, Scale, Crown, Clock, AlertTriangle, Send,
-  UserX, UserCheck, Trash2, Sun, Moon, RefreshCw, BarChart3
+  UserX, UserCheck, Trash2, Sun, Moon, RefreshCw, BarChart3,
+  Activity
 } from "lucide-react";
 import { useTheme } from "../providers/ThemeProvider";
 import { Link, useNavigate, useSearchParams, useLocation } from "react-router-dom";
@@ -17,6 +18,7 @@ import {
 } from 'recharts';
 import SystemNotification from "../components/chat/ResolutionNotification";
 import CalendarView from "../components/common/CalendarView";
+import SlaView from "../components/admin/SlaView";
 
 export default function AdminDashboard() {
   const { theme, isDark, toggleTheme } = useTheme();
@@ -520,6 +522,16 @@ export default function AdminDashboard() {
             <BarChart3 size={18} />
             Inquiry Distribution
           </button>
+
+          {isAuthorized && (
+            <button
+              onClick={() => { setActiveView("sla"); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "sla" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
+            >
+              <Activity size={18} />
+              Performance Report
+            </button>
+          )}
 
           {isAuthorized && (
             <button
@@ -1359,6 +1371,11 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* VIEW: SLA & OPERATIONS */}
+          {activeView === "sla" && isAuthorized && (
+            <SlaView isDark={isDark} onNavigate={setActiveView} />
           )}
 
           {/* VIEW: CALENDAR */}
