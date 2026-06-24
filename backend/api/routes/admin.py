@@ -541,6 +541,20 @@ async def get_sla_report(
             display_name = profile.get("display_name") or l.get("user_name") or l.get("email") or "Unknown Lawyer"
             lawyers_map[l["user_id"]] = display_name
             
+        # 2b. Fetch lawyer ratings from database
+        lawyer_ratings = {}
+        try:
+            ratings_resp = _user_service._supabase.table("consultation_ratings") \
+                .select("lawyer_id, rating") \
+                .execute()
+            for r in (ratings_resp.data or []):
+                lid = r.get("lawyer_id")
+                val = r.get("rating")
+                if lid and val is not None:
+                    lawyer_ratings.setdefault(lid, []).append(val)
+        except Exception as e:
+            logger.warning(f"Could not load consultation ratings (using default 4.8): {e}")
+
         now = datetime.now(timezone.utc)
         
         # Metrics aggregators
@@ -597,14 +611,12 @@ async def get_sla_report(
             # Lawyer performance tracking
             if lawyer_id:
                 if lawyer_id not in lawyer_stats:
-                    # Seed a stable mock rating (e.g. 4.0 - 5.0) based on lawyer_id to represent lawyer quality
-                    import hashlib
-                    rating_seed = int(hashlib.md5(lawyer_id.encode()).hexdigest(), 16) % 11
-                    mock_rating = 4.0 + (rating_seed / 10.0)
+                    l_reviews = lawyer_ratings.get(lawyer_id, [])
+                    real_rating = sum(l_reviews) / len(l_reviews) if l_reviews else 4.8
                     lawyer_stats[lawyer_id] = {
                         "tickets": 0,
                         "resolve_times": [],
-                        "rating": mock_rating
+                        "rating": real_rating
                     }
                 lawyer_stats[lawyer_id]["tickets"] += 1
                 if assigned_at and resolved_at:

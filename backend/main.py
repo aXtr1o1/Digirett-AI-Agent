@@ -13,7 +13,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from api.routes import admin, auth, chat, conversations, documents, health, hitl, invite, messages, webhooks
+from api.routes import admin, auth, chat, conversations, documents, health, hitl, invite, messages, webhooks, ratings
 from api.routes import cal as cal_routes
 from api.routes import cal_webhooks, notes
 from config import settings
@@ -389,6 +389,7 @@ app.include_router(hitl.router,            prefix="/api/v1", dependencies=protec
 app.include_router(cal_routes.router,      prefix="/api/v1", dependencies=protected_deps)
 app.include_router(auth.router,            prefix="/api/v1", dependencies=protected_deps)
 app.include_router(notes.router,           prefix="/api/v1", dependencies=protected_deps)
+app.include_router(ratings.router,         prefix="/api/v1", dependencies=protected_deps)
 
 logger.info("FastAPI app created")
 
