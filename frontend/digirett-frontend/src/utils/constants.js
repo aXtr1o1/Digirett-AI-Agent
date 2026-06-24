@@ -32,6 +32,8 @@ export const API_ENDPOINTS = {
     MY_TICKETS: "/hitl/my-tickets",
     MY_RESOLVED: "/hitl/my-resolved-tickets",
     STATUS: (conversationId) => `/hitl/status/${conversationId}`,
+    RATINGS: "/ratings",
+    LAWYER_RATINGS: "/ratings/lawyer",
   },
   CAL: {
     SLOTS: (ticketId) => `/cal/slots/${ticketId}`,
@@ -54,6 +56,7 @@ export const API_ENDPOINTS = {
     REVOKE_INVITATION: (inviteId) => `/admin/invitations/${inviteId}`,
     DOMAIN_ANALYTICS: "/admin/domain-analytics",
     SLA_REPORT: "/admin/sla-report",
+    RATINGS: "/ratings/admin",
   },
   INVITE: {
     VERIFY: "/invite/verify",

@@ -86,7 +86,29 @@ export default function SlaView({ isDark, onNavigate }) {
     setError(null);
     try {
       const report = await adminService.getSlaReport();
-      setData(report);
+      
+      // Adapt backend keys to frontend expected keys
+      const formattedReport = {
+        alerts: (report.active_breaches || report.alerts || []).map(alert => ({
+          ...alert,
+          type: alert.type === "claim_delay" ? "unclaimed" : (alert.type === "booking_delay" ? "no_booking" : alert.type),
+          waiting_hours: alert.waiting_hours ?? alert.hours_delayed
+        })),
+        avg_response_times: {
+          time_to_claim_hours: report.average_response_times?.avg_claim_hours ?? report.avg_response_times?.time_to_claim_hours,
+          time_to_book_hours: report.average_response_times?.avg_book_hours ?? report.avg_response_times?.time_to_book_hours,
+          time_to_resolve_days: report.average_response_times?.avg_resolve_days ?? report.avg_response_times?.time_to_resolve_days
+        },
+        lawyer_performance: (report.lawyer_performance || []).map(l => ({
+          ...l,
+          lawyer_name: l.name ?? l.lawyer_name,
+          total_tickets: l.tickets ?? l.total_tickets,
+          avg_rating: l.rating ?? l.avg_rating
+        })),
+        sla_thresholds: report.sla_thresholds || { claim_hours: 24, booking_hours: 48, resolve_days: 5 }
+      };
+
+      setData(formattedReport);
     } catch (err) {
       setError(err.message || "Failed to load SLA report");
     } finally {
@@ -187,7 +209,7 @@ export default function SlaView({ isDark, onNavigate }) {
             <CheckCircle size={18} color="#10b981" />
           )}
           <h2 style={{ fontSize: "15px", fontWeight: 800, color: isDark ? "#f1f5f9" : "#0f172a", margin: 0 }}>
-            {alerts.length > 0 ? `⚠️ SLA Alerts — ${alerts.length} active` : "✅ All SLA metrics within threshold"}
+            {alerts.length > 0 ? `SLA Alerts — ${alerts.length} active` : "All SLA metrics within threshold"}
           </h2>
         </div>
 
@@ -270,7 +292,6 @@ export default function SlaView({ isDark, onNavigate }) {
           borderBottom: `1px solid ${isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"}`,
           display: "flex", alignItems: "center", gap: "10px"
         }}>
-          <Award size={17} color="#f59e0b" />
           <h2 style={{ fontSize: "15px", fontWeight: 800, color: isDark ? "#f1f5f9" : "#0f172a", margin: 0 }}>
             Lawyer Performance
           </h2>

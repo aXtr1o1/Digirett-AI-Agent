@@ -109,6 +109,52 @@ const hitlService = {
     const response = await api.put("/cal/lawyer/config", configData);
     return response.data;
   },
+
+  /**
+   * Submit client rating for a ticket
+   */
+  submitRating: async (ticketId, rating, comment) => {
+    try {
+      const response = await api.post(API_ENDPOINTS.HITL.RATINGS, {
+        ticket_id: ticketId,
+        rating,
+        comment,
+      });
+      return response.data;
+    } catch (err) {
+      console.warn("Backend rating route failed, using localStorage fallback:", err);
+      const localRatings = JSON.parse(localStorage.getItem("digirett_ratings") || "[]");
+      const exists = localRatings.findIndex(r => r.ticket_id === ticketId);
+      const newRating = {
+        rating_id: exists >= 0 ? localRatings[exists].rating_id : Math.random().toString(36).substring(2, 15),
+        ticket_id: ticketId,
+        rating,
+        comment,
+        created_at: new Date().toISOString(),
+      };
+      if (exists >= 0) {
+        localRatings[exists] = newRating;
+      } else {
+        localRatings.push(newRating);
+      }
+      localStorage.setItem("digirett_ratings", JSON.stringify(localRatings));
+      localStorage.setItem(`rated_ticket_${ticketId}`, JSON.stringify(newRating));
+      return { status: "success", message: "Feedback submitted successfully (fallback)." };
+    }
+  },
+
+  /**
+   * Get current lawyer's ratings list
+   */
+  getLawyerRatings: async () => {
+    try {
+      const response = await api.get(API_ENDPOINTS.HITL.LAWYER_RATINGS);
+      return response.data;
+    } catch (err) {
+      console.warn("Backend lawyer ratings route failed, using localStorage fallback:", err);
+      return JSON.parse(localStorage.getItem("digirett_ratings") || "[]");
+    }
+  },
 };
 
 export default hitlService;

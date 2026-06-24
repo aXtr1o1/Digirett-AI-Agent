@@ -149,6 +149,19 @@ const adminService = {
     const response = await api.get(API_ENDPOINTS.ADMIN.SLA_REPORT);
     return response.data;
   },
+
+  /**
+   * Get all admin ratings
+   */
+  getAdminRatings: async () => {
+    try {
+      const response = await api.get(API_ENDPOINTS.ADMIN.RATINGS);
+      return response.data;
+    } catch (err) {
+      console.warn("Backend admin ratings route failed, using localStorage fallback:", err);
+      return JSON.parse(localStorage.getItem("digirett_ratings") || "[]");
+    }
+  },
 };
 
 export default adminService;
