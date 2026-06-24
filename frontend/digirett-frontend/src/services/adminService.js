@@ -140,6 +140,15 @@ const adminService = {
     const response = await api.get(API_ENDPOINTS.ADMIN.DOMAIN_ANALYTICS);
     return response.data;
   },
+
+  /**
+   * GET /admin/sla-report
+   * Returns SLA alerts, avg response times, and per-lawyer performance.
+   */
+  getSlaReport: async () => {
+    const response = await api.get(API_ENDPOINTS.ADMIN.SLA_REPORT);
+    return response.data;
+  },
 };
 
 export default adminService;

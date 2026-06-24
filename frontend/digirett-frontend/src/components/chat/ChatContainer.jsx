@@ -70,7 +70,7 @@ const ChatContainer = ({
     if (prev === null && conversationId !== null) {
       // Transitioning from New Chat to Auto-Created Chat.
       // Do NOT change the key, so the composer does NOT remount and wipe typed text.
-      return; 
+      return;
     } else if (prev !== conversationId) {
       // Switched to a different chat from the sidebar. Change key to clear input.
       setComposerKey(conversationId || "new-chat");

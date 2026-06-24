@@ -60,7 +60,7 @@ const MainLayout = ({
 
       {/* Sidebar Overlay for Mobile */}
       {isMobile && isSidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-slate-950/60 z-40 backdrop-blur-sm transition-opacity duration-300"
           onClick={toggleSidebar}
         />
