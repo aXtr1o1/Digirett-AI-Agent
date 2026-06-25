@@ -1,17 +1,42 @@
-import React from "react";
-import { User, Bot, Copy, Check } from "lucide-react";
+import React, { useState } from "react";
+import { User, Bot, Copy, Check, Bookmark } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import SourceLinks from "./SourceLinks";
 import useCopyToClipboard from "../../hooks/useCopyToClipboard";
 import { API_BASE_URL } from "../../utils/constants";
+import libraryService from "../../services/libraryService";
 
-const Message = ({ message, isStreaming = false, theme = "dark" }) => {
+const Message = ({ message, isStreaming = false, theme = "dark", conversationId, conversationTitle }) => {
   const { user } = useUser();
   const { isCopied, copyToClipboard } = useCopyToClipboard();
   const isUser = message.role === "user";
   const isDark = theme === "dark";
+
+  const msgId = message.message_id || message.id;
+  const [isBookmarked, setIsBookmarked] = useState(() =>
+    libraryService.isMessageSaved(msgId)
+  );
+
+  const handleToggleBookmark = async () => {
+    const originalState = isBookmarked;
+    // Optimistic UI update
+    setIsBookmarked(!originalState);
+    
+    try {
+      if (originalState) {
+        await libraryService.unsaveMessage(msgId);
+      } else {
+        await libraryService.saveMessage(message);
+      }
+    } catch (err) {
+      console.error("Failed to toggle bookmark status:", err);
+      // Revert state on error
+      setIsBookmarked(originalState);
+    }
+  };
+
   // ✅ FILE MESSAGE HANDLING (ADD THIS BLOCK)
   if (message.type === "file") {
     return (
@@ -58,15 +83,17 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
         >
           {/* File attachment pill */}
           <a
-            href={
-              message.documentId
-                ? `${API_BASE_URL}/api/v1/documents/view/${message.documentId}`
-                : "#"
-            }
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => {
-              if (!message.documentId) e.preventDefault();
+            href="#"
+            onClick={async (e) => {
+              e.preventDefault();
+              if (!message.documentId) return;
+              try {
+                const token = await window.Clerk?.session?.getToken();
+                const url = `${API_BASE_URL}/api/v1/documents/view/${message.documentId}${token ? `?token=${token}` : ""}`;
+                window.open(url, "_blank");
+              } catch (err) {
+                console.error("Failed to download document:", err);
+              }
             }}
             className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-colors ${isDark
               ? "bg-[#3a3a3a] text-gray-300 hover:bg-[#444]"
@@ -204,17 +231,38 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
             )}
 
             {!isStreaming && (
-              <button
-                onClick={() => copyToClipboard(message.content)}
-                className={`mt-1 flex items-center gap-1.5 text-xs ${isDark ? "text-gray-500 hover:text-gray-300" : "text-gray-400 hover:text-gray-600"
-                  }`}
-              >
-                {isCopied ? (
-                  <><Check className="h-3 w-3" /><span>Copied</span></>
-                ) : (
-                  <><Copy className="h-3 w-3" /><span>Copy</span></>
+              <div className="mt-2 flex items-center gap-4">
+                <button
+                  onClick={() => copyToClipboard(message.content)}
+                  className={`flex items-center gap-1.5 text-xs ${isDark ? "text-gray-500 hover:text-gray-300" : "text-gray-400 hover:text-gray-600"
+                    }`}
+                >
+                  {isCopied ? (
+                    <><Check className="h-3 w-3" /><span>Copied</span></>
+                  ) : (
+                    <><Copy className="h-3 w-3" /><span>Copy</span></>
+                  )}
+                </button>
+
+                {!isUser && message.role !== "system" && (
+                  <button
+                    onClick={handleToggleBookmark}
+                    className={`flex items-center gap-1.5 text-xs transition-colors ${
+                      isBookmarked
+                        ? "text-blue-500 hover:text-blue-400"
+                        : isDark
+                          ? "text-gray-500 hover:text-gray-300"
+                          : "text-gray-400 hover:text-gray-600"
+                    }`}
+                  >
+                    <Bookmark
+                      className="h-3 w-3"
+                      fill={isBookmarked ? "currentColor" : "none"}
+                    />
+                    <span>{isBookmarked ? "Saved" : "Save to Library"}</span>
+                  </button>
                 )}
-              </button>
+              </div>
             )}
 
             {!isStreaming && message.sources && message.sources.length > 0 && (

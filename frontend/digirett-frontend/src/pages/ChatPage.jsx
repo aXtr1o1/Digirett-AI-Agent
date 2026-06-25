@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import MainLayout from "../components/layout/MainLayout";
 import ChatContainer from "../components/chat/ChatContainer";
+import LibraryDashboard from "../components/chat/LibraryDashboard";
+import libraryService from "../services/libraryService";
 import LegalPanel from "../components/layout/LegalPanel";
 import useConversations from "../hooks/useConversations";
 import { useUser } from "@clerk/clerk-react";
@@ -19,6 +21,8 @@ const isUuid = (str) => {
 const ChatPage = () => {
   const { id: urlId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const activeView = searchParams.get("view"); // "library" or null
   const { user } = useUser();
   const [isEscalated, setIsEscalated] = useState(false);
   const [isLegalPanelOpen, setIsLegalPanelOpen] = useState(false);
@@ -37,13 +41,28 @@ const ChatPage = () => {
     handleAutoCreatedConversation,
     moveConversationToTop,
     setCurrentConversationId,
-    updateEscalationStatus
+    updateEscalationStatus,
+    archivedIds,
+    archiveConversation,
+    restoreConversation
   } = useConversations();
 
-  // Sync currentConversationId with URL parameter
+  // Prefetch the saved messages cache on mount to ensure bookmark icons render correctly
   useEffect(() => {
-    if (urlId && isUuid(urlId) && urlId !== currentConversationId) {
-      selectConversation(urlId);
+    libraryService.loadCache().catch(err => console.error("[ChatPage] Failed to load library cache:", err));
+  }, []);
+
+  // Sync currentConversationId with URL parameter
+  // Note: archived conversations should still be loadable/viewable — archivedIds only controls the sidebar filter
+  useEffect(() => {
+    if (urlId && isUuid(urlId)) {
+      if (urlId !== currentConversationId) {
+        selectConversation(urlId);
+      }
+    } else {
+      if (currentConversationId !== null) {
+        selectConversation(null);
+      }
     }
   }, [urlId, selectConversation, currentConversationId]);
 
@@ -209,6 +228,9 @@ const ChatPage = () => {
       <MainLayout
         conversations={conversations}
         currentConversationId={currentConversationId}
+        archivedIds={archivedIds}
+        archiveConversation={archiveConversation}
+        restoreConversation={restoreConversation}
         onNewChat={() => {
           localStorage.removeItem("conversationId");
           navigate("/chat");
@@ -244,10 +266,20 @@ const ChatPage = () => {
           <div className="flex-1 flex items-center justify-center h-full text-gray-500">
             Loading...
           </div>
+        ) : activeView === "library" ? (
+          <LibraryDashboard
+            theme={isDark ? "dark" : "light"}
+            onNavigateToConversation={(convId) => {
+              navigate(`/chat/${convId}`);
+              setIsEscalated(false);
+              setIsLegalPanelOpen(false);
+            }}
+          />
         ) : (
           <div className="relative w-full h-full flex flex-col">
             <ChatContainer
               conversationId={currentConversationId}
+              conversations={conversations}
               onConversationCreated={handleConversationCreated}
               moveConversationToTop={moveConversationToTop}
               userId={user?.id}

@@ -8,6 +8,7 @@ import EscalationStatusCard from "./EscalationStatusCard";
 
 const ChatContainer = ({
   conversationId,
+  conversations = [],
   onConversationCreated,
   moveConversationToTop,
   userId,
@@ -18,6 +19,9 @@ const ChatContainer = ({
   const { user } = useUser();
   const role = user?.publicMetadata?.role || "user";
   const isLawyerView = role === "lawyer" || role === "admin";
+
+  const currentConversation = conversations.find(c => c.conversation_id === conversationId);
+  const conversationTitle = currentConversation?.title || "New Chat";
 
   const {
     messages,
@@ -100,6 +104,8 @@ const ChatContainer = ({
             isStreaming={isStreaming}
             isProcessingDoc={isProcessingDoc}
             theme={theme}
+            conversationId={conversationId}
+            conversationTitle={conversationTitle}
           />
 
           {/* ✅ Status Card removed from here — moved to Right Sidebar */}

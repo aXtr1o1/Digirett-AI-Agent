@@ -19,6 +19,31 @@ const useConversations = () => {
     return isUuid(saved) ? saved : null;
   });
 
+  const [archivedIds, setArchivedIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem("digirett_archived_conversation_ids");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const archiveConversation = useCallback((id) => {
+    setArchivedIds((prev) => {
+      const next = [...new Set([...prev, id])];
+      localStorage.setItem("digirett_archived_conversation_ids", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const restoreConversation = useCallback((id) => {
+    setArchivedIds((prev) => {
+      const next = prev.filter((item) => item !== id);
+      localStorage.setItem("digirett_archived_conversation_ids", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   const loadConversations = useCallback(async () => {
     if (!clerkId) return;
     setIsLoading(true);
@@ -50,7 +75,7 @@ const useConversations = () => {
         .from("conversations")
         .select("conversation_id, user_id, title, is_deleted, created_at, updated_at")
         .eq("user_id", internalUserId)
-        .eq("is_deleted", false)
+        .or("is_deleted.eq.false,is_deleted.is.null")
         .order("updated_at", { ascending: false })
         .limit(50);
 
@@ -314,7 +339,10 @@ const useConversations = () => {
     getCurrentConversation,
     handleAutoCreatedConversation,
     moveConversationToTop,
-    updateEscalationStatus
+    updateEscalationStatus,
+    archivedIds,
+    archiveConversation,
+    restoreConversation
   };
 };
 

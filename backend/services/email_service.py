@@ -263,6 +263,51 @@ class EmailService:
             plain_content=plain_content,
         )
 
+    async def send_ticket_message_notification(
+        self,
+        to_email: str,
+        recipient_name: str,
+        sender_name: str,
+        message_content: str,
+        ticket_id: str,
+    ) -> bool:
+        """
+        Notifies a user or lawyer of a new message in their pre-consultation chat.
+        """
+        subject = f"New message from {sender_name} — Digirett"
+        # Truncate content in email preview if long
+        preview_content = message_content if len(message_content) <= 120 else f"{message_content[:117]}..."
+        
+        html_content = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
+            <h2 style="color: #2D3748;">New Message Received</h2>
+            <p>Hi <strong>{recipient_name}</strong>,</p>
+            <p>You have a new message from <strong>{sender_name}</strong> regarding case reference <strong>{ticket_id[:8].upper()}</strong>:</p>
+            
+            <div style="background:#f7f7f7; border-left:4px solid #3182ce; padding:16px; margin:24px 0; border-radius:4px; font-style:italic; color:#2d3748; white-space: pre-wrap;">
+                "{preview_content}"
+            </div>
+            
+            <p style="color:#4a5568;">Please log in to the Digirett platform to view the thread and reply.</p>
+            
+            <div style="text-align:center; margin:30px 0;">
+                <a href="{settings.FRONTEND_URL}"
+                   style="background-color:#3182ce; color:white; padding:12px 28px;
+                          text-decoration:none; border-radius:6px; font-weight:bold;">
+                   Open Digirett
+                </a>
+            </div>
+            
+            <hr style="border:none; border-top:1px solid #eee; margin:30px 0;">
+            <p style="font-size:0.8em; color:#A0AEC0;">This is an automated notification from the Digirett platform.</p>
+        </div>
+        """
+        return await self._send(
+            to_email=to_email,
+            subject=subject,
+            html_content=html_content,
+        )
+
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # INTERNAL — shared SMTP sender
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

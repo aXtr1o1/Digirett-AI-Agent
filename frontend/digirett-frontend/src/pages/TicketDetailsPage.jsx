@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useClerk } from "@clerk/clerk-react";
 import hitlService from "../services/hitlService";
 import conversationService from "../services/conversationService";
@@ -28,10 +28,13 @@ import {
   Moon,
   UserX,
   LayoutDashboard,
-  Star
+  Star,
+  FileText,
+  Download
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import useDocumentUpload from "../hooks/useDocumentUpload";
+import { API_BASE_URL } from "../utils/constants";
 import { useTheme } from "../providers/ThemeProvider";
 import BackgroundLayer from "../components/common/BackgroundLayer";
 
@@ -50,13 +53,26 @@ export default function TicketDetailsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [file, setFile] = useState(null);
-  const [currentView, setCurrentView] = useState("details");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentView = searchParams.get("view") || "details";
+  const setCurrentView = (view) => setSearchParams({ view });
   const [isSuccess, setIsSuccess] = useState(false);
   const [showNoShowConfirm, setShowNoShowConfirm] = useState(false);
   const [noShowType, setNoShowType] = useState("user");
+  const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const fileInputRef = React.useRef(null);
 
   const { uploadDocument, isUploading, uploadError } = useDocumentUpload(ticket?.conversation_id);
+
+  const checkUnreadStatus = useCallback(async () => {
+    try {
+      const msgs = await hitlService.getTicketMessages(id);
+      const hasUnread = msgs.some(m => !m.is_read && m.sender_role === "user");
+      setHasUnreadMessages(hasUnread);
+    } catch (err) {
+      console.error("Failed to check unread messages:", err);
+    }
+  }, [id]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -72,17 +88,29 @@ export default function TicketDetailsPage() {
       if (ratingInfo) {
         setTicketRating(ratingInfo);
       }
+      
+      await checkUnreadStatus();
     } catch (err) {
       console.error("Failed to fetch details:", err);
       setError(err.message || "Unauthorized or not found");
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, checkUnreadStatus]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (currentView === "messages") {
+      setHasUnreadMessages(false);
+    } else {
+      checkUnreadStatus();
+      const interval = setInterval(checkUnreadStatus, 15000);
+      return () => clearInterval(interval);
+    }
+  }, [currentView, checkUnreadStatus]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -218,6 +246,20 @@ export default function TicketDetailsPage() {
           >
             <UserX size={18} />
             <span className="text-sm font-semibold tracking-wide">Mark No-Show</span>
+          </button>
+
+          <button
+            onClick={() => setCurrentView("messages")}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all group ${currentView === "messages" ? "bg-blue-600/90 text-white shadow-lg shadow-blue-600/20" : "text-gray-400 hover:bg-white/5 hover:text-white"
+              }`}
+          >
+            <div className="flex items-center gap-3">
+              <MessageSquare size={18} />
+              <span className="text-sm font-semibold tracking-wide">Pre-Consultation Chat</span>
+            </div>
+            {hasUnreadMessages && (
+              <div className="h-2 w-2 rounded-full bg-red-500 animate-ping"></div>
+            )}
           </button>
 
           <button
@@ -442,6 +484,18 @@ export default function TicketDetailsPage() {
               </div>
             )}
 
+            {/* VIEW: PRE-CONSULTATION CHAT */}
+            {currentView === "messages" && (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="mb-8">
+                  <h2 className={`text-3xl font-bold tracking-tight mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>Pre-Consultation Chat</h2>
+                  <p className="text-gray-400 font-bold uppercase text-[9px] tracking-widest">Secure pre-consultation thread with client</p>
+                </div>
+                
+                <PreConsultationChat ticketId={id} isDark={isDark} userRole="lawyer" onReadMarked={() => setHasUnreadMessages(false)} conversationId={ticket?.conversation_id} />
+              </div>
+            )}
+
             {/* VIEW: CLIENT FEEDBACK */}
             {currentView === "feedback" && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -563,6 +617,285 @@ export default function TicketDetailsPage() {
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+function PreConsultationChat({ ticketId, isDark, userRole = "user", onReadMarked, conversationId }) {
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const messagesEndRef = React.useRef(null);
+
+  const fileInputRef = React.useRef(null);
+  const { uploadDocument, isUploading, uploadError, clearUploadError } = useDocumentUpload(conversationId);
+
+  const fetchMessages = useCallback(async (shouldMarkRead = false) => {
+    try {
+      const data = await hitlService.getTicketMessages(ticketId);
+      setMessages(data);
+      setLoading(false);
+      
+      // Check if there are any unread messages from the other side
+      const hasUnread = data.some(m => !m.is_read && m.sender_role !== userRole);
+      if (hasUnread || shouldMarkRead) {
+        await hitlService.markTicketMessagesRead(ticketId);
+        if (onReadMarked) onReadMarked();
+      }
+    } catch (err) {
+      console.error("Failed to fetch ticket messages:", err);
+    }
+  }, [ticketId, userRole, onReadMarked]);
+
+  useEffect(() => {
+    fetchMessages(true);
+    
+    const interval = setInterval(() => {
+      fetchMessages();
+    }, 15000); // 15 seconds polling
+
+    return () => clearInterval(interval);
+  }, [fetchMessages]);
+
+  useEffect(() => {
+    // Scroll to bottom on new messages
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  useEffect(() => {
+    if (uploadError) {
+      const timer = setTimeout(() => {
+        clearUploadError();
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [uploadError, clearUploadError]);
+
+  const handleSend = async (e) => {
+    e.preventDefault();
+    if (!newMessage.trim() || sending) return;
+    
+    setSending(true);
+    try {
+      await hitlService.sendTicketMessage(ticketId, newMessage.trim());
+      setNewMessage("");
+      await fetchMessages();
+    } catch (err) {
+      console.error("Failed to send message:", err);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleAttachClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const result = await uploadDocument(file, conversationId);
+      if (result && result.document_id) {
+        await hitlService.sendTicketMessage(
+          ticketId,
+          `Sent a document: ${result.file_name}`,
+          result.file_name,
+          result.document_id
+        );
+        await fetchMessages();
+      }
+    } catch (err) {
+      console.error("Failed to upload document in chat:", err);
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDownload = async (documentId, fileName) => {
+    try {
+      const token = await window.Clerk?.session?.getToken();
+      const url = `${API_BASE_URL}/api/v1/documents/view/${documentId}${token ? `?token=${token}` : ""}`;
+      window.open(url, "_blank");
+    } catch (err) {
+      console.error("Failed to download document:", err);
+    }
+  };
+
+  if (loading && messages.length === 0) {
+    return (
+      <div className="flex justify-center p-8">
+        <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className={`rounded-2xl border flex flex-col overflow-hidden h-[500px] ${
+      isDark ? "bg-slate-900/40 border-white/5" : "bg-slate-50 border-slate-200"
+    }`}>
+      {/* Header */}
+      <div className={`px-6 py-4 border-b flex items-center justify-between ${
+        isDark ? "bg-slate-900/60 border-white/5" : "bg-slate-100 border-slate-200"
+      }`}>
+        <div className="flex items-center gap-2">
+          <ScaleIcon size={16} className={isDark ? "text-indigo-400" : "text-indigo-600"} />
+          <span className={`text-xs font-black uppercase tracking-widest ${
+            isDark ? "text-slate-300" : "text-slate-700"
+          }`}>
+            Communication Thread
+          </span>
+        </div>
+        {messages.some(m => !m.is_read && m.sender_role !== userRole) && (
+          <span className="px-2 py-0.5 bg-red-500/10 text-red-500 text-[9px] font-black uppercase tracking-widest rounded animate-pulse">
+            New
+          </span>
+        )}
+      </div>
+
+      {/* Message List */}
+      <div className="p-6 overflow-y-auto space-y-4 flex-1 scrollbar-thin">
+        {messages.length === 0 ? (
+          <div className="text-center py-16">
+            <MessageSquare size={32} className="mx-auto text-slate-500 opacity-30 mb-3" />
+            <p className="text-xs text-slate-500 font-medium">
+              No pre-consultation messages yet. Start the conversation by sending a message below.
+            </p>
+          </div>
+        ) : (
+          messages.map((msg) => {
+            const isMe = msg.sender_role === userRole;
+            const hasAttachment = !!msg.document_id;
+            return (
+              <div
+                key={msg.message_id}
+                className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
+              >
+                <div className="flex items-center gap-1.5 mb-1 px-1">
+                  <span className="text-[10px] font-black text-slate-400">
+                    {isMe ? "You" : (msg.sender_role === "lawyer" ? "Lawyer" : "👤 Client")}
+                  </span>
+                  <span className="text-[9px] text-slate-500 font-medium">
+                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-xs font-semibold leading-relaxed shadow-sm flex flex-col gap-2 ${
+                  isMe
+                    ? "bg-blue-600 text-white rounded-tr-none"
+                    : (isDark 
+                        ? "bg-slate-800 text-slate-200 border border-white/5 rounded-tl-none" 
+                        : "bg-white text-slate-800 border border-slate-200 rounded-tl-none")
+                }`}>
+                  {hasAttachment ? (
+                    <div 
+                      onClick={() => handleDownload(msg.document_id, msg.file_name)}
+                      className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
+                        isMe
+                          ? "bg-blue-700/50 border-blue-500/30 hover:bg-blue-700/70"
+                          : (isDark
+                              ? "bg-slate-900/60 border-white/5 hover:bg-slate-900/80"
+                              : "bg-slate-100/50 border-slate-200 hover:bg-slate-100/80")
+                      }`}
+                    >
+                      <div className={`p-1.5 rounded-lg ${
+                        isMe ? "bg-blue-500/30" : "bg-blue-500/10 text-blue-500"
+                      }`}>
+                        <FileText size={16} className={isMe ? "text-blue-200" : "text-blue-500"} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-xs font-bold truncate max-w-[180px] ${
+                          isMe ? "text-white" : (isDark ? "text-slate-200" : "text-slate-800")
+                        }`}>
+                          {msg.file_name || "Document"}
+                        </p>
+                        <p className={`text-[10px] ${
+                          isMe ? "text-blue-200" : "text-slate-400"
+                        }`}>
+                          Click to download
+                        </p>
+                      </div>
+                      <Download size={14} className={isMe ? "text-blue-200" : "text-slate-400"} />
+                    </div>
+                  ) : (
+                    <div>{msg.content}</div>
+                  )}
+                  {hasAttachment && msg.content && !msg.content.startsWith("Sent a document:") && (
+                    <div className="text-xs leading-relaxed whitespace-pre-wrap mt-1">
+                      {msg.content}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {uploadError && (
+        <div className={`px-6 py-2.5 text-xs font-bold text-center border-t transition-all animate-in fade-in duration-300 ${
+          isDark ? "bg-red-500/10 text-red-400 border-red-500/20" : "bg-red-50 text-red-600 border-red-100"
+        }`}>
+          {uploadError}
+        </div>
+      )}
+
+      {/* Input Form */}
+      <form onSubmit={handleSend} className={`p-4 border-t flex gap-3 items-center ${
+        isDark ? "bg-slate-900/30 border-white/5" : "bg-white border-slate-200"
+      }`}>
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          onChange={handleFileUpload} 
+          accept=".pdf,.docx,.doc" 
+          style={{ display: "none" }} 
+        />
+
+        <button
+          type="button"
+          onClick={handleAttachClick}
+          disabled={isUploading || sending}
+          className={`p-2.5 rounded-xl transition-all flex items-center justify-center flex-shrink-0 ${
+            isDark
+              ? "bg-slate-950 border border-white/5 text-slate-400 hover:text-white hover:bg-slate-800/50"
+              : "bg-slate-50 border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+          }`}
+          title="Attach a document (.pdf, .docx)"
+        >
+          {isUploading ? (
+            <Loader2 size={16} className="animate-spin text-blue-500" />
+          ) : (
+            <Paperclip size={16} />
+          )}
+        </button>
+
+        <input
+          type="text"
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          placeholder="Type a message to the client..."
+          disabled={sending || isUploading}
+          className={`flex-1 min-w-0 px-4 py-3 rounded-xl text-xs font-medium outline-none transition-all ${
+            isDark
+              ? "bg-slate-950 border border-white/5 text-slate-300 focus:border-blue-500/30"
+              : "bg-slate-50 border border-slate-200 text-gray-900 focus:border-blue-600/20 focus:bg-white"
+          }`}
+        />
+        <button
+          type="submit"
+          disabled={!newMessage.trim() || sending || isUploading}
+          className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-white flex-shrink-0 transition-all ${
+            !newMessage.trim() || sending || isUploading
+              ? (isDark ? "bg-slate-800 text-slate-600" : "bg-slate-200 text-slate-400")
+              : "bg-blue-600 hover:bg-blue-700 active:scale-95 shadow-md"
+          }`}
+        >
+          {sending ? "Sending..." : "Send Message"}
+        </button>
+      </form>
     </div>
   );
 }

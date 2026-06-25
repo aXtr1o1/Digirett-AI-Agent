@@ -365,10 +365,18 @@ def require_db_role(*allowed_roles: str):
             supabase = get_supabase()
             try:
                 def fetch_fallback_role():
-                    return supabase.table("users").select("role").eq("clerk_user_id", user.clerk_user_id).single().execute()
+                    return supabase.table("users").select("user_id, role, status").eq("clerk_user_id", user.clerk_user_id).single().execute()
                 
                 resp = await asyncio.to_thread(fetch_fallback_role)
-                db_role = resp.data.get("role") if resp.data else None
+                if resp.data:
+                    db_user = resp.data
+                    db_role = db_user.get("role")
+                    # Enrich the user object
+                    user["db_user_id"] = db_user.get("user_id")
+                    user["db_role"] = db_role
+                    user["status"] = db_user.get("status")
+                else:
+                    db_role = None
             except Exception as exc:
                 logger.error(f"❌ DB role check fallback failed for {user.clerk_user_id} | {exc}")
                 db_role = None

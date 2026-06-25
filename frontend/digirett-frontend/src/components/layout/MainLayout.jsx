@@ -9,6 +9,9 @@ const MainLayout = ({
   children,
   conversations,
   currentConversationId,
+  archivedIds = [],
+  archiveConversation,
+  restoreConversation,
   onSelectConversation,
   onNewChat,
   onDeleteConversation,
@@ -93,6 +96,9 @@ const MainLayout = ({
           <Sidebar
             conversations={conversations}
             currentConversationId={currentConversationId}
+            archivedIds={archivedIds}
+            archiveConversation={archiveConversation}
+            restoreConversation={restoreConversation}
             onSelectConversation={onSelectConversation}
             onNewChat={onNewChat}
             onDeleteConversation={onDeleteConversation}

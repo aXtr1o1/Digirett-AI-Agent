@@ -536,7 +536,9 @@ export default function LawyerDashboard() {
                 >
                   <Inbox size={18} />
                   My Intake
-                  {intakeTicket && <span className="ml-auto bg-emerald-500 w-2 h-2 rounded-full"></span>}
+                  {intakeTicket && (
+                    <span className={`ml-auto w-2 h-2 rounded-full ${intakeTicket.has_unread_messages ? "bg-red-500 animate-pulse" : "bg-emerald-500"}`}></span>
+                  )}
                 </button>
                 <button
                   onClick={() => { setActiveView("pending"); setIsSidebarOpen(false); }}
@@ -545,7 +547,11 @@ export default function LawyerDashboard() {
                 >
                   <Layers size={18} />
                   Pending Matters
-                  {pendingTickets.length > 0 && <span className="ml-auto bg-white/10 text-white px-1.5 py-0.5 rounded text-[10px]">{pendingTickets.length}</span>}
+                  {pendingTickets.some(t => t.has_unread_messages) ? (
+                    <span className="ml-auto bg-red-500 w-2 h-2 rounded-full animate-pulse"></span>
+                  ) : (
+                    pendingTickets.length > 0 && <span className="ml-auto bg-white/10 text-white px-1.5 py-0.5 rounded text-[10px]">{pendingTickets.length}</span>
+                  )}
                 </button>
               </nav>
             </div>
@@ -959,7 +965,12 @@ export default function LawyerDashboard() {
                             <div className="flex items-center gap-4">
                               <div className="h-10 w-10 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-bold">{(t.user_display_name || "U").charAt(0)}</div>
                               <div>
-                                <p className="text-sm font-bold">{t.user_display_name || "Anonymous"}</p>
+                                <p className="text-sm font-bold flex items-center gap-2">
+                                  {t.user_display_name || "Anonymous"}
+                                  {t.has_unread_messages && (
+                                    <span className="px-1.5 py-0.5 bg-red-500/10 text-red-500 rounded text-[8px] font-black uppercase tracking-widest animate-pulse">New Msg</span>
+                                  )}
+                                </p>
                                 <p className="text-[10px] text-slate-500">{t.user_email}</p>
                                 {(t.outcome_notes?.includes("[USER-NO-SHOW]") || t.outcome_notes?.includes("[BOTH-NO-SHOW]")) && (
                                   <div className="mt-1 flex items-center gap-1 text-[9px] font-black text-red-500 uppercase tracking-tighter">
@@ -1155,8 +1166,8 @@ export default function LawyerDashboard() {
                             key={note.id}
                             onClick={() => handleEditNote(note)}
                             className={`p-4 rounded-xl border transition-all flex flex-col justify-between gap-3 cursor-pointer ${currentNoteId === note.id
-                                ? (isDark ? "bg-indigo-500/10 border-indigo-500/50" : "bg-indigo-50 border-indigo-300")
-                                : (isDark ? "bg-slate-950/40 border-slate-800/80 hover:border-slate-700" : "bg-slate-50/50 border-slate-100 hover:border-slate-200")
+                              ? (isDark ? "bg-indigo-500/10 border-indigo-500/50" : "bg-indigo-50 border-indigo-300")
+                              : (isDark ? "bg-slate-950/40 border-slate-800/80 hover:border-slate-700" : "bg-slate-50/50 border-slate-100 hover:border-slate-200")
                               }`}
                           >
                             <div>
