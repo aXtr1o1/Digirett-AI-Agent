@@ -63,6 +63,12 @@ export const API_ENDPOINTS = {
     ACCEPT: "/auth/accept-invite",
   },
   HEALTH: "/health",
+  LIBRARY: {
+    SAVE: "/library/save",
+    LIST: "/library",
+    DELETE: (messageId) => `/library/${messageId}`,
+    UPDATE_NOTE: (messageId) => `/library/${messageId}`,
+  },
 };
 
 export const MESSAGE_ROLES = {

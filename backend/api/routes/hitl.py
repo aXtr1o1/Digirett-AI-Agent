@@ -269,8 +269,9 @@ def get_ticket_details(
     Access: Only the assigned lawyer or admin can call this.
     """
     lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
+    user_role = current_lawyer.db_role or current_lawyer.role
 
-    details = _hitl_service.get_ticket_with_user_details(ticket_id, lawyer_id)
+    details = _hitl_service.get_ticket_with_user_details(ticket_id, lawyer_id, user_role=user_role)
     if not details:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -304,9 +305,10 @@ def respond_to_ticket(
     Status transitions: assigned|booked → resolved
     """
     lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
+    user_role = current_lawyer.db_role or current_lawyer.role
 
     # Verify assignment — lawyer must be assigned to this ticket
-    details = _hitl_service.get_ticket_with_user_details(ticket_id, lawyer_id)
+    details = _hitl_service.get_ticket_with_user_details(ticket_id, lawyer_id, user_role=user_role)
     if not details:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

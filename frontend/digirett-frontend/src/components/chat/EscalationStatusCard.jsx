@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import hitlService from "../../services/hitlService";
 import BookingSystem from "./BookingSystem";
-import { Loader2, Scale, CheckCircle2, Clock, Calendar, ExternalLink, ShieldCheck, AlertCircle, AlertTriangle, ChevronLeft, X, Quote, Star } from "lucide-react";
+import { Loader2, Scale, CheckCircle2, Clock, Calendar, ExternalLink, ShieldCheck, AlertCircle, AlertTriangle, ChevronLeft, X, Quote, Star, Paperclip, FileText, Download } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import useDocumentUpload from "../../hooks/useDocumentUpload";
+import { API_BASE_URL } from "../../utils/constants";
 
 export default function EscalationStatusCard({ conversationId, theme = "dark", isSidebar = false }) {
   const [statusData, setStatusData] = useState(null);
@@ -208,6 +210,9 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
             isSidebar={isSidebar}
           />
         </div>
+
+        {/* Pre-Consultation Messages */}
+        <PreConsultationChat ticketId={ticket.ticket_id} isDark={isDark} userRole="user" conversationId={conversationId} />
       </div>
     );
   }
@@ -248,6 +253,9 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
             </div>
           </div>
         </div>
+
+        {/* Pre-Consultation Messages */}
+        <PreConsultationChat ticketId={ticket.ticket_id} isDark={isDark} userRole="user" conversationId={conversationId} />
       </div>
     );
   }
@@ -446,6 +454,281 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
   return (
     <div className="p-4 text-center text-[10px] text-slate-500 italic">
       Waiting for legal status updates...
+    </div>
+  );
+}
+
+function PreConsultationChat({ ticketId, isDark, userRole = "user", conversationId }) {
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const messagesEndRef = React.useRef(null);
+
+  const fileInputRef = React.useRef(null);
+  const { uploadDocument, isUploading, uploadError, clearUploadError } = useDocumentUpload(conversationId);
+
+  const fetchMessages = useCallback(async (shouldMarkRead = false) => {
+    try {
+      const data = await hitlService.getTicketMessages(ticketId);
+      setMessages(data);
+      setLoading(false);
+      
+      // Check if there are any unread messages from the other side
+      const hasUnread = data.some(m => !m.is_read && m.sender_role !== userRole);
+      if (hasUnread || shouldMarkRead) {
+        await hitlService.markTicketMessagesRead(ticketId);
+      }
+    } catch (err) {
+      console.error("Failed to fetch ticket messages:", err);
+    }
+  }, [ticketId, userRole]);
+
+  useEffect(() => {
+    fetchMessages(true);
+    
+    const interval = setInterval(() => {
+      fetchMessages();
+    }, 15000); // 15 seconds polling
+
+    return () => clearInterval(interval);
+  }, [fetchMessages]);
+
+  useEffect(() => {
+    // Scroll to bottom on new messages
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  useEffect(() => {
+    if (uploadError) {
+      const timer = setTimeout(() => {
+        clearUploadError();
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [uploadError, clearUploadError]);
+
+  const handleSend = async (e) => {
+    e.preventDefault();
+    if (!newMessage.trim() || sending) return;
+    
+    setSending(true);
+    try {
+      await hitlService.sendTicketMessage(ticketId, newMessage.trim());
+      setNewMessage("");
+      await fetchMessages();
+    } catch (err) {
+      console.error("Failed to send message:", err);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleAttachClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const result = await uploadDocument(file, conversationId);
+      if (result && result.document_id) {
+        await hitlService.sendTicketMessage(
+          ticketId,
+          `Sent a document: ${result.file_name}`,
+          result.file_name,
+          result.document_id
+        );
+        await fetchMessages();
+      }
+    } catch (err) {
+      console.error("Failed to upload document in chat:", err);
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDownload = async (documentId, fileName) => {
+    try {
+      const token = await window.Clerk?.session?.getToken();
+      const url = `${API_BASE_URL}/api/v1/documents/view/${documentId}${token ? `?token=${token}` : ""}`;
+      window.open(url, "_blank");
+    } catch (err) {
+      console.error("Failed to download document:", err);
+    }
+  };
+
+  if (loading && messages.length === 0) {
+    return (
+      <div className="flex justify-center p-4">
+        <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className={`mt-6 rounded-2xl border flex flex-col overflow-hidden ${
+      isDark ? "bg-slate-900/40 border-white/5" : "bg-slate-50 border-slate-200"
+    }`}>
+      {/* Header */}
+      <div className={`px-4 py-3 border-b flex items-center justify-between ${
+        isDark ? "bg-slate-900/60 border-white/5" : "bg-slate-100 border-slate-200"
+      }`}>
+        <div className="flex items-center gap-2">
+          <Scale size={14} className={isDark ? "text-indigo-400" : "text-indigo-600"} />
+          <span className={`text-[10px] font-black uppercase tracking-widest ${
+            isDark ? "text-slate-300" : "text-slate-700"
+          }`}>
+            Pre-Consultation Messages
+          </span>
+        </div>
+        {messages.some(m => !m.is_read && m.sender_role !== userRole) && (
+          <span className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
+        )}
+      </div>
+
+      {/* Message List */}
+      <div className="p-4 max-h-[240px] overflow-y-auto space-y-3 flex-1 scrollbar-thin">
+        {messages.length === 0 ? (
+          <div className="text-center py-6">
+            <p className="text-[10px] text-slate-500 font-medium">
+              No messages yet. Ask your lawyer a question or share draft documents.
+            </p>
+          </div>
+        ) : (
+          messages.map((msg) => {
+            const isMe = msg.sender_role === userRole;
+            const hasAttachment = !!msg.document_id;
+            return (
+              <div
+                key={msg.message_id}
+                className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
+              >
+                <div className="flex items-center gap-1 mb-0.5 px-1">
+                  <span className="text-[9px] font-black text-slate-500">
+                    {isMe ? "You" : (msg.sender_role === "lawyer" ? "Lawyer" : "👤 Client")}
+                  </span>
+                  <span className="text-[8px] text-slate-400">
+                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                <div className={`max-w-[85%] px-3.5 py-2 rounded-2xl text-[11px] font-medium leading-relaxed shadow-sm flex flex-col gap-2 ${
+                  isMe
+                    ? "bg-indigo-600 text-white rounded-tr-none"
+                    : (isDark 
+                        ? "bg-slate-800 text-slate-200 border border-white/5 rounded-tl-none" 
+                        : "bg-white text-slate-800 border border-slate-200 rounded-tl-none")
+                }`}>
+                  {hasAttachment ? (
+                    <div 
+                      onClick={() => handleDownload(msg.document_id, msg.file_name)}
+                      className={`flex items-center gap-2.5 p-2 rounded-xl border transition-all cursor-pointer select-none ${
+                        isMe
+                          ? "bg-indigo-700/50 border-indigo-500/30 hover:bg-indigo-700/70"
+                          : (isDark
+                              ? "bg-slate-900/60 border-white/5 hover:bg-slate-900/80"
+                              : "bg-slate-50 border-slate-100 hover:bg-slate-100/70")
+                      }`}
+                    >
+                      <div className={`p-1.5 rounded-lg ${
+                        isMe ? "bg-indigo-500/30" : "bg-indigo-500/10 text-indigo-500"
+                      }`}>
+                        <FileText size={14} className={isMe ? "text-indigo-200" : "text-indigo-500"} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-[10px] font-bold truncate max-w-[140px] ${
+                          isMe ? "text-white" : (isDark ? "text-slate-200" : "text-slate-800")
+                        }`}>
+                          {msg.file_name || "Document"}
+                        </p>
+                        <p className={`text-[8px] ${
+                          isMe ? "text-indigo-200" : "text-slate-400"
+                        }`}>
+                          Click to download
+                        </p>
+                      </div>
+                      <Download size={12} className={isMe ? "text-indigo-200" : "text-slate-400"} />
+                    </div>
+                  ) : (
+                    <div>{msg.content}</div>
+                  )}
+                  {hasAttachment && msg.content && !msg.content.startsWith("Sent a document:") && (
+                    <div className="text-[11px] leading-relaxed whitespace-pre-wrap mt-1">
+                      {msg.content}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {uploadError && (
+        <div className={`px-4 py-2 text-[10px] font-bold text-center border-t transition-all animate-in fade-in duration-300 ${
+          isDark ? "bg-red-500/10 text-red-400 border-red-500/20" : "bg-red-50 text-red-600 border-red-100"
+        }`}>
+          {uploadError}
+        </div>
+      )}
+
+      {/* Input Form */}
+      <form onSubmit={handleSend} className={`p-3 border-t flex gap-2 items-center ${
+        isDark ? "bg-slate-900/30 border-white/5" : "bg-white border-slate-200"
+      }`}>
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          onChange={handleFileUpload} 
+          accept=".pdf,.docx,.doc" 
+          style={{ display: "none" }} 
+        />
+        
+        <button
+          type="button"
+          onClick={handleAttachClick}
+          disabled={isUploading || sending}
+          className={`p-2 rounded-xl transition-all flex items-center justify-center flex-shrink-0 ${
+            isDark
+              ? "bg-slate-950 border border-white/5 text-slate-400 hover:text-white hover:bg-slate-800/50"
+              : "bg-slate-50 border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+          }`}
+          title="Attach a document (.pdf, .docx)"
+        >
+          {isUploading ? (
+            <Loader2 size={14} className="animate-spin text-indigo-500" />
+          ) : (
+            <Paperclip size={14} />
+          )}
+        </button>
+
+        <input
+          type="text"
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          placeholder="Type a message to your lawyer..."
+          disabled={sending || isUploading}
+          className={`flex-1 min-w-0 px-3 py-2 rounded-xl text-[11px] font-medium outline-none transition-all ${
+            isDark
+              ? "bg-slate-950 border border-white/5 text-slate-300 focus:border-indigo-500/30"
+              : "bg-slate-50 border border-slate-200 text-slate-900 focus:border-indigo-600/30 focus:bg-white"
+          }`}
+        />
+        <button
+          type="submit"
+          disabled={!newMessage.trim() || sending || isUploading}
+          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-white flex-shrink-0 transition-all ${
+            !newMessage.trim() || sending || isUploading
+              ? (isDark ? "bg-slate-800 text-slate-600" : "bg-slate-200 text-slate-400")
+              : "bg-indigo-600 hover:bg-indigo-500 active:scale-95 shadow-md"
+          }`}
+        >
+          {sending ? "..." : "Send"}
+        </button>
+      </form>
     </div>
   );
 }

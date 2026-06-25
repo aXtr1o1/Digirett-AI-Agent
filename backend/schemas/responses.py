@@ -96,3 +96,17 @@ class SearchResponse(BaseModel):
     results: List[SearchResult] = Field(default_factory=list)
     total_found: int
     query_time: float
+
+
+class LibraryItemResponse(BaseModel):
+    """A saved message item in user's library."""
+    id: str
+    message_id: str
+    content: str
+    role: str
+    conversation_id: str
+    conversation_title: str
+    saved_at: datetime
+    note: str = ""
+    sources: List[Dict[str, Any]] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)

@@ -13,7 +13,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from api.routes import admin, auth, chat, conversations, documents, health, hitl, invite, messages, webhooks, ratings
+from api.routes import admin, auth, chat, conversations, documents, health, hitl, invite, messages, webhooks, ratings, library, ticket_messages
 from api.routes import cal as cal_routes
 from api.routes import cal_webhooks, notes
 from config import settings
@@ -32,6 +32,7 @@ from services.message_service import MessageService
 from services.rag_service import RAGService
 from services.user_service import UserService
 from services.notes_service import NotesService
+from services.library_service import LibraryService
 from config import settings
 from db.milvus_client import get_milvus
 from db.redis_client import get_redis
@@ -152,6 +153,9 @@ async def lifespan(app: FastAPI):
         logger.info("Initializing Notes service...")
         notes_service = NotesService(supabase_client=supabase_client)
 
+        logger.info("Initializing Library service...")
+        library_service = LibraryService(supabase_client=supabase_client)
+
         # ── Title fetcher must be created BEFORE MessageService ──────────
         # It resolves Lovdata URLs to human-readable Norwegian titles using
         # a 3-layer cache: Redis (L1) → Supabase lovdata_url_titles (L2)
@@ -233,6 +237,15 @@ async def lifespan(app: FastAPI):
         notes.set_services(
             notes_svc=notes_service,
             user_svc=user_service,
+        )
+        library.set_services(
+            library_service=library_service,
+            user_service=user_service,
+        )
+        ticket_messages.set_services(
+            hitl_svc=hitl_service,
+            user_svc=user_service,
+            email_svc=email_service,
         )
 
         logger.info("All services ready — server is live")
@@ -390,6 +403,8 @@ app.include_router(cal_routes.router,      prefix="/api/v1", dependencies=protec
 app.include_router(auth.router,            prefix="/api/v1", dependencies=protected_deps)
 app.include_router(notes.router,           prefix="/api/v1", dependencies=protected_deps)
 app.include_router(ratings.router,         prefix="/api/v1", dependencies=protected_deps)
+app.include_router(library.router,         prefix="/api/v1", dependencies=protected_deps)
+app.include_router(ticket_messages.router,  prefix="/api/v1", dependencies=protected_deps)
 
 logger.info("FastAPI app created")
 

@@ -356,10 +356,10 @@ class HitlService:
             logger.error(f"❌ Failed to respond to ticket {ticket_id} | {exc}")
             return False
 
-    def get_ticket_with_user_details(self, ticket_id: str, lawyer_id: str) -> Optional[Dict[str, Any]]:
+    def get_ticket_with_user_details(self, ticket_id: str, lawyer_id: str, user_role: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
         Fetches full ticket details including the user's profile info.
-        Enforces that ONLY the assigned lawyer can see this.
+        Enforces that ONLY the assigned lawyer or admins can see this.
 
         Returns the ticket with a 'user_info' key containing:
           - email, user_name (from users table)
@@ -388,11 +388,12 @@ class HitlService:
 
             ticket = response.data[0]
 
-            # Security check: only the assigned lawyer can view details
-            if ticket.get("assigned_lawyer_id") != lawyer_id:
+            # Security check: only the assigned lawyer or admins can view details
+            is_admin = user_role in ("admin", "system_admin")
+            if not is_admin and ticket.get("assigned_lawyer_id") != lawyer_id:
                 logger.warning(
                     f"Unauthorized access to ticket details | "
-                    f"lawyer={lawyer_id} | ticket={ticket_id}"
+                    f"lawyer={lawyer_id} | role={user_role} | ticket={ticket_id}"
                 )
                 return None
 
@@ -491,6 +492,19 @@ class HitlService:
                 # Apply auto no-show check
                 self._auto_handle_no_show(ticket)
 
+                # Check for unread messages sent by the user
+                try:
+                    unread_resp = self._supabase.table("ticket_messages") \
+                        .select("message_id", count="exact") \
+                        .eq("ticket_id", ticket.get("ticket_id")) \
+                        .eq("sender_role", "user") \
+                        .eq("is_read", False) \
+                        .execute()
+                    ticket["has_unread_messages"] = (unread_resp.count or 0) > 0
+                except Exception as msg_exc:
+                    logger.warning(f"⚠️ Failed to fetch unread messages count for ticket {ticket.get('ticket_id')} | {msg_exc}")
+                    ticket["has_unread_messages"] = False
+
             return data
         except Exception as exc:
             logger.error(f"❌ Failed to fetch lawyer active tickets | {exc}")
@@ -534,6 +548,19 @@ class HitlService:
                 
                 # Apply auto no-show check
                 self._auto_handle_no_show(ticket)
+
+                # Check for unread messages sent by the lawyer
+                try:
+                    unread_resp = self._supabase.table("ticket_messages") \
+                        .select("message_id", count="exact") \
+                        .eq("ticket_id", ticket.get("ticket_id")) \
+                        .eq("sender_role", "lawyer") \
+                        .eq("is_read", False) \
+                        .execute()
+                    ticket["has_unread_messages"] = (unread_resp.count or 0) > 0
+                except Exception as msg_exc:
+                    logger.warning(f"⚠️ Failed to fetch unread messages count for ticket {ticket.get('ticket_id')} | {msg_exc}")
+                    ticket["has_unread_messages"] = False
 
             return data
         except Exception as exc:

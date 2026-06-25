@@ -55,15 +55,15 @@ const ForgotPassword = () => {
         strategy: 'reset_password_email_code',
         identifier: email,
       });
-      
+
       setStep('verify');
     } catch (err) {
       console.error('Send code error:', err);
-      
+
       // Broadened check for "already signed in" or "session exists"
       const errorMsg = JSON.stringify(err).toLowerCase();
       const isAlreadySignedIn = errorMsg.includes('signed in') || errorMsg.includes('session_already_exists');
-      
+
       if (isAlreadySignedIn) {
         setError('Active session detected. Logging you out to allow password reset...');
         setTimeout(async () => {
@@ -76,7 +76,7 @@ const ForgotPassword = () => {
         }, 1000);
         return;
       }
-      
+
       setError(err.errors?.[0]?.message || 'Failed to send reset code');
     } finally {
       setLoading(false);
@@ -99,12 +99,12 @@ const ForgotPassword = () => {
       if (result.status === 'complete') {
         alert('Password updated successfully!');
         // Pass credentials to the sign-in page via state
-        navigate('/sign-in', { 
-          state: { 
-            identifier: email, 
+        navigate('/sign-in', {
+          state: {
+            identifier: email,
             password: newPassword,
             message: 'Your password has been updated. Click login to continue.'
-          } 
+          }
         });
       } else {
         setError('Incomplete status: ' + result.status);
@@ -149,8 +149,8 @@ const ForgotPassword = () => {
             {step === 'email' ? 'Forgot Password?' : 'Reset Password'}
           </h1>
           <p className="text-gray-400 text-sm">
-            {step === 'email' 
-              ? 'Enter your email and we\'ll send you a recovery code.' 
+            {step === 'email'
+              ? 'Enter your email and we\'ll send you a recovery code.'
               : `We've sent a 6-digit code to ${email}`}
           </p>
         </div>

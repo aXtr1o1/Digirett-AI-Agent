@@ -155,6 +155,34 @@ const hitlService = {
       return JSON.parse(localStorage.getItem("digirett_ratings") || "[]");
     }
   },
+
+  /**
+   * Get all pre-consultation messages for a ticket
+   */
+  getTicketMessages: async (ticketId) => {
+    const response = await api.get(`/hitl/tickets/${ticketId}/messages`);
+    return response.data;
+  },
+
+  /**
+   * Send a pre-consultation message for a ticket
+   */
+  sendTicketMessage: async (ticketId, content, fileName = null, documentId = null) => {
+    const response = await api.post(`/hitl/tickets/${ticketId}/messages`, {
+      content,
+      file_name: fileName,
+      document_id: documentId
+    });
+    return response.data;
+  },
+
+  /**
+   * Mark all pre-consultation messages in the thread as read
+   */
+  markTicketMessagesRead: async (ticketId) => {
+    const response = await api.patch(`/hitl/tickets/${ticketId}/messages/read`);
+    return response.data;
+  },
 };
 
 export default hitlService;
