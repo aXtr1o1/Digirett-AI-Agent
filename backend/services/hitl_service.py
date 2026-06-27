@@ -48,9 +48,22 @@ class HitlService:
         """
         try:
             ticket_id = str(uuid4())
-            # NOTE: only columns that exist in the real hitl_tickets schema.
-            # tenant_id is deferred to a future phase — column will be made nullable via migration.
-            # user_note is not yet in the schema — add via migration when needed.
+            # Retrieve detected_domain from the latest assistant message metadata
+            detected_domain = None
+            try:
+                msg_resp = self._supabase.table("messages") \
+                    .select("metadata") \
+                    .eq("conversation_id", conversation_id) \
+                    .eq("role", "assistant") \
+                    .order("created_at", desc=True) \
+                    .limit(1) \
+                    .execute()
+                if msg_resp.data:
+                    meta = msg_resp.data[0].get("metadata") or {}
+                    detected_domain = meta.get("detected_domain")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to look up detected_domain for conversation {conversation_id} | {e}")
+
             ticket_data = {
                 "ticket_id": ticket_id,
                 "conversation_id": conversation_id,
@@ -58,10 +71,11 @@ class HitlService:
                 "trigger_message_id": trigger_message_id,
                 "status": "open",
                 "created_at": datetime.utcnow().isoformat(),
+                "detected_domain": detected_domain,
             }
 
             response = self._supabase.table("hitl_tickets").insert(ticket_data).execute()
-            logger.info(f"🎫 Ticket created | id={ticket_id} | user={user_id}")
+            logger.info(f"🎫 Ticket created | id={ticket_id} | user={user_id} | domain={detected_domain}")
             return response.data[0] if response.data else ticket_data
             
         except Exception as exc:
@@ -211,14 +225,28 @@ class HitlService:
     # LAWYER ACTIONS
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    def get_open_tickets(self, tenant_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_open_tickets(self, tenant_id: Optional[str] = None, lawyer_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Returns all tickets in 'open' status visible on the lawyer dashboard queue.
         Includes the DB summary from the conversations table and user profile info.
+        Prioritizes matched-domain lawyers first if lawyer_id is provided.
         """
         try:
+            lawyer_domains = []
+            if lawyer_id:
+                try:
+                    lp_resp = self._supabase.table("lawyer_profiles") \
+                        .select("expertise_domains") \
+                        .eq("lawyer_id", lawyer_id) \
+                        .limit(1) \
+                        .execute()
+                    if lp_resp.data:
+                        lawyer_domains = lp_resp.data[0].get("expertise_domains") or []
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to load domains for lawyer {lawyer_id} | {e}")
+
             query = self._supabase.table("hitl_tickets").select(
-                "ticket_id, conversation_id, user_id, status, created_at, "
+                "ticket_id, conversation_id, user_id, status, created_at, detected_domain, ai_brief, "
                 "conversations!hitl_tickets_conversation_id_fkey(conversation_summary), "
                 "users!hitl_tickets_user_id_fkey("
                 "  email, "
@@ -240,6 +268,14 @@ class HitlService:
                 raw_profile = raw_user.get("user_profiles", {}) or {}
                 ticket["user_display_name"] = raw_profile.get("display_name")
                 ticket["user_phone_number"] = raw_profile.get("phone_number")
+
+            if lawyer_domains and data:
+                lawyer_domains_set = {d.lower() for d in lawyer_domains}
+                def sort_key(t):
+                    td = t.get("detected_domain")
+                    has_match = td and td.lower() in lawyer_domains_set
+                    return (0 if has_match else 1, t.get("created_at"))
+                data.sort(key=sort_key)
 
             return data
         except Exception as exc:

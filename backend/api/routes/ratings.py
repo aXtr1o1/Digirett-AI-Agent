@@ -1,13 +1,21 @@
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel, Field
+from config import settings
 
 from core.auth import ClerkUser, require_db_role, get_current_user
 from db.supabase_client import get_supabase
+from services.email_service import EmailService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ratings", tags=["Ratings"])
+
+_email_service: Optional[EmailService] = None
+
+def set_services(email_svc: Optional[EmailService] = None) -> None:
+    global _email_service
+    _email_service = email_svc
 
 class RatingSubmitRequest(BaseModel):
     ticket_id: str
@@ -17,6 +25,7 @@ class RatingSubmitRequest(BaseModel):
 @router.post("", summary="Submit consultation feedback and rating")
 async def submit_rating(
     req: RatingSubmitRequest,
+    background_tasks: BackgroundTasks,
     current_user: ClerkUser = Depends(get_current_user),
 ):
     supabase = get_supabase()
@@ -75,10 +84,68 @@ async def submit_rating(
             "comment": req.comment
         }, on_conflict="ticket_id").execute()
         
+        # 4. Trigger background email notification
+        if _email_service:
+            background_tasks.add_task(
+                _send_rating_notification,
+                ticket_id=req.ticket_id,
+                lawyer_id=lawyer_id,
+                rating=req.rating,
+                comment=req.comment
+            )
+        
         return {"status": "success", "message": "Feedback submitted successfully."}
     except Exception as exc:
         logger.error(f"Failed to submit rating: {exc}")
         raise HTTPException(status_code=500, detail="Failed to store feedback.")
+
+
+async def _send_rating_notification(
+    ticket_id: str,
+    lawyer_id: str,
+    rating: int,
+    comment: Optional[str] = None
+):
+    """Internal helper to notify lawyer of new rating and copy admin if low rating."""
+    try:
+        supabase = get_supabase()
+        
+        # Get lawyer profile
+        lawyer_resp = supabase.table("users") \
+            .select("email, user_name, user_profiles(display_name)") \
+            .eq("user_id", lawyer_id) \
+            .single() \
+            .execute()
+            
+        if lawyer_resp.data and _email_service:
+            lawyer_data = lawyer_resp.data
+            to_email = lawyer_data.get("email")
+            
+            profile = lawyer_data.get("user_profiles") or {}
+            lawyer_name = profile.get("display_name") or lawyer_data.get("user_name") or "Lawyer"
+            
+            if to_email:
+                await _email_service.send_consultation_feedback_email(
+                    to_email=to_email,
+                    lawyer_name=lawyer_name,
+                    ticket_id=ticket_id,
+                    rating=rating,
+                    comment=comment
+                )
+                
+            # If low rating (<= 2 stars), notify admin for Quality Assurance
+            admin_email = settings.ADMIN_ALERT_EMAIL
+            if rating <= 2 and admin_email:
+                await _email_service.send_consultation_feedback_email(
+                    to_email=admin_email,
+                    lawyer_name=f"{lawyer_name} (Admin Review)",
+                    ticket_id=ticket_id,
+                    rating=rating,
+                    comment=f"[QA REVIEW REQUIRED] {comment or 'No comment provided.'}"
+                )
+    except Exception as exc:
+        logger.warning(f"⚠️ Failed to send rating notification email (non-fatal) | {exc}")
+
 
 @router.get("/lawyer", summary="Get rating logs for the logged-in lawyer")
 async def get_lawyer_ratings(
