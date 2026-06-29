@@ -6,6 +6,46 @@ import ReactMarkdown from "react-markdown";
 import useDocumentUpload from "../../hooks/useDocumentUpload";
 import { API_BASE_URL } from "../../utils/constants";
 
+const DOMAIN_ENGLISH_NAMES = {
+  "arbeidsrett": "Company Law", // wait, "arbeidsrett" is Employment Law! Let's map it correctly.
+  "selskapsrett": "Company Law",
+  "avtalerett": "Contract Law",
+  "manda_fusjon_fisjon": "M&A, Mergers & Acquisitions",
+  "arsregnskap_og_selskapsrapportering": "Financial Statements & Reporting",
+  "inkasso_og_tvangsfullbyrdelse": "Debt Collection & Enforcement",
+  "konkursrett_og_insolvens": "Bankruptcy & Insolvency",
+  "obligasjonsrett": "Law of Obligations",
+  "panterett_og_sikkerhetsrett": "Liens & Security Rights",
+  "pengekravsrett_fordringer": "Monetary Claims & Debt",
+  "personvern_gdpr_business_compliance": "Privacy & GDPR Compliance",
+  "tvistelosning_smb": "Dispute Resolution for SMBs",
+  "arbeidsrett_en": "Employment Law" // Fallback / alias
+};
+
+// Map keys to correct English names
+const getDomainEnglishName = (domain) => {
+  if (!domain) return null;
+  const normalized = domain.toLowerCase().trim();
+  if (normalized === "arbeidsrett") return "Employment Law";
+  if (normalized === "selskapsrett") return "Company Law";
+  if (normalized === "avtalerett") return "Contract Law";
+  if (normalized === "manda_fusjon_fisjon") return "M&A, Mergers & Acquisitions";
+  if (normalized === "arsregnskap_og_selskapsrapportering") return "Financial Statements & Reporting";
+  if (normalized === "inkasso_og_tvangsfullbyrdelse") return "Debt Collection & Enforcement";
+  if (normalized === "konkursrett_og_insolvens") return "Bankruptcy & Insolvency";
+  if (normalized === "obligasjonsrett") return "Law of Obligations";
+  if (normalized === "panterett_og_sikkerhetsrett") return "Liens & Security Rights";
+  if (normalized === "pengekravsrett_fordringer") return "Monetary Claims & Debt";
+  if (normalized === "personvern_gdpr_business_compliance") return "Privacy & GDPR Compliance";
+  if (normalized === "tvistelosning_smb") return "Dispute Resolution for SMBs";
+  
+  // Format custom domains nicely (e.g. criminal_law -> Criminal Law)
+  return normalized
+    .split(/[_-]/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+};
+
 export default function EscalationStatusCard({ conversationId, theme = "dark", isSidebar = false }) {
   const [statusData, setStatusData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -125,6 +165,7 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
 
   // 1. OPEN: Waiting for lawyer to claim
   if (status === "open") {
+    const domainName = getDomainEnglishName(ticket?.detected_domain);
     return (
       <div className={`${containerClass} animate-pulse-subtle ${!isSidebar ? (isDark ? "bg-indigo-500/5 border-indigo-500/20" : "bg-indigo-50 border-indigo-100") : ""
         }`}>
@@ -134,10 +175,16 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
           </div>
           <div>
             <h4 className={`text-sm font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
-              Searching for a Lawyer...
+              {domainName ? `Finding an expert in ${domainName}...` : "Searching for a Lawyer..."}
             </h4>
             <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
-              Your matter has been escalated. A specialized lawyer is currently reviewing your matter and will accept shortly.
+              {domainName ? (
+                <>
+                  Your matter has been escalated. A lawyer specializing in <strong>{domainName}</strong> is currently reviewing your details and will accept shortly.
+                </>
+              ) : (
+                "Your matter has been escalated. A specialized lawyer is currently reviewing your matter and will accept shortly."
+              )}
             </p>
             <div className="mt-4 flex items-center gap-2">
               <Loader2 className="w-3 h-3 text-indigo-500 animate-spin" />
@@ -195,7 +242,7 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
                 Under Legal Review
               </h4>
               <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
-                <span className="text-indigo-500 font-bold">{ticket.assigned_lawyer_name || "An expert"}</span> is reviewing your details.
+                <span className="text-indigo-500 font-bold">{ticket.assigned_lawyer_name || "An expert"}</span> is reviewing your details. Your lawyer has received a brief about your matter.
               </p>
             </div>
           </div>

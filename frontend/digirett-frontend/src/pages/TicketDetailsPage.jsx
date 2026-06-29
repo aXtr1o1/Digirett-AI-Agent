@@ -60,6 +60,7 @@ export default function TicketDetailsPage() {
   const [showNoShowConfirm, setShowNoShowConfirm] = useState(false);
   const [noShowType, setNoShowType] = useState("user");
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
+  const [isBriefExpanded, setIsBriefExpanded] = useState(true);
   const fileInputRef = React.useRef(null);
 
   const { uploadDocument, isUploading, uploadError } = useDocumentUpload(ticket?.conversation_id);
@@ -220,6 +221,17 @@ export default function TicketDetailsPage() {
             <span className="text-sm font-semibold tracking-wide">User Details</span>
           </button>
 
+          {ticket?.ai_brief && (
+            <button
+              onClick={() => setCurrentView("brief")}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${currentView === "brief" ? "bg-blue-600/90 text-white shadow-lg shadow-blue-600/20" : "text-gray-400 hover:bg-white/5 hover:text-white"
+                }`}
+            >
+              <FileText size={18} />
+              <span className="text-sm font-semibold tracking-wide">Case Brief</span>
+            </button>
+          )}
+
           <button
             onClick={() => setCurrentView("resolve")}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${currentView === "resolve" ? "bg-blue-600/90 text-white shadow-lg shadow-blue-600/20" : "text-gray-400 hover:bg-white/5 hover:text-white"
@@ -304,7 +316,7 @@ export default function TicketDetailsPage() {
               Matter Review
             </button>
             <ChevronRight size={12} />
-            <span className="text-blue-600">{currentView === "details" ? "User Details" : currentView === "resolve" ? "Resolve Matter" : currentView === "context" ? "Context Details" : currentView === "feedback" ? "Client Feedback" : "User Details"}</span>
+            <span className="text-blue-600">{currentView === "details" ? "User Details" : currentView === "brief" ? "Case Brief" : currentView === "resolve" ? "Resolve Matter" : currentView === "context" ? "Context Details" : currentView === "feedback" ? "Client Feedback" : "User Details"}</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -481,6 +493,86 @@ export default function TicketDetailsPage() {
                     </div>
                   </>
                 )}
+              </div>
+            )}
+
+            {/* VIEW: CASE BRIEF */}
+            {currentView === "brief" && ticket.ai_brief && (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 mb-4">AI Matter Intelligence</p>
+
+                <div className={`rounded-2xl border p-8 shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-gray-100"}`}>
+                  <div className="flex items-center justify-between mb-8 border-b pb-6 dark:border-slate-800">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">📋</span>
+                      <div>
+                        <h2 className={`text-xl font-bold tracking-tight ${isDark ? "text-white" : "text-gray-900"}`}>Case Brief</h2>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">Automated Pre-Consultation Summary</p>
+                      </div>
+                    </div>
+                    <span className="px-3 py-1 bg-indigo-500/10 text-indigo-400 rounded-lg text-[10px] font-black uppercase tracking-widest border border-indigo-500/20">
+                      AI Generated
+                    </span>
+                  </div>
+
+                  <div className="space-y-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      {/* Matter Type */}
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-450 dark:text-slate-500">Matter Type</span>
+                        <p className="text-sm font-bold text-slate-850 dark:text-slate-200">
+                          {ticket.ai_brief.matter_type || "N/A"}
+                        </p>
+                      </div>
+
+                      {/* Risk Level */}
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-450 dark:text-slate-500">Risk Level</span>
+                        <div>
+                          <span className={`inline-block px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${
+                            ticket.ai_brief.risk_level?.toLowerCase() === "high"
+                              ? "bg-red-500/10 text-red-500 border-red-500/20"
+                              : ticket.ai_brief.risk_level?.toLowerCase() === "moderate" || ticket.ai_brief.risk_level?.toLowerCase() === "medium"
+                                ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                          }`}>
+                            {ticket.ai_brief.risk_level || "Low"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Key Issues */}
+                    <div className="space-y-3 pt-6 border-t dark:border-slate-800">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-455 dark:text-slate-500">Key Issues</span>
+                      {Array.isArray(ticket.ai_brief.key_issues) && ticket.ai_brief.key_issues.length > 0 ? (
+                        <ul className="list-disc list-inside space-y-2.5 text-sm text-slate-600 dark:text-slate-300 font-medium">
+                          {ticket.ai_brief.key_issues.map((issue, idx) => (
+                            <li key={idx} className="leading-relaxed">{issue}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-slate-455 dark:text-slate-500 italic">None identified</p>
+                      )}
+                    </div>
+
+                    {/* Relevant Law */}
+                    <div className="space-y-3 pt-6 border-t dark:border-slate-800">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-455 dark:text-slate-500">Relevant Law</span>
+                      <div className="flex flex-wrap gap-2.5">
+                        {Array.isArray(ticket.ai_brief.relevant_laws) && ticket.ai_brief.relevant_laws.length > 0 ? (
+                          ticket.ai_brief.relevant_laws.map((law, idx) => (
+                            <span key={idx} className="px-3 py-1.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold border border-slate-300 dark:border-slate-700">
+                              {law}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-sm text-slate-455 dark:text-slate-500 italic">None specified</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 

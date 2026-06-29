@@ -531,15 +531,23 @@ class HitlService:
                 # Check for unread messages sent by the user
                 try:
                     unread_resp = self._supabase.table("ticket_messages") \
-                        .select("message_id", count="exact") \
+                        .select("message_id") \
                         .eq("ticket_id", ticket.get("ticket_id")) \
                         .eq("sender_role", "user") \
                         .eq("is_read", False) \
+                        .order("created_at", desc=True) \
+                        .limit(1) \
                         .execute()
-                    ticket["has_unread_messages"] = (unread_resp.count or 0) > 0
+                    if unread_resp.data:
+                        ticket["has_unread_messages"] = True
+                        ticket["latest_unread_message_id"] = unread_resp.data[0]["message_id"]
+                    else:
+                        ticket["has_unread_messages"] = False
+                        ticket["latest_unread_message_id"] = None
                 except Exception as msg_exc:
                     logger.warning(f"⚠️ Failed to fetch unread messages count for ticket {ticket.get('ticket_id')} | {msg_exc}")
                     ticket["has_unread_messages"] = False
+                    ticket["latest_unread_message_id"] = None
 
             return data
         except Exception as exc:

@@ -111,6 +111,17 @@ const hitlService = {
   },
 
   /**
+   * Update lawyer specialization domains
+   */
+  updateSpecialization: async (expertiseDomains, specializationLabel = null) => {
+    const response = await api.patch("/hitl/lawyer/profile/specialization", {
+      expertise_domains: expertiseDomains,
+      specialization_label: specializationLabel
+    });
+    return response.data;
+  },
+
+  /**
    * Submit client rating for a ticket
    */
   submitRating: async (ticketId, rating, comment) => {

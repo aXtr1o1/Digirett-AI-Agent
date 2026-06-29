@@ -151,6 +151,18 @@ const adminService = {
   },
 
   /**
+   * Admin overrides a lawyer's specialization settings
+   * PATCH /admin/lawyers/{lawyer_id}/specialization
+   */
+  overrideSpecialization: async (lawyerId, expertiseDomains, specializationLabel = null) => {
+    const response = await api.patch(`/admin/lawyers/${lawyerId}/specialization`, {
+      expertise_domains: expertiseDomains,
+      specialization_label: specializationLabel
+    });
+    return response.data;
+  },
+
+  /**
    * Get all admin ratings
    */
   getAdminRatings: async () => {
