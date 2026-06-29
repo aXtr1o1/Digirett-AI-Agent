@@ -51,6 +51,8 @@ class EscalateRequest(BaseModel):
     conversation_id: str
     trigger_message_id: str
     user_note: Optional[str] = None
+    priority: Optional[str] = "normal"
+    urgent_reason: Optional[str] = None
 
 
 class RespondRequest(BaseModel):
@@ -66,6 +68,18 @@ class NoShowRequest(BaseModel):
 class SpecializationRequest(BaseModel):
     expertise_domains: List[str]
     specialization_label: Optional[str] = None
+
+
+class AvailabilityRequest(BaseModel):
+    availability_status: str
+
+
+class PriorityUpdateRequest(BaseModel):
+    priority: str
+
+
+class ReEscalateRequest(BaseModel):
+    option: str
 
 
 @router.get(
@@ -138,12 +152,20 @@ def escalate_conversation(
             detail="This conversation is already escalated.",
         )
 
-    ticket = _hitl_service.create_ticket(
-        conversation_id=req.conversation_id,
-        user_id=user_id,
-        trigger_message_id=req.trigger_message_id,
-        user_note=req.user_note,
-    )
+    try:
+        ticket = _hitl_service.create_ticket(
+            conversation_id=req.conversation_id,
+            user_id=user_id,
+            trigger_message_id=req.trigger_message_id,
+            user_note=req.user_note,
+            priority=req.priority or "normal",
+            urgent_reason=req.urgent_reason,
+        )
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve)
+        )
 
     logger.info(
         f"🎫 Escalation created | ticket={ticket.get('ticket_id')} | "
@@ -249,6 +271,93 @@ def update_lawyer_specialization(
     except Exception as e:
         logger.error(f"❌ Failed to update lawyer specialization | {e}")
         raise HTTPException(status_code=500, detail="Failed to update specialization profile.")
+
+
+@router.patch(
+    "/lawyer/profile/availability",
+    summary="Lawyer updates their own availability status",
+)
+def update_lawyer_availability(
+    req: AvailabilityRequest,
+    current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
+):
+    lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
+    status_val = req.availability_status.lower()
+    if status_val not in ("available", "busy", "away"):
+        raise HTTPException(status_code=400, detail="Invalid availability status. Must be available, busy, or away.")
+    try:
+        resp = _hitl_service._supabase.table("lawyer_profiles").upsert({
+            "lawyer_id": lawyer_id,
+            "availability_status": status_val,
+            "last_seen_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat()
+        }).execute()
+        return {"message": "Availability status updated successfully.", "profile": resp.data[0] if resp.data else {}}
+    except Exception as e:
+        logger.error(f"❌ Failed to update lawyer availability | {e}")
+        raise HTTPException(status_code=500, detail="Failed to update availability status.")
+
+
+@router.patch(
+    "/tickets/{ticket_id}/priority",
+    summary="Lawyer or Admin updates ticket priority",
+)
+def update_ticket_priority_endpoint(
+    ticket_id: str,
+    req: PriorityUpdateRequest,
+    current_user: ClerkUser = Depends(require_db_role("lawyer", "admin")),
+):
+    priority_val = req.priority.lower()
+    if priority_val not in ("normal", "high", "urgent"):
+        raise HTTPException(status_code=400, detail="Invalid priority level. Must be normal, high, or urgent.")
+    
+    success = _hitl_service.update_ticket_priority(ticket_id, priority_val)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update ticket priority.")
+    return {"message": "Ticket priority updated successfully."}
+
+
+@router.patch(
+    "/tickets/{ticket_id}/close",
+    summary="Client closes their own resolved ticket",
+)
+def close_ticket_endpoint(
+    ticket_id: str,
+    current_user: ClerkUser = Depends(require_db_role("user", "lawyer", "admin")),
+):
+    user_id = _user_service.get_user_id_from_clerk_id(current_user.clerk_user_id)
+    try:
+        _hitl_service.close_ticket(ticket_id, user_id)
+        return {"message": "Ticket closed successfully."}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to close ticket.")
+
+
+@router.post(
+    "/tickets/{ticket_id}/re-escalate",
+    summary="Client re-escalates their resolved ticket",
+)
+def re_escalate_ticket_endpoint(
+    ticket_id: str,
+    req: ReEscalateRequest,
+    current_user: ClerkUser = Depends(require_db_role("user", "lawyer", "admin")),
+):
+    user_id = _user_service.get_user_id_from_clerk_id(current_user.clerk_user_id)
+    opt = req.option.lower()
+    if opt not in ("same", "different"):
+        raise HTTPException(status_code=400, detail="Invalid option. Must be 'same' or 'different'.")
+    try:
+        new_ticket = _hitl_service.re_escalate_ticket(ticket_id, user_id, opt)
+        return {
+            "message": "Ticket re-escalated successfully.",
+            "ticket_id": new_ticket.get("ticket_id")
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to re-escalate ticket.")
 
 
 async def _send_assignment_notification(ticket_id: str, lawyer_id: str):
@@ -508,10 +617,22 @@ def get_escalation_status(
     ticket = _hitl_service.get_ticket_by_conversation(conversation_id)
     is_escalated = ticket is not None and ticket.get("status") in ["open", "assigned", "booked", "resolved"]
     
+    available_lawyers_count = 0
+    try:
+        avail_resp = _hitl_service._supabase.table("lawyer_profiles") \
+            .select("lawyer_id", count="exact") \
+            .eq("availability_status", "available") \
+            .execute()
+        if avail_resp.count is not None:
+            available_lawyers_count = avail_resp.count
+    except Exception as e:
+        logger.warning(f"Failed to fetch available lawyers count: {e}")
+
     return {
         "conversation_id": conversation_id, 
         "is_escalated": is_escalated,
-        "ticket": ticket
+        "ticket": ticket,
+        "available_lawyers_count": available_lawyers_count
     }
 
 

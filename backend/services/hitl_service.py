@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 from db.supabase_client import SupabaseClient
@@ -40,13 +40,43 @@ class HitlService:
         conversation_id: str,
         user_id: str,
         trigger_message_id: str,
-        user_note: Optional[str] = None,   # kept in signature for API compat; not stored yet
-        tenant_id: Optional[str] = None
+        user_note: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        priority: str = "normal",
+        urgent_reason: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Creates a new escalation ticket. Called when a user is unsatisfied.
         """
         try:
+            # Enforce limits on urgent tickets
+            if priority.lower() == "urgent":
+                # Check 1: Active urgent ticket
+                try:
+                    active_res = self._supabase.table("hitl_tickets") \
+                        .select("ticket_id") \
+                        .eq("user_id", user_id) \
+                        .eq("priority", "urgent") \
+                        .in_("status", ["open", "assigned", "booked"]) \
+                        .execute()
+                    if active_res.data:
+                        raise ValueError("You already have an active urgent request. Please wait until it is resolved.")
+
+                    # Check 2: Urgent ticket created in last 7 days
+                    seven_days_ago = (datetime.utcnow() - timedelta(days=7)).isoformat()
+                    recent_res = self._supabase.table("hitl_tickets") \
+                        .select("ticket_id") \
+                        .eq("user_id", user_id) \
+                        .eq("priority", "urgent") \
+                        .gte("created_at", seven_days_ago) \
+                        .execute()
+                    if recent_res.data:
+                        raise ValueError("You already have an active urgent request. Please wait until it is resolved.")
+                except ValueError as ve:
+                    raise ve
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed checking urgent tickets limit rule | {e}")
+
             ticket_id = str(uuid4())
             # Retrieve detected_domain from the latest assistant message metadata
             detected_domain = None
@@ -72,12 +102,17 @@ class HitlService:
                 "status": "open",
                 "created_at": datetime.utcnow().isoformat(),
                 "detected_domain": detected_domain,
+                "priority": priority.lower(),
+                "urgent_reason": urgent_reason if priority.lower() == "urgent" else None
             }
 
             response = self._supabase.table("hitl_tickets").insert(ticket_data).execute()
-            logger.info(f"🎫 Ticket created | id={ticket_id} | user={user_id} | domain={detected_domain}")
+            logger.info(f"🎫 Ticket created | id={ticket_id} | user={user_id} | domain={detected_domain} | priority={priority}")
             return response.data[0] if response.data else ticket_data
             
+        except ValueError as ve:
+            logger.warning(f"⚠️ Create ticket blocked by validation: {ve}")
+            raise ve
         except Exception as exc:
             logger.error(f"❌ Failed to create HITL ticket | {exc}", exc_info=True)
             raise ValueError(f"Failed to create ticket: {exc}")
@@ -246,7 +281,7 @@ class HitlService:
                     logger.warning(f"⚠️ Failed to load domains for lawyer {lawyer_id} | {e}")
 
             query = self._supabase.table("hitl_tickets").select(
-                "ticket_id, conversation_id, user_id, status, created_at, detected_domain, ai_brief, "
+                "ticket_id, conversation_id, user_id, status, created_at, detected_domain, ai_brief, priority, urgent_reason, excluded_lawyer_ids, "
                 "conversations!hitl_tickets_conversation_id_fkey(conversation_summary), "
                 "users!hitl_tickets_user_id_fkey("
                 "  email, "
@@ -269,12 +304,23 @@ class HitlService:
                 ticket["user_display_name"] = raw_profile.get("display_name")
                 ticket["user_phone_number"] = raw_profile.get("phone_number")
 
-            if lawyer_domains and data:
-                lawyer_domains_set = {d.lower() for d in lawyer_domains}
+            if lawyer_id and data:
+                data = [t for t in data if not (t.get("excluded_lawyer_ids") and lawyer_id in t.get("excluded_lawyer_ids"))]
+
+            if data:
+                lawyer_domains_set = {d.lower() for d in lawyer_domains} if lawyer_domains else set()
+                is_common_lawyer = "common" in lawyer_domains_set
+                priority_map = {"urgent": 0, "high": 1, "normal": 2}
+
                 def sort_key(t):
+                    tp = t.get("priority") or "normal"
+                    priority_val = priority_map.get(tp.lower(), 2)
+
                     td = t.get("detected_domain")
-                    has_match = td and td.lower() in lawyer_domains_set
-                    return (0 if has_match else 1, t.get("created_at"))
+                    has_domain_match = is_common_lawyer or (td and td.lower() in lawyer_domains_set)
+                    domain_match_val = 0 if has_domain_match else 1
+
+                    return (priority_val, domain_match_val, t.get("created_at"))
                 data.sort(key=sort_key)
 
             return data
@@ -311,6 +357,115 @@ class HitlService:
         except Exception as exc:
             logger.error(f"❌ Failed to assign ticket {ticket_id} | {exc}")
             return False
+
+    def update_ticket_priority(self, ticket_id: str, priority: str) -> bool:
+        """Updates the priority level of a ticket (e.g. downgrading/upgrading)."""
+        try:
+            if priority.lower() not in ("normal", "high", "urgent"):
+                raise ValueError("Invalid priority level")
+            self._supabase.table("hitl_tickets") \
+                .update({"priority": priority.lower()}) \
+                .eq("ticket_id", ticket_id) \
+                .execute()
+            self._log_audit("ticket.priority_updated", "system", {"ticket_id": ticket_id, "priority": priority})
+            return True
+        except Exception as exc:
+            logger.error(f"❌ Failed to update ticket priority | {ticket_id} | {exc}")
+            return False
+
+    def close_ticket(self, ticket_id: str, user_id: str) -> bool:
+        """Transitions ticket status from 'resolved' to 'closed' for the ticket owner."""
+        try:
+            t_resp = self._supabase.table("hitl_tickets") \
+                .select("ticket_id, user_id, status") \
+                .eq("ticket_id", ticket_id) \
+                .execute()
+            if not t_resp.data:
+                raise ValueError("Ticket not found")
+
+            ticket = t_resp.data[0]
+            if ticket.get("user_id") != user_id:
+                raise ValueError("Permission denied. Not your ticket.")
+
+            if ticket.get("status") != "resolved":
+                raise ValueError("Only resolved tickets can be closed.")
+
+            now = datetime.utcnow().isoformat()
+            self._supabase.table("hitl_tickets").update({
+                "status": "closed",
+                "closed_at": now
+            }).eq("ticket_id", ticket_id).execute()
+
+            self._log_audit("ticket.closed", user_id, {"ticket_id": ticket_id})
+            return True
+        except Exception as exc:
+            logger.error(f"❌ Failed to close ticket | {ticket_id} | {exc}")
+            raise exc
+
+    def re_escalate_ticket(self, ticket_id: str, user_id: str, option: str) -> Dict[str, Any]:
+        """Closes old resolved ticket and creates a new ticket assigned to the same lawyer or sent back to queue."""
+        try:
+            if option.lower() not in ("same", "different"):
+                raise ValueError("Invalid option. Must be 'same' or 'different'.")
+
+            t_resp = self._supabase.table("hitl_tickets") \
+                .select("*") \
+                .eq("ticket_id", ticket_id) \
+                .execute()
+            if not t_resp.data:
+                raise ValueError("Ticket not found")
+
+            old_ticket = t_resp.data[0]
+            if old_ticket.get("user_id") != user_id:
+                raise ValueError("Permission denied. Not your ticket.")
+
+            if old_ticket.get("status") != "resolved":
+                raise ValueError("Only resolved tickets can be re-escalated.")
+
+            now = datetime.utcnow().isoformat()
+            self._supabase.table("hitl_tickets").update({
+                "status": "closed",
+                "closed_at": now
+            }).eq("ticket_id", ticket_id).execute()
+            self._log_audit("ticket.closed", user_id, {"ticket_id": ticket_id})
+
+            new_ticket_id = str(uuid4())
+            new_status = "assigned" if option.lower() == "same" else "open"
+            prev_lawyer = old_ticket.get("assigned_lawyer_id")
+
+            old_excluded = old_ticket.get("excluded_lawyer_ids") or []
+            new_excluded = list(old_excluded)
+            if option.lower() == "different" and prev_lawyer:
+                if prev_lawyer not in new_excluded:
+                    new_excluded.append(prev_lawyer)
+
+            ticket_data = {
+                "ticket_id": new_ticket_id,
+                "conversation_id": old_ticket.get("conversation_id"),
+                "user_id": user_id,
+                "trigger_message_id": old_ticket.get("trigger_message_id"),
+                "status": new_status,
+                "created_at": now,
+                "detected_domain": old_ticket.get("detected_domain"),
+                "priority": old_ticket.get("priority") or "normal",
+                "urgent_reason": old_ticket.get("urgent_reason"),
+                "parent_ticket_id": ticket_id,
+                "is_reescalated": True,
+                "excluded_lawyer_ids": new_excluded
+            }
+
+            if option.lower() == "same" and prev_lawyer:
+                ticket_data["assigned_lawyer_id"] = prev_lawyer
+                ticket_data["assigned_at"] = now
+
+            response = self._supabase.table("hitl_tickets").insert(ticket_data).execute()
+            logger.info(f"🔄 Ticket re-escalated | old={ticket_id} | new={new_ticket_id} | option={option}")
+            self._log_audit("ticket.reescalated", user_id, {"old_ticket_id": ticket_id, "new_ticket_id": new_ticket_id, "option": option})
+            return response.data[0] if response.data else ticket_data
+
+        except Exception as exc:
+            logger.error(f"❌ Failed to re-escalate ticket | {ticket_id} | {exc}")
+            raise exc
 
     def admin_assign_ticket(self, ticket_id: str, lawyer_id: str) -> bool:
         """
