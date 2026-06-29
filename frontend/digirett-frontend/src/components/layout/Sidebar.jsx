@@ -609,6 +609,64 @@ const Sidebar = ({
           />
         )}
 
+        {/* SEARCH HISTORY INPUT */}
+        {(activeFeature === "chat" || activeFeature === "archived" || activeFeature === "library") && (
+          <div style={{ padding: "4px 8px", flexShrink: 0 }}>
+            <div style={{ margin: "0 8px 8px", position: "relative" }}>
+              <Search
+                size={12}
+                style={{
+                  position: "absolute",
+                  left: "10px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: isDark ? "#6b7280" : "#9ca3af",
+                  pointerEvents: "none",
+                }}
+              />
+              <input
+                type="text"
+                placeholder="Search history..."
+                value={sidebarSearchQuery}
+                onChange={(e) => setSidebarSearchQuery(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "6px 24px 6px 26px",
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                  backgroundColor: isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.03)",
+                  color: isDark ? "#ffffff" : "#111827",
+                  border: isDark ? "1px solid rgba(255, 255, 255, 0.08)" : "1px solid rgba(0, 0, 0, 0.08)",
+                  outline: "none",
+                  transition: "border-color 0.15s",
+                  boxSizing: "border-box",
+                }}
+                onFocus={(e) => (e.target.style.borderColor = "#3b82f6")}
+                onBlur={(e) => (e.target.style.borderColor = isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.08)")}
+              />
+              {sidebarSearchQuery && (
+                <button
+                  onClick={() => setSidebarSearchQuery("")}
+                  style={{
+                    position: "absolute",
+                    right: "6px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: isDark ? "#6b7280" : "#9ca3af",
+                    padding: "2px",
+                    display: "flex",
+                  }}
+                >
+                  <X size={10} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* FEATURES SECTION */}
         <div style={{ flexShrink: 0, marginBottom: "8px" }}>
           <div style={{
@@ -691,60 +749,6 @@ const Sidebar = ({
               flexDirection: "column",
               gap: "4px",
             }}>
-            
-            {/* Search History Input */}
-            <div style={{ padding: "0 8px 8px", position: "relative", flexShrink: 0 }}>
-              <Search
-                size={12}
-                style={{
-                  position: "absolute",
-                  left: "18px",
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  color: isDark ? "#6b7280" : "#9ca3af",
-                  pointerEvents: "none",
-                }}
-              />
-              <input
-                type="text"
-                placeholder="Search history..."
-                value={sidebarSearchQuery}
-                onChange={(e) => setSidebarSearchQuery(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "6px 24px 6px 26px",
-                  borderRadius: "8px",
-                  fontSize: "12px",
-                  backgroundColor: isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.03)",
-                  color: isDark ? "#ffffff" : "#111827",
-                  border: isDark ? "1px solid rgba(255, 255, 255, 0.08)" : "1px solid rgba(0, 0, 0, 0.08)",
-                  outline: "none",
-                  transition: "border-color 0.15s",
-                  boxSizing: "border-box",
-                }}
-                onFocus={(e) => (e.target.style.borderColor = "#3b82f6")}
-                onBlur={(e) => (e.target.style.borderColor = isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.08)")}
-              />
-              {sidebarSearchQuery && (
-                <button
-                  onClick={() => setSidebarSearchQuery("")}
-                  style={{
-                    position: "absolute",
-                    right: "14px",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    color: isDark ? "#6b7280" : "#9ca3af",
-                    padding: "2px",
-                    display: "flex",
-                  }}
-                >
-                  <X size={10} />
-                </button>
-              )}
-            </div>
 
             {displayedConversations.length === 0 ? (
               <div style={{

@@ -16,6 +16,23 @@ const fmtDays = (d) => {
   if (d < 1) return `${Math.round(d * 24)}h`;
   return `${d.toFixed(1)} days`;
 };
+const fmtWaitingText = (h) => {
+  if (h == null) return "—";
+  if (h < 24) {
+    if (h < 1) return `${Math.round(h * 60)}m`;
+    return `${Math.round(h)}h`;
+  }
+  let days = Math.floor(h / 24);
+  let remainingHours = Math.round(h % 24);
+  if (remainingHours === 24) {
+    days += 1;
+    remainingHours = 0;
+  }
+  if (remainingHours === 0) {
+    return `${days} ${days === 1 ? "day" : "days"}`;
+  }
+  return `${days} ${days === 1 ? "day" : "days"} ${remainingHours}h`;
+};
 const fmtTicketId = (id) => (id ? `#${id.slice(0, 8).toUpperCase()}` : "—");
 
 const ALERT_LABEL = {
@@ -237,7 +254,7 @@ export default function SlaView({ isDark, onNavigate }) {
                     </p>
                     <p style={{ fontSize: "12px", color: isDark ? "#94a3b8" : "#64748b", margin: "2px 0 0" }}>
                       {alert.user_name && `User: ${alert.user_name} · `}
-                      Waiting {fmtHours(alert.waiting_hours)}
+                      Waiting {fmtWaitingText(alert.waiting_hours)}
                       {alert.lawyer_name && ` · Lawyer: ${alert.lawyer_name}`}
                     </p>
                   </div>
@@ -254,7 +271,7 @@ export default function SlaView({ isDark, onNavigate }) {
       {/* ── SECTION 2: KPI Cards ── */}
       <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
         <KpiCard
-          label="Time to Claim"
+          label="Avg Time to Claim"
           value={fmtHours(avg.time_to_claim_hours)}
           sublabel={`SLA threshold: ${thresholds.claim_hours}h`}
           color={avg.time_to_claim_hours > thresholds.claim_hours ? "#ef4444" : "#10b981"}
@@ -262,7 +279,7 @@ export default function SlaView({ isDark, onNavigate }) {
           isDark={isDark}
         />
         <KpiCard
-          label="Time to Book"
+          label="Avg Time to Book"
           value={fmtHours(avg.time_to_book_hours)}
           sublabel={`SLA threshold: ${thresholds.booking_hours}h`}
           color={avg.time_to_book_hours > thresholds.booking_hours ? "#ef4444" : "#3b82f6"}
@@ -270,7 +287,7 @@ export default function SlaView({ isDark, onNavigate }) {
           isDark={isDark}
         />
         <KpiCard
-          label="Time to Resolve"
+          label="Avg Time to Resolve"
           value={fmtDays(avg.time_to_resolve_days)}
           sublabel={`SLA threshold: ${thresholds.resolve_days} days`}
           color={avg.time_to_resolve_days > thresholds.resolve_days ? "#ef4444" : "#6366f1"}

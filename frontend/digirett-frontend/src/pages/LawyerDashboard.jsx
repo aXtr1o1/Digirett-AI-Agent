@@ -53,6 +53,7 @@ export default function LawyerDashboard() {
   const { theme, isDark, toggleTheme } = useTheme();
   const [queueTickets, setQueueTickets] = useState([]);
   const [resolvedTickets, setResolvedTickets] = useState([]);
+  const [activeSummaryModal, setActiveSummaryModal] = useState(null);
   const [ratings, setRatings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -863,8 +864,18 @@ export default function LawyerDashboard() {
                                 </div>
                               </div>
                             </td>
-                            <td className="px-8 py-6">
-                              <p className="text-xs text-slate-500 truncate max-w-xs">{ticket.conversation_summary || "No summary available."}</p>
+                             <td className="px-8 py-6">
+                              <p 
+                                onClick={() => {
+                                  if (ticket.conversation_summary) {
+                                    setActiveSummaryModal(ticket.conversation_summary);
+                                  }
+                                }}
+                                className="text-xs text-slate-500 truncate max-w-xs cursor-pointer hover:text-indigo-500 hover:underline transition-all"
+                                title={ticket.conversation_summary ? "Click to view full summary" : ""}
+                              >
+                                {ticket.conversation_summary || "No summary available."}
+                              </p>
                             </td>
                             <td className="px-8 py-6 text-right">
                               <button onClick={() => handleClaim(ticket.ticket_id)} className="px-4 py-2 border border-slate-200 rounded-lg text-xs font-bold hover:bg-slate-50 transition-all">Claim Matter</button>
@@ -1321,6 +1332,34 @@ export default function LawyerDashboard() {
                 className="flex-1 h-12 rounded-xl bg-red-600 text-white text-xs font-bold shadow-lg shadow-red-600/20 hover:bg-red-700 transition-all disabled:opacity-50"
               >
                 {isProcessing ? "Processing..." : "Confirm No-Show"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FULL SUMMARY MODAL */}
+      {activeSummaryModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`w-full max-w-lg rounded-3xl border p-8 shadow-2xl animate-in zoom-in-95 duration-200 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-gray-100"}`}>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold">Full Matter Summary</h3>
+              <button 
+                onClick={() => setActiveSummaryModal(null)} 
+                className={`p-1.5 rounded-xl transition-colors ${isDark ? "hover:bg-slate-800 text-slate-400" : "hover:bg-slate-100 text-slate-500"}`}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className={`p-6 rounded-2xl border text-sm leading-relaxed max-h-[60vh] overflow-y-auto ${isDark ? "bg-slate-950/50 border-slate-800 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-700"}`}>
+              {activeSummaryModal}
+            </div>
+            <div className="mt-8 flex justify-end">
+              <button
+                onClick={() => setActiveSummaryModal(null)}
+                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all"
+              >
+                Close
               </button>
             </div>
           </div>

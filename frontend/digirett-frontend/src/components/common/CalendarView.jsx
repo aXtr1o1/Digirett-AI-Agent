@@ -83,9 +83,9 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
   const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
   const getFirstDayIndex = (y, m) => new Date(y, m, 1).getDay();
 
-  // Group booked consultations
+  // Group booked & resolved consultations
   const bookedTickets = tickets.filter(
-    (t) => t.status === "booked" && t.booking_confirmed_at
+    (t) => (t.status === "booked" || t.status === "resolved") && t.booking_confirmed_at
   );
 
   const getLocalDateKey = (isoString) => {
@@ -657,14 +657,14 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
       {/* Booking Details Modal */}
       {selectedEvent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className={`relative w-full max-w-lg rounded-2xl border p-6 shadow-2xl animate-in zoom-in-95 duration-200 transition-colors ${
+          <div className={`relative w-full max-w-md rounded-2xl border p-5 shadow-2xl animate-in zoom-in-95 duration-200 transition-colors ${
             isDark ? "bg-slate-900 border-slate-800 text-slate-200" : "bg-white border-slate-200 text-slate-800"
           }`}>
             {/* Modal Header */}
-            <div className={`flex items-center justify-between mb-6 pb-4 border-b ${isDark ? "border-slate-800" : "border-slate-200"}`}>
+            <div className={`flex items-center justify-between mb-4 pb-3 border-b ${isDark ? "border-slate-800" : "border-slate-200"}`}>
               <div className="flex items-center gap-2">
-                <Video className="text-indigo-400 h-5 w-5" />
-                <h3 className={`text-lg font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Consultation Details</h3>
+                <Video className="text-indigo-400 h-4.5 w-4.5" />
+                <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Consultation Details</h3>
               </div>
               <button 
                 onClick={() => setSelectedEvent(null)}
@@ -672,40 +672,40 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
                   isDark ? "text-slate-400 hover:text-white hover:bg-slate-800" : "text-slate-500 hover:text-black hover:bg-slate-100"
                 }`}
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             </div>
 
             {/* Modal Content */}
-            <div className="space-y-6">
+            <div className="space-y-4">
               {/* Event Time */}
-              <div className={`p-4 rounded-xl border flex items-start gap-3 ${
+              <div className={`p-3 rounded-xl border flex items-start gap-3 ${
                 isDark ? "border-indigo-500/20 bg-indigo-500/5" : "border-indigo-200 bg-indigo-55/20"
               }`}>
-                <Clock className="text-indigo-400 h-5 w-5 mt-0.5 shrink-0" />
+                <Clock className="text-indigo-400 h-4.5 w-4.5 mt-0.5 shrink-0" />
                 <div>
-                  <h4 className={`text-xs font-black uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>Scheduled Time</h4>
-                  <p className={`text-sm font-bold mt-1 ${isDark ? "text-slate-200" : "text-slate-850"}`}>
+                  <h4 className={`text-[10px] font-black uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>Scheduled Time</h4>
+                  <p className={`text-xs font-bold mt-0.5 ${isDark ? "text-slate-200" : "text-slate-850"}`}>
                     {formatFullDate(selectedEvent.booking_confirmed_at)}
                   </p>
                 </div>
               </div>
 
               {/* Client Info */}
-              <div className="space-y-3">
-                <h4 className={`text-xs font-black uppercase tracking-wider flex items-center gap-1.5 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                  <User size={13} /> Client Details
+              <div className="space-y-1.5">
+                <h4 className={`text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                  <User size={12} /> Client Details
                 </h4>
-                <div className={`grid grid-cols-2 gap-4 p-4 rounded-xl border ${
+                <div className={`grid grid-cols-2 gap-3 p-3.5 rounded-xl border ${
                   isDark ? "bg-slate-950/30 border-slate-800/80" : "bg-slate-50 border-slate-200"
                 }`}>
                   <div>
-                    <span className="text-[10px] text-slate-400 font-bold block">Display Name</span>
-                    <span className={`text-sm font-bold ${isDark ? "text-slate-200" : "text-slate-800"}`}>{selectedEvent.user_display_name || "N/A"}</span>
+                    <span className="text-[9px] text-slate-400 font-bold block">Display Name</span>
+                    <span className={`text-xs font-bold ${isDark ? "text-slate-200" : "text-slate-800"}`}>{selectedEvent.user_display_name || "N/A"}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-400 font-bold block">Email Address</span>
-                    <span className={`text-sm font-bold truncate block ${isDark ? "text-slate-200" : "text-slate-800"}`} title={selectedEvent.user_email}>
+                    <span className="text-[9px] text-slate-400 font-bold block">Email Address</span>
+                    <span className={`text-xs font-bold truncate block ${isDark ? "text-slate-200" : "text-slate-800"}`} title={selectedEvent.user_email}>
                       {selectedEvent.user_email || "N/A"}
                     </span>
                   </div>
@@ -714,20 +714,20 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
 
               {/* Lawyer Info (Only shown for Admin view) */}
               {role === "admin" && (
-                <div className="space-y-3">
-                  <h4 className={`text-xs font-black uppercase tracking-wider flex items-center gap-1.5 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                    <Shield size={13} /> Assigned Lawyer
+                <div className="space-y-1.5">
+                  <h4 className={`text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                    <Shield size={12} /> Assigned Lawyer
                   </h4>
-                  <div className={`grid grid-cols-2 gap-4 p-4 rounded-xl border ${
+                  <div className={`grid grid-cols-2 gap-3 p-3.5 rounded-xl border ${
                     isDark ? "bg-slate-950/30 border-slate-800/80" : "bg-slate-50 border-slate-200"
                   }`}>
                     <div>
-                      <span className="text-[10px] text-slate-400 font-bold block">Professional Name</span>
-                      <span className={`text-sm font-bold ${isDark ? "text-slate-200" : "text-slate-855"}`}>{selectedEvent.lawyer_name || "N/A"}</span>
+                      <span className="text-[9px] text-slate-400 font-bold block">Professional Name</span>
+                      <span className={`text-xs font-bold ${isDark ? "text-slate-200" : "text-slate-855"}`}>{selectedEvent.lawyer_name || "N/A"}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 font-bold block">Professional Email</span>
-                      <span className={`text-sm font-bold truncate block ${isDark ? "text-slate-200" : "text-slate-855"}`} title={selectedEvent.lawyer_email}>
+                      <span className="text-[9px] text-slate-400 font-bold block">Professional Email</span>
+                      <span className={`text-xs font-bold truncate block ${isDark ? "text-slate-200" : "text-slate-855"}`} title={selectedEvent.lawyer_email}>
                         {selectedEvent.lawyer_email || "N/A"}
                       </span>
                     </div>
@@ -735,18 +735,37 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
                 </div>
               )}
 
-              {/* Consultation Status */}
-              <div className={`flex items-center justify-between text-xs py-2 px-4 rounded-lg border ${
-                isDark ? "bg-slate-950/20 border-slate-800/60 text-slate-400" : "bg-slate-50 border-slate-200 text-slate-500"
-              }`}>
-                <span className="font-bold">Matter Reference:</span>
-                <span className="font-mono text-indigo-400 font-bold">{selectedEvent.ticket_id}</span>
+              {/* Status & Reference Side-by-Side */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className={`flex items-center justify-between text-xs py-2 px-3.5 rounded-xl border ${
+                  isDark ? "bg-slate-950/20 border-slate-800/60 text-slate-400" : "bg-slate-50 border-slate-200 text-slate-500"
+                }`}>
+                  <span className="font-semibold text-[10px]">Status:</span>
+                  <span className={`font-bold capitalize ${selectedEvent.status === 'resolved' ? 'text-emerald-500' : 'text-indigo-500'}`}>
+                    {selectedEvent.status}
+                  </span>
+                </div>
+                <div className={`flex items-center justify-between text-xs py-2 px-3.5 rounded-xl border ${
+                  isDark ? "bg-slate-950/20 border-slate-800/60 text-slate-400" : "bg-slate-50 border-slate-200 text-slate-500"
+                }`}>
+                  <span className="font-semibold text-[10px]">Reference:</span>
+                  <span className="font-mono text-indigo-400 font-bold truncate max-w-[80px]" title={selectedEvent.ticket_id}>
+                    {selectedEvent.ticket_id ? selectedEvent.ticket_id.slice(0, 8).toUpperCase() : "N/A"}
+                  </span>
+                </div>
               </div>
             </div>
 
             {/* Modal Actions */}
             <div className={`mt-8 flex flex-col sm:flex-row gap-3 pt-4 border-t ${isDark ? "border-slate-800" : "border-slate-200"}`}>
-              {selectedEvent.booking_url ? (
+              {selectedEvent.status === "resolved" ? (
+                <div className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm text-center border flex items-center justify-center gap-2 ${
+                  isDark ? "bg-slate-800 text-slate-400 border-slate-700/80" : "bg-slate-100 text-slate-400 border-slate-200"
+                }`}>
+                  <Video size={16} className="opacity-50" />
+                  Meeting Finished
+                </div>
+              ) : selectedEvent.booking_url ? (
                 <a
                   href={selectedEvent.booking_url}
                   target="_blank"
@@ -763,21 +782,6 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
                 }`}>
                   Waiting for Cal.com meeting url...
                 </div>
-              )}
-              
-              {selectedEvent.conversation_id && (
-                <Link
-                  to={`/chat/${selectedEvent.conversation_id}`}
-                  onClick={() => setSelectedEvent(null)}
-                  className={`px-4 py-2.5 rounded-xl border font-bold text-sm text-center flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                    isDark 
-                      ? "border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white hover:bg-white/5" 
-                      : "border-slate-300 hover:border-slate-400 text-slate-700 hover:text-black hover:bg-slate-100"
-                  }`}
-                >
-                  <MessageSquare size={16} />
-                  Open Chat
-                </Link>
               )}
 
               <button

@@ -36,6 +36,36 @@ const COLORS = [
   '#a855f7', // Purple
 ];
 
+const DOMAIN_DISPLAY_NAMES = {
+  "arbeidsrett": "Employment Law (Arbeidsrett)",
+  "arsregnskap_og_selskapsrapportering": "Financial Statements & Reporting (Årsregnskap og Selskapsrapportering)",
+  "avtalerett": "Contract Law (Avtalerett)",
+  "inkasso_og_tvangsfullbyrdelse": "Debt Collection & Enforcement (Inkasso og Tvangsfullbyrdelse)",
+  "konkursrett_og_insolvens": "Bankruptcy & Insolvency (Konkursrett og Insolvens)",
+  "manda_fusjon_fisjon": "M&A, Mergers & Acquisitions (M&A, Fusjon, Fisjon)",
+  "obligasjonsrett": "Law of Obligations (Obligasjonsrett)",
+  "panterett_og_sikkerhetsrett": "Liens & Security Rights (Panterett og Sikkerhetsrett)",
+  "pengekravsrett_fordringer": "Monetary Claims & Debt (Pengekravsrett og Fordringer)",
+  "personvern_gdpr_business_compliance": "Privacy & GDPR Compliance (Personvern, GDPR & Compliance)",
+  "selskapsrett": "Company Law (Selskapsrett)",
+  "tvistelosning_smb": "Dispute Resolution for SMBs (Tvisteløsning, SMB)"
+};
+
+const OTHER_DOMAIN_DISPLAY_NAMES = {
+  "straffeloven": "Criminal Law (Straffeloven)",
+  "strafferett": "Criminal Law (Strafferett)",
+  "familierett": "Family Law (Familierett)",
+  "arverett": "Inheritance Law (Arverett)",
+  "skatterett": "Tax Law (Skatterett)",
+  "utlendingsrett": "Immigration Law (Utlendingsrett)",
+  "forvaltningsrett": "Administrative Law (Forvaltningsrett)",
+  "tingsrett": "Property Law (Tingsrett)",
+  "erstatningsrett": "Tort Law (Erstatningsrett)",
+  "immaterialrett": "Intellectual Property Law (Immaterialrett)",
+  "entrepriserett": "Construction Law (Entrepriserett)",
+  "miljorett": "Environmental Law (Miljørett)"
+};
+
 export default function AdminDashboard() {
   const { theme, isDark, toggleTheme } = useTheme();
   const [users, setUsers] = useState([]);
@@ -81,6 +111,7 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const [confirmModal, setConfirmModal] = useState({ show: false, user: null });
   const [viewUser, setViewUser] = useState(null);
+  const [activeSummaryModal, setActiveSummaryModal] = useState(null);
 
   // Scoped Messages
   const [inviteMsg, setInviteMsg] = useState(null);
@@ -157,7 +188,34 @@ export default function AdminDashboard() {
       setTickets(ticketsData);
       setAuditLogs(logsData);
       setHealthStatus(healthData);
-      setDomainAnalytics(domainData);
+      
+      // Format domain analytics names for display
+      const formattedDomainData = { ...domainData };
+      if (formattedDomainData.distribution && Array.isArray(formattedDomainData.distribution)) {
+        formattedDomainData.distribution = formattedDomainData.distribution.map(entry => {
+          const lowerKey = entry.name.toLowerCase();
+          const isCanonical = lowerKey in DOMAIN_DISPLAY_NAMES;
+          
+          let displayName = entry.name;
+          if (isCanonical) {
+            displayName = DOMAIN_DISPLAY_NAMES[lowerKey];
+          } else if (lowerKey in OTHER_DOMAIN_DISPLAY_NAMES) {
+            displayName = OTHER_DOMAIN_DISPLAY_NAMES[lowerKey];
+          } else {
+            // Capitalize and format unknown custom domains: "custom_domain" -> "Custom Domain (custom_domain)"
+            const capitalized = entry.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            displayName = `${capitalized} (${entry.name})`;
+          }
+
+          return {
+            ...entry,
+            rawKey: lowerKey,
+            isCanonical,
+            name: displayName
+          };
+        });
+      }
+      setDomainAnalytics(formattedDomainData);
 
       // Also check for new notifications during main fetch
       checkInvitationStatus();
@@ -337,6 +395,7 @@ export default function AdminDashboard() {
 
   // Derived Stats
   const totalUsers = users.length;
+  const systemAdminCount = users.filter(u => u.role === 'system_admin').length;
   const lawyerCount = users.filter(u => u.role === 'lawyer').length;
   const adminCount = users.filter(u => u.role === 'admin').length;
   const standardUserCount = users.filter(u => u.role === 'user' || !u.role).length;
@@ -347,9 +406,10 @@ export default function AdminDashboard() {
   // ── Chart Data Processors ──────────────────────────────────────────
 
   const roleData = [
-    { name: 'Admins', value: adminCount, color: '#EC6B56' },
-    { name: 'Lawyers', value: lawyerCount, color: '#FFC154' },
-    { name: 'Users', value: standardUserCount, color: '#47B39C' },
+    { name: 'System Admins', value: systemAdminCount, color: '#ef4444' },
+    { name: 'Admins', value: adminCount, color: '#8b5cf6' },
+    { name: 'Lawyers', value: lawyerCount, color: '#3b82f6' },
+    { name: 'Users', value: standardUserCount, color: '#10b981' },
   ];
 
   const statusData = [
@@ -536,7 +596,7 @@ export default function AdminDashboard() {
             className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "distribution" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
           >
             <BarChart3 size={18} />
-            Inquiry Distribution
+            Classified Category
           </button>
 
           {isAuthorized && (
@@ -613,7 +673,9 @@ export default function AdminDashboard() {
                   ? (isSystemAdmin ? 'System Admin Settings' : 'Admin Settings')
                   : activeView === 'calendar'
                     ? 'System Admin Schedule'
-                    : activeView.replace('-', ' ')}
+                    : activeView === 'distribution'
+                      ? 'Classified Categories'
+                      : activeView.replace('-', ' ')}
             </h2>
           </div>
 
@@ -698,9 +760,10 @@ export default function AdminDashboard() {
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300 pb-10">
 
               {/* KPI Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-6">
                 {[
-                  { label: "Administrators", value: adminCount, color: "purple" },
+                  { label: "System Admins", value: systemAdminCount, color: "red" },
+                  { label: "Admins", value: adminCount, color: "purple" },
                   { label: "Active Lawyers", value: lawyerCount, color: "blue" },
                   { label: "Standard Users", value: standardUserCount, color: "green" },
                   { label: "Open Tickets", value: tickets.filter(t => t.status === 'open' && !t.assigned_lawyer_id).length, color: "orange" },
@@ -869,11 +932,11 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Row 4: Inquiry Domain Distribution */}
+              {/* Row 4: Classified Categories */}
               <div className="grid grid-cols-1 gap-8">
-                {/* Inquiry Domain Distribution Section */}
+                {/* Classified Categories Section */}
                 <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">User Inquiry Domain Distribution</h3>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Classified Categories</h3>
                   <div className="h-[300px] w-full">
                     {domainAnalytics && domainAnalytics.distribution && domainAnalytics.distribution.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
@@ -1319,7 +1382,11 @@ export default function AdminDashboard() {
                             <td className="px-8 py-6">
                               {!ticket.assigned_lawyer_id && ticket.conversation_summary ? (
                                 <div className="max-w-xs">
-                                  <p className="text-[11px] text-slate-600 dark:text-slate-400 italic leading-relaxed line-clamp-2">
+                                  <p
+                                    onClick={() => setActiveSummaryModal(ticket.conversation_summary)}
+                                    className="text-[11px] text-slate-600 dark:text-slate-400 italic leading-relaxed line-clamp-2 cursor-pointer hover:text-indigo-500 hover:underline transition-all"
+                                    title="Click to view full summary"
+                                  >
                                     "{ticket.conversation_summary}"
                                   </p>
                                 </div>
@@ -1363,54 +1430,120 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* VIEW: INQUIRY DISTRIBUTION */}
-          {activeView === "distribution" && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-              <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                <h1 className="text-2xl font-bold">User Inquiry Domain Distribution</h1>
-                <p className="mt-1 text-sm text-slate-500">
-                  Analyze the classified domain distribution of all user queries and system interactions.
-                </p>
-              </div>
+          {/* VIEW: CLASSIFIED CATEGORIES */}
+          {activeView === "distribution" && (() => {
+            const allCanonicalKeys = Object.keys(DOMAIN_DISPLAY_NAMES);
+            const canonicalEntriesMap = {};
+            (domainAnalytics?.distribution || []).forEach(d => {
+              if (d.isCanonical) {
+                canonicalEntriesMap[d.rawKey] = d;
+              }
+            });
 
-              <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Classified Categories</h3>
-                <div className="w-full">
-                  {domainAnalytics && domainAnalytics.distribution && domainAnalytics.distribution.length > 0 ? (
-                    <div className="w-full overflow-y-auto pr-2 max-h-[450px] space-y-6">
-                      {domainAnalytics.distribution.map((entry, index) => {
-                        const pct = entry.percentage ?? 0;
-                        const color = COLORS[index % COLORS.length];
-                        return (
-                          <div key={index} className="space-y-2">
-                            <div className="flex items-center justify-between text-xs font-semibold">
-                              <span className={isDark ? "text-slate-200" : "text-slate-700"}>{entry.name}</span>
-                              <span className={isDark ? "text-slate-400" : "text-slate-500"}>
-                                {entry.queries} queries ({pct}%)
-                              </span>
+            const canonicalList = allCanonicalKeys.map(key => {
+              if (canonicalEntriesMap[key]) {
+                return canonicalEntriesMap[key];
+              }
+              return {
+                name: DOMAIN_DISPLAY_NAMES[key],
+                rawKey: key,
+                isCanonical: true,
+                queries: 0,
+                percentage: 0
+              };
+            }).sort((a, b) => b.queries - a.queries);
+
+            const otherList = (domainAnalytics?.distribution || []).filter(d => !d.isCanonical);
+
+            return (
+              <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                  <h1 className="text-2xl font-bold">Classified Categories</h1>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Analyze the distribution of user queries across different classified categories.
+                  </p>
+                </div>
+
+                <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                    
+                    {/* Section 1: Default Legal Domains */}
+                    <div className="space-y-4">
+                      <h3 className="text-xs font-black uppercase tracking-widest text-indigo-500 flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                        Default Legal Domains (12)
+                      </h3>
+                      <div className="w-full overflow-y-auto pr-2 max-h-[550px] space-y-6">
+                        {canonicalList.map((entry, index) => {
+                          const pct = entry.percentage ?? 0;
+                          const color = COLORS[index % COLORS.length];
+                          return (
+                            <div key={index} className="space-y-2">
+                              <div className="flex items-center justify-between text-xs font-semibold">
+                                <span className={isDark ? "text-slate-200" : "text-slate-700"}>{entry.name}</span>
+                                <span className={isDark ? "text-slate-400" : "text-slate-500"}>
+                                  {entry.queries} queries ({pct}%)
+                                </span>
+                              </div>
+                              <div className={`w-full h-3 rounded-full ${isDark ? "bg-slate-800" : "bg-slate-100"}`}>
+                                <div
+                                  className="h-full rounded-full transition-all duration-500"
+                                  style={{
+                                    width: `${pct}%`,
+                                    backgroundColor: color
+                                  }}
+                                />
+                              </div>
                             </div>
-                            <div className={`w-full h-3 rounded-full ${isDark ? "bg-slate-800" : "bg-slate-100"}`}>
-                              <div
-                                className="h-full rounded-full transition-all duration-500"
-                                style={{
-                                  width: `${pct}%`,
-                                  backgroundColor: color
-                                }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
-                  ) : (
-                    <div className="h-[300px] flex items-center justify-center text-slate-500 text-xs font-bold italic opacity-40">
-                      No classified user queries recorded yet.
+
+                    {/* Section 2: Other Categories */}
+                    <div className="space-y-4 border-t lg:border-t-0 lg:border-l pt-8 lg:pt-0 lg:pl-12 border-slate-150 dark:border-slate-800/80">
+                      <h3 className="text-xs font-black uppercase tracking-widest text-amber-550 flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                        Other Categories ({otherList.length})
+                      </h3>
+                      {otherList.length > 0 ? (
+                        <div className="w-full overflow-y-auto pr-2 max-h-[550px] space-y-6">
+                          {otherList.map((entry, index) => {
+                            const pct = entry.percentage ?? 0;
+                            const color = COLORS[(index + 12) % COLORS.length];
+                            return (
+                              <div key={index} className="space-y-2">
+                                <div className="flex items-center justify-between text-xs font-semibold">
+                                  <span className={isDark ? "text-slate-200" : "text-slate-700"}>{entry.name}</span>
+                                  <span className={isDark ? "text-slate-400" : "text-slate-500"}>
+                                    {entry.queries} queries ({pct}%)
+                                  </span>
+                                </div>
+                                <div className={`w-full h-3 rounded-full ${isDark ? "bg-slate-800" : "bg-slate-100"}`}>
+                                  <div
+                                    className="h-full rounded-full transition-all duration-500"
+                                    style={{
+                                      width: `${pct}%`,
+                                      backgroundColor: color
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="h-[120px] flex flex-col items-center justify-center text-slate-500 text-xs font-bold italic opacity-40 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                          No queries classified in other categories yet.
+                        </div>
+                      )}
                     </div>
-                  )}
+
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* VIEW: SLA & OPERATIONS */}
           {activeView === "sla" && isAuthorized && (
@@ -1695,6 +1828,34 @@ export default function AdminDashboard() {
             >
               <X size={20} />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* FULL SUMMARY MODAL */}
+      {activeSummaryModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className={`w-full max-w-lg rounded-3xl border p-8 shadow-2xl animate-in zoom-in-95 duration-300 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-black tracking-tight">Full Matter Summary</h3>
+              <button
+                onClick={() => setActiveSummaryModal(null)}
+                className={`p-1.5 rounded-xl transition-colors ${isDark ? "hover:bg-slate-800 text-slate-400" : "hover:bg-slate-100 text-slate-500"}`}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className={`p-6 rounded-2xl border text-sm leading-relaxed max-h-[60vh] overflow-y-auto ${isDark ? "bg-slate-950/50 border-slate-800 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-700"}`}>
+              {activeSummaryModal}
+            </div>
+            <div className="mt-8 flex justify-end">
+              <button
+                onClick={() => setActiveSummaryModal(null)}
+                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
