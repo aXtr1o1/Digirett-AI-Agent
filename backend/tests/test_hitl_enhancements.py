@@ -222,5 +222,164 @@ class TestHitlEnhancements(unittest.TestCase):
         self.assertIn("Selskapsrett", upsert_payload["expertise_domains"])
         self.assertEqual(upsert_payload["specialization_label"], "Senior Counsel")
 
+    def test_get_open_tickets_priority_and_common_sorting(self):
+        # Mock a lawyer specializing in "common" (all domains)
+        mock_lp_resp = MagicMock()
+        mock_lp_resp.data = [{"expertise_domains": ["Common"]}]
+
+        # Mock tickets with different priority levels and domains
+        mock_tickets_resp = MagicMock()
+        mock_tickets_resp.data = [
+            {"ticket_id": "t1", "detected_domain": "eiendomsrett", "priority": "normal", "created_at": "2026-06-29T10:00:00Z"},
+            {"ticket_id": "t2", "detected_domain": "selskapsrett", "priority": "urgent", "created_at": "2026-06-29T10:05:00Z"},
+            {"ticket_id": "t3", "detected_domain": "arbeidsrett", "priority": "high", "created_at": "2026-06-29T10:02:00Z"},
+            {"ticket_id": "t4", "detected_domain": "strafferett", "priority": "urgent", "created_at": "2026-06-29T10:01:00Z"},
+        ]
+
+        def table_mock(table_name):
+            mock_tbl = MagicMock()
+            if table_name == "lawyer_profiles":
+                mock_tbl.select.return_value.eq.return_value.limit.return_value.execute.return_value = mock_lp_resp
+            else:
+                mock_tbl.select.return_value.eq.return_value.order.return_value.execute.return_value = mock_tickets_resp
+            return mock_tbl
+
+        self.mock_supabase.table.side_effect = table_mock
+
+        open_tickets = self.hitl_service.get_open_tickets(lawyer_id="lawyer_common")
+
+        # Expectations:
+        # Since lawyer is "common", all domains are considered a match.
+        # Order by priority first (urgent [t4, t2] > high [t3] > normal [t1]).
+        # Within urgent, order by created_at (t4: 10:01 before t2: 10:05).
+        # Expected order: t4, t2, t3, t1
+        self.assertEqual(open_tickets[0]["ticket_id"], "t4")
+        self.assertEqual(open_tickets[1]["ticket_id"], "t2")
+        self.assertEqual(open_tickets[2]["ticket_id"], "t3")
+        self.assertEqual(open_tickets[3]["ticket_id"], "t1")
+
+    def test_urgent_ticket_validation_limit(self):
+        # Mock active urgent ticket query return
+        mock_active_resp = MagicMock()
+        mock_active_resp.data = [{"ticket_id": "existing_urgent_id"}]
+        self.mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.in_.return_value.execute.return_value = mock_active_resp
+
+        # Create ticket should raise ValueError due to active urgent ticket limit
+        with self.assertRaises(ValueError) as context:
+            self.hitl_service.create_ticket(
+                conversation_id="conv_abc",
+                user_id="user_xyz",
+                trigger_message_id="msg_1",
+                priority="urgent"
+            )
+        self.assertIn("You already have an active urgent request", str(context.exception))
+
+    def test_availability_and_priority_endpoints(self):
+        client = TestClient(app)
+        app.dependency_overrides[get_current_user] = lambda: self.lawyer_user
+
+        import api.routes.hitl
+        mock_user_svc = MagicMock()
+        mock_user_svc.get_user_id_from_clerk_id.return_value = "lawyer_internal_id"
+        api.routes.hitl._user_service = mock_user_svc
+        api.routes.hitl._hitl_service = self.hitl_service
+
+        # Mock upsert for availability status
+        upsert_mock = MagicMock()
+        self.mock_supabase.table.return_value.upsert.return_value.execute.return_value = upsert_mock
+        upsert_mock.data = [{"availability_status": "busy"}]
+
+        # Test availability status endpoint
+        response = client.patch(
+            "/api/v1/hitl/lawyer/profile/availability",
+            json={"availability_status": "busy"}
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Mock update for priority change
+        update_mock = MagicMock()
+        self.mock_supabase.table.return_value.update.return_value.eq.return_value.execute.return_value = update_mock
+
+        # Test priority change endpoint
+        response = client.patch(
+            "/api/v1/hitl/tickets/ticket_123/priority",
+            json={"priority": "high"}
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_close_and_re_escalate_workflow(self):
+        # 1. Test close_ticket
+        mock_resolved_ticket = MagicMock()
+        mock_resolved_ticket.data = [{
+            "ticket_id": "resolved_id",
+            "user_id": "user_xyz",
+            "status": "resolved",
+            "conversation_id": "conv_123",
+            "trigger_message_id": "msg_99",
+            "assigned_lawyer_id": "lawyer_abc",
+            "excluded_lawyer_ids": []
+        }]
+
+        self.mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value = mock_resolved_ticket
+        self.mock_supabase.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock()
+        self.mock_supabase.table.return_value.insert.return_value.execute.return_value = MagicMock()
+
+        success = self.hitl_service.close_ticket("resolved_id", "user_xyz")
+        self.assertTrue(success)
+        self.mock_supabase.table.assert_any_call("hitl_tickets")
+
+        update_args = self.mock_supabase.table.return_value.update.call_args[0][0]
+        self.assertEqual(update_args["status"], "closed")
+
+        # 2. Test re_escalate_ticket for SAME lawyer
+        self.mock_supabase.table.reset_mock()
+        self.mock_supabase.table.return_value.insert.reset_mock()
+        self.mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value = mock_resolved_ticket
+
+        new_ticket = self.hitl_service.re_escalate_ticket("resolved_id", "user_xyz", "same")
+        insert_args = self.mock_supabase.table.return_value.insert.call_args_list[1][0][0]
+        self.assertEqual(insert_args["status"], "assigned")
+        self.assertEqual(insert_args["assigned_lawyer_id"], "lawyer_abc")
+        self.assertEqual(insert_args["parent_ticket_id"], "resolved_id")
+        self.assertTrue(insert_args["is_reescalated"])
+
+        # 3. Test re_escalate_ticket for DIFFERENT lawyer
+        self.mock_supabase.table.reset_mock()
+        self.mock_supabase.table.return_value.insert.reset_mock()
+        self.mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value = mock_resolved_ticket
+
+        new_ticket = self.hitl_service.re_escalate_ticket("resolved_id", "user_xyz", "different")
+
+        insert_args = self.mock_supabase.table.return_value.insert.call_args_list[1][0][0]
+        self.assertEqual(insert_args["status"], "open")
+        self.assertNotIn("assigned_lawyer_id", insert_args)
+        self.assertIn("lawyer_abc", insert_args["excluded_lawyer_ids"])
+        self.assertEqual(insert_args["parent_ticket_id"], "resolved_id")
+
+    def test_open_queue_excludes_lawyer(self):
+        mock_lp_resp = MagicMock()
+        mock_lp_resp.data = [{"expertise_domains": ["common"]}]
+
+        mock_tickets_resp = MagicMock()
+        mock_tickets_resp.data = [
+            {"ticket_id": "t1", "detected_domain": "eiendomsrett", "priority": "normal", "excluded_lawyer_ids": ["lawyer_abc"]},
+            {"ticket_id": "t2", "detected_domain": "selskapsrett", "priority": "normal", "excluded_lawyer_ids": []},
+        ]
+
+        def table_mock(table_name):
+            mock_tbl = MagicMock()
+            if table_name == "lawyer_profiles":
+                mock_tbl.select.return_value.eq.return_value.limit.return_value.execute.return_value = mock_lp_resp
+            else:
+                mock_tbl.select.return_value.eq.return_value.order.return_value.execute.return_value = mock_tickets_resp
+            return mock_tbl
+
+        self.mock_supabase.table.side_effect = table_mock
+
+        open_tickets = self.hitl_service.get_open_tickets(lawyer_id="lawyer_abc")
+        self.assertEqual(len(open_tickets), 1)
+        self.assertEqual(open_tickets[0]["ticket_id"], "t2")
+
+
 if __name__ == "__main__":
     unittest.main()
