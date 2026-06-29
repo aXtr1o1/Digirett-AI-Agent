@@ -147,7 +147,7 @@ async def list_users(
     try:
         response = (
             _user_service._supabase.table("users")
-            .select("*, user_profiles(display_name)")
+            .select("*, user_profiles(display_name), lawyer_profiles(expertise_domains, specialization_label)")
             .order("created_at", desc=True)
             .execute()
         )
@@ -422,7 +422,7 @@ async def admin_list_lawyers(
             .select(
                 "user_id, email, user_name, role, "
                 "user_profiles(display_name), "
-                "lawyer_profiles!inner(cal_event_type_id, cal_api_key, verification_status)"
+                "lawyer_profiles!inner(cal_event_type_id, cal_api_key, verification_status, expertise_domains, specialization_label)"
             )
             .order("created_at", desc=False)
             .execute()
@@ -436,6 +436,8 @@ async def admin_list_lawyers(
                 "email": u.get("email"),
                 "display_name": profile.get("display_name") or u.get("user_name"),
                 "cal_configured": bool(lp.get("cal_api_key") and lp.get("cal_event_type_id")),
+                "expertise_domains": lp.get("expertise_domains") or [],
+                "specialization_label": lp.get("specialization_label"),
             })
         return lawyers
     except Exception as exc:
@@ -652,4 +654,40 @@ async def get_sla_report(
         }
     except Exception as exc:
         logger.error(f"❌ Failed to generate SLA report: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class AdminSpecializationRequest(BaseModel):
+    expertise_domains: List[str]
+    specialization_label: Optional[str] = None
+
+
+@router.patch(
+    "/lawyers/{lawyer_id}/specialization",
+    summary="Admin overrides a lawyer's specialization settings",
+)
+async def admin_set_lawyer_specialization(
+    lawyer_id: str,
+    req: AdminSpecializationRequest,
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
+):
+    try:
+        resp = (
+            _user_service._supabase.table("lawyer_profiles")
+            .update({
+                "expertise_domains": req.expertise_domains,
+                "specialization_label": req.specialization_label,
+            })
+            .eq("lawyer_id", lawyer_id)
+            .execute()
+        )
+        if not resp.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Lawyer profile not found. Ensure the user has been promoted to lawyer.",
+            )
+        return {"status": "success", "message": "Lawyer specialization updated by admin.", "profile": resp.data[0]}
+    except HTTPException:
+        raise
+    except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

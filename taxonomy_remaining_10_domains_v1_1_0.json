@@ -1,0 +1,4026 @@
+{
+  "schema_version": "1.0",
+  "taxonomy_version": "1.1.0",
+  "title": "DigiRett AI Taxonomy — Remaining 10 Domains (Canonical)",
+  "scope": "Domains 01–03, 05–10, 12",
+  "source_document": "DigiRett_AI_Taxonomy_RemainingDomains_v1_0_0.pdf",
+  "date": "2026-06-05",
+  "status": "Draft — for internal use and developer handoff",
+  "notes": "Follows identical structure to taxonomy_contract_employment_v1.0.1.json. All enum values UPPERCASE. subdomain_id values are immutable once deployed.",
+  "enums": {
+    "jurisdiction": [
+      "NO",
+      "EU-EEA",
+      "BOTH"
+    ],
+    "b2b_b2c": [
+      "B2B",
+      "B2C",
+      "BOTH"
+    ],
+    "source_type": [
+      "lov",
+      "forskrift",
+      "forarbeid",
+      "rettspraksis",
+      "veileder",
+      "mal"
+    ],
+    "relationship_type": [
+      "employment",
+      "commercial",
+      "consumer"
+    ],
+    "tier": [
+      1,
+      2,
+      3
+    ]
+  },
+  "global_rules": {
+    "immutable_keys": [
+      "domain_id",
+      "subdomain_id"
+    ],
+    "metadata_required_per_chunk": [
+      "domain_id",
+      "subdomain_id",
+      "jurisdiction",
+      "b2b_b2c",
+      "source_type",
+      "source_id",
+      "source_url",
+      "version_date",
+      "language",
+      "tier",
+      "citation_anchor"
+    ],
+    "employment_relationship_guardrail": {
+      "rule": "All chunks with domain_id D12_EMPLOYMENT MUST include meta.relationship_type = employment.",
+      "applies_to_domain_id": "D12_EMPLOYMENT"
+    }
+  },
+  "domains": [
+    {
+      "domain_id": "D01_COMPANY",
+      "name_en": "Company Law",
+      "name_nb": "Selskapsrett",
+      "default": {
+        "tier_ceiling": 2,
+        "jurisdiction_allowed": [
+          "NO",
+          "EU-EEA",
+          "BOTH"
+        ],
+        "b2b_b2c_allowed": [
+          "B2B"
+        ],
+        "relationship_type_allowed": [
+          "commercial"
+        ]
+      },
+      "subdomains": [
+        {
+          "subdomain_id": "CY-01",
+          "name_en": "Formation & Registration",
+          "name_nb": "Stiftelse og registrering",
+          "scope_in": [
+            "Incorporation of AS/ASA, establishment documents (stiftelsesdokument)",
+            "Registration with Foretaksregisteret (Brreg)",
+            "Articles of association (vedtekter) — drafting and amendment",
+            "Minimum share capital requirements"
+          ],
+          "scope_out": [
+            "Mergers and demergers — route to D02_MA",
+            "Audit duty — route to D03_ACCOUNTS"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "stifte AS",
+            "stifte aksjeselskap",
+            "stiftelsesdokument",
+            "vedtekter",
+            "registrere selskap",
+            "Brreg",
+            "Foretaksregisteret",
+            "aksjekapital krav",
+            "minimumskapital",
+            "organisasjonsnummer",
+            "stifterne",
+            "hvem kan stifte AS",
+            "er vedtektene gyldige",
+            "endre vedtekter",
+            "formålsparagraf",
+            "endring av vedtekter",
+            "registrering av AS",
+            "ny virksomhet",
+            "opprette selskap",
+            "generalforsamling vedtektsendring"
+          ],
+          "confusers": [
+            {
+              "term": "fusjon",
+              "correct_route": "D02_MA / Merger Process",
+              "reason": "Corporate merger is M&A, not formation."
+            },
+            {
+              "term": "fisjon",
+              "correct_route": "D02_MA / Demerger Process",
+              "reason": "Demerger is M&A, not formation."
+            },
+            {
+              "term": "revisjonsplikt",
+              "correct_route": "D03_ACCOUNTS / Audit",
+              "reason": "Audit duty is accounting domain."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1997-06-13-44",
+              "title": "Aksjeloven",
+              "sections": "§§ 2-1 – 2-20",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-1985-06-21-78",
+              "title": "Foretaksregisterloven",
+              "sections": "§§ 1-1 – 4-5",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "CY-02",
+          "name_en": "Governance",
+          "name_nb": "Selskapsledelse",
+          "scope_in": [
+            "Board composition, powers and duties (styrets myndighet)",
+            "CEO authority (daglig leders myndighet)",
+            "Signatory authority and prokura",
+            "Board resolutions (styrevedtak) and validity",
+            "Director duties of care and loyalty"
+          ],
+          "scope_out": [
+            "Authority to enter contracts — route to D04_CONTRACT / CL-02",
+            "Shareholder rights and general meeting — route to CY-03"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "styrets myndighet",
+            "styrets ansvar",
+            "styrevedtak",
+            "styreleder",
+            "daglig leder myndighet",
+            "daglig leder ansvar",
+            "prokura",
+            "signaturrett",
+            "hvem leder selskapet",
+            "styremedlem plikter",
+            "styrets oppgaver",
+            "styreprotokoll",
+            "krav til styre",
+            "hvem kan signere for selskapet",
+            "hvem har lov å signere avtaler",
+            "kan daglig leder bestemme dette alene",
+            "daglig leder uten styrets godkjenning",
+            "må styret godkjenne dette",
+            "trenger vi styremøte for dette",
+            "hvem bestemmer i AS-et",
+            "kan jeg som eneeier gjøre dette selv",
+            "styremedlem stemte i egen sak",
+            "endre hvem som kan signere i Brønnøysund"
+          ],
+          "confusers": [
+            {
+              "term": "fullmakt",
+              "correct_route": "D04_CONTRACT / CL-02",
+              "reason": "Contracting authority is Contract Law."
+            },
+            {
+              "term": "generalforsamling",
+              "correct_route": "D01_COMPANY / CY-03",
+              "reason": "General meeting is shareholder rights."
+            },
+            {
+              "term": "styreansvar ved insolvens",
+              "correct_route": "D07_INSOLVENCY / Director Liability",
+              "reason": "Insolvency-specific director liability is insolvency domain."
+            },
+            {
+              "term": "styreansvar / kan styret holdes ansvarlig",
+              "correct_route": "D01_COMPANY / CY-06",
+              "reason": "Director liability belongs in CY-06, not governance CY-02."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1997-06-13-44",
+              "title": "Aksjeloven",
+              "sections": "§§ 6-1 – 6-35",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "CY-03",
+          "name_en": "Shareholder Rights & Records",
+          "name_nb": "Aksjonærrettigheter og aksjeeierbok",
+          "scope_in": [
+            "General meeting (generalforsamling) — convening, quorum, resolutions",
+            "Shareholder register (aksjeeierbok) and transparency",
+            "Minority shareholder rights and protection",
+            "Pre-emption rights on share transfers",
+            "Right of inspection (innsynsrett)"
+          ],
+          "scope_out": [
+            "Share issuance / capital increase — route to CY-04",
+            "Dividends — route to CY-05"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "generalforsamling",
+            "ekstraordinær generalforsamling",
+            "innkalle generalforsamling",
+            "aksjeeierbok",
+            "aksjonærregister",
+            "aksjonærrettigheter",
+            "innsynsrett",
+            "minoritetsvern",
+            "forkjøpsrett aksjer",
+            "overdragelse av aksjer",
+            "stemmerett aksjonær",
+            "aksjonæravtale",
+            "reglene for generalforsamling",
+            "gyldig vedtak generalforsamling",
+            "beslutningsdyktighet",
+            "quorum generalforsamling",
+            "krav innkalling",
+            "fullmakt generalforsamling",
+            "simpelt flertall",
+            "kvalifisert flertall"
+          ],
+          "confusers": [
+            {
+              "term": "kapitalforhøyelse",
+              "correct_route": "D01_COMPANY / CY-04",
+              "reason": "Capital increase is share capital subdomain."
+            },
+            {
+              "term": "utbytte",
+              "correct_route": "D01_COMPANY / CY-05",
+              "reason": "Dividends are distributions subdomain."
+            },
+            {
+              "term": "styrevedtak",
+              "correct_route": "D01_COMPANY / CY-02",
+              "reason": "Board resolutions are governance subdomain."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1997-06-13-44",
+              "title": "Aksjeloven",
+              "sections": "§§ 4-1 – 5-25",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "CY-04",
+          "name_en": "Share Capital & Equity Changes",
+          "name_nb": "Aksjekapital og kapitalendringer",
+          "scope_in": [
+            "Capital increases (kapitalforhøyelse) — private placement, rights issue",
+            "Capital reductions (kapitalnedsettelse)",
+            "Share issuance procedures (emisjon)",
+            "Convertible instruments and warrants"
+          ],
+          "scope_out": [
+            "Dividends and distributions — route to CY-05",
+            "Board liability for equity shortfall — route to CY-06"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "kapitalforhøyelse",
+            "emisjon",
+            "rettet emisjon",
+            "aksjekapital",
+            "tegningskurs",
+            "kapitalnedsettelse",
+            "nedsette aksjekapital",
+            "fondsemisjon",
+            "fortrinnsemisjon",
+            "aksjetegning",
+            "øke aksjekapitalen",
+            "innbetaling av aksjekapital",
+            "konvertibelt lån",
+            "warrants",
+            "ny aksjekapital",
+            "overkursfond",
+            "kapitalstruktur",
+            "kreditorvarsel kapitalnedsettelse"
+          ],
+          "confusers": [
+            {
+              "term": "utbytte",
+              "correct_route": "D01_COMPANY / CY-05",
+              "reason": "Dividends are distributions."
+            },
+            {
+              "term": "fusjon",
+              "correct_route": "D02_MA",
+              "reason": "Mergers are M&A domain."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1997-06-13-44",
+              "title": "Aksjeloven",
+              "sections": "§§ 10-1 – 12-6",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "CY-05",
+          "name_en": "Distributions",
+          "name_nb": "Utdelinger",
+          "scope_in": [
+            "Dividends (utbytte) — declaration, limits, unlawful distributions",
+            "Group contributions (konsernbidrag)",
+            "Return of capital and share buybacks"
+          ],
+          "scope_out": [
+            "Capital reduction procedure — route to CY-04",
+            "Loss of equity / board duty to act — route to CY-06"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "utbytte",
+            "utbyttebeslutning",
+            "lovlig utbytte",
+            "ulovlig utdeling",
+            "utbyttegrunnlag",
+            "konsernbidrag",
+            "tilbakebetaling av kapital",
+            "kan selskapet dele ut utbytte",
+            "utbytteberegning",
+            "egne aksjer",
+            "tilbakekjøp av aksjer",
+            "aksjeutbytte",
+            "fri egenkapital",
+            "forsvarlig egenkapital og likviditet"
+          ],
+          "confusers": [
+            {
+              "term": "kapitalnedsettelse",
+              "correct_route": "D01_COMPANY / CY-04",
+              "reason": "Capital reduction is share capital subdomain."
+            },
+            {
+              "term": "handleplikt",
+              "correct_route": "D01_COMPANY / CY-06",
+              "reason": "Board duty to act is the loss-of-equity subdomain."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1997-06-13-44",
+              "title": "Aksjeloven",
+              "sections": "§§ 8-1 – 8-7",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "CY-06",
+          "name_en": "Board Liability & Loss of Equity",
+          "name_nb": "Styreansvar og handleplikt",
+          "scope_in": [
+            "Board's mandatory duty to act when equity falls below half (handleplikt)",
+            "Indefensibly low equity and liquidity (forsvarlig egenkapital og likviditet)",
+            "Director liability for loss (erstatningsansvar for styret)",
+            "Continuing operations after equity shortfall",
+            "Liability analysis runs from the håpløshetstidspunkt — may precede formal insolvency"
+          ],
+          "scope_out": [
+            "Director liability AFTER oppbud/konkurs åpnet/bobestyrer appointed — route to D07_INSOLVENCY / IN-04",
+            "Bankruptcy process itself — route to D07_INSOLVENCY",
+            "Board duties on annual accounts — route to D03_ACCOUNTS"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "handleplikt",
+            "styrets handleplikt",
+            "egenkapital under halvparten",
+            "uforsvarlig lav egenkapital",
+            "forsvarlig drift",
+            "styreansvar erstatning",
+            "asl § 3-4",
+            "asl § 3-5",
+            "asl § 17-1",
+            "aksjeloven § 3-4",
+            "aksjeloven § 3-5",
+            "videre drift etter tap",
+            "solvenstest",
+            "fortsatt drift vurdering",
+            "kan styret holdes ansvarlig",
+            "erstatning fra styret",
+            "håpløshetstidspunkt",
+            "fortsatt drift etter tap",
+            "aksjeloven § 3-4",
+            "aksjeloven § 3-5"
+          ],
+          "confusers": [
+            {
+              "term": "konkurs",
+              "correct_route": "D07_INSOLVENCY",
+              "reason": "Bankruptcy process is insolvency domain."
+            },
+            {
+              "term": "revisjonsberetning",
+              "correct_route": "D03_ACCOUNTS",
+              "reason": "Auditor report is accounting domain."
+            },
+            {
+              "term": "styreansvar erstatning (etter konkurs åpnet)",
+              "correct_route": "D07_INSOLVENCY / IN-04",
+              "reason": "After formal insolvency (oppbud/bobestyrer), liability routes to IN-04."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1997-06-13-44",
+              "title": "Aksjeloven",
+              "sections": "§§ 3-4 – 3-5, § 17-1",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-1997-06-13-44",
+              "title": "Aksjeloven",
+              "sections": "§ 17-1 (shared with IN-04 — applies from håpløshetstidspunkt)",
+              "tier": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "D02_MA",
+      "name_en": "M&A (Mergers & Demergers)",
+      "name_nb": "Fusjon og fisjon",
+      "default": {
+        "tier_ceiling": 2,
+        "jurisdiction_allowed": [
+          "NO",
+          "EU-EEA",
+          "BOTH"
+        ],
+        "b2b_b2c_allowed": [
+          "B2B"
+        ],
+        "relationship_type_allowed": [
+          "commercial"
+        ]
+      },
+      "subdomains": [
+        {
+          "subdomain_id": "MA-01",
+          "name_en": "Merger Process",
+          "name_nb": "Fusjonsprosess",
+          "scope_in": [
+            "Merger plan (fusjonsplan) — content requirements",
+            "Creditor notice procedure (kreditorvarsel)",
+            "Shareholder approvals for merger",
+            "Registration of completed merger"
+          ],
+          "scope_out": [
+            "Demerger process — route to MA-02",
+            "Employee rights in merger — route to MA-03"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "fusjon",
+            "fusjonsplan",
+            "kreditorvarsel",
+            "fusjonsvedtak",
+            "sammenslåing av selskaper",
+            "absorbsjonsfusjon",
+            "kombinasjonsfusjon",
+            "kreditorenes rettigheter ved fusjon",
+            "vederlagsaksjer fusjon",
+            "fusjonsbalanse",
+            "fusjonstidspunkt",
+            "registrering av fusjon",
+            "sletting av overdragende selskap",
+            "bytteforhold aksjer fusjon"
+          ],
+          "confusers": [
+            {
+              "term": "fisjon",
+              "correct_route": "D02_MA / MA-02",
+              "reason": "Demerger is a separate subdomain."
+            },
+            {
+              "term": "virksomhetsoverdragelse ansatte",
+              "correct_route": "D12_EMPLOYMENT / EL-04",
+              "reason": "Employee transfer rights are employment domain."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1997-06-13-44",
+              "title": "Aksjeloven",
+              "sections": "§§ 13-1 – 13-26",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "MA-02",
+          "name_en": "Demerger Process",
+          "name_nb": "Fisjonsprosess",
+          "scope_in": [
+            "Demerger plan (fisjonsplan) — content requirements",
+            "Types of demerger: fisjon til eksisterende selskap / fisjon til nystiftet selskap",
+            "Allocation of assets and liabilities in demerger",
+            "Creditor notice and shareholder approvals"
+          ],
+          "scope_out": [
+            "Merger process — route to MA-01",
+            "Tax aspects of demerger — route to MA-04"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "fisjon",
+            "fisjonsplan",
+            "utfisjonering",
+            "overdragelse av virksomhet",
+            "dele opp selskapet",
+            "fisjon til nystiftet selskap",
+            "fisjon til eksisterende selskap",
+            "fisjonsbalanse",
+            "fordeling av gjeld ved fisjon",
+            "solidaransvar fisjon",
+            "vederlagsaksjer fisjon",
+            "fisjon av AS"
+          ],
+          "confusers": [
+            {
+              "term": "fusjon",
+              "correct_route": "D02_MA / MA-01",
+              "reason": "Merger is a separate subdomain."
+            },
+            {
+              "term": "skattefri fisjon",
+              "correct_route": "D02_MA / MA-04",
+              "reason": "Tax aspects are the tax restructuring subdomain."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1997-06-13-44",
+              "title": "Aksjeloven",
+              "sections": "§§ 14-1 – 14-13",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "MA-03",
+          "name_en": "Employee Transfer (Virksomhetsoverdragelse)",
+          "name_nb": "Virksomhetsoverdragelse i M&A",
+          "scope_in": [
+            "POINTER to EL-04 for all standard VO content (AML kap. 16 rights are identical regardless of corporate form).",
+            "ONLY retain: asl. kap. 13/14 universal succession overlay — employment transfers automatically by kontinuitet in fusjon; interaction with merger-plan information duties."
+          ],
+          "scope_out": [
+            "All substantive VO rights (information/consultation, reservasjonsrett, pension, tariff) → D12_EMPLOYMENT / EL-04",
+            "Standalone VO without M&A trigger → D12_EMPLOYMENT / EL-04"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "BOTH"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "ansattes rettigheter ved fusjon",
+            "ansatte ved salg av virksomhet",
+            "informasjon og drøftelse fusjon",
+            "tariffavtale overføres",
+            "pensjonsrettigheter ved overdragelse",
+            "hva skjer med ansatte ved fusjon",
+            "virksomhetsoverdragelse i forbindelse med fusjon"
+          ],
+          "confusers": [
+            {
+              "term": "oppsigelse ved fusjon",
+              "correct_route": "D12_EMPLOYMENT / EL-02",
+              "reason": "Individual dismissal procedure is employment law."
+            },
+            {
+              "term": "virksomhetsoverdragelse uten fusjon",
+              "correct_route": "D12_EMPLOYMENT / EL-04",
+              "reason": "VO without M&A context routes to employment domain."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-2005-06-17-62",
+              "title": "Arbeidsmiljøloven",
+              "sections": "§§ 16-1 – 16-7",
+              "tier": 1
+            },
+            {
+              "source_id": "DIR-2001-23-EF",
+              "title": "Direktiv 2001/23/EF",
+              "sections": "Acquired Rights Directive",
+              "tier": 1
+            }
+          ],
+          "notes": "THIN POINTER. EL-04 (D12_EMPLOYMENT) is canonical for ALL virksomhetsoverdragelse content. AML kap. 16 applies identically regardless of corporate trigger. No independent chunks here."
+        },
+        {
+          "subdomain_id": "MA-04",
+          "name_en": "Tax Restructuring",
+          "name_nb": "Skattemessig restrukturering",
+          "scope_in": [
+            "Tax-neutral mergers and demergers (skattefri fusjon/fisjon)",
+            "Continuity principle (kontinuitetsprinsippet)",
+            "FIFU principle in share exchanges",
+            "Tax consequences of different M&A structures"
+          ],
+          "scope_out": [
+            "General corporate tax — outside scope of DigiRett taxonomy v1",
+            "VAT on asset transfers — outside scope"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "skattefri fusjon",
+            "skattefri fisjon",
+            "kontinuitetsprinsippet",
+            "FIFU-prinsippet",
+            "skattemessig restrukturering",
+            "skatt ved fusjon",
+            "skatt ved fisjon",
+            "skatteplikt fusjon",
+            "skattenøytral fusjon",
+            "inngangsverdi aksjer etter fusjon"
+          ],
+          "confusers": [
+            {
+              "term": "kapitalgevinst",
+              "correct_route": "Outside scope",
+              "reason": "General capital gains tax is outside DigiRett v1 scope."
+            },
+            {
+              "term": "fusjonsplan",
+              "correct_route": "D02_MA / MA-01",
+              "reason": "The procedural merger plan is MA-01."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1999-03-26-14",
+              "title": "Skatteloven",
+              "sections": "§§ 11-1 – 11-51",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "MA-05",
+          "name_en": "Competition Notifications",
+          "name_nb": "Konkurransemelding og foretakssammenslutning",
+          "scope_in": [
+            "Mandatory notification to Konkurransetilsynet",
+            "Notification thresholds (terskelverdier)",
+            "EU Merger Regulation notifications for Norwegian companies",
+            "Phase I / Phase II review timelines"
+          ],
+          "scope_out": [
+            "General competition law — outside scope of DigiRett taxonomy v1",
+            "State aid — outside scope"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "BOTH"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "meldeplikt fusjon",
+            "Konkurransetilsynet",
+            "foretakssammenslutning",
+            "terskelverdier fusjonskontroll",
+            "EU-fusjonskontroll",
+            "inngrep mot fusjon",
+            "fusjon godkjenning myndigheter",
+            "omsetningsterskel",
+            "konkurransemelding"
+          ],
+          "confusers": [
+            {
+              "term": "offentlig støtte",
+              "correct_route": "Outside scope",
+              "reason": "State aid is outside DigiRett taxonomy v1."
+            },
+            {
+              "term": "fusjonsplan",
+              "correct_route": "D02_MA / MA-01",
+              "reason": "The merger plan is the corporate process subdomain."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-2004-03-05-12",
+              "title": "Konkurranseloven",
+              "sections": "§§ 17-20",
+              "tier": 1
+            },
+            {
+              "source_id": "REG-139-2004-EC",
+              "title": "EU Merger Regulation 139/2004",
+              "sections": "Arts. 1-4",
+              "tier": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "D03_ACCOUNTS",
+      "name_en": "Annual Accounts & Reporting",
+      "name_nb": "Årsregnskap og rapportering",
+      "default": {
+        "tier_ceiling": 2,
+        "jurisdiction_allowed": [
+          "NO",
+          "EU-EEA",
+          "BOTH"
+        ],
+        "b2b_b2c_allowed": [
+          "B2B"
+        ],
+        "relationship_type_allowed": [
+          "commercial"
+        ]
+      },
+      "subdomains": [
+        {
+          "subdomain_id": "AC-01",
+          "name_en": "Accounting Duty & Reporting",
+          "name_nb": "Regnskapsplikt og rapportering",
+          "scope_in": [
+            "Who is subject to accounting duty (regnskapsplikt)",
+            "Accounting year (regnskapsår) and transitional periods",
+            "Which entities must prepare annual accounts",
+            "Submission deadlines and format requirements"
+          ],
+          "scope_out": [
+            "Content of annual accounts — route to AC-02",
+            "Tax reporting — outside scope of DigiRett v1"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "regnskapsplikt",
+            "hvem har regnskapsplikt",
+            "regnskapsår",
+            "årsregnskap frist",
+            "innsendingsfrist regnskap",
+            "små foretak",
+            "regnskapsloven",
+            "forenklet IFRS",
+            "god regnskapsskikk",
+            "hvem må levere regnskap",
+            "unntak regnskapsplikt"
+          ],
+          "confusers": [
+            {
+              "term": "skattemelding",
+              "correct_route": "Outside scope",
+              "reason": "Tax returns are outside DigiRett v1 scope."
+            },
+            {
+              "term": "innsending til Regnskapsregisteret",
+              "correct_route": "D03_ACCOUNTS / AC-05",
+              "reason": "Submission to the register is a separate subdomain."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1998-07-17-56",
+              "title": "Regnskapsloven",
+              "sections": "§§ 1-1 – 3-5",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "AC-02",
+          "name_en": "Annual Accounts & Notes",
+          "name_nb": "Årsregnskap og noter",
+          "scope_in": [
+            "Preparation of profit/loss statement (resultatregnskap) and balance sheet",
+            "Notes to accounts (noter) — mandatory content",
+            "Good accounting practices (god regnskapsskikk / NRS)",
+            "Simplified annual accounts for small companies"
+          ],
+          "scope_out": [
+            "Audit of accounts — route to AC-04",
+            "Board duty on going concern — route to AC-03"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "årsregnskap",
+            "resultatregnskap",
+            "balanse",
+            "noter til regnskapet",
+            "god regnskapsskikk",
+            "NRS",
+            "årsberetning",
+            "konsernregnskap",
+            "sammenligningstall",
+            "kontantstrøm",
+            "egenkapitaloppstilling",
+            "hva skal stå i årsregnskapet",
+            "krav til noter",
+            "IFRS",
+            "NGAAP",
+            "regnskapsprinsipper"
+          ],
+          "confusers": [
+            {
+              "term": "revisjonsberetning",
+              "correct_route": "D03_ACCOUNTS / AC-04",
+              "reason": "Auditor's report is the audit subdomain."
+            },
+            {
+              "term": "handleplikt egenkapital",
+              "correct_route": "D03_ACCOUNTS / AC-03",
+              "reason": "Board duty to act is AC-03."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1998-07-17-56",
+              "title": "Regnskapsloven",
+              "sections": "§§ 3-1 – 7-41",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "AC-03",
+          "name_en": "Board Duties: Going Concern & Loss of Equity",
+          "name_nb": "Styrets plikter: forsvarlig egenkapital og fortsatt drift",
+          "scope_in": [
+            "Board's continuing duty to ensure defensible equity and liquidity",
+            "Going concern assessment in annual accounts (fortsatt drift)",
+            "Mandatory board declaration on financial position",
+            "Duty to convene general meeting when equity is deficient"
+          ],
+          "scope_out": [
+            "Director liability for loss — route to D01_COMPANY / CY-06",
+            "Bankruptcy filing — route to D07_INSOLVENCY"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "handleplikt",
+            "fortsatt drift",
+            "going concern",
+            "uforsvarlig lav egenkapital",
+            "forsvarlig egenkapital og likviditet",
+            "styrets ansvar for regnskap",
+            "styreberetning fortsatt drift",
+            "usikkerhet fortsatt drift",
+            "aksjeloven § 3-4",
+            "aksjeloven § 3-5",
+            "regnskapsloven § 3-3a"
+          ],
+          "confusers": [
+            {
+              "term": "konkurs",
+              "correct_route": "D07_INSOLVENCY",
+              "reason": "Bankruptcy process is insolvency domain."
+            },
+            {
+              "term": "styreansvar erstatning",
+              "correct_route": "D01_COMPANY / CY-06",
+              "reason": "Director liability for loss is company law."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1997-06-13-44",
+              "title": "Aksjeloven",
+              "sections": "§§ 3-4 – 3-5",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-1998-07-17-56",
+              "title": "Regnskapsloven",
+              "sections": "§ 3-3a",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "AC-04",
+          "name_en": "Audit: Duty & Opting Out",
+          "name_nb": "Revisjon: revisjonsplikt og fravalg",
+          "scope_in": [
+            "Who is required to have an auditor (revisjonsplikt)",
+            "Small company exemption — opting out of audit (fravalg av revisjon)",
+            "Auditor independence and appointment",
+            "Auditor's report (revisjonsberetning) — content and legal effect"
+          ],
+          "scope_out": [
+            "Accounting duty generally — route to AC-01",
+            "Submission of accounts — route to AC-05"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "revisjonsplikt",
+            "fravalg av revisjon",
+            "kan vi velge bort revisor",
+            "revisor",
+            "revisjonsberetning",
+            "statsautorisert revisor",
+            "revisorloven",
+            "revisjonsfravalg grenser",
+            "terskler fravalg revisjon",
+            "hvem må ha revisor",
+            "revisorvalg generalforsamling",
+            "revisors uavhengighet",
+            "nummerering revisor"
+          ],
+          "confusers": [
+            {
+              "term": "regnskapsplikt",
+              "correct_route": "D03_ACCOUNTS / AC-01",
+              "reason": "Accounting duty is AC-01, not audit."
+            },
+            {
+              "term": "regnskapsfører",
+              "correct_route": "D03_ACCOUNTS / AC-01",
+              "reason": "Bookkeeper is accounting duty, not audit."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-2020-11-20-128",
+              "title": "Revisorloven",
+              "sections": "§§ 1-1 – 12-4",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-1997-06-13-44",
+              "title": "Aksjeloven",
+              "sections": "§ 7-6",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "AC-05",
+          "name_en": "Submission to Regnskapsregisteret",
+          "name_nb": "Innsending til Regnskapsregisteret",
+          "scope_in": [
+            "Submission deadlines for annual accounts to Regnskapsregisteret",
+            "Late filing penalties (forsinkelsesgebyr)",
+            "Procedures for correcting or re-submitting accounts",
+            "Publication and public access to filed accounts"
+          ],
+          "scope_out": [
+            "Content of accounts — route to AC-02",
+            "Tax filing — outside scope of DigiRett v1"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "innsending til Regnskapsregisteret",
+            "frist årsregnskap",
+            "forsinkelsesgebyr regnskap",
+            "for sent levert regnskap",
+            "Altinn regnskap",
+            "publisering årsregnskap",
+            "offentlig årsregnskap",
+            "korrigert regnskap",
+            "tvangsmulkt regnskap",
+            "regnskapsregisterloven",
+            "innsendingsfrist 31. juli"
+          ],
+          "confusers": [
+            {
+              "term": "Brreg",
+              "correct_route": "D01_COMPANY / CY-01",
+              "reason": "Brreg for company registration is company law."
+            },
+            {
+              "term": "regnskapsplikt",
+              "correct_route": "D03_ACCOUNTS / AC-01",
+              "reason": "Accounting duty scope is AC-01."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1998-07-17-56",
+              "title": "Regnskapsloven",
+              "sections": "§ 8-2",
+              "tier": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "D05_OBLIGATIONS",
+      "name_en": "Obligations / Breach & Remedies",
+      "name_nb": "Obligasjonsrett",
+      "default": {
+        "tier_ceiling": 2,
+        "jurisdiction_allowed": [
+          "NO",
+          "EU-EEA",
+          "BOTH"
+        ],
+        "b2b_b2c_allowed": [
+          "B2B",
+          "B2C",
+          "BOTH"
+        ],
+        "relationship_type_allowed": [
+          "commercial",
+          "consumer"
+        ]
+      },
+      "subdomains": [
+        {
+          "subdomain_id": "OB-01",
+          "name_en": "Remedies: Performance, Price Reduction, Termination, Damages",
+          "name_nb": "Misligholdsbeføyelser",
+          "scope_in": [
+            "Breach of contract (mislighold) — general rules",
+            "Right to demand performance (oppfyllelseskrav)",
+            "Price reduction (prisavslag)",
+            "Termination for breach (heving av avtale)",
+            "Damages (erstatning) for breach",
+            "Anticipatory breach (antesipert mislighold) — kjøpsloven §§ 61–62"
+          ],
+          "scope_out": [
+            "Ordinary termination / notice periods WITHOUT breach — route to D05_OBLIGATIONS / OB-05 (not CL-01)",
+            "Time bars for claims — route to D08_MONETARY / MO-04",
+            "Reclamation deadlines — route to OB-02"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "mislighold",
+            "misligholdsbeføyelser",
+            "heve avtalen",
+            "heving",
+            "prisavslag",
+            "erstatning kontraktsbrudd",
+            "kreve oppfyllelse",
+            "retting av mangel",
+            "omlevering",
+            "kan vi heve kontrakten",
+            "leverandøren leverte ikke",
+            "selger misligholdt",
+            "kjøper misligholdt",
+            "mangel",
+            "hva kan vi kreve ved mislighold",
+            "beregning av erstatning",
+            "varen var defekt",
+            "varen var ødelagt",
+            "fikk feil vare",
+            "produktet fungerer ikke",
+            "de leverte for sent",
+            "leveransen var forsinket",
+            "tjenesten var dårlig utført",
+            "kan vi kreve pengene tilbake",
+            "vil ha pengene tilbake",
+            "kan vi kreve ny vare",
+            "forsinkelse",
+            "mangel",
+            "avtalebrudd",
+            "kjøpsloven § 27"
+          ],
+          "confusers": [
+            {
+              "term": "si opp avtalen",
+              "correct_route": "D04_CONTRACT / CL-01",
+              "reason": "Ordinary termination without breach is Contract Law."
+            },
+            {
+              "term": "reklamasjon",
+              "correct_route": "D05_OBLIGATIONS / OB-02",
+              "reason": "Notice of defect timing is OB-02."
+            },
+            {
+              "term": "foreldelse",
+              "correct_route": "D08_MONETARY / MO-04",
+              "reason": "Limitation period for monetary claims is D08."
+            },
+            {
+              "term": "nekte å betale fordi varen var feil",
+              "correct_route": "D05_OBLIGATIONS / OB-04",
+              "reason": "Withholding performance (tilbakeholdsrett) is OB-04."
+            },
+            {
+              "term": "reklamere på mangel",
+              "correct_route": "D05_OBLIGATIONS / OB-02 + OB-01",
+              "reason": "Reclamation deadline is OB-02; co-retrieve OB-01 for the remedy."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1988-05-13-27",
+              "title": "Kjøpsloven",
+              "sections": "§§ 30-57",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-2002-06-21-34",
+              "title": "Forbrukerkjøpsloven",
+              "sections": "§§ 26-50",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "OB-02",
+          "name_en": "Notice & Reclamation Timing",
+          "name_nb": "Reklamasjon og reklamasjonsfrister",
+          "scope_in": [
+            "Duty to notify defect within reasonable time (nøytral reklamasjon)",
+            "Absolute time bar for reclamation (absolutt reklamasjonsfrist)",
+            "Late reclamation — consequences and exceptions"
+          ],
+          "scope_out": [
+            "Remedies after valid reclamation — route to OB-01",
+            "Limitation period (foreldelse) for monetary claims — route to D08_MONETARY / MO-04"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "reklamasjon",
+            "reklamasjonsfrist",
+            "nøytral reklamasjon",
+            "absolutt reklamasjonsfrist",
+            "innen rimelig tid",
+            "tapte reklamasjonsretten",
+            "for sent å reklamere",
+            "kjøpsloven § 32",
+            "forbrukerkjøpsloven § 27",
+            "varsel om mangel",
+            "reklamert for sent",
+            "for sent å klage",
+            "for sent å reklamere",
+            "oppdaget feil for lenge siden",
+            "har vi fortsatt reklamasjonsrett"
+          ],
+          "confusers": [
+            {
+              "term": "foreldelse",
+              "correct_route": "D08_MONETARY / MO-04",
+              "reason": "Limitation periods for claims are D08, not OB-02."
+            },
+            {
+              "term": "inkassovarsel",
+              "correct_route": "D06_DEBT / DC-01",
+              "reason": "Debt collection notice is D06."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1988-05-13-27",
+              "title": "Kjøpsloven",
+              "sections": "§ 32",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-2002-06-21-34",
+              "title": "Forbrukerkjøpsloven",
+              "sections": "§ 27",
+              "tier": 1
+            }
+          ],
+          "co_retrieval": {
+            "rule": "Defect+time query ('for sent', 'oppdaget for tre år siden') must co-retrieve OB-02 AND DC-04. Both limitation bars must be checked.",
+            "paired_with": [
+              "OB-01",
+              "DC-04"
+            ]
+          }
+        },
+        {
+          "subdomain_id": "OB-03",
+          "name_en": "Force Majeure & Hardship",
+          "name_nb": "Force majeure og bristende forutsetninger",
+          "scope_in": [
+            "Force majeure clauses — conditions and legal effect",
+            "Doctrine of changed circumstances (bristende forutsetninger)",
+            "Hardship — contractual and legal rebalancing",
+            "Risk allocation in contracts"
+          ],
+          "scope_out": [
+            "Contract invalidity / unfair terms — route to D04_CONTRACT / CL-03",
+            "Contract revision under avtaleloven § 36 — route to D04_CONTRACT / CL-03"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "force majeure",
+            "bristende forutsetninger",
+            "hardship",
+            "kontraktsrisiko",
+            "hindring utenfor partens kontroll",
+            "koronaklausul",
+            "pandemiklausul",
+            "force majeure klausul",
+            "kjøpsloven § 27",
+            "NF 15 art. 28",
+            "kan vi påberope force majeure",
+            "er krigen force majeure",
+            "leveringssvikt force majeure"
+          ],
+          "confusers": [
+            {
+              "term": "avtalerevisjon",
+              "correct_route": "D04_CONTRACT / CL-03",
+              "reason": "General contract revision is CL-03."
+            },
+            {
+              "term": "heving",
+              "correct_route": "D05_OBLIGATIONS / OB-01",
+              "reason": "Termination for breach is OB-01."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1988-05-13-27",
+              "title": "Kjøpsloven",
+              "sections": "§ 27",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "OB-04",
+          "name_en": "Set-off & Regression",
+          "name_nb": "Motregning og regresskrav",
+          "scope_in": [
+            "Right of set-off (motregning) — conditions and procedure",
+            "Withholding performance (tilbakeholdsrett)",
+            "Regression claims (regresskrav) between co-debtors"
+          ],
+          "scope_out": [
+            "Set-off of monetary claims — route to D08_MONETARY / MO-03",
+            "Debt collection — route to D06_DEBT"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "motregning",
+            "motkrav",
+            "gjensidighet motregning",
+            "tilbakeholdsrett",
+            "regresskrav",
+            "solidarisk ansvar regress",
+            "kan vi motregne",
+            "motregning i kontrakt",
+            "forfalt krav motregning",
+            "betinget krav motregning"
+          ],
+          "confusers": [
+            {
+              "term": "inkasso",
+              "correct_route": "D06_DEBT",
+              "reason": "Debt collection process is D06."
+            },
+            {
+              "term": "foreldelse",
+              "correct_route": "D08_MONETARY / MO-04",
+              "reason": "Limitation for monetary claims is D08."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1939-02-17-1",
+              "title": "Gjeldsbrevloven",
+              "sections": "§ 26",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "OB-05",
+          "name_en": "Specific Contract Types",
+          "name_nb": "Særskilte kontraktstyper",
+          "scope_in": [
+            "Ordinary termination / notice periods of continuing contracts (løpende avtaler) — oppsigelse without breach",
+            "Construction contracts (entreprise) — NS 8405, NS 8406, NS 8407",
+            "Service agreements (tjenesteavtaler)",
+            "Lease agreements (leiekontrakter) — husleie",
+            "Agency agreements (agenturavtaler)",
+            "Franchise and licence agreements"
+          ],
+          "scope_out": [
+            "Standard terms generally — route to D04_CONTRACT / CL-04",
+            "Employment contracts — route to D12_EMPLOYMENT / EL-01"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "entreprisekontrakt",
+            "NS 8405",
+            "NS 8406",
+            "NS 8407",
+            "tjenesteavtale",
+            "leiekontrakt",
+            "husleie",
+            "husleieloven",
+            "agenturavtale",
+            "handelsagent",
+            "franchiseavtale",
+            "lisensavtale",
+            "håndverkertjeneste",
+            "konsulentavtale",
+            "vedlikehold kontrakt",
+            "rammeavtale tjenester",
+            "si opp løpende avtale",
+            "oppsigelse av leverandøravtale",
+            "oppsigelsestid i kontrakt",
+            "oppsigelsesklausul i avtale",
+            "automatisk fornyelse av avtale",
+            "varsle om oppsigelse",
+            "tre måneders oppsigelsestid",
+            "si opp rammeavtale"
+          ],
+          "confusers": [
+            {
+              "term": "standardvilkår",
+              "correct_route": "D04_CONTRACT / CL-04",
+              "reason": "Standard terms are contract law CL-04."
+            },
+            {
+              "term": "arbeidsavtale",
+              "correct_route": "D12_EMPLOYMENT / EL-01",
+              "reason": "Employment contracts are employment law."
+            },
+            {
+              "term": "heving / mislighold / erstatning",
+              "correct_route": "D05_OBLIGATIONS / OB-01",
+              "reason": "Breach remedies are OB-01; ordinary termination without breach stays in OB-05."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1999-03-26-17",
+              "title": "Husleieloven",
+              "sections": "§§ 1-1 – 13-6",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-1989-06-16-63",
+              "title": "Håndverkertjenesteloven",
+              "sections": "§§ 1-48",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-1992-06-19-56",
+              "title": "Agenturloven",
+              "sections": "§§ 1-35",
+              "tier": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "D06_DEBT",
+      "name_en": "Debt Collection & Enforcement",
+      "name_nb": "Inkasso og tvangsfullbyrdelse",
+      "default": {
+        "tier_ceiling": 2,
+        "jurisdiction_allowed": [
+          "NO"
+        ],
+        "b2b_b2c_allowed": [
+          "B2B",
+          "B2C",
+          "BOTH"
+        ],
+        "relationship_type_allowed": [
+          "commercial",
+          "consumer"
+        ]
+      },
+      "subdomains": [
+        {
+          "subdomain_id": "DC-01",
+          "name_en": "Pre-Collection (Reminders & Notices)",
+          "name_nb": "Forhåndsinkasso og purring",
+          "scope_in": [
+            "Payment reminder (purring) — content and timing requirements",
+            "Inkasso notice (inkassovarsel) — mandatory 14-day period",
+            "Documentation requirements before collection may start",
+            "B2B vs B2C rules for pre-collection steps"
+          ],
+          "scope_out": [
+            "Collection fees and process — route to DC-02",
+            "Enforcement (namsmann) — route to DC-03"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "purring",
+            "inkassovarsel",
+            "14-dagers frist betaling",
+            "varsle om inkasso",
+            "krav til inkassovarsel",
+            "kan vi sende til inkasso",
+            "purregebyr",
+            "purrefrister",
+            "inkassoprosessen steg",
+            "kunden betaler ikke",
+            "kunden har ikke betalt",
+            "vi har ikke fått betalt",
+            "faktura ikke betalt",
+            "faktura forfalt for 30 dager siden",
+            "purret flere ganger uten å få betalt",
+            "kunden svarer ikke på purring",
+            "hvordan får vi pengene våre",
+            "hva gjør vi når kunden ikke betaler",
+            "hvor lang tid før vi kan sende til inkasso",
+            "hvor mange purringer før inkasso"
+          ],
+          "confusers": [
+            {
+              "term": "reklamasjon",
+              "correct_route": "D05_OBLIGATIONS / OB-02",
+              "reason": "Notice of defect is obligations domain."
+            },
+            {
+              "term": "prosessvarsel",
+              "correct_route": "D10_DISPUTE / DR-01",
+              "reason": "Litigation warning is dispute resolution."
+            },
+            {
+              "term": "betalingsoppfordring (inkassoloven § 10)",
+              "correct_route": "D06_DEBT / DC-02",
+              "reason": "Formal betalingsoppfordring is the DC-02 collection step."
+            },
+            {
+              "term": "forsinkelsesrente / kan vi kreve renter på faktura",
+              "correct_route": "D08_MONETARY / MO-02",
+              "reason": "Late interest calculation is MO-02."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1988-05-26-26",
+              "title": "Inkassoloven",
+              "sections": "§§ 9-10",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "DC-02",
+          "name_en": "Collection (Inkasso Steps & Fees)",
+          "name_nb": "Inkassoprosessen og inkassosalær",
+          "scope_in": [
+            "Out-of-court collection (utenrettslig inkasso) procedure",
+            "Collection fees (inkassosalær) — regulated maximum amounts",
+            "Collection agencies and licensing (inkassobyrå)",
+            "B2B versus B2C fee limits"
+          ],
+          "scope_out": [
+            "Pre-collection notices — route to DC-01",
+            "Forced execution (namsmann) — route to DC-03"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "inkasso",
+            "inkassosalær",
+            "inkassogebyr",
+            "utenrettslig inkasso",
+            "inkassobyrå",
+            "inkassofirma",
+            "inkassolov",
+            "maks inkassosalær",
+            "inkassosatser",
+            "inkassoforskriften",
+            "betaling til inkassobyrå",
+            "inndrivelseskostnader",
+            "betalingsoppfordring"
+          ],
+          "confusers": [
+            {
+              "term": "tvangsfullbyrdelse",
+              "correct_route": "D06_DEBT / DC-03",
+              "reason": "Forced execution is DC-03."
+            },
+            {
+              "term": "saksomkostninger",
+              "correct_route": "D06_DEBT / DC-05",
+              "reason": "Court costs are DC-05."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1988-05-26-26",
+              "title": "Inkassoloven",
+              "sections": "§§ 1-20",
+              "tier": 1
+            },
+            {
+              "source_id": "FOR-1989-12-14-1153",
+              "title": "Inkassoforskriften",
+              "sections": "§§ 1-2",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "DC-03",
+          "name_en": "Enforcement (Attachments & Forced Sale)",
+          "name_nb": "Tvangsfullbyrdelse og utlegg",
+          "scope_in": [
+            "Enforcement basis (tvangsgrunnlag) — what qualifies",
+            "Attachment of assets (utlegg) procedure",
+            "Forced sale (tvangsauksjon / tvangssalg)",
+            "Namsmann proceedings and geographic jurisdiction"
+          ],
+          "scope_out": [
+            "Collection process before enforcement — route to DC-02",
+            "Bankruptcy — route to D07_INSOLVENCY"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "tvangsfullbyrdelse",
+            "utlegg",
+            "tvangsdekning",
+            "namsmann",
+            "tvangsauksjon",
+            "tvangssalg",
+            "begjæring om utlegg",
+            "tvangsgrunnlag",
+            "kan vi kreve tvangssalg",
+            "lønnstrekk",
+            "utlegg i eiendom",
+            "namsfogden"
+          ],
+          "confusers": [
+            {
+              "term": "konkurs",
+              "correct_route": "D07_INSOLVENCY",
+              "reason": "Bankruptcy is a separate domain."
+            },
+            {
+              "term": "midlertidig forføyning",
+              "correct_route": "D10_DISPUTE / DR-04",
+              "reason": "Interim injunctions are dispute resolution domain."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1992-06-26-86",
+              "title": "Tvangsfullbyrdelsesloven",
+              "sections": "§§ 1-1 – 14-14",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "DC-04",
+          "name_en": "Time Bars (Limitation & Interruption)",
+          "name_nb": "Foreldelse og avbrytelse",
+          "scope_in": [
+            "General limitation periods (3-year, 10-year rules)",
+            "Interruption of limitation (avbrytelse av foreldelse)",
+            "Acknowledgement of debt (erkjennelse) as interruption",
+            "Long-stop limitation for personal injury and product liability"
+          ],
+          "scope_out": [
+            "Reclamation deadlines in contracts — route to D05_OBLIGATIONS / OB-02",
+            "Limitation in employment disputes — route to D12_EMPLOYMENT / EL-05"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "foreldelse",
+            "foreldelsesfrister",
+            "avbrytelse av foreldelse",
+            "3-årsregel foreldelse",
+            "10-årsregel foreldelse",
+            "foreldet krav",
+            "er kravet foreldet",
+            "foreldelsesloven",
+            "erkjennelse foreldelse",
+            "rettslig skritt foreldelse",
+            "fristen løper fra",
+            "absoluttfrist foreldelse",
+            "er kravet foreldet",
+            "mistet kravet på grunn av tid",
+            "kravet er for gammelt",
+            "for sent å fremsette krav",
+            "avbryte foreldelse",
+            "erkjennelse av gjeld foreldelse"
+          ],
+          "confusers": [
+            {
+              "term": "reklamasjonsfrist",
+              "correct_route": "D05_OBLIGATIONS / OB-02",
+              "reason": "Reclamation time bars are obligations domain."
+            },
+            {
+              "term": "søksmålsfrist oppsigelse",
+              "correct_route": "D12_EMPLOYMENT / EL-05",
+              "reason": "Employment claim time limits are EL-05."
+            },
+            {
+              "term": "for sent å reklamere på mangel",
+              "correct_route": "D05_OBLIGATIONS / OB-02",
+              "reason": "Reclamation notice is OB-02; limitation of the resulting claim is DC-04."
+            },
+            {
+              "term": "reklamasjonsfrist",
+              "correct_route": "D05_OBLIGATIONS / OB-02",
+              "reason": "Contractual reclamation time bars are OB-02."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1979-05-18-18",
+              "title": "Foreldelsesloven",
+              "sections": "§§ 1-30",
+              "tier": 1
+            }
+          ],
+          "notes": "CANONICAL foreldelse subdomain. MO-04 in D08_MONETARY is an alias. One statute (foreldelsesloven), one chunk set."
+        },
+        {
+          "subdomain_id": "DC-05",
+          "name_en": "Costs (Court Fees & Expenses)",
+          "name_nb": "Saksomkostninger og rettsgebyr",
+          "scope_in": [
+            "Court fees (rettsgebyr) — scale and calculation",
+            "Recovery of legal costs (saksomkostninger) from losing party",
+            "Risk of costs in litigation (prosessrisiko)",
+            "Free legal aid (fri rettshjelp) thresholds"
+          ],
+          "scope_out": [
+            "Collection fees (inkassosalær) — route to DC-02",
+            "Employment litigation costs — route to D12_EMPLOYMENT / EL-05"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "rettsgebyr",
+            "saksomkostninger",
+            "fri rettshjelp",
+            "prosessrisiko",
+            "hvem betaler saksomkostningene",
+            "domstolenes gebyrer",
+            "begjæringsgebyr",
+            "rettsgebyrloven",
+            "tvisteloven § 20-2",
+            "dekke motpartens kostnader"
+          ],
+          "confusers": [
+            {
+              "term": "inkassosalær",
+              "correct_route": "D06_DEBT / DC-02",
+              "reason": "Collection fees are DC-02."
+            },
+            {
+              "term": "erstatning",
+              "correct_route": "D05_OBLIGATIONS / OB-01",
+              "reason": "Damages are obligations domain."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1982-12-17-86",
+              "title": "Rettsgebyrloven",
+              "sections": "§§ 1-28",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-2005-06-17-90",
+              "title": "Tvisteloven",
+              "sections": "§§ 20-1 – 20-12",
+              "tier": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "D07_INSOLVENCY",
+      "name_en": "Insolvency & Bankruptcy",
+      "name_nb": "Konkurs og insolvens",
+      "default": {
+        "tier_ceiling": 2,
+        "jurisdiction_allowed": [
+          "NO"
+        ],
+        "b2b_b2c_allowed": [
+          "B2B"
+        ],
+        "relationship_type_allowed": [
+          "commercial"
+        ]
+      },
+      "subdomains": [
+        {
+          "subdomain_id": "IN-01",
+          "name_en": "Insolvency Thresholds & Filing",
+          "name_nb": "Insolvensterskler og begjæring om konkurs",
+          "scope_in": [
+            "Definition of insolvency: illiquidity (illikviditet) and insufficiency (insuffisiens)",
+            "Voluntary petition by debtor (oppbud)",
+            "Creditor petition for bankruptcy (begjæring om konkurs)",
+            "Court's jurisdiction and opening of estate"
+          ],
+          "scope_out": [
+            "Board duty to act before insolvency — route to D01_COMPANY / CY-06",
+            "Debt collection before insolvency — route to D06_DEBT"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "insolvens",
+            "illikviditet",
+            "insuffisiens",
+            "begjæring om konkurs",
+            "oppbud",
+            "kan vi begjære konkurs",
+            "er selskapet insolvent",
+            "konkursloven",
+            "åpning av konkurs",
+            "konkursbegjæring kreditor",
+            "betalingsudyktighet",
+            "vedvarende illikviditet",
+            "selskapet kan ikke betale regningene",
+            "selskapet er tomt for penger",
+            "vi klarer ikke å betale leverandører",
+            "må vi melde oppbud",
+            "når må styret melde oppbud",
+            "hvordan begjærer vi oppbud",
+            "vi går konkurs",
+            "bør vi begjære konkurs",
+            "kreditor vil slå oss konkurs",
+            "kan vi slå kunden konkurs"
+          ],
+          "confusers": [
+            {
+              "term": "handleplikt",
+              "correct_route": "D01_COMPANY / CY-06",
+              "reason": "Board duty before insolvency is company law."
+            },
+            {
+              "term": "tvangsfullbyrdelse",
+              "correct_route": "D06_DEBT / DC-03",
+              "reason": "Enforcement short of bankruptcy is debt collection."
+            },
+            {
+              "term": "egenkapital tapt / hva må styret gjøre (ingen begjæring)",
+              "correct_route": "D01_COMPANY / CY-06",
+              "reason": "Without formal insolvency petition, board duty routes to CY-06."
+            },
+            {
+              "term": "lønn til ansatte ved konkurs",
+              "correct_route": "D07_INSOLVENCY / IN-05",
+              "reason": "Wage guarantee in bankruptcy is IN-05."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1984-06-08-58",
+              "title": "Konkursloven",
+              "sections": "§§ 60-65",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "IN-02",
+          "name_en": "Estate Process & Creditor Actions",
+          "name_nb": "Bobehandling og kreditoraktivitet",
+          "scope_in": [
+            "Trustee in bankruptcy (bobestyrer) — duties and powers",
+            "Creditors' committee (kreditorutvalg)",
+            "Claims submission and verification (fordringsprøving)",
+            "Estate administration and costs (massekrav)"
+          ],
+          "scope_out": [
+            "Priority of claims — route to IN-03",
+            "Director liability in distress — route to IN-04"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "konkursbo",
+            "bobestyrer",
+            "fordringshavere",
+            "kreditorutvalg",
+            "bobehandling",
+            "melder krav i konkurs",
+            "prøving av krav",
+            "massekrav",
+            "boets midler",
+            "konkurskarantene",
+            "boets utgifter",
+            "avslutte konkursbo"
+          ],
+          "confusers": [
+            {
+              "term": "dividende",
+              "correct_route": "D07_INSOLVENCY / IN-03",
+              "reason": "Dividend distribution to creditors is priority/distribution subdomain."
+            },
+            {
+              "term": "konkursbegjæring",
+              "correct_route": "D07_INSOLVENCY / IN-01",
+              "reason": "Filing is IN-01."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1984-06-08-58",
+              "title": "Konkursloven",
+              "sections": "§§ 70-160",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "IN-03",
+          "name_en": "Avoidance / Priority / Dividends",
+          "name_nb": "Omstøtelse, prioritet og dividende",
+          "scope_in": [
+            "Avoidance of transactions (omstøtelse) — objective and subjective rules",
+            "Priority of claims (prioritet) in distribution",
+            "Dividend calculation and payment to creditors",
+            "Separatist right of secured creditors (separatistrett)"
+          ],
+          "scope_out": [
+            "Security interest enforcement — route to D09_SECURITY",
+            "Estate administration — route to IN-02"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "omstøtelse",
+            "dekningsloven",
+            "prioritet krav konkurs",
+            "dividende konkurs",
+            "separatistrett",
+            "fortrinnsberettigede krav",
+            "usikrede kreditorer",
+            "preferansefordringer",
+            "omstøtelsesregel",
+            "omstøtelseskrav",
+            "dekningslovens § 5"
+          ],
+          "confusers": [
+            {
+              "term": "panterett",
+              "correct_route": "D09_SECURITY",
+              "reason": "Security interests are D09."
+            },
+            {
+              "term": "bobehandling",
+              "correct_route": "D07_INSOLVENCY / IN-02",
+              "reason": "Estate administration is IN-02."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1984-06-08-59",
+              "title": "Dekningsloven",
+              "sections": "§§ 5-1 – 9-7",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "IN-04",
+          "name_en": "Director Liability in Distress",
+          "name_nb": "Styreansvar i insolvens",
+          "scope_in": [
+            "Director personal liability for losses AFTER oppbud filed / konkurs åpnet / bobestyrer appointed",
+            "Culpa analysis for continued trading after the håpløshetstidspunkt — damages measured from that point",
+            "Criminal liability for fraudulent trading in insolvency context",
+            "Director disqualification (konkurskarantene) — konkursloven §§ 142 ff."
+          ],
+          "scope_out": [
+            "Board duty to act BEFORE formal insolvency (no petition) — route to D01_COMPANY / CY-06",
+            "General director liability outside insolvency — route to D01_COMPANY / CY-06"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "styreansvar ved insolvens",
+            "culpaansvar konkurs",
+            "fortsatt drift etter insolvens",
+            "straffbart å drive videre",
+            "aksjeloven § 17-1 insolvens",
+            "erstatningsansvar konkurs",
+            "personlig ansvar ved konkurs",
+            "konkurskarantene",
+            "kan styret saksøkes etter konkurs",
+            "oppbud begjært",
+            "konkurs åpnet",
+            "bobestyrer",
+            "håpløshetstidspunkt",
+            "for sent oppbud",
+            "fortsatt drift etter insolvens erstatning"
+          ],
+          "confusers": [
+            {
+              "term": "handleplikt",
+              "correct_route": "D01_COMPANY / CY-06",
+              "reason": "Board duty to act before insolvency is company law."
+            },
+            {
+              "term": "omstøtelse",
+              "correct_route": "D07_INSOLVENCY / IN-03",
+              "reason": "Avoidance of transactions is IN-03."
+            },
+            {
+              "term": "egenkapital under halvparten (no petition)",
+              "correct_route": "D01_COMPANY / CY-06",
+              "reason": "Without formal insolvency petition, board duty is Company Law CY-06."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1997-06-13-44",
+              "title": "Aksjeloven",
+              "sections": "§ 17-1",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-1984-06-08-58",
+              "title": "Konkursloven",
+              "sections": "§§ 142 ff. (konkurskarantene); § 61 (insolvens)",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-1997-06-13-44",
+              "title": "Aksjeloven",
+              "sections": "§ 17-1 (shared with CY-06; applies from håpløshetstidspunkt)",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "IN-05",
+          "name_en": "Wage Guarantee",
+          "name_nb": "Lønnsgarantiordningen",
+          "scope_in": [
+            "NAV wage guarantee scheme (lønnsgarantiordningen) — scope and amounts",
+            "Employee priority claims for wages in bankruptcy",
+            "Procedure for applying to NAV wage guarantee",
+            "Interaction between wage guarantee and employment termination in insolvency"
+          ],
+          "scope_out": [
+            "Employment termination procedure in insolvency — route to D12_EMPLOYMENT / EL-02",
+            "Estate priority generally — route to IN-03"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "lønnsgarantiordningen",
+            "NAV lønnsgaranti",
+            "lønn ved konkurs",
+            "fortrinnsrett lønn konkurs",
+            "arbeidstakers krav ved konkurs",
+            "lønnskrav konkursbo",
+            "melde lønnskrav",
+            "lønnsgarantiloven",
+            "dekning av lønn ved arbeidsgivers konkurs"
+          ],
+          "confusers": [
+            {
+              "term": "oppsigelse ved konkurs",
+              "correct_route": "D12_EMPLOYMENT / EL-02",
+              "reason": "Employment termination procedure is EL-02."
+            },
+            {
+              "term": "dividende",
+              "correct_route": "D07_INSOLVENCY / IN-03",
+              "reason": "General dividend distribution is IN-03."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1973-03-14-9",
+              "title": "Lønnsgarantiloven",
+              "sections": "§§ 1-10",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-1984-06-08-59",
+              "title": "Dekningsloven",
+              "sections": "§ 9-3",
+              "tier": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "D08_MONETARY",
+      "name_en": "Monetary Claims / Receivables",
+      "name_nb": "Pengekrav og fordringer",
+      "default": {
+        "tier_ceiling": 2,
+        "jurisdiction_allowed": [
+          "NO"
+        ],
+        "b2b_b2c_allowed": [
+          "B2B",
+          "B2C",
+          "BOTH"
+        ],
+        "relationship_type_allowed": [
+          "commercial",
+          "consumer"
+        ]
+      },
+      "subdomains": [
+        {
+          "subdomain_id": "MO-01",
+          "name_en": "Assignment / Cessio & Debtor Change",
+          "name_nb": "Cessio og gjeldsovertakelse",
+          "scope_in": [
+            "Assignment of receivables (cessio / overdragelse av fordring)",
+            "Factoring agreements",
+            "Assumption of debt (gjeldsovertakelse) and creditor consent",
+            "Notification requirements to debtor on assignment"
+          ],
+          "scope_out": [
+            "Pledging of receivables as security — route to D09_SECURITY",
+            "Debt collection procedure — route to D06_DEBT"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "cessio",
+            "overdragelse av fordring",
+            "gjeldsovertakelse",
+            "factoringavtale",
+            "notifikasjon cessio",
+            "debitorskifte",
+            "kan vi overdra kravet",
+            "kjøpe fordringer",
+            "gjeldsbrevloven",
+            "kreditorskifte"
+          ],
+          "confusers": [
+            {
+              "term": "pantsettelse av fordring",
+              "correct_route": "D09_SECURITY",
+              "reason": "Pledging receivables is security interests domain."
+            },
+            {
+              "term": "inkasso",
+              "correct_route": "D06_DEBT",
+              "reason": "Collection procedure is D06."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1939-02-17-1",
+              "title": "Gjeldsbrevloven",
+              "sections": "§§ 1-25",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "MO-02",
+          "name_en": "Interest & Late Interest",
+          "name_nb": "Renter og forsinkelsesrente",
+          "scope_in": [
+            "Statutory late payment interest (forsinkelsesrente) — rate and calculation",
+            "Norges Bank reference rate + 8% formula",
+            "Accrual date for late interest",
+            "Contractual interest versus statutory late interest"
+          ],
+          "scope_out": [
+            "Debt collection fees — route to D06_DEBT / DC-02",
+            "Limitation of interest claims — route to MO-04"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "forsinkelsesrente",
+            "morarente",
+            "rentesats forsinkelse",
+            "Norges Bank styringsrente pluss 8",
+            "forsinkelsesrenteloven",
+            "beregne forsinkelsesrente",
+            "når løper rente",
+            "betaling etter forfall",
+            "rentekrav faktura",
+            "krav på forsinkelsesrente",
+            "renteberegning"
+          ],
+          "confusers": [
+            {
+              "term": "inkassosalær",
+              "correct_route": "D06_DEBT / DC-02",
+              "reason": "Collection fees are D06."
+            },
+            {
+              "term": "saksomkostninger",
+              "correct_route": "D06_DEBT / DC-05",
+              "reason": "Court costs are DC-05."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1976-12-17-100",
+              "title": "Forsinkelsesrenteloven",
+              "sections": "§§ 1-5",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "MO-03",
+          "name_en": "Set-off Basics",
+          "name_nb": "Motregning av pengekrav",
+          "scope_in": [
+            "Set-off of monetary claims (motregning av pengekrav)",
+            "Maturity, mutuality and liquidity requirements for set-off",
+            "Set-off against insolvency estate"
+          ],
+          "scope_out": [
+            "Set-off in contract / performance context — route to D05_OBLIGATIONS / OB-04",
+            "Withholding performance — route to D05_OBLIGATIONS / OB-04"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "motregning pengekrav",
+            "kan vi motregne kravet",
+            "motkrav forfalt",
+            "gjensidighetsvilkår motregning",
+            "motregning i konkurs",
+            "motregningserklæring",
+            "vilkår for motregning",
+            "likviditetsvilkår motregning"
+          ],
+          "confusers": [
+            {
+              "term": "tilbakeholdsrett",
+              "correct_route": "D05_OBLIGATIONS / OB-04",
+              "reason": "Withholding performance is obligations domain."
+            },
+            {
+              "term": "motregning i arbeidsforhold",
+              "correct_route": "D12_EMPLOYMENT",
+              "reason": "Employment wage set-off is employment domain."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1939-02-17-1",
+              "title": "Gjeldsbrevloven",
+              "sections": "§ 26",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "MO-04",
+          "name_en": "Limitation Interactions",
+          "name_nb": "Foreldelse av fordringer",
+          "scope_in": [
+            "Alias: limitation of monetary claims — all foreldelse content canonical in DC-04.",
+            "Queries here co-retrieve from DC-04 (D06_DEBT). Do not duplicate chunks."
+          ],
+          "scope_out": [
+            "General limitation — route to D06_DEBT / DC-04",
+            "Reclamation deadlines — route to D05_OBLIGATIONS / OB-02"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "foreldelse av fordring",
+            "erkjennelse av gjeld",
+            "avbrytelse foreldelse erkjennelse",
+            "rettslig skritt foreldelse",
+            "suspensjon av foreldelse",
+            "skjult krav foreldelse",
+            "hvornår er fordringen foreldet",
+            "foreldet pengekrav",
+            "er fordringen foreldet"
+          ],
+          "confusers": [
+            {
+              "term": "reklamasjonsfrist",
+              "correct_route": "D05_OBLIGATIONS / OB-02",
+              "reason": "Contract reclamation time bars are OB-02."
+            },
+            {
+              "term": "foreldelse generelt",
+              "correct_route": "D06_DEBT / DC-04",
+              "reason": "General limitation statute is DC-04."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1979-05-18-18",
+              "title": "Foreldelsesloven",
+              "sections": "§§ 1-30",
+              "tier": 1
+            }
+          ],
+          "notes": "ALIAS subdomain. Routes to DC-04 (D06_DEBT) chunk set. Do not maintain independent chunks for foreldelsesloven."
+        },
+        {
+          "subdomain_id": "MO-05",
+          "name_en": "Payment Disputes",
+          "name_nb": "Betalingstvister",
+          "scope_in": [
+            "Payment under protest (betaling under protest)",
+            "Deposit of disputed amounts (deponering)",
+            "Receipts and discharge of debt",
+            "Payment allocation when debtor has multiple debts"
+          ],
+          "scope_out": [
+            "Debt collection process — route to D06_DEBT",
+            "Late interest — route to MO-02"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "betaling under protest",
+            "deponering av beløp",
+            "kvittering for betaling",
+            "gjelden er betalt",
+            "tvistebeløp deponeres",
+            "avdrag på gjeld",
+            "betaling på bestridt krav",
+            "hvem av gjeldene betales"
+          ],
+          "confusers": [
+            {
+              "term": "inkasso",
+              "correct_route": "D06_DEBT",
+              "reason": "Debt collection process is D06."
+            },
+            {
+              "term": "forsinkelsesrente",
+              "correct_route": "D08_MONETARY / MO-02",
+              "reason": "Late interest is MO-02."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1999-06-25-46",
+              "title": "Finansavtaleloven",
+              "sections": "§§ 1-1 – 4-57",
+              "tier": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "D09_SECURITY",
+      "name_en": "Security Interests (Panterett)",
+      "name_nb": "Panterett og sikkerhetsstillelse",
+      "default": {
+        "tier_ceiling": 2,
+        "jurisdiction_allowed": [
+          "NO"
+        ],
+        "b2b_b2c_allowed": [
+          "B2B"
+        ],
+        "relationship_type_allowed": [
+          "commercial"
+        ]
+      },
+      "subdomains": [
+        {
+          "subdomain_id": "SE-01",
+          "name_en": "Creating Security (Pledge Types)",
+          "name_nb": "Stiftelse av pant og panteformer",
+          "scope_in": [
+            "Types of pledge: mortgage (underpant), possessory pledge (håndpant), vendor's lien (salgspant)",
+            "Floating charge over business assets (driftstilbehørspant / factoringpant)",
+            "Requirements for valid creation of security interest",
+            "Negative pledge clauses"
+          ],
+          "scope_out": [
+            "Registration for perfection — route to SE-02",
+            "Security in insolvency — route to SE-05"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "pant",
+            "underpant",
+            "håndpant",
+            "salgspant",
+            "factoringpant",
+            "driftstilbehørspant",
+            "pantsette",
+            "stille sikkerhet",
+            "panteloven",
+            "pant i aksjer",
+            "pant i eiendom",
+            "pant i løsøre",
+            "negativpant klausul",
+            "hva kan pantsettes",
+            "krav til panteavtale"
+          ],
+          "confusers": [
+            {
+              "term": "tinglysing",
+              "correct_route": "D09_SECURITY / SE-02",
+              "reason": "Registration for perfection is SE-02."
+            },
+            {
+              "term": "sikkerhet for lån",
+              "correct_route": "D09_SECURITY / SE-01",
+              "reason": "General — stay in SE-01 unless a specific sub-issue applies."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1980-02-08-2",
+              "title": "Panteloven",
+              "sections": "§§ 1-1 – 6-6",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "SE-02",
+          "name_en": "Perfection & Registration",
+          "name_nb": "Rettsvern og tinglysing",
+          "scope_in": [
+            "Registration in the Løsøreregisteret for movable property",
+            "Land registry (tinglysing) for real property mortgages",
+            "Perfection requirements (rettsvern) and consequence of failure",
+            "Brønnøysundregistrene registration requirements"
+          ],
+          "scope_out": [
+            "Creation of pledge — route to SE-01",
+            "Priority between competing security holders — route to SE-03"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "tinglysing",
+            "løsøreregisteret",
+            "rettsvern",
+            "Brønnøysundregistrene pant",
+            "registrere pant",
+            "tinglysingsloven",
+            "rettsvern mot kreditorforfølgning",
+            "ikrafttreden av pant",
+            "krav til tinglysing",
+            "melding til løsøreregisteret"
+          ],
+          "confusers": [
+            {
+              "term": "Brreg selskapsregistrering",
+              "correct_route": "D01_COMPANY / CY-01",
+              "reason": "Company registration is company law."
+            },
+            {
+              "term": "prioritet mellom panthavere",
+              "correct_route": "D09_SECURITY / SE-03",
+              "reason": "Priority conflicts are SE-03."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1980-02-08-2",
+              "title": "Panteloven",
+              "sections": "§§ 2-1 – 4-10",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-1935-06-07-2",
+              "title": "Tinglysingsloven",
+              "sections": "§§ 1-38",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "SE-03",
+          "name_en": "Priority Conflicts",
+          "name_nb": "Prioritetskonflikter",
+          "scope_in": [
+            "Priority between competing security interests (eldre vs yngre rettsstiftelse)",
+            "Effect of prior encumbrances on later creditors",
+            "Good faith purchaser protection"
+          ],
+          "scope_out": [
+            "Avoidance of security in insolvency — route to D07_INSOLVENCY / IN-03",
+            "Security enforcement — route to SE-04"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "prioritetskonflikter pant",
+            "yngre rettsstiftelse",
+            "eldre rettsstiftelse",
+            "prioritet mellom panthavere",
+            "rettsvern konkurranse",
+            "hvem har best rett til pantet",
+            "tinglysingsloven § 20",
+            "panteloven § 1-12"
+          ],
+          "confusers": [
+            {
+              "term": "omstøtelse",
+              "correct_route": "D07_INSOLVENCY / IN-03",
+              "reason": "Avoidance of transactions is insolvency."
+            },
+            {
+              "term": "tvangssalg",
+              "correct_route": "D09_SECURITY / SE-04",
+              "reason": "Enforcement is SE-04."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1980-02-08-2",
+              "title": "Panteloven",
+              "sections": "§§ 1-12 – 1-14",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-1935-06-07-2",
+              "title": "Tinglysingsloven",
+              "sections": "§ 20",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "SE-04",
+          "name_en": "Enforcement of Security",
+          "name_nb": "Realisasjon av pant",
+          "scope_in": [
+            "Creditor's right to realise security on default",
+            "Forced sale of pledged assets (tvangssalg av pant)",
+            "Cover sale (dekningssalg)",
+            "Surplus and deficit after realisation"
+          ],
+          "scope_out": [
+            "General enforcement — route to D06_DEBT / DC-03",
+            "Security in insolvency — route to SE-05"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "realisasjon av pant",
+            "tvangssalg av pant",
+            "dekningssalg",
+            "panthavers rettigheter ved mislighold",
+            "selge pantet",
+            "bryte pantet",
+            "inndrive sikkerhet",
+            "overgang av pant",
+            "namsrettens kjennelse om tvangssalg"
+          ],
+          "confusers": [
+            {
+              "term": "tvangsfullbyrdelse generelt",
+              "correct_route": "D06_DEBT / DC-03",
+              "reason": "General enforcement is D06."
+            },
+            {
+              "term": "separatistrett i konkurs",
+              "correct_route": "D09_SECURITY / SE-05",
+              "reason": "Secured creditor in insolvency is SE-05."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1980-02-08-2",
+              "title": "Panteloven",
+              "sections": "§§ 1-9 – 1-10",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-1992-06-26-86",
+              "title": "Tvangsfullbyrdelsesloven",
+              "sections": "Kap. 8",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "SE-05",
+          "name_en": "Security in Insolvency",
+          "name_nb": "Panterett i konkurs",
+          "scope_in": [
+            "Separatist right of secured creditor in bankruptcy (separatistrett)",
+            "Secured creditor's position in estate proceedings",
+            "Mass claims and priority over security (massekrav)",
+            "Interaction between avoidance (omstøtelse) and security"
+          ],
+          "scope_out": [
+            "Avoidance transactions generally — route to D07_INSOLVENCY / IN-03",
+            "Enforcement outside insolvency — route to SE-04"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "separatistrett",
+            "panterettens stilling i konkurs",
+            "massekrav og pant",
+            "fortrinnsrett panthaver",
+            "dekningsloven § 8",
+            "pant ved konkurs",
+            "kan panthaver holdes utenfor boet",
+            "realiseringsprivilegium"
+          ],
+          "confusers": [
+            {
+              "term": "omstøtelse",
+              "correct_route": "D07_INSOLVENCY / IN-03",
+              "reason": "Avoidance is insolvency IN-03."
+            },
+            {
+              "term": "tvangssalg pant",
+              "correct_route": "D09_SECURITY / SE-04",
+              "reason": "Enforcement outside insolvency is SE-04."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1984-06-08-59",
+              "title": "Dekningsloven",
+              "sections": "§§ 8-1 – 9-7",
+              "tier": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "D10_DISPUTE",
+      "name_en": "Dispute Resolution",
+      "name_nb": "Tvisteløsning",
+      "default": {
+        "tier_ceiling": 2,
+        "jurisdiction_allowed": [
+          "NO",
+          "EU-EEA",
+          "BOTH"
+        ],
+        "b2b_b2c_allowed": [
+          "B2B",
+          "B2C",
+          "BOTH"
+        ],
+        "relationship_type_allowed": [
+          "commercial",
+          "consumer"
+        ]
+      },
+      "subdomains": [
+        {
+          "subdomain_id": "DR-01",
+          "name_en": "Complaint / Formal Notice / Process Warning",
+          "name_nb": "Formell klage og prosessvarsel",
+          "scope_in": [
+            "Formal process warning before litigation (prosessvarsel)",
+            "Notice of claim / formal complaint letter",
+            "Statutory requirements for dispute notice under tvisteloven § 5-2",
+            "Consequences of failing to give notice"
+          ],
+          "scope_out": [
+            "Debt collection notice — route to D06_DEBT / DC-01",
+            "Employment dispute notice — route to D12_EMPLOYMENT / EL-05"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "prosessvarsel",
+            "varselbrev",
+            "formell klage",
+            "varsel om søksmål",
+            "tvisteloven § 5-2",
+            "forliksforsøk",
+            "krav til prosessvarsel",
+            "mekling før søksmål",
+            "obligatorisk mekling"
+          ],
+          "confusers": [
+            {
+              "term": "inkassovarsel",
+              "correct_route": "D06_DEBT / DC-01",
+              "reason": "Debt collection notice is D06."
+            },
+            {
+              "term": "søksmålsfrist oppsigelse",
+              "correct_route": "D12_EMPLOYMENT / EL-05",
+              "reason": "Employment dispute time limit is EL-05."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-2005-06-17-90",
+              "title": "Tvisteloven",
+              "sections": "§ 5-2",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "DR-02",
+          "name_en": "Conciliation Board (Forliksråd)",
+          "name_nb": "Forliksrådet",
+          "scope_in": [
+            "Forliksråd jurisdiction and mandatory referral",
+            "Filing a forliksklage — procedural requirements",
+            "Forliksråd hearing and possible outcomes",
+            "Forliksdom and enforcement of forliksdom"
+          ],
+          "scope_out": [
+            "District court proceedings — route to DR-03",
+            "Employment conciliation — route to D12_EMPLOYMENT / EL-05"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "forliksråd",
+            "forliksklage",
+            "forliksmøte",
+            "forliksdom",
+            "inngi forliksklage",
+            "mekle i forliksrådet",
+            "forliksrådets kompetanse",
+            "sende sak til forliksråd",
+            "tvungen mekling",
+            "forliksrådets avgjørelse"
+          ],
+          "confusers": [
+            {
+              "term": "tingretten",
+              "correct_route": "D10_DISPUTE / DR-03",
+              "reason": "District court proceedings are DR-03."
+            },
+            {
+              "term": "voldgift",
+              "correct_route": "D10_DISPUTE / DR-05",
+              "reason": "Arbitration is DR-05."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-2005-06-17-90",
+              "title": "Tvisteloven",
+              "sections": "§§ 6-1 – 6-15",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "DR-03",
+          "name_en": "Small Claims / Simplified Procedure",
+          "name_nb": "Småkravsprosess",
+          "scope_in": [
+            "Simplified procedure for claims under 250,000 NOK (småkravsprosess)",
+            "Cost limitations in small claims procedure",
+            "Procedural differences from ordinary civil proceedings"
+          ],
+          "scope_out": [
+            "Ordinary district court proceedings above 250K — route to DR-05 or general litigation",
+            "Forliksråd — route to DR-02"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "småkravsprosess",
+            "forenklede rettergangsregler",
+            "krav under 250 000",
+            "småkrav domstol",
+            "begrenset sakskostnader småkrav",
+            "tvisteloven § 10-1",
+            "når gjelder småkravsprosess",
+            "prosessregler småsaker"
+          ],
+          "confusers": [
+            {
+              "term": "forliksråd",
+              "correct_route": "D10_DISPUTE / DR-02",
+              "reason": "Forliksråd is a separate subdomain."
+            },
+            {
+              "term": "voldgift",
+              "correct_route": "D10_DISPUTE / DR-05",
+              "reason": "Arbitration is DR-05."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-2005-06-17-90",
+              "title": "Tvisteloven",
+              "sections": "§§ 10-1 – 10-5",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "DR-04",
+          "name_en": "Injunction & Interim Measures",
+          "name_nb": "Midlertidig forføyning og arrest",
+          "scope_in": [
+            "Interim injunction (midlertidig forføyning) — conditions and procedure",
+            "Arrest of assets (arrest) — precautionary attachment",
+            "Emergency relief before a claim is formally filed",
+            "Balance of convenience test",
+            "Injunctions enforcing post-employment commercial restraints (konkurranseklausul, kundeklausul, forretningshemmeligheter) — tvisteloven kap. 34 governs even though the relationship is employment"
+          ],
+          "scope_out": [
+            "Enforcement of final judgment — route to D06_DEBT / DC-03",
+            "Employment injunction against dismissal — route to D12_EMPLOYMENT / EL-05"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "midlertidig forføyning",
+            "arrest",
+            "sikringstiltak",
+            "begjæring om forføyning",
+            "tvisteloven § 32",
+            "vilkår forføyning",
+            "fumus boni iuris",
+            "kan vi stoppe motparten",
+            "nødstilfelle domstol",
+            "kjennelse om forføyning",
+            "forholdsmessighetsvurdering",
+            "midlertidig forføyning konkurranseklausul",
+            "stoppe ansatt fra å bryte konkurranseklausul",
+            "forretningshemmeligheter tidligere ansatt",
+            "kundeklausul brudd forføyning"
+          ],
+          "confusers": [
+            {
+              "term": "tvangsfullbyrdelse",
+              "correct_route": "D06_DEBT / DC-03",
+              "reason": "Enforcement of judgment is D06."
+            },
+            {
+              "term": "stå i stilling oppsigelse",
+              "correct_route": "D12_EMPLOYMENT / EL-05",
+              "reason": "Right to remain in post is employment law."
+            },
+            {
+              "term": "stå i stilling / gjeninntreden (dismissal validity)",
+              "correct_route": "D12_EMPLOYMENT / EL-05",
+              "reason": "Right to remain in post is AML § 15-11 lex specialis — EL-05. Employer petitions for fratreden under § 15-11(2), not a tvisteloven kap. 32 forføyning."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-2005-06-17-90",
+              "title": "Tvisteloven",
+              "sections": "§§ 32-1 – 34-7",
+              "tier": 1
+            }
+          ],
+          "notes": "NOTE for EL-05 (in companion taxonomy): add confuser 'midlertidig forføyning konkurranseklausul/kundeklausul/forretningshemmeligheter → DR-04'. § 15-11 is lex specialis, not a kap. 32 forføyning."
+        },
+        {
+          "subdomain_id": "DR-05",
+          "name_en": "Arbitration & Agreed Venue",
+          "name_nb": "Voldgift og verneting",
+          "scope_in": [
+            "Arbitration agreements (voldgiftsklausuler) — validity and scope",
+            "Agreed contractual jurisdiction (avtalt verneting)",
+            "Arbitration institutions: ICC, NHO voldgift, Oslo Handelskammer",
+            "Recognition and enforcement of arbitral awards"
+          ],
+          "scope_out": [
+            "Forliksråd — route to DR-02",
+            "Interim measures in arbitration context — route to DR-04"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "BOTH"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "voldgift",
+            "voldgiftsklausul",
+            "voldgiftsavtale",
+            "verneting",
+            "avtalt verneting",
+            "ICC voldgift",
+            "NHO voldgift",
+            "Oslo Handelskammer",
+            "tvunget til voldgift",
+            "er voldgiftsklausulen gyldig",
+            "anerkjenne voldgiftsdom",
+            "new york-konvensjonen"
+          ],
+          "confusers": [
+            {
+              "term": "forliksråd",
+              "correct_route": "D10_DISPUTE / DR-02",
+              "reason": "Forliksråd is conciliation board, not arbitration."
+            },
+            {
+              "term": "midlertidig forføyning",
+              "correct_route": "D10_DISPUTE / DR-04",
+              "reason": "Interim measures are DR-04."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-2004-05-14-25",
+              "title": "Voldgiftsloven",
+              "sections": "§§ 1-45",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-2005-06-17-90",
+              "title": "Tvisteloven",
+              "sections": "§§ 4-1 – 4-7",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "DR-06",
+          "name_en": "Evidence & Costs",
+          "name_nb": "Bevis og saksomkostninger",
+          "scope_in": [
+            "Duty to produce evidence (bevisplikt)",
+            "Documentary evidence and witness testimony rules",
+            "Recovery of legal costs (saksomkostninger) in civil proceedings",
+            "Free legal aid (fri rettshjelp) in civil matters"
+          ],
+          "scope_out": [
+            "Court fees scale — route to D06_DEBT / DC-05",
+            "Employment litigation costs — route to D12_EMPLOYMENT / EL-05"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "bevisføring",
+            "vitneforklaring",
+            "dokumentbevis",
+            "saksomkostninger sivil sak",
+            "fri rettshjelp",
+            "bevisplikt",
+            "bevisavskjæring",
+            "tvisteloven § 21",
+            "tvisteloven § 22",
+            "bevisbyrde",
+            "beviskrav sivil sak"
+          ],
+          "confusers": [
+            {
+              "term": "inkassosalær",
+              "correct_route": "D06_DEBT / DC-02",
+              "reason": "Collection fees are D06."
+            },
+            {
+              "term": "saksomkostninger arbeidsrett",
+              "correct_route": "D12_EMPLOYMENT / EL-05",
+              "reason": "Employment litigation costs are EL-05."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-2005-06-17-90",
+              "title": "Tvisteloven",
+              "sections": "§§ 21-1 – 22-11, §§ 20-1 – 20-12",
+              "tier": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "D12_PRIVACY",
+      "name_en": "Privacy / GDPR",
+      "name_nb": "Personvern og GDPR",
+      "default": {
+        "tier_ceiling": 2,
+        "jurisdiction_allowed": [
+          "NO",
+          "EU-EEA",
+          "BOTH"
+        ],
+        "b2b_b2c_allowed": [
+          "B2B",
+          "B2C",
+          "BOTH"
+        ],
+        "relationship_type_allowed": [
+          "commercial",
+          "consumer"
+        ]
+      },
+      "subdomains": [
+        {
+          "subdomain_id": "PR-01",
+          "name_en": "Lawful Basis & Internal Control",
+          "name_nb": "Behandlingsgrunnlag og internkontroll",
+          "scope_in": [
+            "Lawful basis for processing (behandlingsgrunnlag) — consent, legitimate interest, contract, legal obligation",
+            "Special category data (sensitive data) — additional requirements",
+            "Data controller responsibilities (behandlingsansvarlig)",
+            "Internal control and record-keeping obligations (protokoll over behandlingsaktiviteter)"
+          ],
+          "scope_out": [
+            "Processor agreements — route to PR-02",
+            "Data subject rights — route to PR-06"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "BOTH"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "behandlingsgrunnlag",
+            "samtykke GDPR",
+            "berettiget interesse",
+            "behandlingsansvarlig",
+            "internkontroll personvern",
+            "GDPR art. 6",
+            "GDPR art. 9",
+            "sensitiv persondata",
+            "lovlig behandling av personopplysninger",
+            "personvernerklæring",
+            "samtykke krav",
+            "har vi lov til å lagre kundedata",
+            "kan vi bruke kundelista til markedsføring",
+            "kan vi sende nyhetsbrev uten samtykke",
+            "GDPR for små bedrifter",
+            "hva må en liten bedrift gjøre med GDPR",
+            "lawful basis",
+            "legitimate interest",
+            "privacy policy",
+            "personvernerklæring mal",
+            "kan vi bruke dataene uten samtykke",
+            "lagre ansattes personopplysninger",
+            "behandlingsgrunnlag GDPR"
+          ],
+          "confusers": [
+            {
+              "term": "taushetsplikt",
+              "correct_route": "Outside scope",
+              "reason": "Professional secrecy is outside DigiRett taxonomy v1."
+            },
+            {
+              "term": "databehandleravtale",
+              "correct_route": "D12_PRIVACY / PR-02",
+              "reason": "Processor agreements are PR-02."
+            },
+            {
+              "term": "samtykke til cookies / sporing / nettside",
+              "correct_route": "D12_PRIVACY / PR-08",
+              "reason": "Cookie consent is PR-08. samtykke + cookie/sporing/nettside → PR-08."
+            },
+            {
+              "term": "databehandleravtale",
+              "correct_route": "D12_PRIVACY / PR-02",
+              "reason": "Processor agreement is PR-02."
+            },
+            {
+              "term": "trekke tilbake samtykke / slette data",
+              "correct_route": "D12_PRIVACY / PR-06",
+              "reason": "Withdrawal of consent and erasure requests are PR-06."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "REG-2016-679-EU",
+              "title": "GDPR",
+              "sections": "Art. 6, 9, 30",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-2018-06-15-38",
+              "title": "Personopplysningsloven",
+              "sections": "§§ 1-8",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "PR-02",
+          "name_en": "Processor Agreements (DPA)",
+          "name_nb": "Databehandleravtale",
+          "scope_in": [
+            "Mandatory content of data processing agreements (databehandleravtale) under GDPR Art. 28",
+            "Sub-processor chains and consent requirements",
+            "Audit rights and controller instructions",
+            "Termination of DPA and return/deletion of data"
+          ],
+          "scope_out": [
+            "Lawful basis for the underlying processing — route to PR-01",
+            "Cross-border transfers — route to separate guidance (not in v1 scope)"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "BOTH"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "databehandleravtale",
+            "DPA GDPR",
+            "databehandler",
+            "behandlingsansvarlig kontrakt",
+            "underleverandør personvern",
+            "GDPR art. 28",
+            "krav til databehandleravtale",
+            "skyavtale personvern",
+            "SaaS og GDPR",
+            "databehandler instrukser",
+            "revisjonsrett databehandleravtale"
+          ],
+          "confusers": [
+            {
+              "term": "taushetserklæring",
+              "correct_route": "D04_CONTRACT / CL-01",
+              "reason": "NDA is a commercial contract matter."
+            },
+            {
+              "term": "behandlingsgrunnlag",
+              "correct_route": "D12_PRIVACY / PR-01",
+              "reason": "Lawful basis is PR-01."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "REG-2016-679-EU",
+              "title": "GDPR",
+              "sections": "Art. 28",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-2018-06-15-38",
+              "title": "Personopplysningsloven",
+              "sections": "§ 15",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "PR-03",
+          "name_en": "Security Measures (TOMs)",
+          "name_nb": "Tekniske og organisatoriske tiltak",
+          "scope_in": [
+            "Appropriate technical and organisational measures (TOMs) under GDPR Art. 32",
+            "Risk assessment for processing activities",
+            "Encryption, pseudonymisation and access controls",
+            "Information security policies and procedures"
+          ],
+          "scope_out": [
+            "Data breach handling — route to PR-04",
+            "DPIA — route to PR-05"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "BOTH"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "tekniske og organisatoriske tiltak",
+            "TOMs",
+            "informasjonssikkerhet GDPR",
+            "GDPR art. 32",
+            "risikovurdering personvern",
+            "tilgangskontroll",
+            "kryptering personopplysninger",
+            "pseudonymisering",
+            "sikkerhetstiltak personvern",
+            "NSM grunnprinsipper",
+            "passord og tilgangsstyring GDPR",
+            "sikkerhetsnivå"
+          ],
+          "confusers": [
+            {
+              "term": "ISO 27001",
+              "correct_route": "Outside scope",
+              "reason": "ISO certification is outside DigiRett taxonomy v1."
+            },
+            {
+              "term": "personvernbrudd",
+              "correct_route": "D12_PRIVACY / PR-04",
+              "reason": "Data breach handling is PR-04."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "REG-2016-679-EU",
+              "title": "GDPR",
+              "sections": "Art. 32",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-2018-06-15-38",
+              "title": "Personopplysningsloven",
+              "sections": "§ 15",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "PR-04",
+          "name_en": "Breach Handling & Reporting",
+          "name_nb": "Personvernbrudd og avvikshåndtering",
+          "scope_in": [
+            "Definition of personal data breach (personvernbrudd)",
+            "72-hour notification duty to Datatilsynet",
+            "Notification to data subjects when required",
+            "Breach log requirements and documentation"
+          ],
+          "scope_out": [
+            "Security measures to prevent breaches — route to PR-03",
+            "DPIA for high-risk processing — route to PR-05"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "BOTH"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "personvernbrudd",
+            "avviksmelding",
+            "Datatilsynet melding",
+            "72-timers frist brudd",
+            "bruddlogg",
+            "GDPR art. 33",
+            "GDPR art. 34",
+            "datainnbrudd",
+            "lekkasje personopplysninger",
+            "hva gjør vi ved databrudd",
+            "sikkerhetshendelse personvern",
+            "melde til Datatilsynet"
+          ],
+          "confusers": [
+            {
+              "term": "sikkerhetshendelse IT",
+              "correct_route": "D12_PRIVACY / PR-03",
+              "reason": "Security measures context is PR-03 unless a breach has occurred."
+            },
+            {
+              "term": "DPIA",
+              "correct_route": "D12_PRIVACY / PR-05",
+              "reason": "Impact assessment is PR-05."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "REG-2016-679-EU",
+              "title": "GDPR",
+              "sections": "Art. 33-34",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-2018-06-15-38",
+              "title": "Personopplysningsloven",
+              "sections": "§ 15",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "PR-05",
+          "name_en": "DPIA (Data Protection Impact Assessment)",
+          "name_nb": "Personvernkonsekvensutredning",
+          "scope_in": [
+            "When a DPIA is mandatory (high-risk processing)",
+            "DPIA methodology and Datatilsynet's guidance",
+            "Prior consultation with Datatilsynet (forhåndsdrøfting)",
+            "Residual risk and mitigation measures"
+          ],
+          "scope_out": [
+            "General risk assessment — route to PR-03",
+            "Data breach reporting — route to PR-04"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "BOTH"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "personvernkonsekvensvurdering",
+            "DPIA",
+            "høyrisikobehandling",
+            "forhåndsdrøfting Datatilsynet",
+            "GDPR art. 35",
+            "GDPR art. 36",
+            "når kreves DPIA",
+            "gjennomføre DPIA",
+            "Datatilsynets veileder DPIA",
+            "konsekvensvurdering personvern"
+          ],
+          "confusers": [
+            {
+              "term": "risikovurdering generelt",
+              "correct_route": "D12_PRIVACY / PR-03",
+              "reason": "General security risk assessment is PR-03."
+            },
+            {
+              "term": "bruddmelding",
+              "correct_route": "D12_PRIVACY / PR-04",
+              "reason": "Breach notification is PR-04."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "REG-2016-679-EU",
+              "title": "GDPR",
+              "sections": "Art. 35-36",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "PR-06",
+          "name_en": "Data Subject Rights",
+          "name_nb": "De registrertes rettigheter",
+          "scope_in": [
+            "Right of access (innsynsrett) — Art. 15",
+            "Right to erasure / right to be forgotten (sletting) — Art. 17",
+            "Right to rectification (retting) — Art. 16",
+            "Data portability (dataportabilitet) — Art. 20",
+            "Right to object and restriction of processing — Arts. 18, 21"
+          ],
+          "scope_out": [
+            "Lawful basis for processing — route to PR-01",
+            "Public access to documents — outside scope"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "BOTH"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "innsynsrett GDPR",
+            "slette personopplysninger",
+            "rette personopplysninger",
+            "dataportabilitet",
+            "innsigelse mot behandling",
+            "begrensning av behandling",
+            "GDPR art. 15",
+            "GDPR art. 17",
+            "GDPR art. 20",
+            "be om innsyn",
+            "kan jeg kreve sletting",
+            "svar på innsynsbegjæring",
+            "fristen for å svare"
+          ],
+          "confusers": [
+            {
+              "term": "offentlighet",
+              "correct_route": "Outside scope",
+              "reason": "Public access to government documents is outside DigiRett v1."
+            },
+            {
+              "term": "samtykke",
+              "correct_route": "D12_PRIVACY / PR-01",
+              "reason": "Consent as lawful basis is PR-01."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "REG-2016-679-EU",
+              "title": "GDPR",
+              "sections": "Art. 15-22",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-2018-06-15-38",
+              "title": "Personopplysningsloven",
+              "sections": "§§ 16-27",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "PR-07",
+          "name_en": "Logging & Access Control",
+          "name_nb": "Logging og tilgangsstyring",
+          "scope_in": [
+            "Access log requirements (tilgangslogg)",
+            "Role-based access control (rollebasert tilgang)",
+            "Audit trail obligations for sensitive processing",
+            "NSM basic principles for access management"
+          ],
+          "scope_out": [
+            "General security measures — route to PR-03",
+            "Breach caused by access failure — route to PR-04"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "BOTH"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "tilgangslogg",
+            "loggføring personvern",
+            "tilgangsstyring GDPR",
+            "rollebasert tilgang",
+            "hvem har tilgang til persondata",
+            "loggkrav GDPR",
+            "NSM grunnprinsipper tilgang",
+            "access management personvern"
+          ],
+          "confusers": [
+            {
+              "term": "internkontroll",
+              "correct_route": "D12_PRIVACY / PR-01",
+              "reason": "Overarching internal control is PR-01."
+            },
+            {
+              "term": "datasikkerhet generelt",
+              "correct_route": "D12_PRIVACY / PR-03",
+              "reason": "General security measures are PR-03."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "REG-2016-679-EU",
+              "title": "GDPR",
+              "sections": "Art. 32",
+              "tier": 1
+            }
+          ]
+        },
+        {
+          "subdomain_id": "PR-08",
+          "name_en": "Cookies & eCom Overlay",
+          "name_nb": "Informasjonskapsler og ekomloven",
+          "scope_in": [
+            "Cookie/tracking consent under ekomloven § 3-15 (in force 1 January 2025)",
+            "Consent must satisfy GDPR standard: active, prior, informed, granular, withdrawable — no pre-ticked boxes",
+            "§ 3-15 applies to storage/access on terminal equipment whether or not personal data is involved",
+            "Strictly-necessary and transmission exemptions from consent requirement",
+            "Cookie banner design and valid consent mechanics",
+            "Joint supervision by Datatilsynet and Nkom",
+            "Tracking technologies beyond traditional cookies (pixels, fingerprinting)"
+          ],
+          "scope_out": [
+            "Electronic contract formation — route to D04_CONTRACT / CL-05",
+            "General GDPR consent as lawful basis — route to PR-01"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "BOTH"
+            ],
+            "jurisdiction": [
+              "BOTH"
+            ],
+            "relationship_type": [
+              "commercial",
+              "consumer"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "informasjonskapsler",
+            "cookies",
+            "samtykke til cookies",
+            "ekomloven",
+            "cookie-banner",
+            "cookie-samtykke",
+            "tracking",
+            "nettstedet bruker cookies",
+            "Datatilsynet cookie veileder",
+            "analytiske cookies",
+            "markedsføringscookies",
+            "ekomloven § 3-15",
+            "aktivt samtykke cookies",
+            "samtykkebanner GDPR",
+            "Nkom cookies",
+            "forhåndsavkrysset samtykke",
+            "trekke tilbake cookie-samtykke",
+            "strengt nødvendige informasjonskapsler"
+          ],
+          "confusers": [
+            {
+              "term": "netthandel avtale",
+              "correct_route": "D04_CONTRACT / CL-05",
+              "reason": "eCom contract formation is CL-05."
+            },
+            {
+              "term": "GDPR samtykke generelt",
+              "correct_route": "D12_PRIVACY / PR-01",
+              "reason": "General GDPR consent as lawful basis is PR-01."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-2024-12-13-76",
+              "title": "Ekomloven (i kraft 1.1.2025)",
+              "sections": "§ 3-15 (informasjonskapsler og sporingsteknologi)",
+              "tier": 1
+            },
+            {
+              "source_id": "REG-2016-679-EU",
+              "title": "GDPR",
+              "sections": "Art. 4(11), Art. 6, Art. 7 (consent standard)",
+              "tier": 1
+            },
+            {
+              "source_id": "DATATILSYNET-COOKIE-VEILEDER",
+              "title": "Datatilsynet — Bruk av informasjonskapsler og andre sporingsteknologier",
+              "sections": "Datatilsynet.no/personvern-pa-ulike-omrader/internett-og-apper/",
+              "tier": 2
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "date": "2026-06-05",
+      "changes": "Initial release — 55 subdomains across 10 domains."
+    },
+    {
+      "version": "1.1.0",
+      "date": "2026-06-05",
+      "changes": [
+        "CRITICAL: PR-08 source replaced — ekomloven LOV-2003 § 2-7b (repealed) → LOV-2024-12-13-76 § 3-15. Scope updated to GDPR consent standard.",
+        "STRUCTURAL: MA-03 → thin pointer to EL-04. No independent AML kap. 16 chunks in MA-03.",
+        "STRUCTURAL: DC-04 designated canonical foreldelse subdomain; MO-04 designated alias/pointer. One foreldelsesloven chunk set.",
+        "BOUNDARY OB-01/OB-05: ordinary termination of continuing contracts re-pointed to OB-05 (not CL-01). OB-05 extended to cover oppsigelse of løpende avtaler.",
+        "BOUNDARY CY-06/IN-04: split re-framed on insolvency-procedural signal (oppbud/konkurs åpnet/bobestyrer → IN-04; otherwise CY-06). Håpløshetstidspunkt added. § 17-1 shared. IN-04 konkurskarantene anchor corrected to §§ 142 ff.",
+        "BOUNDARY DR-04: extended to cover injunctions on post-employment commercial restraints. § 15-11 characterised as lex specialis, not tvl. kap. 32.",
+        "KEYWORDS CY-02: removed legalistic terms (inhabilitet, styreinstruks, daglig drift); added SME situation phrases; removed styreansvar from positive list.",
+        "KEYWORDS OB-01: added SME defect/delay phrases; removed nynorsk avtalebrot; added OB-04 and OB-02 confusers.",
+        "KEYWORDS DC-01: added SME urgency phrases; moved betalingsoppfordring to DC-02; added MO-02 confuser.",
+        "KEYWORDS IN-01: added SME plain-language insolvency phrases.",
+        "KEYWORDS PR-01: removed textbook terms; added mixed NO/EN SME GDPR phrases; added samtykke/cookie/DPA confusers.",
+        "CO-RETRIEVAL: OB-02 co_retrieval rule added (paired with OB-01 and DC-04).",
+        "GAPS (v2): DPO/personvernombud, lagringstid/retention, cross-border transfers, ordinary termination canonical home in CL domain.",
+        "SYSTEMIC NOTE: Tier-2 Høyesterett layer needed for CY-06/IN-04, OB-03, IN-03, DR-04, EL-04. Automated Lovdata repeal check required at ingestion."
+      ]
+    }
+  ]
+}

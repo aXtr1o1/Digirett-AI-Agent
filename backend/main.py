@@ -247,6 +247,9 @@ async def lifespan(app: FastAPI):
             user_svc=user_service,
             email_svc=email_service,
         )
+        ratings.set_services(
+            email_svc=email_service,
+        )
 
         logger.info("All services ready — server is live")
 

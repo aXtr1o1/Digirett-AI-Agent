@@ -24,7 +24,7 @@ import hmac
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi import APIRouter, Header, HTTPException, Request, status, BackgroundTasks
 
 from config import settings
 from services.hitl_service import HitlService
@@ -88,6 +88,7 @@ def _verify_cal_signature(payload: bytes, signature_header: Optional[str]) -> bo
 )
 async def cal_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     x_cal_signature_256: Optional[str] = Header(None, alias="X-Cal-Signature-256"),
 ):
     """
@@ -168,6 +169,8 @@ async def cal_webhook(
     if is_cancelled_event:
         _hitl_service.handle_cancellation(ticket_id)
         logger.info(f"🗑️ Booking cancelled for ticket {ticket_id}. Status reset to 'assigned'.")
+        if _email_service:
+            background_tasks.add_task(_send_cancellation_notifications, ticket_id)
         return {"status": "success", "action": "ticket_reset", "ticket_id": ticket_id}
 
     # ── Handle Booking/Reschedule ───────────────────────────────────
@@ -229,3 +232,29 @@ async def cal_webhook(
         "cal_booking_id": cal_booking_id,
         "booking_url": meet_link,
     }
+
+
+async def _send_cancellation_notifications(ticket_id: str):
+    """Sends cancellation notification emails to both user and lawyer."""
+    try:
+        ticket = _hitl_service.get_ticket_by_id(ticket_id)
+        if ticket and _email_service:
+            user_email = ticket.get("user_email")
+            user_name = ticket.get("user_display_name") or "User"
+            lawyer_email = ticket.get("lawyer_email")
+            lawyer_name = ticket.get("assigned_lawyer_name") or "Lawyer"
+
+            if user_email:
+                await _email_service.send_booking_cancelled_email(
+                    to_email=user_email,
+                    recipient_name=user_name,
+                    ticket_id=ticket_id
+                )
+            if lawyer_email:
+                await _email_service.send_booking_cancelled_email(
+                    to_email=lawyer_email,
+                    recipient_name=lawyer_name,
+                    ticket_id=ticket_id
+                )
+    except Exception as exc:
+        logger.warning(f"⚠️ Cancellation notification email failed (non-fatal) | {exc}")
