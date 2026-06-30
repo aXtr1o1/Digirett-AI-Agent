@@ -180,6 +180,19 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
   const ticket = statusData.ticket;
   let status = ticket?.status || "open";
 
+  const renderPriorityBadge = () => {
+    const priority = ticket?.priority || "normal";
+    if (priority === "normal") return null;
+    const classes = priority === "urgent"
+      ? (isDark ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-rose-50 text-rose-600 border-rose-100")
+      : (isDark ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-amber-50 text-amber-600 border-amber-100");
+    return (
+      <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider border flex-shrink-0 ${classes}`}>
+        {priority}
+      </span>
+    );
+  };
+
   // Handle DB-compatible no_show mapping
   if (status === "closed" && ticket?.outcome_notes?.includes("[NO-SHOW]")) {
     status = "no_show";
@@ -201,10 +214,13 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
           <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20 flex-shrink-0">
             <Scale className="text-white w-5 h-5" />
           </div>
-          <div>
-            <h4 className={`text-sm font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
-              {domainName ? `Finding an expert in ${domainName}...` : "Searching for a Lawyer..."}
-            </h4>
+          <div className="flex-1">
+            <div className="flex justify-between items-start gap-2">
+              <h4 className={`text-sm font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
+                {domainName ? `Finding an expert in ${domainName}...` : "Searching for a Lawyer..."}
+              </h4>
+              {renderPriorityBadge()}
+            </div>
             <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
               {domainName ? (
                 <>
@@ -265,10 +281,13 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
             <div className="w-8 h-8 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20 flex-shrink-0">
               <ShieldCheck className="text-white w-4 h-4" />
             </div>
-            <div>
-              <h4 className={`text-xs font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
-                Under Legal Review
-              </h4>
+            <div className="flex-1">
+              <div className="flex justify-between items-start gap-2">
+                <h4 className={`text-xs font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
+                  Under Legal Review
+                </h4>
+                {renderPriorityBadge()}
+              </div>
               <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
                 <span className="text-indigo-500 font-bold">{ticket.assigned_lawyer_name || "An expert"}</span> is reviewing your details. Your lawyer has received a brief about your matter.
               </p>
@@ -304,7 +323,7 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
             <Clock className="text-white w-5 h-5" />
           </div>
           <div className="flex-1">
-            <div className="flex justify-between items-start">
+            <div className="flex justify-between items-start gap-2">
               <div>
                 <h4 className={`text-sm font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
                   Meeting with {ticket.assigned_lawyer_name || "Lawyer"}
@@ -313,9 +332,12 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
                   {meetingDate.toLocaleString()}
                 </p>
               </div>
-              <span className="px-2 py-1 bg-blue-500/20 text-blue-500 rounded-lg text-[8px] font-black uppercase tracking-widest">
-                Booked
-              </span>
+              <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                <span className="px-2 py-1 bg-blue-500/20 text-blue-500 rounded-lg text-[8px] font-black uppercase tracking-widest">
+                  Booked
+                </span>
+                {renderPriorityBadge()}
+              </div>
             </div>
 
             <div className="mt-4 flex flex-col items-center">

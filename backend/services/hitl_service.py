@@ -259,11 +259,11 @@ class HitlService:
             lawyer_domains = []
             if lawyer_id:
                 try:
-                    lp_resp = self._supabase.table("lawyer_profiles") \
+                    domain_query = self._supabase.table("lawyer_profiles") \
                         .select("expertise_domains") \
                         .eq("lawyer_id", lawyer_id) \
-                        .limit(1) \
-                        .execute()
+                        .limit(1)
+                    lp_resp = self._supabase.execute_query(domain_query)
                     if lp_resp.data:
                         lawyer_domains = lp_resp.data[0].get("expertise_domains") or []
                 except Exception as e:
@@ -278,7 +278,7 @@ class HitlService:
                 ")"
             ).eq("status", "open")
 
-            response = query.order("created_at", desc=False).execute()
+            response = self._supabase.execute_query(query.order("created_at", desc=False))
             data = response.data or []
 
             # Flatten nested joins for easier frontend consumption
@@ -357,6 +357,26 @@ class HitlService:
                 .eq("ticket_id", ticket_id) \
                 .execute()
             self._log_audit("ticket.priority_updated", "system", {"ticket_id": ticket_id, "priority": priority})
+
+            # Fetch conversation_id to insert a professional system message in the chat
+            ticket_res = self._supabase.table("hitl_tickets") \
+                .select("conversation_id") \
+                .eq("ticket_id", ticket_id) \
+                .execute()
+            if ticket_res.data:
+                conv_id = ticket_res.data[0].get("conversation_id")
+                if conv_id:
+                    import uuid
+                    from datetime import datetime
+                    self._supabase.table("messages").insert({
+                        "message_id": str(uuid.uuid4()),
+                        "conversation_id": conv_id,
+                        "role": "assistant",
+                        "type": "system",
+                        "content": f"Case priority updated to {priority.capitalize()}",
+                        "created_at": datetime.utcnow().isoformat()
+                    }).execute()
+
             return True
         except Exception as exc:
             logger.error(f"❌ Failed to update ticket priority | {ticket_id} | {exc}")
@@ -643,7 +663,7 @@ class HitlService:
         Includes user and conversation details.
         """
         try:
-            response = self._supabase.table("hitl_tickets") \
+            query = self._supabase.table("hitl_tickets") \
                 .select(
                     "*, "
                     "users!hitl_tickets_user_id_fkey("
@@ -654,8 +674,8 @@ class HitlService:
                 ) \
                 .eq("assigned_lawyer_id", lawyer_id) \
                 .in_("status", ["assigned", "booked"]) \
-                .order("assigned_at", desc=True) \
-                .execute()
+                .order("assigned_at", desc=True)
+            response = self._supabase.execute_query(query)
             
             data = response.data or []
             # Flatten for cleaner consumption
@@ -704,7 +724,7 @@ class HitlService:
         Includes the assigned lawyer's name if the ticket is claimed.
         """
         try:
-            response = self._supabase.table("hitl_tickets") \
+            query = self._supabase.table("hitl_tickets") \
                 .select(
                     "*, "
                     "lawyer:users!hitl_tickets_assigned_lawyer_id_fkey("
@@ -714,8 +734,8 @@ class HitlService:
                     "hitl_responses(content)"
                 ) \
                 .eq("user_id", user_id) \
-                .order("created_at", desc=True) \
-                .execute()
+                .order("created_at", desc=True)
+            response = self._supabase.execute_query(query)
             
             # Clean up the lawyer name for easier frontend consumption
             data = response.data or []
@@ -739,12 +759,12 @@ class HitlService:
 
                 # Check for unread messages sent by the lawyer
                 try:
-                    unread_resp = self._supabase.table("ticket_messages") \
+                    msg_query = self._supabase.table("ticket_messages") \
                         .select("message_id", count="exact") \
                         .eq("ticket_id", ticket.get("ticket_id")) \
                         .eq("sender_role", "lawyer") \
-                        .eq("is_read", False) \
-                        .execute()
+                        .eq("is_read", False)
+                    unread_resp = self._supabase.execute_query(msg_query)
                     ticket["has_unread_messages"] = (unread_resp.count or 0) > 0
                 except Exception as msg_exc:
                     logger.warning(f"⚠️ Failed to fetch unread messages count for ticket {ticket.get('ticket_id')} | {msg_exc}")

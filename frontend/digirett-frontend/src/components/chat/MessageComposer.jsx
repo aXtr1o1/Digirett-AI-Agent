@@ -372,6 +372,22 @@ const MessageComposer = ({
                       </div>
                     </div>
 
+                    {/* Priority Adjustment Disclaimer */}
+                    <div style={{ 
+                      fontSize: "9px", 
+                      color: isDark ? "#9ca3af" : "#4b5563", 
+                      lineHeight: "1.4", 
+                      marginTop: "12px", 
+                      marginBottom: "16px",
+                      padding: "10px",
+                      borderRadius: "8px",
+                      backgroundColor: isDark ? "rgba(255, 255, 255, 0.02)" : "rgba(0, 0, 0, 0.02)",
+                      border: isDark ? "1px solid rgba(255, 255, 255, 0.05)" : "1px solid rgba(0, 0, 0, 0.05)",
+                      textAlign: "left"
+                    }}>
+                      <span style={{ fontWeight: "700", color: isDark ? "#f3f4f6" : "#1f2937" }}>Please note:</span> The assigned legal professional will review the details of your matter and may adjust the priority level based on their assessment of its urgency.
+                    </div>
+
                     {/* Urgent Reason Textarea */}
                     {escalatePriority === "urgent" && (
                       <div style={{ marginBottom: "16px" }}>

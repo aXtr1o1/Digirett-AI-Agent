@@ -1007,24 +1007,6 @@ export default function LawyerDashboard() {
                                   <div>
                                     <p className="text-sm font-bold flex items-center gap-2">
                                       {ticket.user_display_name || "Anonymous"}
-                                      {ticket.priority === "urgent" && (
-                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
-                                          isDark 
-                                            ? "bg-rose-955/20 border-rose-900/30 text-rose-400" 
-                                            : "bg-rose-50 border-rose-100 text-rose-600"
-                                        }`}>
-                                          Urgent
-                                        </span>
-                                      )}
-                                      {ticket.priority === "high" && (
-                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
-                                          isDark 
-                                            ? "bg-amber-955/20 border-amber-900/30 text-amber-400" 
-                                            : "bg-amber-50 border-amber-100 text-amber-600"
-                                        }`}>
-                                          High
-                                        </span>
-                                      )}
                                     </p>
                                     <p className="text-[10px] text-slate-500">{ticket.user_email}</p>
                                     {ticket.detected_domain && (

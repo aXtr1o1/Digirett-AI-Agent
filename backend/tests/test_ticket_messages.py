@@ -83,6 +83,7 @@ class TestTicketMessages(unittest.TestCase):
         import db.supabase_client
         import api.routes.ticket_messages
         self.mock_supabase = MagicMock()
+        self.mock_supabase.execute_query.side_effect = lambda query, **kwargs: query.execute()
         db.supabase_client.get_supabase = lambda: self.mock_supabase
         api.routes.ticket_messages.get_supabase = lambda: self.mock_supabase
         
