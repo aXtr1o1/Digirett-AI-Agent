@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { StopCircle, Paperclip, ArrowUp, X, Scale, Check, CheckCircle, Loader2 } from "lucide-react";
 
 const MessageComposer = ({
@@ -19,6 +20,9 @@ const MessageComposer = ({
   const [isEscalating, setIsEscalating] = useState(false);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [localEscalated, setLocalEscalated] = useState(false);
+  const [escalatePriority, setEscalatePriority] = useState("normal");
+  const [escalateUrgentReason, setEscalateUrgentReason] = useState("");
+  const [escalateError, setEscalateError] = useState("");
 
   // Sync localEscalated state with parent isEscalated prop
   useEffect(() => {
@@ -27,6 +31,15 @@ const MessageComposer = ({
       setShowEscalateConfirm(false);
     }
   }, [isEscalated]);
+
+  // Reset form and errors when modal is opened
+  useEffect(() => {
+    if (showEscalateConfirm) {
+      setEscalateError("");
+      setEscalatePriority("normal");
+      setEscalateUrgentReason("");
+    }
+  }, [showEscalateConfirm]);
 
   const isBusy = disabled || isProcessingDoc;
   const isInputBlocked = isBusy || (disabled && !isStreaming);
@@ -216,105 +229,251 @@ const MessageComposer = ({
         {/* Lawyer Escalation Button (Only for Users) */}
         {showEscalate && (
           <div className="relative">
-            {showEscalateConfirm && (
+            {showEscalateConfirm && createPortal(
               <div style={{
-                position: "absolute",
-                bottom: "calc(100% + 12px)",
-                left: "0",
-                width: "256px",
-                padding: "16px",
-                borderRadius: "16px",
-                boxShadow: "0 10px 30px rgba(0, 0, 0, 0.3)",
-                backgroundColor: isDark ? "#1a1a1a" : "#ffffff",
-                border: isDark ? "1px solid rgba(42, 42, 42, 0.5)" : "1px solid rgba(229, 231, 235, 0.5)",
-                zIndex: 50,
+                position: "fixed",
+                inset: 0,
+                backgroundColor: isDark ? "rgba(0, 0, 0, 0.6)" : "rgba(0, 0, 0, 0.4)",
+                backdropFilter: "blur(4px)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 9999,
               }}>
-                {isEscalated || localEscalated ? (
-                  <div style={{ textAlign: "center" }}>
-                    <CheckCircle size={24} style={{ color: "#2563eb", marginBottom: "8px" }} />
-                    <p style={{ fontSize: "14px", fontWeight: "600", color: isDark ? "#ffffff" : "#111827", marginBottom: "4px" }}>
-                      Already Booked
-                    </p>
-                    <p style={{ fontSize: "12px", color: isDark ? "#9ca3af" : "#6b7280", marginBottom: "12px" }}>
-                      You have already requested a legal consultation for this matter.
-                    </p>
-                    <button
-                      onClick={() => setShowEscalateConfirm(false)}
-                      style={{
-                        width: "100%",
-                        padding: "8px",
-                        backgroundColor: isDark ? "#2a2a2a" : "#f3f4f6",
-                        color: isDark ? "#9ca3af" : "#6b7280",
-                        fontSize: "12px",
-                        fontWeight: "700",
-                        borderRadius: "8px",
-                        border: "none",
-                        cursor: "pointer"
-                      }}
-                    >
-                      Close
-                    </button>
-                  </div>
-                ) : messageCount === 0 ? (
-                  <div style={{ textAlign: "center" }}>
-                    <p style={{ fontSize: "14px", fontWeight: "600", color: isDark ? "#ffffff" : "#111827", marginBottom: "6px" }}>
-                      Begin your enquiry
-                    </p>
-                    <p style={{ fontSize: "12px", color: isDark ? "#9ca3af" : "#6b7280", marginBottom: "12px", lineHeight: "1.5" }}>
-                      Please provide a brief overview of your legal requirements so our professionals can review them prior to your consultation.
-                    </p>
-                    <button
-                      onClick={() => setShowEscalateConfirm(false)}
-                      style={{
-                        width: "100%",
-                        padding: "8px",
-                        backgroundColor: "#2563eb",
-                        color: "#ffffff",
-                        fontSize: "12px",
-                        fontWeight: "700",
-                        borderRadius: "8px",
-                        border: "none",
-                        cursor: "pointer"
-                      }}
-                    >
-                      Got it
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <p style={{ fontSize: "14px", marginBottom: "12px", fontWeight: "500", color: isDark ? "#d1d5db" : "#374151" }}>
+                <div style={{
+                  width: "420px",
+                  maxWidth: "90%",
+                  padding: "24px",
+                  borderRadius: "24px",
+                  boxShadow: "0 20px 40px rgba(0, 0, 0, 0.3)",
+                  backgroundColor: isDark ? "#111827" : "#ffffff",
+                  border: isDark ? "1px solid #1f2937" : "1px solid #e5e7eb",
+                }}>
+                  {isEscalated || localEscalated ? (
+                    <div style={{ textAlign: "center" }}>
+                      <CheckCircle size={32} style={{ color: "#2563eb", marginBottom: "12px" }} />
+                      <p style={{ fontSize: "16px", fontWeight: "600", color: isDark ? "#ffffff" : "#111827", marginBottom: "6px" }}>
+                        Already Booked
+                      </p>
+                      <p style={{ fontSize: "13px", color: isDark ? "#9ca3af" : "#6b7280", marginBottom: "16px", lineHeight: "1.5" }}>
+                        You have already requested a legal consultation for this matter.
+                      </p>
+                      <button
+                        onClick={() => setShowEscalateConfirm(false)}
+                        style={{
+                          width: "100%",
+                          padding: "10px",
+                          backgroundColor: isDark ? "#1f2937" : "#f3f4f6",
+                          color: isDark ? "#d1d5db" : "#4b5563",
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          borderRadius: "10px",
+                          border: "none",
+                          cursor: "pointer",
+                          transition: "all 0.2s"
+                        }}
+                      >
+                        Close
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <p style={{ fontSize: "15px", marginBottom: "20px", fontWeight: "700", color: isDark ? "#f3f4f6" : "#1f2937", lineHeight: "1.4" }}>
                       Would you like to consult with a professional regarding this matter?
                     </p>
+
+                    {/* Vertical Priority Cards */}
+                    <div style={{ marginBottom: "16px" }}>
+                      <label style={{ display: "block", fontSize: "10px", fontWeight: "800", color: isDark ? "#9ca3af" : "#6b7280", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        Select Priority
+                      </label>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                        {[
+                          { 
+                            value: "normal", 
+                            label: "Normal", 
+                            desc: "Routine legal questions or document review.",
+                            dotColor: isDark ? "#64748b" : "#94a3b8",
+                            activeBorder: isDark ? "#9ca3af" : "#4b5563",
+                            activeBg: isDark ? "rgba(156, 163, 175, 0.05)" : "rgba(107, 114, 128, 0.03)"
+                          },
+                          { 
+                            value: "high", 
+                            label: "High", 
+                            desc: "Important issue that should be handled soon.",
+                            dotColor: "#f59e0b",
+                            activeBorder: "#f59e0b",
+                            activeBg: isDark ? "rgba(245, 158, 11, 0.05)" : "rgba(245, 158, 11, 0.03)"
+                          },
+                          { 
+                            value: "urgent", 
+                            label: "Urgent", 
+                            desc: "Immediate legal emergency.",
+                            dotColor: "#ef4444",
+                            activeBorder: "#ef4444",
+                            activeBg: isDark ? "rgba(239, 68, 68, 0.05)" : "rgba(239, 68, 68, 0.03)"
+                          }
+                        ].map((p) => {
+                          const isActive = escalatePriority === p.value;
+                          return (
+                            <div
+                              key={p.value}
+                              onClick={() => {
+                                setEscalatePriority(p.value);
+                                if (p.value !== "urgent") setEscalateUrgentReason("");
+                              }}
+                              style={{
+                                display: "flex",
+                                alignItems: "start",
+                                gap: "10px",
+                                padding: "10px 12px",
+                                borderRadius: "12px",
+                                border: isActive ? `1.5px solid ${p.activeBorder}` : (isDark ? "1px solid #1f2937" : "1px solid #e5e7eb"),
+                                backgroundColor: isActive ? p.activeBg : "transparent",
+                                cursor: "pointer",
+                                transition: "all 0.15s ease",
+                              }}
+                            >
+                              {/* Left Dot Indicator */}
+                              <div style={{ display: "flex", alignItems: "center", height: "16px", marginTop: "2px" }}>
+                                <span style={{
+                                  height: "8px",
+                                  width: "8px",
+                                  borderRadius: "50%",
+                                  backgroundColor: p.dotColor,
+                                  boxShadow: isActive ? `0 0 8px ${p.dotColor}` : "none",
+                                  display: "inline-block"
+                                }} />
+                              </div>
+                              {/* Right Text details */}
+                              <div style={{ flex: 1, textAlign: "left" }}>
+                                <div style={{ 
+                                  fontSize: "12px", 
+                                  fontWeight: "700", 
+                                  color: isActive 
+                                    ? (isDark ? "#f3f4f6" : "#1f2937") 
+                                    : (isDark ? "#9ca3af" : "#4b5563") 
+                                }}>
+                                  {p.label}
+                                </div>
+                                <div style={{ 
+                                  fontSize: "10px", 
+                                  fontWeight: "500", 
+                                  color: isDark ? "#6b7280" : "#9ca3af",
+                                  marginTop: "2px",
+                                  lineHeight: "1.3"
+                                }}>
+                                  {p.desc}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Priority Adjustment Disclaimer */}
+                    <div style={{ 
+                      fontSize: "9px", 
+                      color: isDark ? "#9ca3af" : "#4b5563", 
+                      lineHeight: "1.4", 
+                      marginTop: "12px", 
+                      marginBottom: "16px",
+                      padding: "10px",
+                      borderRadius: "8px",
+                      backgroundColor: isDark ? "rgba(255, 255, 255, 0.02)" : "rgba(0, 0, 0, 0.02)",
+                      border: isDark ? "1px solid rgba(255, 255, 255, 0.05)" : "1px solid rgba(0, 0, 0, 0.05)",
+                      textAlign: "left"
+                    }}>
+                      <span style={{ fontWeight: "700", color: isDark ? "#f3f4f6" : "#1f2937" }}>Please note:</span> The assigned legal professional will review the details of your matter and may adjust the priority level based on their assessment of its urgency.
+                    </div>
+
+                    {/* Urgent Reason Textarea */}
+                    {escalatePriority === "urgent" && (
+                      <div style={{ marginBottom: "16px" }}>
+                        <label style={{ display: "block", fontSize: "10px", fontWeight: "800", color: isDark ? "#fca5a5" : "#ef4444", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          Urgent Reason <span style={{ color: "#ef4444" }}>*</span>
+                        </label>
+                        <textarea
+                          value={escalateUrgentReason}
+                          onChange={(e) => setEscalateUrgentReason(e.target.value)}
+                          placeholder="Please describe why this is urgent..."
+                          rows={2}
+                          style={{
+                            width: "100%",
+                            padding: "10px",
+                            borderRadius: "10px",
+                            border: isDark ? "1.5px solid #ef4444" : "1.5px solid #fca5a5",
+                            backgroundColor: isDark ? "#111827" : "#fff",
+                            color: isDark ? "#fca5a5" : "#991b1b",
+                            fontSize: "12px",
+                            resize: "none",
+                            outline: "none",
+                            lineHeight: "1.4",
+                            fontFamily: "inherit"
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Error Message */}
+                    {escalateError && (
+                      <div style={{
+                        padding: "10px 12px",
+                        backgroundColor: isDark ? "rgba(239, 68, 68, 0.1)" : "rgba(239, 68, 68, 0.05)",
+                        border: "1px solid rgba(239, 68, 68, 0.2)",
+                        borderRadius: "12px",
+                        color: "#f87171",
+                        fontSize: "11px",
+                        fontWeight: "600",
+                        marginBottom: "16px",
+                        lineHeight: "1.4",
+                        textAlign: "left"
+                      }}>
+                        {escalateError}
+                      </div>
+                    )}
+
                     <div style={{ display: "flex", gap: "8px" }}>
                       <button
                         onClick={async () => {
+                          if (escalatePriority === "urgent" && !escalateUrgentReason.trim()) {
+                            return;
+                          }
                           setIsEscalating(true);
+                          setEscalateError("");
                           try {
-                            await onEscalate();
+                            await onEscalate("", escalatePriority, escalatePriority === "urgent" ? escalateUrgentReason : null);
                             setLocalEscalated(true);
                             setShowEscalateConfirm(false);
                             setShowSuccessToast(true);
                             setTimeout(() => setShowSuccessToast(false), 3000);
                           } catch (err) {
                             console.error("Escalation failed:", err);
+                            setEscalateError(err.message || "Failed to escalate. Please try again.");
                           } finally {
                             setIsEscalating(false);
                           }
                         }}
-                        disabled={isEscalating}
+                        disabled={isEscalating || (escalatePriority === "urgent" && !escalateUrgentReason.trim())}
                         style={{
                           flex: 1,
-                          padding: "8px",
-                          backgroundColor: "#2563eb",
-                          color: "#ffffff",
+                          padding: "10px",
+                          backgroundColor: (escalatePriority === "urgent" && !escalateUrgentReason.trim()) 
+                            ? (isDark ? "#1f2937" : "#f3f4f6") 
+                            : "#2563eb",
+                          color: (escalatePriority === "urgent" && !escalateUrgentReason.trim()) 
+                            ? (isDark ? "#4b5563" : "#9ca3af") 
+                            : "#ffffff",
                           fontSize: "12px",
                           fontWeight: "700",
-                          borderRadius: "8px",
+                          borderRadius: "10px",
                           border: "none",
-                          cursor: "pointer",
+                          cursor: (escalatePriority === "urgent" && !escalateUrgentReason.trim()) ? "default" : "pointer",
                           display: "flex",
                           alignItems: "center",
-                          justifyContent: "center"
+                          justifyContent: "center",
+                          transition: "all 0.2s"
                         }}
                       >
                         {isEscalating ? <Loader2 className="h-3 w-3 animate-spin" /> : "Confirm"}
@@ -323,14 +482,15 @@ const MessageComposer = ({
                         onClick={() => setShowEscalateConfirm(false)}
                         style={{
                           flex: 1,
-                          padding: "8px",
-                          backgroundColor: isDark ? "#2a2a2a" : "#f3f4f6",
-                          color: isDark ? "#9ca3af" : "#6b7280",
+                          padding: "10px",
+                          backgroundColor: isDark ? "#1f2937" : "#f3f4f6",
+                          color: isDark ? "#d1d5db" : "#4b5563",
                           fontSize: "12px",
                           fontWeight: "700",
-                          borderRadius: "8px",
+                          borderRadius: "10px",
                           border: "none",
-                          cursor: "pointer"
+                          cursor: "pointer",
+                          transition: "all 0.2s"
                         }}
                       >
                         Cancel
@@ -339,7 +499,9 @@ const MessageComposer = ({
                   </>
                 )}
               </div>
-            )}
+            </div>,
+            document.body
+          )}
 
             <button
               type="button"

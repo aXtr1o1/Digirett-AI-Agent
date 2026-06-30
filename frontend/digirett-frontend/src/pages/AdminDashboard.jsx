@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Menu, Plus, X, Calendar, User,
   ShieldCheck, Scale, Crown, Clock, AlertTriangle, Send,
   UserX, UserCheck, Trash2, Sun, Moon, RefreshCw, BarChart3,
-  Activity, Star
+  Activity, Star, ChevronDown
 } from "lucide-react";
 import { useTheme } from "../providers/ThemeProvider";
 import { Link, useNavigate, useSearchParams, useLocation } from "react-router-dom";
@@ -34,6 +34,51 @@ const COLORS = [
   '#eab308', // Yellow
   '#ef4444', // Red
   '#a855f7', // Purple
+];
+
+const DOMAIN_DISPLAY_NAMES = {
+  "arbeidsrett": "Employment Law (Arbeidsrett)",
+  "arsregnskap_og_selskapsrapportering": "Financial Statements & Reporting (Årsregnskap og Selskapsrapportering)",
+  "avtalerett": "Contract Law (Avtalerett)",
+  "inkasso_og_tvangsfullbyrdelse": "Debt Collection & Enforcement (Inkasso og Tvangsfullbyrdelse)",
+  "konkursrett_og_insolvens": "Bankruptcy & Insolvency (Konkursrett og Insolvens)",
+  "manda_fusjon_fisjon": "M&A, Mergers & Acquisitions (M&A, Fusjon, Fisjon)",
+  "obligasjonsrett": "Law of Obligations (Obligasjonsrett)",
+  "panterett_og_sikkerhetsrett": "Liens & Security Rights (Panterett og Sikkerhetsrett)",
+  "pengekravsrett_fordringer": "Monetary Claims & Debt (Pengekravsrett og Fordringer)",
+  "personvern_gdpr_business_compliance": "Privacy & GDPR Compliance (Personvern, GDPR & Compliance)",
+  "selskapsrett": "Company Law (Selskapsrett)",
+  "tvistelosning_smb": "Dispute Resolution for SMBs (Tvisteløsning, SMB)"
+};
+
+const OTHER_DOMAIN_DISPLAY_NAMES = {
+  "straffeloven": "Criminal Law (Straffeloven)",
+  "strafferett": "Criminal Law (Strafferett)",
+  "familierett": "Family Law (Familierett)",
+  "arverett": "Inheritance Law (Arverett)",
+  "skatterett": "Tax Law (Skatterett)",
+  "utlendingsrett": "Immigration Law (Utlendingsrett)",
+  "forvaltningsrett": "Administrative Law (Forvaltningsrett)",
+  "tingsrett": "Property Law (Tingsrett)",
+  "erstatningsrett": "Tort Law (Erstatningsrett)",
+  "immaterialrett": "Intellectual Property Law (Immaterialrett)",
+  "entrepriserett": "Construction Law (Entrepriserett)",
+  "miljorett": "Environmental Law (Miljørett)"
+};
+
+const LEGAL_DOMAINS = [
+  { key: "arbeidsrett", en: "Employment Law", no: "Arbeidsrett" },
+  { key: "arsregnskap_og_selskapsrapportering", en: "Financial Statements & Reporting", no: "Årsregnskap og Selskapsrapportering" },
+  { key: "avtalerett", en: "Contract Law", no: "Avtalerett" },
+  { key: "inkasso_og_tvangsfullbyrdelse", en: "Debt Collection & Enforcement", no: "Inkasso og Tvangsfullbyrdelse" },
+  { key: "konkursrett_og_insolvens", en: "Bankruptcy & Insolvency", no: "Konkursrett og Insolvens" },
+  { key: "manda_fusjon_fisjon", en: "M&A, Mergers & Acquisitions", no: "M&A, Fusjon, Fisjon" },
+  { key: "obligasjonsrett", en: "Law of Obligations", no: "Obligasjonsrett" },
+  { key: "panterett_og_sikkerhetsrett", en: "Liens & Security Rights", no: "Panterett og Sikkerhetsrett" },
+  { key: "pengekravsrett_fordringer", en: "Monetary Claims & Debt", no: "Pengekravsrett og Fordringer" },
+  { key: "personvern_gdpr_business_compliance", en: "Privacy & GDPR Compliance", no: "Personvern, GDPR & Compliance" },
+  { key: "selskapsrett", en: "Company Law", no: "Selskapsrett" },
+  { key: "tvistelosning_smb", en: "Dispute Resolution for SMBs", no: "Tvisteløsning, SMB" }
 ];
 
 export default function AdminDashboard() {
@@ -81,6 +126,109 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const [confirmModal, setConfirmModal] = useState({ show: false, user: null });
   const [viewUser, setViewUser] = useState(null);
+  const [editingSpecializationLabel, setEditingSpecializationLabel] = useState("");
+  const [editingExpertiseDomains, setEditingExpertiseDomains] = useState([]);
+  const [savingSpecialization, setSavingSpecialization] = useState(false);
+  const [activeSummaryModal, setActiveSummaryModal] = useState(null);
+  const [openDropdownUserId, setOpenDropdownUserId] = useState(null);
+
+  useEffect(() => {
+    if (viewUser && viewUser.role === 'lawyer') {
+      const lp = viewUser.lawyer_profiles || {};
+      setEditingSpecializationLabel(lp.specialization_label || "");
+      setEditingExpertiseDomains(lp.expertise_domains || []);
+    } else {
+      setEditingSpecializationLabel("");
+      setEditingExpertiseDomains([]);
+    }
+  }, [viewUser]);
+
+  const handleSaveSpecializationOverride = async () => {
+    if (!viewUser || viewUser.role !== 'lawyer') return;
+    setSavingSpecialization(true);
+    try {
+      await adminService.overrideSpecialization(
+        viewUser.user_id,
+        editingExpertiseDomains,
+        editingSpecializationLabel
+      );
+      setQueueMsg({ type: "success", text: "Lawyer specialization updated successfully." });
+
+      setUsers(prev => prev.map(u => {
+        if (u.user_id === viewUser.user_id) {
+          return {
+            ...u,
+            lawyer_profiles: {
+              ...u.lawyer_profiles,
+              specialization_label: editingSpecializationLabel,
+              expertise_domains: editingExpertiseDomains
+            }
+          };
+        }
+        return u;
+      }));
+
+      setViewUser(prev => ({
+        ...prev,
+        lawyer_profiles: {
+          ...prev.lawyer_profiles,
+          specialization_label: editingSpecializationLabel,
+          expertise_domains: editingExpertiseDomains
+        }
+      }));
+    } catch (err) {
+      console.error("Failed to override specialization:", err);
+      setQueueMsg({ type: "error", text: err.message || "Failed to update specialization." });
+    } finally {
+      setSavingSpecialization(false);
+    }
+  };
+
+  const [specLawyer, setSpecLawyer] = useState(null);
+  const [specSpecializationLabel, setSpecSpecializationLabel] = useState("");
+  const [specExpertiseDomains, setSpecExpertiseDomains] = useState([]);
+  const [savingSpec, setSavingSpec] = useState(false);
+
+  const handleSaveSpecPageOverride = async () => {
+    if (!specLawyer || specLawyer.role !== 'lawyer') return;
+    setSavingSpec(true);
+    try {
+      await adminService.overrideSpecialization(
+        specLawyer.user_id,
+        specExpertiseDomains,
+        specSpecializationLabel
+      );
+      setQueueMsg({ type: "success", text: "Lawyer specialization updated successfully." });
+
+      setUsers(prev => prev.map(u => {
+        if (u.user_id === specLawyer.user_id) {
+          return {
+            ...u,
+            lawyer_profiles: {
+              ...u.lawyer_profiles,
+              specialization_label: specSpecializationLabel,
+              expertise_domains: specExpertiseDomains
+            }
+          };
+        }
+        return u;
+      }));
+
+      setSpecLawyer(prev => ({
+        ...prev,
+        lawyer_profiles: {
+          ...prev.lawyer_profiles,
+          specialization_label: specSpecializationLabel,
+          expertise_domains: specExpertiseDomains
+        }
+      }));
+    } catch (err) {
+      console.error("Failed to override specialization:", err);
+      setQueueMsg({ type: "error", text: err.message || "Failed to update specialization." });
+    } finally {
+      setSavingSpec(false);
+    }
+  };
 
   // Scoped Messages
   const [inviteMsg, setInviteMsg] = useState(null);
@@ -157,7 +305,34 @@ export default function AdminDashboard() {
       setTickets(ticketsData);
       setAuditLogs(logsData);
       setHealthStatus(healthData);
-      setDomainAnalytics(domainData);
+
+      // Format domain analytics names for display
+      const formattedDomainData = { ...domainData };
+      if (formattedDomainData.distribution && Array.isArray(formattedDomainData.distribution)) {
+        formattedDomainData.distribution = formattedDomainData.distribution.map(entry => {
+          const lowerKey = entry.name.toLowerCase();
+          const isCanonical = lowerKey in DOMAIN_DISPLAY_NAMES;
+
+          let displayName = entry.name;
+          if (isCanonical) {
+            displayName = DOMAIN_DISPLAY_NAMES[lowerKey];
+          } else if (lowerKey in OTHER_DOMAIN_DISPLAY_NAMES) {
+            displayName = OTHER_DOMAIN_DISPLAY_NAMES[lowerKey];
+          } else {
+            // Capitalize and format unknown custom domains: "custom_domain" -> "Custom Domain (custom_domain)"
+            const capitalized = entry.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            displayName = `${capitalized} (${entry.name})`;
+          }
+
+          return {
+            ...entry,
+            rawKey: lowerKey,
+            isCanonical,
+            name: displayName
+          };
+        });
+      }
+      setDomainAnalytics(formattedDomainData);
 
       // Also check for new notifications during main fetch
       checkInvitationStatus();
@@ -337,6 +512,7 @@ export default function AdminDashboard() {
 
   // Derived Stats
   const totalUsers = users.length;
+  const systemAdminCount = users.filter(u => u.role === 'system_admin').length;
   const lawyerCount = users.filter(u => u.role === 'lawyer').length;
   const adminCount = users.filter(u => u.role === 'admin').length;
   const standardUserCount = users.filter(u => u.role === 'user' || !u.role).length;
@@ -347,9 +523,10 @@ export default function AdminDashboard() {
   // ── Chart Data Processors ──────────────────────────────────────────
 
   const roleData = [
-    { name: 'Admins', value: adminCount, color: '#EC6B56' },
-    { name: 'Lawyers', value: lawyerCount, color: '#FFC154' },
-    { name: 'Users', value: standardUserCount, color: '#47B39C' },
+    { name: 'System Admins', value: systemAdminCount, color: '#ef4444' },
+    { name: 'Admins', value: adminCount, color: '#8b5cf6' },
+    { name: 'Lawyers', value: lawyerCount, color: '#3b82f6' },
+    { name: 'Users', value: standardUserCount, color: '#10b981' },
   ];
 
   const statusData = [
@@ -524,6 +701,14 @@ export default function AdminDashboard() {
           </button>
 
           <button
+            onClick={() => { setActiveView("specialization"); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "specialization" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
+          >
+            <Scale size={18} />
+            Lawyer Specialization
+          </button>
+
+          <button
             onClick={() => { setActiveView("queue"); setIsSidebarOpen(false); }}
             className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "queue" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
           >
@@ -536,7 +721,7 @@ export default function AdminDashboard() {
             className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "distribution" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
           >
             <BarChart3 size={18} />
-            Inquiry Distribution
+            Classified Category
           </button>
 
           {isAuthorized && (
@@ -613,7 +798,9 @@ export default function AdminDashboard() {
                   ? (isSystemAdmin ? 'System Admin Settings' : 'Admin Settings')
                   : activeView === 'calendar'
                     ? 'System Admin Schedule'
-                    : activeView.replace('-', ' ')}
+                    : activeView === 'distribution'
+                      ? 'Classified Categories'
+                      : activeView.replace('-', ' ')}
             </h2>
           </div>
 
@@ -698,9 +885,10 @@ export default function AdminDashboard() {
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300 pb-10">
 
               {/* KPI Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-6">
                 {[
-                  { label: "Administrators", value: adminCount, color: "purple" },
+                  { label: "System Admins", value: systemAdminCount, color: "red" },
+                  { label: "Admins", value: adminCount, color: "purple" },
                   { label: "Active Lawyers", value: lawyerCount, color: "blue" },
                   { label: "Standard Users", value: standardUserCount, color: "green" },
                   { label: "Open Tickets", value: tickets.filter(t => t.status === 'open' && !t.assigned_lawyer_id).length, color: "orange" },
@@ -869,11 +1057,11 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Row 4: Inquiry Domain Distribution */}
+              {/* Row 4: Classified Categories */}
               <div className="grid grid-cols-1 gap-8">
-                {/* Inquiry Domain Distribution Section */}
+                {/* Classified Categories Section */}
                 <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">User Inquiry Domain Distribution</h3>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Classified Categories</h3>
                   <div className="h-[300px] w-full">
                     {domainAnalytics && domainAnalytics.distribution && domainAnalytics.distribution.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
@@ -1172,10 +1360,12 @@ export default function AdminDashboard() {
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className={`text-left ${isDark ? "bg-slate-950/50" : "bg-slate-50/50"}`}>
+                      <tr className={`text-left ${isDark ? "bg-slate-955/50" : "bg-slate-50/50"}`}>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Lawyer Specialization</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Access Role</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Status</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Availability</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">User Details</th>
                         {isAuthorized && <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Actions</th>}
                       </tr>
@@ -1183,7 +1373,7 @@ export default function AdminDashboard() {
                     <tbody className={`divide-y ${isDark ? "divide-slate-800" : "divide-slate-100"}`}>
                       {loading ? (
                         <tr>
-                          <td colSpan={isAuthorized ? 5 : 4} className="px-8 py-20 text-center">
+                          <td colSpan={isAuthorized ? 7 : 6} className="px-8 py-20 text-center">
                             <Loader2 size={32} className="animate-spin text-indigo-500 mx-auto opacity-20" />
                           </td>
                         </tr>
@@ -1202,6 +1392,55 @@ export default function AdminDashboard() {
                               </div>
                             </td>
                             <td className="px-8 py-6">
+                              {user.role === 'lawyer' && user.lawyer_profiles ? (
+                                <div className="relative">
+                                  {(user.lawyer_profiles.expertise_domains && user.lawyer_profiles.expertise_domains.length > 0) ? (
+                                    <div className="relative inline-block text-left">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setOpenDropdownUserId(openDropdownUserId === user.user_id ? null : user.user_id);
+                                        }}
+                                        className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider border transition-all ${openDropdownUserId === user.user_id
+                                          ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-600/10"
+                                          : (isDark ? "bg-slate-850 border-slate-750 text-slate-300 hover:bg-slate-800" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50")
+                                          }`}
+                                      >
+                                        <span>{user.lawyer_profiles.expertise_domains.length} {user.lawyer_profiles.expertise_domains.length === 1 ? "Domain" : "Domains"}</span>
+                                        <ChevronDown size={10} className={`transition-transform duration-200 ${openDropdownUserId === user.user_id ? "rotate-180" : ""}`} />
+                                      </button>
+
+                                      {openDropdownUserId === user.user_id && (
+                                        <>
+                                          <div
+                                            className="fixed inset-0 z-40"
+                                            onClick={() => setOpenDropdownUserId(null)}
+                                          />
+                                          <div className={`absolute left-0 mt-2 w-56 rounded-xl border shadow-2xl z-50 p-2 space-y-1 animate-in fade-in slide-in-from-top-1 duration-150 ${isDark ? "bg-slate-900 border-slate-800 shadow-black/40" : "bg-white border-slate-200"
+                                            }`}>
+                                            {user.lawyer_profiles.expertise_domains.map((dom, i) => (
+                                              <div
+                                                key={i}
+                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border truncate ${isDark ? "bg-slate-950 border-slate-850 text-slate-300" : "bg-slate-50 border-slate-100 text-slate-700"
+                                                  }`}
+                                                title={DOMAIN_DISPLAY_NAMES[dom.toLowerCase()] || dom}
+                                              >
+                                                {DOMAIN_DISPLAY_NAMES[dom.toLowerCase()] || dom}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-[9px] text-slate-400 italic">No domains set</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 dark:text-slate-600 font-bold">—</span>
+                              )}
+                            </td>
+                            <td className="px-8 py-6">
                               <span className={`inline-flex items-center px-4 py-1.5 rounded-full text-[10px] font-black tracking-widest uppercase border ${user.role === 'admin'
                                 ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
                                 user.role === 'lawyer'
@@ -1218,6 +1457,32 @@ export default function AdminDashboard() {
                                   {user.status === 'inactive' ? 'Inactive' : (user.status || 'Active')}
                                 </span>
                               </div>
+                            </td>
+                            <td className="px-8 py-6">
+                              {user.role === 'lawyer' ? (
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`h-1.5 w-1.5 rounded-full ${
+                                      user.lawyer_profiles?.availability_status === 'available'
+                                        ? 'bg-emerald-550 animate-pulse'
+                                        : user.lawyer_profiles?.availability_status === 'busy'
+                                          ? 'bg-amber-500'
+                                          : 'bg-red-500'
+                                    }`}
+                                  />
+                                  <span className={`text-[10px] font-black uppercase tracking-widest ${
+                                    user.lawyer_profiles?.availability_status === 'available'
+                                      ? 'text-emerald-500'
+                                      : user.lawyer_profiles?.availability_status === 'busy'
+                                        ? 'text-amber-500'
+                                        : 'text-red-500'
+                                  }`}>
+                                    {user.lawyer_profiles?.availability_status || 'Available'}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 dark:text-slate-650 font-bold">—</span>
+                              )}
                             </td>
 
                             <td className="px-8 py-6 text-right">
@@ -1319,7 +1584,11 @@ export default function AdminDashboard() {
                             <td className="px-8 py-6">
                               {!ticket.assigned_lawyer_id && ticket.conversation_summary ? (
                                 <div className="max-w-xs">
-                                  <p className="text-[11px] text-slate-600 dark:text-slate-400 italic leading-relaxed line-clamp-2">
+                                  <p
+                                    onClick={() => setActiveSummaryModal(ticket.conversation_summary)}
+                                    className="text-[11px] text-slate-600 dark:text-slate-400 italic leading-relaxed line-clamp-2 cursor-pointer hover:text-indigo-500 hover:underline transition-all"
+                                    title="Click to view full summary"
+                                  >
                                     "{ticket.conversation_summary}"
                                   </p>
                                 </div>
@@ -1363,54 +1632,120 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* VIEW: INQUIRY DISTRIBUTION */}
-          {activeView === "distribution" && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-              <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                <h1 className="text-2xl font-bold">User Inquiry Domain Distribution</h1>
-                <p className="mt-1 text-sm text-slate-500">
-                  Analyze the classified domain distribution of all user queries and system interactions.
-                </p>
-              </div>
+          {/* VIEW: CLASSIFIED CATEGORIES */}
+          {activeView === "distribution" && (() => {
+            const allCanonicalKeys = Object.keys(DOMAIN_DISPLAY_NAMES);
+            const canonicalEntriesMap = {};
+            (domainAnalytics?.distribution || []).forEach(d => {
+              if (d.isCanonical) {
+                canonicalEntriesMap[d.rawKey] = d;
+              }
+            });
 
-              <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Classified Categories</h3>
-                <div className="w-full">
-                  {domainAnalytics && domainAnalytics.distribution && domainAnalytics.distribution.length > 0 ? (
-                    <div className="w-full overflow-y-auto pr-2 max-h-[450px] space-y-6">
-                      {domainAnalytics.distribution.map((entry, index) => {
-                        const pct = entry.percentage ?? 0;
-                        const color = COLORS[index % COLORS.length];
-                        return (
-                          <div key={index} className="space-y-2">
-                            <div className="flex items-center justify-between text-xs font-semibold">
-                              <span className={isDark ? "text-slate-200" : "text-slate-700"}>{entry.name}</span>
-                              <span className={isDark ? "text-slate-400" : "text-slate-500"}>
-                                {entry.queries} queries ({pct}%)
-                              </span>
+            const canonicalList = allCanonicalKeys.map(key => {
+              if (canonicalEntriesMap[key]) {
+                return canonicalEntriesMap[key];
+              }
+              return {
+                name: DOMAIN_DISPLAY_NAMES[key],
+                rawKey: key,
+                isCanonical: true,
+                queries: 0,
+                percentage: 0
+              };
+            }).sort((a, b) => b.queries - a.queries);
+
+            const otherList = (domainAnalytics?.distribution || []).filter(d => !d.isCanonical);
+
+            return (
+              <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                  <h1 className="text-2xl font-bold">Classified Categories</h1>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Analyze the distribution of user queries across different classified categories.
+                  </p>
+                </div>
+
+                <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+
+                    {/* Section 1: Default Legal Domains */}
+                    <div className="space-y-4">
+                      <h3 className="text-xs font-black uppercase tracking-widest text-indigo-500 flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                        Default Legal Domains (12)
+                      </h3>
+                      <div className="w-full overflow-y-auto pr-2 max-h-[550px] space-y-6">
+                        {canonicalList.map((entry, index) => {
+                          const pct = entry.percentage ?? 0;
+                          const color = COLORS[index % COLORS.length];
+                          return (
+                            <div key={index} className="space-y-2">
+                              <div className="flex items-center justify-between text-xs font-semibold">
+                                <span className={isDark ? "text-slate-200" : "text-slate-700"}>{entry.name}</span>
+                                <span className={isDark ? "text-slate-400" : "text-slate-500"}>
+                                  {entry.queries} queries ({pct}%)
+                                </span>
+                              </div>
+                              <div className={`w-full h-3 rounded-full ${isDark ? "bg-slate-800" : "bg-slate-100"}`}>
+                                <div
+                                  className="h-full rounded-full transition-all duration-500"
+                                  style={{
+                                    width: `${pct}%`,
+                                    backgroundColor: color
+                                  }}
+                                />
+                              </div>
                             </div>
-                            <div className={`w-full h-3 rounded-full ${isDark ? "bg-slate-800" : "bg-slate-100"}`}>
-                              <div
-                                className="h-full rounded-full transition-all duration-500"
-                                style={{
-                                  width: `${pct}%`,
-                                  backgroundColor: color
-                                }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
-                  ) : (
-                    <div className="h-[300px] flex items-center justify-center text-slate-500 text-xs font-bold italic opacity-40">
-                      No classified user queries recorded yet.
+
+                    {/* Section 2: Other Categories */}
+                    <div className="space-y-4 border-t lg:border-t-0 lg:border-l pt-8 lg:pt-0 lg:pl-12 border-slate-150 dark:border-slate-800/80">
+                      <h3 className="text-xs font-black uppercase tracking-widest text-amber-550 flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                        Other Categories ({otherList.length})
+                      </h3>
+                      {otherList.length > 0 ? (
+                        <div className="w-full overflow-y-auto pr-2 max-h-[550px] space-y-6">
+                          {otherList.map((entry, index) => {
+                            const pct = entry.percentage ?? 0;
+                            const color = COLORS[(index + 12) % COLORS.length];
+                            return (
+                              <div key={index} className="space-y-2">
+                                <div className="flex items-center justify-between text-xs font-semibold">
+                                  <span className={isDark ? "text-slate-200" : "text-slate-700"}>{entry.name}</span>
+                                  <span className={isDark ? "text-slate-400" : "text-slate-500"}>
+                                    {entry.queries} queries ({pct}%)
+                                  </span>
+                                </div>
+                                <div className={`w-full h-3 rounded-full ${isDark ? "bg-slate-800" : "bg-slate-100"}`}>
+                                  <div
+                                    className="h-full rounded-full transition-all duration-500"
+                                    style={{
+                                      width: `${pct}%`,
+                                      backgroundColor: color
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="h-[120px] flex flex-col items-center justify-center text-slate-500 text-xs font-bold italic opacity-40 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                          No queries classified in other categories yet.
+                        </div>
+                      )}
                     </div>
-                  )}
+
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* VIEW: SLA & OPERATIONS */}
           {activeView === "sla" && isAuthorized && (
@@ -1522,6 +1857,135 @@ export default function AdminDashboard() {
             </div>
           )}
 
+          {/* VIEW: LAWYER SPECIALIZATION */}
+          {activeView === "specialization" && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="h-12 w-12 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
+                    <Scale size={24} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold tracking-tight">Lawyer Specialization</h2>
+                    <p className="text-sm text-slate-500 mt-1">Select a lawyer to override their title and expertise domains</p>
+                  </div>
+                </div>
+
+                {queueMsg && activeView === "specialization" && (
+                  <div className={`mb-6 p-4 rounded-xl flex items-center justify-between text-sm font-bold animate-in fade-in zoom-in-95 ${queueMsg.type === 'success'
+                    ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                    : 'bg-red-500/10 text-red-500 border-red-500/20'
+                    }`}>
+                    <div className="flex items-center gap-3">
+                      {queueMsg.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
+                      {queueMsg.text}
+                    </div>
+                    <button onClick={() => setQueueMsg(null)} className="text-lg opacity-50 hover:opacity-100">&times;</button>
+                  </div>
+                )}
+
+                <div className="space-y-8">
+                  <div className="max-w-md">
+                    <label className="block text-xs font-bold tracking-wide text-slate-500 uppercase mb-3">Select Lawyer</label>
+                    <select
+                      value={specLawyer?.user_id || ""}
+                      onChange={(e) => {
+                        const selected = users.find(u => u.user_id === e.target.value);
+                        setSpecLawyer(selected || null);
+                        if (selected) {
+                          setSpecSpecializationLabel(selected.lawyer_profiles?.specialization_label || "");
+                          setSpecExpertiseDomains(selected.lawyer_profiles?.expertise_domains || []);
+                        } else {
+                          setSpecSpecializationLabel("");
+                          setSpecExpertiseDomains([]);
+                        }
+                      }}
+                      className={`w-full h-12 px-4 rounded-xl border text-sm outline-none transition-all focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-550 ${isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-white border-slate-300 text-slate-955"}`}
+                    >
+                      <option value="">Choose a Lawyer</option>
+                      {users.filter(u => u.role === 'lawyer').map(l => (
+                        <option key={l.user_id} value={l.user_id}>
+                          {l.user_profiles?.display_name || l.email} ({l.email})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {specLawyer && specLawyer.role === 'lawyer' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 pt-6 border-t dark:border-slate-800 animate-in fade-in duration-300">
+                      <div className="lg:col-span-2 space-y-6">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Specialization Title / Label</label>
+                          <input
+                            type="text"
+                            value={specSpecializationLabel}
+                            onChange={(e) => setSpecSpecializationLabel(e.target.value)}
+                            placeholder="e.g. Senior Partner, Employment Specialist"
+                            className={`w-full px-4 py-3 rounded-xl border text-sm transition-all focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-550 ${isDark ? "bg-slate-955 border-slate-800 text-white placeholder-slate-600" : "bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400"}`}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Expertise Areas</label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {LEGAL_DOMAINS.map((domain) => {
+                              const isChecked = specExpertiseDomains.some(d => d.toLowerCase() === domain.key.toLowerCase());
+                              return (
+                                <label
+                                  key={domain.key}
+                                  className={`p-4 rounded-xl border flex items-start gap-3 cursor-pointer select-none transition-all ${isChecked
+                                    ? (isDark ? "bg-indigo-500/10 border-indigo-500/40 text-white" : "bg-indigo-50 border-indigo-200 text-indigo-900")
+                                    : (isDark ? "bg-slate-955/40 border-slate-800/50 hover:border-slate-750 text-slate-400" : "bg-white border-slate-200 hover:border-slate-300 text-slate-600")
+                                    }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setSpecExpertiseDomains(prev => [...prev, domain.key]);
+                                      } else {
+                                        setSpecExpertiseDomains(prev => prev.filter(d => d.toLowerCase() !== domain.key.toLowerCase()));
+                                      }
+                                    }}
+                                    className="mt-1 rounded text-indigo-600 focus:ring-indigo-500"
+                                  />
+                                  <div>
+                                    <span className="text-xs font-bold block">{domain.en}</span>
+                                    <span className="text-[10px] opacity-60 block mt-0.5">{domain.no}</span>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={handleSaveSpecPageOverride}
+                          disabled={savingSpec}
+                          className="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50"
+                        >
+                          {savingSpec ? "Saving..." : "Save Specialization Override"}
+                        </button>
+                      </div>
+
+                      <div className={`p-6 rounded-2xl border h-fit ${isDark ? "bg-indigo-500/5 border-indigo-500/10 text-indigo-200" : "bg-indigo-50 border-indigo-100 text-indigo-900"}`}>
+                        <h3 className="font-bold flex items-center gap-2 mb-4">
+                          <ShieldCheck size={18} />
+                          Admin
+                        </h3>
+                        <p className="text-xs font-medium opacity-80 leading-relaxed">
+                          Modifying these settings will immediately update the lawyer's profile and matching logic in the queue.
+                          The lawyer will be prioritized for any incoming matters that match the updated domains.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
         </main>
       </div>
 
@@ -1579,7 +2043,7 @@ export default function AdminDashboard() {
         <>
           <div
             onClick={() => setViewUser(null)}
-            className="fixed inset-0 z-[110] bg-slate-950/40 backdrop-blur-[2px] animate-in fade-in duration-300"
+            className="fixed inset-0 z-[110] bg-slate-955/40 backdrop-blur-[2px] animate-in fade-in duration-300"
           />
           <div className={`fixed inset-y-0 right-0 z-[120] w-full max-w-md shadow-2xl transform transition-transform duration-500 ease-out animate-in slide-in-from-right duration-500 border-l ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"
             }`}>
@@ -1652,7 +2116,7 @@ export default function AdminDashboard() {
                 {/* Account Security */}
                 <div className="space-y-6">
                   <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400 border-b pb-2">Account Security</h5>
-                  <div className={`p-4 rounded-xl border ${isDark ? "bg-slate-950/50 border-slate-800" : "bg-slate-50 border-slate-200"}`}>
+                  <div className={`p-4 rounded-xl border ${isDark ? "bg-slate-955/50 border-slate-800" : "bg-slate-50 border-slate-200"}`}>
                     <p className="text-xs text-slate-500 leading-relaxed italic">
                       This user's authentication and session tokens are managed via Clerk. Administrative actions here will affect platform-level access and database visibility.
                     </p>
@@ -1695,6 +2159,34 @@ export default function AdminDashboard() {
             >
               <X size={20} />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* FULL SUMMARY MODAL */}
+      {activeSummaryModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className={`w-full max-w-lg rounded-3xl border p-8 shadow-2xl animate-in zoom-in-95 duration-300 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-black tracking-tight">Full Matter Summary</h3>
+              <button
+                onClick={() => setActiveSummaryModal(null)}
+                className={`p-1.5 rounded-xl transition-colors ${isDark ? "hover:bg-slate-800 text-slate-400" : "hover:bg-slate-100 text-slate-500"}`}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className={`p-6 rounded-2xl border text-sm leading-relaxed max-h-[60vh] overflow-y-auto ${isDark ? "bg-slate-950/50 border-slate-800 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-700"}`}>
+              {activeSummaryModal}
+            </div>
+            <div className="mt-8 flex justify-end">
+              <button
+                onClick={() => setActiveSummaryModal(null)}
+                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -61,17 +61,6 @@ class HitlService:
                         .execute()
                     if active_res.data:
                         raise ValueError("You already have an active urgent request. Please wait until it is resolved.")
-
-                    # Check 2: Urgent ticket created in last 7 days
-                    seven_days_ago = (datetime.utcnow() - timedelta(days=7)).isoformat()
-                    recent_res = self._supabase.table("hitl_tickets") \
-                        .select("ticket_id") \
-                        .eq("user_id", user_id) \
-                        .eq("priority", "urgent") \
-                        .gte("created_at", seven_days_ago) \
-                        .execute()
-                    if recent_res.data:
-                        raise ValueError("You already have an active urgent request. Please wait until it is resolved.")
                 except ValueError as ve:
                     raise ve
                 except Exception as e:
@@ -368,6 +357,26 @@ class HitlService:
                 .eq("ticket_id", ticket_id) \
                 .execute()
             self._log_audit("ticket.priority_updated", "system", {"ticket_id": ticket_id, "priority": priority})
+
+            # Fetch conversation_id to insert a professional system message in the chat
+            ticket_res = self._supabase.table("hitl_tickets") \
+                .select("conversation_id") \
+                .eq("ticket_id", ticket_id) \
+                .execute()
+            if ticket_res.data:
+                conv_id = ticket_res.data[0].get("conversation_id")
+                if conv_id:
+                    import uuid
+                    from datetime import datetime
+                    self._supabase.table("messages").insert({
+                        "message_id": str(uuid.uuid4()),
+                        "conversation_id": conv_id,
+                        "role": "assistant",
+                        "type": "system",
+                        "content": f"Case priority updated to {priority.capitalize()}",
+                        "created_at": datetime.utcnow().isoformat()
+                    }).execute()
+
             return True
         except Exception as exc:
             logger.error(f"❌ Failed to update ticket priority | {ticket_id} | {exc}")
@@ -685,16 +694,24 @@ class HitlService:
 
                 # Check for unread messages sent by the user
                 try:
-                    msg_query = self._supabase.table("ticket_messages") \
-                        .select("message_id", count="exact") \
+                    unread_resp = self._supabase.table("ticket_messages") \
+                        .select("message_id") \
                         .eq("ticket_id", ticket.get("ticket_id")) \
                         .eq("sender_role", "user") \
-                        .eq("is_read", False)
-                    unread_resp = self._supabase.execute_query(msg_query)
-                    ticket["has_unread_messages"] = (unread_resp.count or 0) > 0
+                        .eq("is_read", False) \
+                        .order("created_at", desc=True) \
+                        .limit(1) \
+                        .execute()
+                    if unread_resp.data:
+                        ticket["has_unread_messages"] = True
+                        ticket["latest_unread_message_id"] = unread_resp.data[0]["message_id"]
+                    else:
+                        ticket["has_unread_messages"] = False
+                        ticket["latest_unread_message_id"] = None
                 except Exception as msg_exc:
                     logger.warning(f"⚠️ Failed to fetch unread messages count for ticket {ticket.get('ticket_id')} | {msg_exc}")
                     ticket["has_unread_messages"] = False
+                    ticket["latest_unread_message_id"] = None
 
             return data
         except Exception as exc:

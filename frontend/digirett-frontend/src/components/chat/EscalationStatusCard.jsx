@@ -6,12 +6,88 @@ import ReactMarkdown from "react-markdown";
 import useDocumentUpload from "../../hooks/useDocumentUpload";
 import { API_BASE_URL } from "../../utils/constants";
 
+const DOMAIN_ENGLISH_NAMES = {
+  "arbeidsrett": "Company Law", // wait, "arbeidsrett" is Employment Law! Let's map it correctly.
+  "selskapsrett": "Company Law",
+  "avtalerett": "Contract Law",
+  "manda_fusjon_fisjon": "M&A, Mergers & Acquisitions",
+  "arsregnskap_og_selskapsrapportering": "Financial Statements & Reporting",
+  "inkasso_og_tvangsfullbyrdelse": "Debt Collection & Enforcement",
+  "konkursrett_og_insolvens": "Bankruptcy & Insolvency",
+  "obligasjonsrett": "Law of Obligations",
+  "panterett_og_sikkerhetsrett": "Liens & Security Rights",
+  "pengekravsrett_fordringer": "Monetary Claims & Debt",
+  "personvern_gdpr_business_compliance": "Privacy & GDPR Compliance",
+  "tvistelosning_smb": "Dispute Resolution for SMBs",
+  "arbeidsrett_en": "Employment Law" // Fallback / alias
+};
+
+// Map keys to correct English names
+const getDomainEnglishName = (domain) => {
+  if (!domain) return null;
+  const normalized = domain.toLowerCase().trim();
+  if (normalized === "arbeidsrett") return "Employment Law";
+  if (normalized === "selskapsrett") return "Company Law";
+  if (normalized === "avtalerett") return "Contract Law";
+  if (normalized === "manda_fusjon_fisjon") return "M&A, Mergers & Acquisitions";
+  if (normalized === "arsregnskap_og_selskapsrapportering") return "Financial Statements & Reporting";
+  if (normalized === "inkasso_og_tvangsfullbyrdelse") return "Debt Collection & Enforcement";
+  if (normalized === "konkursrett_og_insolvens") return "Bankruptcy & Insolvency";
+  if (normalized === "obligasjonsrett") return "Law of Obligations";
+  if (normalized === "panterett_og_sikkerhetsrett") return "Liens & Security Rights";
+  if (normalized === "pengekravsrett_fordringer") return "Monetary Claims & Debt";
+  if (normalized === "personvern_gdpr_business_compliance") return "Privacy & GDPR Compliance";
+  if (normalized === "tvistelosning_smb") return "Dispute Resolution for SMBs";
+  
+  // Format custom domains nicely (e.g. criminal_law -> Criminal Law)
+  return normalized
+    .split(/[_-]/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+};
+
 export default function EscalationStatusCard({ conversationId, theme = "dark", isSidebar = false }) {
   const [statusData, setStatusData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [cancellationNotice, setCancellationNotice] = useState(false);
   const isDark = theme === "dark";
+
+  const [showReescalateOptions, setShowReescalateOptions] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [reescalateOption, setReescalateOption] = useState(null);
+  const [caseClosed, setCaseClosed] = useState(false);
+
+  const handleCloseCase = async () => {
+    const t = statusData?.ticket;
+    if (!t?.ticket_id) return;
+    setIsClosing(true);
+    try {
+      await hitlService.closeTicket(t.ticket_id);
+      setCaseClosed(true);
+      fetchStatus();
+    } catch (err) {
+      alert(err.message || "Failed to close the case");
+    } finally {
+      setIsClosing(false);
+    }
+  };
+
+  const handleReescalateCase = async (option) => {
+    const t = statusData?.ticket;
+    if (!t?.ticket_id) return;
+    setReescalateOption(option);
+    try {
+      await hitlService.reEscalateTicket(t.ticket_id, option);
+      setShowReescalateOptions(false);
+      window.dispatchEvent(new CustomEvent("escalation_status_changed", { detail: true }));
+      fetchStatus();
+    } catch (err) {
+      alert(err.message || "Failed to re-escalate the case");
+    } finally {
+      setReescalateOption(null);
+    }
+  };
 
   const [rating, setRating] = useState(0);
   const [ratingHover, setRatingHover] = useState(0);
@@ -75,9 +151,9 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
       prevStatusRef.current = newStatus;
 
       setStatusData(data);
-      setError(null);
     } catch (err) {
       console.error("Failed to fetch escalation status:", err);
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -85,17 +161,9 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
 
   useEffect(() => {
     fetchStatus();
-
-    const pollInterval = setInterval(() => {
-      const currentStatus = statusData?.ticket?.status;
-      // Poll if active (searching, assigned, or waiting for meeting)
-      if (statusData?.is_escalated && (currentStatus === "open" || currentStatus === "assigned" || currentStatus === "booked")) {
-        fetchStatus();
-      }
-    }, 30000); // Poll every 30 seconds as per user pro-tip
-
-    return () => clearInterval(pollInterval);
-  }, [fetchStatus, statusData?.is_escalated, statusData?.ticket?.status]);
+    const interval = setInterval(fetchStatus, 15000);
+    return () => clearInterval(interval);
+  }, [fetchStatus]);
 
   if (loading && !statusData) {
     return (
@@ -112,6 +180,19 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
   const ticket = statusData.ticket;
   let status = ticket?.status || "open";
 
+  const renderPriorityBadge = () => {
+    const priority = ticket?.priority || "normal";
+    if (priority === "normal") return null;
+    const classes = priority === "urgent"
+      ? (isDark ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-rose-50 text-rose-600 border-rose-100")
+      : (isDark ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-amber-50 text-amber-600 border-amber-100");
+    return (
+      <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider border flex-shrink-0 ${classes}`}>
+        {priority}
+      </span>
+    );
+  };
+
   // Handle DB-compatible no_show mapping
   if (status === "closed" && ticket?.outcome_notes?.includes("[NO-SHOW]")) {
     status = "no_show";
@@ -125,6 +206,7 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
 
   // 1. OPEN: Waiting for lawyer to claim
   if (status === "open") {
+    const domainName = getDomainEnglishName(ticket?.detected_domain);
     return (
       <div className={`${containerClass} animate-pulse-subtle ${!isSidebar ? (isDark ? "bg-indigo-500/5 border-indigo-500/20" : "bg-indigo-50 border-indigo-100") : ""
         }`}>
@@ -132,12 +214,21 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
           <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20 flex-shrink-0">
             <Scale className="text-white w-5 h-5" />
           </div>
-          <div>
-            <h4 className={`text-sm font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
-              Searching for a Lawyer...
-            </h4>
+          <div className="flex-1">
+            <div className="flex justify-between items-start gap-2">
+              <h4 className={`text-sm font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
+                {domainName ? `Finding an expert in ${domainName}...` : "Searching for a Lawyer..."}
+              </h4>
+              {renderPriorityBadge()}
+            </div>
             <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
-              Your matter has been escalated. A specialized lawyer is currently reviewing your matter and will accept shortly.
+              {domainName ? (
+                <>
+                  Your matter has been escalated. A lawyer specializing in <strong>{domainName}</strong> is currently reviewing your details and will accept shortly.
+                </>
+              ) : (
+                "Your matter has been escalated. A specialized lawyer is currently reviewing your matter and will accept shortly."
+              )}
             </p>
             <div className="mt-4 flex items-center gap-2">
               <Loader2 className="w-3 h-3 text-indigo-500 animate-spin" />
@@ -190,12 +281,15 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
             <div className="w-8 h-8 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20 flex-shrink-0">
               <ShieldCheck className="text-white w-4 h-4" />
             </div>
-            <div>
-              <h4 className={`text-xs font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
-                Under Legal Review
-              </h4>
+            <div className="flex-1">
+              <div className="flex justify-between items-start gap-2">
+                <h4 className={`text-xs font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
+                  Under Legal Review
+                </h4>
+                {renderPriorityBadge()}
+              </div>
               <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
-                <span className="text-indigo-500 font-bold">{ticket.assigned_lawyer_name || "An expert"}</span> is reviewing your details.
+                <span className="text-indigo-500 font-bold">{ticket.assigned_lawyer_name || "An expert"}</span> is reviewing your details. Your lawyer has received a brief about your matter.
               </p>
             </div>
           </div>
@@ -229,7 +323,7 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
             <Clock className="text-white w-5 h-5" />
           </div>
           <div className="flex-1">
-            <div className="flex justify-between items-start">
+            <div className="flex justify-between items-start gap-2">
               <div>
                 <h4 className={`text-sm font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
                   Meeting with {ticket.assigned_lawyer_name || "Lawyer"}
@@ -238,9 +332,12 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
                   {meetingDate.toLocaleString()}
                 </p>
               </div>
-              <span className="px-2 py-1 bg-blue-500/20 text-blue-500 rounded-lg text-[8px] font-black uppercase tracking-widest">
-                Booked
-              </span>
+              <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                <span className="px-2 py-1 bg-blue-500/20 text-blue-500 rounded-lg text-[8px] font-black uppercase tracking-widest">
+                  Booked
+                </span>
+                {renderPriorityBadge()}
+              </div>
             </div>
 
             <div className="mt-4 flex flex-col items-center">
@@ -261,7 +358,10 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
   }
 
   // 4. RESOLVED: Lawyer finished
+  // 4. RESOLVED: Lawyer finished
   if (status === "resolved") {
+    const isClosedOrResolvedClosed = caseClosed || ticket?.status === "closed";
+
     return (
       <div className={`p-6 rounded-2xl border-2 border-dashed animate-in fade-in zoom-in duration-500 ${isDark ? "bg-emerald-500/5 border-emerald-500/20" : "bg-emerald-50 border-emerald-100"
         }`}>
@@ -270,10 +370,10 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
             <ShieldCheck className="text-white w-6 h-6" />
           </div>
           <h4 className={`text-base font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
-            Resolution Ready
+            {isClosedOrResolvedClosed ? "Matter Closed" : "Resolution Ready"}
           </h4>
           <p className="text-[11px] text-slate-500 font-medium">
-            Your legal consultation has been completed.
+            {isClosedOrResolvedClosed ? "This case has been closed. Please rate your experience." : "Your legal consultation has been completed."}
           </p>
         </div>
 
@@ -281,133 +381,183 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
         <div className="space-y-4">
           <div className="flex items-center gap-2 mb-2">
             <Scale size={12} className="text-indigo-500" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Matter Feedback</span>
+            <span className="text-indigo-600 text-[10px] font-bold uppercase tracking-wider">Legal Resolution</span>
           </div>
-
-          <div className={`relative p-6 rounded-3xl border shadow-sm ${
+          <div className={`relative p-4 rounded-xl border-l-4 border-indigo-500 shadow-sm ${
             isDark 
-              ? "bg-emerald-500/10 border-emerald-500/20 text-slate-200" 
-              : "bg-emerald-500/5 border-emerald-500/10 text-slate-700"
+              ? "bg-slate-900/60 border-slate-800 text-slate-200" 
+              : "bg-slate-50 border-slate-200 text-slate-750"
           }`}>
-            <div className="prose prose-sm dark:prose-invert max-w-none relative z-10 text-xs leading-relaxed font-medium">
+            <div className="prose prose-sm dark:prose-invert max-w-none relative z-10 text-[11px] leading-relaxed font-medium">
               <ReactMarkdown 
                 components={{
-                  p: ({node, ...props}) => <p className="mb-3 last:mb-0" {...props} />,
-                  strong: ({node, ...props}) => <strong className="font-black text-indigo-500" {...props} />,
-                  ul: ({node, ...props}) => <ul className="list-disc pl-4 mb-3" {...props} />,
+                  p: ({node, ...props}) => <p className="mb-2 last:mb-0" {...props} />,
+                  strong: ({node, ...props}) => <strong className="font-bold text-indigo-500" {...props} />,
+                  ul: ({node, ...props}) => <ul className="list-disc pl-4 mb-2" {...props} />,
                 }}
               >
                 {ticket.lawyer_response || ticket.outcome_notes || "No specific feedback notes were recorded for this resolution."}
               </ReactMarkdown>
             </div>
           </div>
-
-          {/* Rating Section */}
-          <div className={`mt-6 p-6 rounded-3xl border ${
-            isDark ? "bg-[#0b1329]/60 border-white/5" : "bg-white border-slate-100"
-          } shadow-sm transition-all duration-300`}>
-            {ratingSubmitted ? (
-              <div className="flex flex-col items-center text-center">
-                <h5 className={`text-xs font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
-                  Feedback Submitted
-                </h5>
-                <p className="text-[10px] text-slate-500 font-medium mb-3">
-                  Thank you for rating your consultation!
-                </p>
-                <div className="flex gap-1 mb-2">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <Star
-                      key={star}
-                      size={14}
-                      fill={star <= rating ? "#f59e0b" : "none"}
-                      color={star <= rating ? "#f59e0b" : "#64748b"}
-                    />
-                  ))}
-                </div>
-                {ratingComment && (
-                  <p className="text-[10px] text-slate-400 italic max-w-xs leading-relaxed mt-2 border-t border-white/5 pt-2 w-full">
-                    "{ratingComment}"
-                  </p>
-                )}
-              </div>
-            ) : (
-              <form onSubmit={handleRatingSubmit} className="space-y-4">
-                <div className="text-center">
-                  <h5 className={`text-xs font-black uppercase tracking-widest ${isDark ? "text-indigo-400" : "text-indigo-600"} mb-1`}>
-                    Rate Your Consultation
+ 
+          {isClosedOrResolvedClosed ? (
+            /* Rating Section */
+            <div className={`mt-6 p-6 rounded-3xl border ${
+              isDark ? "bg-[#0b1329]/60 border-white/5" : "bg-white border-slate-100"
+            } shadow-sm transition-all duration-300`}>
+              {ratingSubmitted ? (
+                <div className="flex flex-col items-center text-center">
+                  <h5 className={`text-xs font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
+                    Feedback Submitted
                   </h5>
-                  <p className="text-[9px] text-slate-500 font-medium">
-                    How was your discussion with {ticket.assigned_lawyer_name || "your lawyer"}?
+                  <p className="text-[10px] text-slate-500 font-medium mb-3">
+                    Thank you for rating your consultation!
                   </p>
-                </div>
-
-                {/* Stars Selector */}
-                <div className="flex justify-center gap-2 py-2">
-                  {[1, 2, 3, 4, 5].map((star) => {
-                    const isLit = star <= (ratingHover || rating);
-                    return (
-                      <button
-                        type="button"
+                  <div className="flex gap-1 mb-2">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Star
                         key={star}
-                        onMouseEnter={() => setRatingHover(star)}
-                        onMouseLeave={() => setRatingHover(0)}
-                        onClick={() => setRating(star)}
-                        className="transition-transform duration-150 hover:scale-125 focus:outline-none"
-                      >
-                        <Star
-                          size={24}
-                          fill={isLit ? "#f59e0b" : "none"}
-                          color={isLit ? "#f59e0b" : "#475569"}
-                          className="cursor-pointer"
-                        />
-                      </button>
-                    );
-                  })}
+                        size={14}
+                        fill={star <= rating ? "#f59e0b" : "none"}
+                        color={star <= rating ? "#f59e0b" : "#64748b"}
+                      />
+                    ))}
+                  </div>
+                  {ratingComment && (
+                    <p className="text-[10px] text-slate-400 italic max-w-xs leading-relaxed mt-2 border-t border-white/5 pt-2 w-full">
+                      "{ratingComment}"
+                    </p>
+                  )}
                 </div>
-
-                {/* Comment field */}
-                <div className="space-y-1">
-                  <textarea
-                    value={ratingComment}
-                    onChange={(e) => setRatingComment(e.target.value)}
-                    placeholder="Describe your experience (optional)..."
-                    rows={2}
-                    className={`w-full p-3 rounded-xl border text-xs font-medium resize-none transition-all outline-none ${
-                      isDark
-                        ? "bg-slate-950 border-white/5 focus:border-indigo-500/30 text-slate-300"
-                        : "bg-slate-50 border-slate-200 focus:border-indigo-600/30 text-slate-900 focus:bg-white"
-                    }`}
-                  />
-                </div>
-
-                {ratingError && (
-                  <p className="text-[10px] text-red-500 text-center font-semibold">
-                    {ratingError}
-                  </p>
-                )}
-
-                <div className="flex justify-center">
-                  <button
-                    type="submit"
-                    disabled={rating === 0 || submittingRating}
-                    className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all shadow-md ${
-                      rating === 0
-                        ? "bg-slate-800 text-slate-500 cursor-not-allowed opacity-50"
-                        : "bg-indigo-600 hover:bg-indigo-500 active:scale-95"
-                    }`}
-                  >
-                    {submittingRating ? "Submitting..." : "Submit Feedback"}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-
-          <div className="pt-2 flex flex-col items-center gap-2">
-            <p className="text-[10px] text-slate-400 italic">
-              If you have further questions, you can start a new escalation.
-            </p>
-          </div>
+              ) : (
+                <form onSubmit={handleRatingSubmit} className="space-y-4">
+                  <div className="text-center">
+                    <h5 className={`text-xs font-black uppercase tracking-widest ${isDark ? "text-indigo-450" : "text-indigo-600"} mb-1`}>
+                      Rate Your Consultation
+                    </h5>
+                    <p className="text-[9px] text-slate-500 font-medium">
+                      How was your discussion with {ticket.assigned_lawyer_name || "your lawyer"}?
+                    </p>
+                  </div>
+ 
+                  {/* Stars Selector */}
+                  <div className="flex justify-center gap-2 py-2">
+                    {[1, 2, 3, 4, 5].map((star) => {
+                      const isLit = star <= (ratingHover || rating);
+                      return (
+                        <button
+                          type="button"
+                          key={star}
+                          onMouseEnter={() => setRatingHover(star)}
+                          onMouseLeave={() => setRatingHover(0)}
+                          onClick={() => setRating(star)}
+                          className="transition-transform duration-150 hover:scale-125 focus:outline-none"
+                        >
+                          <Star
+                            size={24}
+                            fill={isLit ? "#f59e0b" : "none"}
+                            color={isLit ? "#f59e0b" : "#475569"}
+                            className="cursor-pointer"
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+ 
+                  {/* Comment field */}
+                  <div className="space-y-1">
+                    <textarea
+                      value={ratingComment}
+                      onChange={(e) => setRatingComment(e.target.value)}
+                      placeholder="Describe your experience (optional)..."
+                      rows={2}
+                      className={`w-full p-3 rounded-xl border text-xs font-medium resize-none transition-all outline-none ${
+                        isDark
+                          ? "bg-slate-955 border-white/5 focus:border-indigo-500/30 text-slate-300"
+                          : "bg-slate-50 border-slate-200 focus:border-indigo-600/30 text-slate-900 focus:bg-white"
+                      }`}
+                    />
+                  </div>
+ 
+                  {ratingError && (
+                    <p className="text-[10px] text-red-500 text-center font-semibold">
+                      {ratingError}
+                    </p>
+                  )}
+ 
+                  <div className="flex justify-center">
+                    <button
+                      type="submit"
+                      disabled={rating === 0 || submittingRating}
+                      className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all shadow-md ${
+                        rating === 0
+                          ? "bg-slate-800 text-slate-500 cursor-not-allowed opacity-50"
+                          : "bg-indigo-600 hover:bg-indigo-500 active:scale-95"
+                      }`}
+                    >
+                      {submittingRating ? "Submitting..." : "Submit Feedback"}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          ) : showReescalateOptions ? (
+            <div className={`mt-5 p-5 rounded-2xl border ${isDark ? "bg-slate-900/60 border-slate-800" : "bg-slate-50 border-slate-200"} shadow-sm text-center space-y-3`}>
+              <h5 className={`text-xs font-bold ${isDark ? "text-indigo-400" : "text-indigo-650"}`}>
+                Re-escalation Options
+              </h5>
+              <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
+                Would you like to assign this back to the same lawyer or submit it to a different professional?
+              </p>
+              <div className="flex flex-col gap-2 pt-1">
+                <button
+                  onClick={() => handleReescalateCase("same")}
+                  disabled={reescalateOption !== null}
+                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition-all shadow-sm"
+                >
+                  {reescalateOption === "same" ? "Re-escalating..." : "Same Lawyer"}
+                </button>
+                <button
+                  onClick={() => handleReescalateCase("different")}
+                  disabled={reescalateOption !== null}
+                  className={`w-full py-2 rounded-xl text-xs font-semibold border transition-all ${
+                    isDark 
+                      ? "bg-slate-800 hover:bg-slate-700 text-white border-slate-700" 
+                      : "bg-white hover:bg-slate-100 text-slate-700 border-slate-300"
+                  }`}
+                >
+                  {reescalateOption === "different" ? "Re-escalating..." : "Different Lawyer"}
+                </button>
+                <button
+                  onClick={() => setShowReescalateOptions(false)}
+                  className="text-[10px] font-bold text-slate-500 hover:text-slate-450 pt-1"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={handleCloseCase}
+                disabled={isClosing}
+                className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all"
+              >
+                {isClosing ? "Closing..." : "Close the Case"}
+              </button>
+              <button
+                onClick={() => setShowReescalateOptions(true)}
+                className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                  isDark 
+                    ? "bg-slate-800 hover:bg-slate-700 text-white border-slate-700" 
+                    : "bg-white hover:bg-slate-100 text-slate-700 border-slate-300"
+                }`}
+              >
+                Re-escalate
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -438,15 +588,87 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
     return (
       <div className={`p-6 rounded-2xl border ${isDark ? "bg-white/5 border-white/10" : "bg-slate-50 border-slate-200"
         }`}>
-        <div className="flex flex-col items-center text-center">
-          <ShieldCheck className="text-slate-500 w-8 h-8 mb-3 opacity-50" />
-          <h4 className={`text-sm font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
-            Matter Archived
-          </h4>
-          <p className="text-[10px] text-slate-500 font-medium">
-            This legal consultation has been closed and archived.
-          </p>
-        </div>
+        {!ratingSubmitted ? (
+          <form onSubmit={handleRatingSubmit} className="space-y-4">
+            <div className="text-center">
+              <h5 className={`text-xs font-black uppercase tracking-widest ${isDark ? "text-indigo-450" : "text-indigo-600"} mb-1`}>
+                Rate Your Consultation
+              </h5>
+              <p className="text-[9px] text-slate-500 font-medium">
+                How was your discussion with {ticket.assigned_lawyer_name || "your lawyer"}?
+              </p>
+            </div>
+
+            {/* Stars Selector */}
+            <div className="flex justify-center gap-2 py-2">
+              {[1, 2, 3, 4, 5].map((star) => {
+                const isLit = star <= (ratingHover || rating);
+                return (
+                  <button
+                    type="button"
+                    key={star}
+                    onMouseEnter={() => setRatingHover(star)}
+                    onMouseLeave={() => setRatingHover(0)}
+                    onClick={() => setRating(star)}
+                    className="transition-transform duration-150 hover:scale-125 focus:outline-none"
+                  >
+                    <Star
+                      size={24}
+                      fill={isLit ? "#f59e0b" : "none"}
+                      color={isLit ? "#f59e0b" : "#475569"}
+                      className="cursor-pointer"
+                    />
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Comment field */}
+            <div className="space-y-1">
+              <textarea
+                value={ratingComment}
+                onChange={(e) => setRatingComment(e.target.value)}
+                placeholder="Describe your experience (optional)..."
+                rows={2}
+                className={`w-full p-3 rounded-xl border text-xs font-medium resize-none transition-all outline-none ${
+                  isDark
+                    ? "bg-slate-955 border-white/5 focus:border-indigo-500/30 text-slate-300"
+                    : "bg-slate-50 border-slate-200 focus:border-indigo-600/30 text-slate-900 focus:bg-white"
+                }`}
+              />
+            </div>
+
+            {ratingError && (
+              <p className="text-[10px] text-red-500 text-center font-semibold">
+                {ratingError}
+              </p>
+            )}
+
+            <div className="flex justify-center">
+              <button
+                type="submit"
+                disabled={rating === 0 || submittingRating}
+                className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all shadow-md ${
+                  rating === 0
+                    ? "bg-slate-800 text-slate-500 cursor-not-allowed opacity-50"
+                    : "bg-indigo-600 hover:bg-indigo-500 active:scale-95"
+                }`}
+              >
+                {submittingRating ? "Submitting..." : "Submit Feedback"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="flex flex-col items-center text-center">
+            <ShieldCheck className="text-slate-500 w-8 h-8 mb-3 opacity-50" />
+            <h4 className={`text-sm font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
+              Matter Archived
+            </h4>
+            <p className="text-[10px] text-slate-500 font-medium">
+              This legal consultation has been closed and archived.
+            </p>
+          </div>
+        )}
       </div>
     );
   }

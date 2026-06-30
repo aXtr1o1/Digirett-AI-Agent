@@ -45,11 +45,13 @@ const hitlService = {
   /**
    * Escalate a conversation to a lawyer (called by user)
    */
-  escalateConversation: async (conversationId, triggerMessageId, userNote = "") => {
+  escalateConversation: async (conversationId, triggerMessageId, userNote = "", priority = "normal", urgentReason = null) => {
     const response = await api.post(API_ENDPOINTS.HITL.ESCALATE, {
       conversation_id: conversationId,
       trigger_message_id: triggerMessageId,
       user_note: userNote,
+      priority,
+      urgent_reason: urgentReason
     });
     return response.data;
   },
@@ -107,6 +109,17 @@ const hitlService = {
    */
   updateCalConfig: async (configData) => {
     const response = await api.put("/cal/lawyer/config", configData);
+    return response.data;
+  },
+
+  /**
+   * Update lawyer specialization domains
+   */
+  updateSpecialization: async (expertiseDomains, specializationLabel = null) => {
+    const response = await api.patch("/hitl/lawyer/profile/specialization", {
+      expertise_domains: expertiseDomains,
+      specialization_label: specializationLabel
+    });
     return response.data;
   },
 
@@ -181,6 +194,38 @@ const hitlService = {
    */
   markTicketMessagesRead: async (ticketId) => {
     const response = await api.patch(`/hitl/tickets/${ticketId}/messages/read`);
+    return response.data;
+  },
+
+  /**
+   * Close a resolved ticket
+   */
+  closeTicket: async (ticketId) => {
+    const response = await api.patch(`/hitl/tickets/${ticketId}/close`);
+    return response.data;
+  },
+
+  /**
+   * Re-escalate a resolved ticket
+   */
+  reEscalateTicket: async (ticketId, option) => {
+    const response = await api.post(`/hitl/tickets/${ticketId}/re-escalate`, { option });
+    return response.data;
+  },
+
+  /**
+   * Update lawyer availability status
+   */
+  updateAvailability: async (status) => {
+    const response = await api.patch("/hitl/lawyer/profile/availability", { availability_status: status });
+    return response.data;
+  },
+
+  /**
+   * Update ticket priority
+   */
+  updateTicketPriority: async (ticketId, priority) => {
+    const response = await api.patch(`/hitl/tickets/${ticketId}/priority`, { priority });
     return response.data;
   },
 };

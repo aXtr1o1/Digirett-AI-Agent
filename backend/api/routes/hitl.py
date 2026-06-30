@@ -50,6 +50,7 @@ def set_services(
 class EscalateRequest(BaseModel):
     conversation_id: str
     trigger_message_id: Optional[str] = None
+    trigger_message_id: Optional[str] = None
     user_note: Optional[str] = None
     priority: Optional[str] = "normal"
     urgent_reason: Optional[str] = None
@@ -615,7 +616,10 @@ def get_escalation_status(
     Used by the chat UI to show the correct status and details.
     """
     ticket = _hitl_service.get_ticket_by_conversation(conversation_id)
-    is_escalated = ticket is not None and ticket.get("status") in ["open", "assigned", "booked", "resolved"]
+    is_escalated = ticket is not None and (
+        ticket.get("status") in ["open", "assigned", "booked", "resolved"] or
+        (ticket.get("status") == "closed" and not ticket.get("rating"))
+    )
     
     available_lawyers_count = 0
     try:

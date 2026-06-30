@@ -123,7 +123,7 @@ const Message = ({ message, isStreaming = false, theme = "dark", conversationId,
   }
 
   // ── Regular message ────────────────────────────────────────────────────
-  if (message.role === "system") {
+  if (message.role === "system" || message.type === "system") {
     return (
       <div className="flex justify-center my-4 opacity-60">
         <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${isDark

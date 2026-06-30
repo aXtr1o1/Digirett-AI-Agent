@@ -514,14 +514,14 @@ const useChat = (
     isUploadDisabled,
     isChatDisabled,
     isEscalated,
-    escalate: async (userNote) => {
+    escalate: async (userNote, priority = "normal", urgentReason = null) => {
       if (!conversationId || isEscalated || isEscalatingRef.current) return;
 
       isEscalatingRef.current = true;
       const lastMessage = messages[messages.length - 1];
       const triggerId = lastMessage?.id;
       try {
-        const result = await hitlService.escalateConversation(conversationId, triggerId, userNote);
+        const result = await hitlService.escalateConversation(conversationId, triggerId, userNote, priority, urgentReason);
         setIsEscalated(true);
         return result;
       } catch (err) {

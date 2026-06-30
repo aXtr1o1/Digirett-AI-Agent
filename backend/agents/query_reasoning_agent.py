@@ -256,7 +256,7 @@ OUTPUT FORMAT (STRICT – NO EXTRA TEXT)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Legal Topic               : <short description>
-Legal Domain              : <one of the allowed domain keys below>
+Legal Domain              : <one of the allowed domain keys below, or a custom key if outside the 12 default domains>
 Primary Statute Name      : <most likely governing Norwegian law>
 Primary Statute ID        : <official Lovdata statute id OR full Lovdata URL if known>
 Secondary Statute Name    : <if relevant, else "none">
@@ -265,7 +265,7 @@ Key Mechanism             : <core legal mechanism being regulated>
 Key Concepts              : <comma-separated statute-native terms>
 Enriched Query            : <single dense statute-anchored sentence>
 Response Style            : <one plain-English instruction for the generator>
-Legal Domain              : <canonical domain key>
+Legal Domain              : <canonical domain key or custom key>
 Jurisdiction              : <NO / EU-EEA / both>
 Source Type               : <lov / forskrift / both>
 
@@ -273,7 +273,7 @@ Do not output anything outside this structure.
 Do not explain your reasoning.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ALLOWED LEGAL DOMAIN VALUES (use EXACTLY these keys)
+ALLOWED LEGAL DOMAIN VALUES (use EXACTLY these keys for canonical domains, or custom keys for other domains)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 {domain_list}
@@ -618,12 +618,8 @@ class QueryReasoningAgent:
                 idx = line.find(":")
                 if idx != -1:
                     val = line[idx + 1:].strip()
-                    if val in self._ALLOWED_DOMAINS:
-                        found.append(val)
-                    else:
-                        logger.warning(
-                            f"⚠️  Domain '{val}' not in allowed set — dropping"
-                        )
+                    if val and val.lower() not in ("none", ""):
+                        found.append(val.lower())
         return found[-1] if found else None
 
     @staticmethod

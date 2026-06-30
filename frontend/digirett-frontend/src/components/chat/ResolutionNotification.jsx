@@ -131,11 +131,7 @@ const NotificationItem = ({ notif, onDismiss, onNavigate, index }) => {
   };
 
   const handleView = () => {
-    if (notif.view) {
-      onNavigate(notif.view);
-    } else if (notif.conversation_id) {
-      onNavigate(notif.conversation_id);
-    }
+    onNavigate(notif.view || notif.conversation_id, notif);
     handleDismiss();
   };
 
@@ -155,7 +151,7 @@ const NotificationItem = ({ notif, onDismiss, onNavigate, index }) => {
     >
       <div
         style={{
-          background: "#10b981",
+          background: notif.type === 'new_message' ? '#3b82f6' : '#10b981',
           borderRadius: "16px",
           padding: "14px 18px",
           boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
@@ -207,7 +203,7 @@ const NotificationItem = ({ notif, onDismiss, onNavigate, index }) => {
               {isNewCase ? notif.caseRef : `#${notif.caseRef}`}
             </span>
             <span>
-              {isResolution ? "MATTER RESOLVED" : isNewCase ? "NEW MATTER" : "LAWYER LINKED"}
+              {isResolution ? "MATTER RESOLVED" : isNewCase ? "NEW MATTER" : notif.type === 'new_message' ? "NEW MESSAGE" : "LAWYER LINKED"}
             </span>
           </div>
           <div style={{
