@@ -33,18 +33,20 @@ class SupabaseClient:
             http_client = httpx.Client(
                 http2=False,
                 limits=httpx.Limits(
-                    max_keepalive_connections=10,
-                    max_connections=30,
-                    keepalive_expiry=10.0
+                    max_keepalive_connections=20,
+                    max_connections=100,
+                    keepalive_expiry=30.0
                 ),
-                timeout=httpx.Timeout(60.0, connect=10.0)
+                timeout=httpx.Timeout(60.0, connect=30.0),  # Increase connect timeout to 30s to allow handshake under load
+                trust_env=False  # Speed up handshake by bypassing system proxy scanning
             )
             options = ClientOptions(httpx_client=http_client)
             
             self._client = create_client(url, key, options=options)
 
             # Smoke-test: query the users table
-            self._client.table("users").select("user_id").limit(1).execute()
+            smoke_query = self._client.table("users").select("user_id").limit(1)
+            self.execute_query(smoke_query)
 
             self._ready = True
             logger.info(" Supabase connected")
@@ -81,9 +83,9 @@ class SupabaseClient:
         for attempt in range(max_retries):
             try:
                 return query.execute()
-            except (httpx.RemoteProtocolError, httpcore.RemoteProtocolError, httpx.NetworkError) as exc:
+            except (httpx.HTTPError, httpcore.HTTPCoreError) as exc:
                 last_exc = exc
-                logger.warning(f"⚠️ Supabase connection dropped (attempt {attempt+1}/{max_retries}) | {exc}")
+                logger.warning(f"⚠️ Supabase connection dropped/timed out (attempt {attempt+1}/{max_retries}) | {exc}")
                 time.sleep(0.5)
         raise last_exc
 
