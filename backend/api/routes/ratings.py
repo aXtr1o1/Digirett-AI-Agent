@@ -31,10 +31,10 @@ async def submit_rating(
     supabase = get_supabase()
     
     # 1. Fetch ticket to verify ownership and get assigned lawyer
-    ticket_resp = supabase.table("hitl_tickets") \
+    ticket_query = supabase.table("hitl_tickets") \
         .select("ticket_id, user_id, status, assigned_lawyer_id") \
-        .eq("ticket_id", req.ticket_id) \
-        .execute()
+        .eq("ticket_id", req.ticket_id)
+    ticket_resp = supabase.execute_query(ticket_query)
         
     if not ticket_resp.data:
         raise HTTPException(status_code=404, detail="Ticket not found.")
@@ -42,11 +42,11 @@ async def submit_rating(
     ticket = ticket_resp.data[0]
     
     # 2. Get internal performer user ID
-    performer_resp = supabase.table("users") \
+    performer_query = supabase.table("users") \
         .select("user_id") \
         .eq("clerk_user_id", current_user.clerk_user_id) \
-        .single() \
-        .execute()
+        .single()
+    performer_resp = supabase.execute_query(performer_query)
         
     if not performer_resp.data:
         raise HTTPException(status_code=404, detail="User profile not found.")
@@ -76,13 +76,14 @@ async def submit_rating(
         
     # 3. Insert rating
     try:
-        supabase.table("consultation_ratings").upsert({
+        insert_query = supabase.table("consultation_ratings").upsert({
             "ticket_id": req.ticket_id,
             "user_id": internal_user_id,
             "lawyer_id": lawyer_id,
             "rating": req.rating,
             "comment": req.comment
-        }, on_conflict="ticket_id").execute()
+        }, on_conflict="ticket_id")
+        supabase.execute_query(insert_query)
         
         # 4. Trigger background email notification
         if _email_service:
@@ -111,11 +112,11 @@ async def _send_rating_notification(
         supabase = get_supabase()
         
         # Get lawyer profile
-        lawyer_resp = supabase.table("users") \
+        lawyer_query = supabase.table("users") \
             .select("email, user_name, user_profiles(display_name)") \
             .eq("user_id", lawyer_id) \
-            .single() \
-            .execute()
+            .single()
+        lawyer_resp = supabase.execute_query(lawyer_query)
             
         if lawyer_resp.data and _email_service:
             lawyer_data = lawyer_resp.data
@@ -154,21 +155,21 @@ async def get_lawyer_ratings(
     supabase = get_supabase()
     
     # Get internal user ID of lawyer
-    performer_resp = supabase.table("users") \
+    performer_query = supabase.table("users") \
         .select("user_id") \
         .eq("clerk_user_id", current_lawyer.clerk_user_id) \
-        .single() \
-        .execute()
+        .single()
+    performer_resp = supabase.execute_query(performer_query)
         
     if not performer_resp.data:
         raise HTTPException(status_code=404, detail="Lawyer profile not found.")
         
     lawyer_id = performer_resp.data["user_id"]
     
-    resp = supabase.table("consultation_ratings") \
+    ratings_query = supabase.table("consultation_ratings") \
         .select("rating_id, rating, comment, created_at, ticket_id") \
-        .eq("lawyer_id", lawyer_id) \
-        .execute()
+        .eq("lawyer_id", lawyer_id)
+    resp = supabase.execute_query(ratings_query)
         
     return resp.data or []
 
@@ -177,8 +178,8 @@ async def get_admin_ratings(
     current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     supabase = get_supabase()
-    resp = supabase.table("consultation_ratings") \
+    ratings_query = supabase.table("consultation_ratings") \
         .select("*, users!consultation_ratings_lawyer_id_fkey(user_name, email)") \
-        .order("created_at", desc=True) \
-        .execute()
+        .order("created_at", desc=True)
+    resp = supabase.execute_query(ratings_query)
     return resp.data or []

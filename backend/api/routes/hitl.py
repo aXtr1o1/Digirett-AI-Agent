@@ -49,7 +49,7 @@ def set_services(
 
 class EscalateRequest(BaseModel):
     conversation_id: str
-    trigger_message_id: str
+    trigger_message_id: Optional[str] = None
     user_note: Optional[str] = None
     priority: Optional[str] = "normal"
     urgent_reason: Optional[str] = None
@@ -669,4 +669,4 @@ async def _send_resolution_notification(ticket_id: str, content: str):
                     ticket_id=ticket_id
                 )
     except Exception as exc:
-        logger.warning(f"⚠️ Resolution email notification failed (non-fatal) | {exc}")
+        logger.warning(f"⚠️ Resolution email notification failed (non-fatal) | {exc}")

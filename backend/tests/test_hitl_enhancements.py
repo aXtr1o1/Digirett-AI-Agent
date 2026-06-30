@@ -64,6 +64,7 @@ class TestHitlEnhancements(unittest.TestCase):
 
     def setUp(self):
         self.mock_supabase = MagicMock()
+        self.mock_supabase.execute_query.side_effect = lambda query, **kwargs: query.execute()
         self.hitl_service = HitlService(self.mock_supabase)
         
         # Test roles
