@@ -83,6 +83,7 @@ class TestRatingsSystem(unittest.TestCase):
         import db.supabase_client
         import api.routes.ratings
         self.mock_supabase = MagicMock()
+        self.mock_supabase.execute_query.side_effect = lambda query, **kwargs: query.execute()
         db.supabase_client.get_supabase = lambda: self.mock_supabase
         api.routes.ratings.get_supabase = lambda: self.mock_supabase
         

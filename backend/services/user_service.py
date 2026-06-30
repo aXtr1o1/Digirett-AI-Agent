@@ -412,7 +412,8 @@ class UserService:
             }
             
             # Upsert (allow re-inviting or updating role)
-            self._supabase.table("role_invites").upsert(invite_data, on_conflict="email").execute()
+            upsert_query = self._supabase.table("role_invites").upsert(invite_data, on_conflict="email")
+            self._supabase.execute_query(upsert_query)
             
             # Send email (await async call)
             success = await email_service.send_invitation_email(email, role, token, admin_email=admin_email)
@@ -433,7 +434,8 @@ class UserService:
         Fetches all rows from the role_invites table.
         """
         try:
-            resp = self._supabase.table("role_invites").select("*").order("created_at", desc=True).execute()
+            query = self._supabase.table("role_invites").select("*").order("created_at", desc=True)
+            resp = self._supabase.execute_query(query)
             return resp.data or []
         except Exception as exc:
             logger.error(f"❌ get_all_invitations failed | {exc}")
@@ -444,7 +446,8 @@ class UserService:
         Deletes a pending invitation from the role_invites table.
         """
         try:
-            resp = self._supabase.table("role_invites").delete().eq("invite_id", invite_id).execute()
+            query = self._supabase.table("role_invites").delete().eq("invite_id", invite_id)
+            resp = self._supabase.execute_query(query)
             return len(resp.data or []) > 0
         except Exception as exc:
             logger.error(f"❌ revoke_invitation failed | {invite_id} | {exc}")
@@ -587,7 +590,8 @@ class UserService:
     def get_lawyer_cal_config(self, lawyer_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve the Cal.com configuration for a lawyer."""
         try:
-            resp = self._supabase.table("lawyer_profiles").select("cal_event_type_id, cal_api_key, expertise_domains, specialization_label, availability_status, last_seen_at").eq("lawyer_id", lawyer_id).execute()
+            query = self._supabase.table("lawyer_profiles").select("cal_event_type_id, cal_api_key, expertise_domains, specialization_label, availability_status, last_seen_at").eq("lawyer_id", lawyer_id)
+            resp = self._supabase.execute_query(query)
             if resp.data:
                 return resp.data[0]
             return None
@@ -598,11 +602,12 @@ class UserService:
     def update_lawyer_cal_config(self, lawyer_id: str, event_type_id: str, api_key: str) -> bool:
         """Update the Cal.com configuration for a lawyer."""
         try:
-            self._supabase.table("lawyer_profiles").update({
+            query = self._supabase.table("lawyer_profiles").update({
                 "cal_event_type_id": event_type_id,
                 "cal_api_key": api_key,
                 "updated_at": datetime.utcnow().isoformat()
-            }).eq("lawyer_id", lawyer_id).execute()
+            }).eq("lawyer_id", lawyer_id)
+            self._supabase.execute_query(query)
             logger.info(f"✅ Updated Cal.com config for lawyer | {lawyer_id}")
             return True
         except Exception as exc:

@@ -280,11 +280,11 @@ async def get_current_user(request: Request = None, websocket: WebSocket = None,
     try:
         # Check status and role using a background thread to prevent event loop blocking
         def fetch_user_status():
-            return supabase.table("users") \
+            query = supabase.table("users") \
                 .select("user_id, role, status") \
                 .eq("clerk_user_id", user.clerk_user_id) \
-                .limit(1) \
-                .execute()
+                .limit(1)
+            return supabase.execute_query(query)
         
         resp = await asyncio.to_thread(fetch_user_status)
         
@@ -365,7 +365,8 @@ def require_db_role(*allowed_roles: str):
             supabase = get_supabase()
             try:
                 def fetch_fallback_role():
-                    return supabase.table("users").select("user_id, role, status").eq("clerk_user_id", user.clerk_user_id).single().execute()
+                    query = supabase.table("users").select("user_id, role, status").eq("clerk_user_id", user.clerk_user_id).single()
+                    return supabase.execute_query(query)
                 
                 resp = await asyncio.to_thread(fetch_fallback_role)
                 if resp.data:
