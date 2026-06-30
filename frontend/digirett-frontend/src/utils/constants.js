@@ -64,10 +64,10 @@ export const API_ENDPOINTS = {
   },
   HEALTH: "/health",
   LIBRARY: {
-    SAVE: "/library/save",
-    LIST: "/library",
-    DELETE: (messageId) => `/library/${messageId}`,
-    UPDATE_NOTE: (messageId) => `/library/${messageId}`,
+    LIST: "/library/documents",
+    UPLOAD: "/library/documents/upload",
+    DELETE: (documentId) => `/library/documents/${documentId}`,
+    UPDATE_NOTE: (documentId) => `/library/documents/${documentId}`,
   },
 };
 

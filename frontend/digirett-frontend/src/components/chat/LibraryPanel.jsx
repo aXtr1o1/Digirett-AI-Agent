@@ -1,17 +1,23 @@
 // frontend/digirett-frontend/src/components/chat/LibraryPanel.jsx
-import React, { useState, useEffect } from "react";
-import { Search, Bookmark, Trash2, Calendar, Edit2, ExternalLink, Filter } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Search, Bookmark, Trash2, Calendar, Edit2, Download, Upload, FileText, Loader2, AlertCircle } from "lucide-react";
 import libraryService from "../../services/libraryService";
+import { API_BASE_URL } from "../../utils/constants";
 
-const LibraryPanel = ({ isDark, onSelectConversation, setActiveFeature, filterConversationId, onClearFilter }) => {
-  const [savedMessages, setSavedMessages] = useState([]);
+const LibraryPanel = ({ isDark }) => {
+  const [documents, setDocuments] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [editNoteText, setEditNoteText] = useState("");
+  
+  // Upload states
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const fileInputRef = useRef(null);
 
   const loadSaved = async () => {
-    const messages = await libraryService.getSavedMessages();
-    setSavedMessages(messages);
+    const docs = await libraryService.getSavedMessages();
+    setDocuments(docs);
   };
 
   useEffect(() => {
@@ -24,45 +30,56 @@ const LibraryPanel = ({ isDark, onSelectConversation, setActiveFeature, filterCo
     };
   }, []);
 
-  const handleRemove = async (e, messageId) => {
-    e.stopPropagation();
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setUploadError("");
     try {
-      await libraryService.unsaveMessage(messageId);
+      await libraryService.uploadDocument(file, "");
+      await loadSaved();
+    } catch (err) {
+      console.error("Failed to upload document:", err);
+      setUploadError(err.message || "Failed to upload document");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleRemove = async (e, docId) => {
+    e.stopPropagation();
+    if (!window.confirm("Are you sure you want to remove this document from the library?")) return;
+    try {
+      await libraryService.unsaveMessage(docId);
       loadSaved();
     } catch (err) {
-      console.error("Failed to remove saved message:", err);
+      console.error("Failed to remove document:", err);
     }
   };
 
-  const handleNavigate = (conversationId) => {
-    if (onSelectConversation) {
-      onSelectConversation(conversationId);
-    }
-    if (setActiveFeature) {
-      try {
-        const archivedIdsStr = localStorage.getItem("digirett_archived_conversation_ids");
-        const archivedIds = archivedIdsStr ? JSON.parse(archivedIdsStr) : [];
-        if (Array.isArray(archivedIds) && archivedIds.includes(conversationId)) {
-          setActiveFeature("archived");
-        } else {
-          setActiveFeature("chat");
-        }
-      } catch (err) {
-        setActiveFeature("chat");
-      }
-    }
-  };
-
-  const startEditingNote = (e, msg) => {
-    e.stopPropagation();
-    setEditingNoteId(msg.message_id);
-    setEditNoteText(msg.note || "");
-  };
-
-  const saveNote = async (e, messageId) => {
+  const handleDownload = async (e, docId) => {
     e.stopPropagation();
     try {
-      await libraryService.updateMessageNote(messageId, editNoteText);
+      const token = await window.Clerk?.session?.getToken();
+      const url = `${API_BASE_URL}/api/v1/library/documents/${docId}/view${token ? `?token=${token}` : ""}`;
+      window.open(url, "_blank");
+    } catch (err) {
+      console.error("Failed to view document:", err);
+    }
+  };
+
+  const startEditingNote = (e, doc) => {
+    e.stopPropagation();
+    setEditingNoteId(doc.id);
+    setEditNoteText(doc.note || "");
+  };
+
+  const saveNote = async (e, docId) => {
+    e.stopPropagation();
+    try {
+      await libraryService.updateMessageNote(docId, editNoteText);
       setEditingNoteId(null);
       setEditNoteText("");
       loadSaved();
@@ -77,11 +94,12 @@ const LibraryPanel = ({ isDark, onSelectConversation, setActiveFeature, filterCo
     setEditNoteText("");
   };
 
-  const filteredMessages = savedMessages.filter((msg) => {
-    const matchesSearch = msg.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      msg.conversation_title.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesConversation = filterConversationId ? msg.conversation_id === filterConversationId : true;
-    return matchesSearch && matchesConversation;
+  const filteredDocuments = documents.filter((doc) => {
+    const q = searchQuery.toLowerCase();
+    return (
+      (doc.file_name || "").toLowerCase().includes(q) ||
+      (doc.note || "").toLowerCase().includes(q)
+    );
   });
 
   const formatDate = (isoString) => {
@@ -117,60 +135,82 @@ const LibraryPanel = ({ isDark, onSelectConversation, setActiveFeature, filterCo
       >
         <Bookmark size={18} className="text-blue-500" />
         <span style={{ fontSize: "14px", fontWeight: "600", color: isDark ? "#ffffff" : "#111827" }}>
-          Legal Library ({savedMessages.length})
+          Legal Library ({documents.length})
         </span>
       </div>
 
-      {/* Conversation Filter Badge */}
-      {filterConversationId && (
-        <div
+      {/* Upload Dropzone/Button */}
+      <div style={{ padding: "0 4px 12px" }}>
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          accept=".pdf,.docx,.doc"
+          style={{ display: "none" }}
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading}
           style={{
-            margin: "0 4px 12px",
-            padding: "8px 10px",
-            borderRadius: "8px",
-            backgroundColor: isDark ? "rgba(59, 130, 246, 0.1)" : "rgba(59, 130, 246, 0.05)",
-            border: isDark ? "1px solid rgba(59, 130, 246, 0.2)" : "1px solid rgba(59, 130, 246, 0.15)",
-            fontSize: "11px",
+            width: "100%",
+            padding: "12px",
+            borderRadius: "12px",
+            border: isDark ? "1.5px dashed rgba(255, 255, 255, 0.15)" : "1.5px dashed rgba(0, 0, 0, 0.15)",
+            backgroundColor: isDark ? "rgba(255, 255, 255, 0.02)" : "rgba(0, 0, 0, 0.01)",
+            color: isDark ? "#d1d5db" : "#374151",
+            cursor: isUploading ? "not-allowed" : "pointer",
             display: "flex",
+            flexDirection: "column",
             alignItems: "center",
-            justifyContent: "space-between",
+            justifyContent: "center",
             gap: "6px",
+            transition: "all 0.2s",
+            outline: "none",
+          }}
+          onMouseEnter={(e) => {
+            if (!isUploading) {
+              e.currentTarget.style.borderColor = "#3b82f6";
+              e.currentTarget.style.backgroundColor = isDark ? "rgba(59, 130, 246, 0.04)" : "rgba(59, 130, 246, 0.02)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!isUploading) {
+              e.currentTarget.style.borderColor = isDark ? "rgba(255, 255, 255, 0.15)" : "rgba(0, 0, 0, 0.15)";
+              e.currentTarget.style.backgroundColor = isDark ? "rgba(255, 255, 255, 0.02)" : "rgba(0, 0, 0, 0.01)";
+            }
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "4px", minWidth: 0, flex: 1 }}>
-            <Filter size={10} style={{ color: isDark ? "#60a5fa" : "#2563eb", flexShrink: 0 }} />
-            <span
-              style={{
-                color: isDark ? "#93c5fd" : "#1d4ed8",
-                fontWeight: "500",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              Filtered by Chat
-            </span>
+          {isUploading ? (
+            <>
+              <Loader2 size={16} className="text-blue-500 animate-spin" />
+              <span style={{ fontSize: "11px", fontWeight: "600" }}>Uploading...</span>
+            </>
+          ) : (
+            <>
+              <Upload size={16} className="text-blue-500" />
+              <span style={{ fontSize: "11px", fontWeight: "600" }}>Upload PDF or DOCX</span>
+            </>
+          )}
+        </button>
+
+        {uploadError && (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+            color: "#f87171",
+            fontSize: "10px",
+            marginTop: "6px",
+            padding: "0 4px"
+          }}>
+            <AlertCircle size={10} />
+            <span>{uploadError}</span>
           </div>
-          <button
-            onClick={onClearFilter}
-            style={{
-              border: "none",
-              background: "none",
-              color: isDark ? "#60a5fa" : "#2563eb",
-              cursor: "pointer",
-              fontSize: "11px",
-              fontWeight: "600",
-              padding: 0,
-              flexShrink: 0,
-            }}
-          >
-            Show All
-          </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Search Input */}
-      {savedMessages.length > 0 && (
+      {documents.length > 0 && (
         <div style={{ padding: "0 4px 12px", position: "relative" }}>
           <Search
             size={14}
@@ -184,7 +224,7 @@ const LibraryPanel = ({ isDark, onSelectConversation, setActiveFeature, filterCo
           />
           <input
             type="text"
-            placeholder="Search saved answers..."
+            placeholder="Search documents..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{
@@ -216,7 +256,7 @@ const LibraryPanel = ({ isDark, onSelectConversation, setActiveFeature, filterCo
           maxHeight: "calc(100vh - 280px)",
         }}
       >
-        {filteredMessages.length === 0 ? (
+        {filteredDocuments.length === 0 ? (
           <div
             style={{
               padding: "24px 16px",
@@ -225,19 +265,18 @@ const LibraryPanel = ({ isDark, onSelectConversation, setActiveFeature, filterCo
               color: isDark ? "#6b7280" : "#9ca3af",
             }}
           >
-            {savedMessages.length === 0 ? "Bookmark key messages or save entire conversations to see them here." : "No matching bookmarks found."}
+            {documents.length === 0 ? "Upload PDFs or Word documents to keep them in your Legal Library." : "No matching documents found."}
           </div>
         ) : (
-          filteredMessages.map((msg) => (
+          filteredDocuments.map((doc) => (
             <div
-              key={msg.id}
-              onClick={() => handleNavigate(msg.conversation_id)}
+              key={doc.id}
               style={{
                 padding: "10px",
                 borderRadius: "10px",
                 backgroundColor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
                 border: isDark ? "1px solid rgba(255, 255, 255, 0.06)" : "1px solid rgba(0, 0, 0, 0.06)",
-                cursor: "pointer",
+                cursor: "default",
                 transition: "all 0.2s",
                 display: "flex",
                 flexDirection: "column",
@@ -260,37 +299,44 @@ const LibraryPanel = ({ isDark, onSelectConversation, setActiveFeature, filterCo
               {/* Header metadata */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0, flex: 1 }}>
+                  <FileText 
+                    size={14} 
+                    className="text-blue-500 flex-shrink-0" 
+                    onClick={(e) => handleDownload(e, doc.id)}
+                    style={{ cursor: "pointer" }}
+                    title="Download / View file"
+                  />
                   <span
+                    onClick={(e) => handleDownload(e, doc.id)}
                     style={{
-                      fontSize: "11px",
+                      fontSize: "12px",
                       fontWeight: "600",
-                      color: "#3b82f6",
+                      color: isDark ? "#f3f4f6" : "#1f2937",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
-                      maxWidth: "110px",
+                      cursor: "pointer",
                     }}
-                    title={msg.conversation_title}
+                    title={doc.file_name}
+                    onMouseEnter={(e) => e.currentTarget.style.textDecoration = "underline"}
+                    onMouseLeave={(e) => e.currentTarget.style.textDecoration = "none"}
                   >
-                    {msg.conversation_title}
+                    {doc.file_name}
                   </span>
                   <span
                     style={{
-                      fontSize: "9px",
-                      fontWeight: "600",
+                      fontSize: "8px",
+                      fontWeight: "800",
                       padding: "1px 4px",
                       borderRadius: "4px",
-                      backgroundColor: msg.role === "user"
-                        ? (isDark ? "rgba(99, 102, 241, 0.15)" : "rgba(99, 102, 241, 0.1)")
-                        : (isDark ? "rgba(59, 130, 246, 0.15)" : "rgba(59, 130, 246, 0.1)"),
-                      color: msg.role === "user" ? "#818cf8" : "#60a5fa",
-                      border: `1px solid ${msg.role === "user"
-                        ? (isDark ? "rgba(99, 102, 241, 0.25)" : "rgba(99, 102, 241, 0.2)")
-                        : (isDark ? "rgba(59, 130, 246, 0.25)" : "rgba(59, 130, 246, 0.2)")}`,
+                      backgroundColor: isDark ? "rgba(59, 130, 246, 0.15)" : "rgba(59, 130, 246, 0.1)",
+                      color: "#60a5fa",
+                      border: `1px solid ${isDark ? "rgba(59, 130, 246, 0.25)" : "rgba(59, 130, 246, 0.2)"}`,
                       flexShrink: 0,
+                      textTransform: "uppercase"
                     }}
                   >
-                    {msg.role === "user" ? "Question" : "AI Answer"}
+                    {doc.file_type || "File"}
                   </span>
                 </div>
 
@@ -306,7 +352,7 @@ const LibraryPanel = ({ isDark, onSelectConversation, setActiveFeature, filterCo
                 >
                   <Trash2
                     size={12}
-                    onClick={(e) => handleRemove(e, msg.message_id)}
+                    onClick={(e) => handleRemove(e, doc.id)}
                     style={{
                       color: isDark ? "#9ca3af" : "#6b7280",
                       cursor: "pointer",
@@ -314,36 +360,25 @@ const LibraryPanel = ({ isDark, onSelectConversation, setActiveFeature, filterCo
                     }}
                     onMouseEnter={(e) => (e.currentTarget.style.color = "#ef4444")}
                     onMouseLeave={(e) => (e.currentTarget.style.color = isDark ? "#9ca3af" : "#6b7280")}
-                    title="Remove from library"
+                    title="Delete document"
                   />
-                  <ExternalLink
+                  <Download
                     size={12}
-                    style={{ color: isDark ? "#9ca3af" : "#6b7280" }}
-                    title="Navigate to conversation"
+                    onClick={(e) => handleDownload(e, doc.id)}
+                    style={{
+                      color: isDark ? "#9ca3af" : "#6b7280",
+                      cursor: "pointer",
+                      transition: "color 0.15s",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = "#3b82f6")}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = isDark ? "#9ca3af" : "#6b7280")}
+                    title="Download document"
                   />
                 </div>
               </div>
 
-              {/* Message Snippet */}
-              <div
-                style={{
-                  fontSize: "12px",
-                  lineHeight: "1.4",
-                  color: isDark ? "#d1d5db" : "#374151",
-                  display: "-webkit-box",
-                  WebkitLineClamp: 3,
-                  WebkitBoxOrient: "vertical",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "normal",
-                  maxHeight: "50px",
-                }}
-              >
-                {msg.content}
-              </div>
-
               {/* Personal Annotations note block */}
-              {editingNoteId === msg.message_id ? (
+              {editingNoteId === doc.id ? (
                 <div
                   onClick={(e) => e.stopPropagation()}
                   style={{
@@ -386,7 +421,7 @@ const LibraryPanel = ({ isDark, onSelectConversation, setActiveFeature, filterCo
                       Cancel
                     </button>
                     <button
-                      onClick={(e) => saveNote(e, msg.message_id)}
+                      onClick={(e) => saveNote(e, doc.id)}
                       style={{
                         padding: "2px 6px",
                         borderRadius: "4px",
@@ -401,7 +436,7 @@ const LibraryPanel = ({ isDark, onSelectConversation, setActiveFeature, filterCo
                     </button>
                   </div>
                 </div>
-              ) : msg.note ? (
+              ) : doc.note ? (
                 <div
                   style={{
                     marginTop: "4px",
@@ -417,11 +452,11 @@ const LibraryPanel = ({ isDark, onSelectConversation, setActiveFeature, filterCo
                     gap: "2px",
                   }}
                 >
-                  <div>
-                    <strong style={{ fontWeight: "600" }}>Note:</strong> {msg.note}
+                  <div style={{ wordBreak: "break-word" }}>
+                    <strong style={{ fontWeight: "600" }}>Note:</strong> {doc.note}
                   </div>
                   <button
-                    onClick={(e) => startEditingNote(e, msg)}
+                    onClick={(e) => startEditingNote(e, doc)}
                     style={{
                       border: "none",
                       background: "none",
@@ -438,7 +473,7 @@ const LibraryPanel = ({ isDark, onSelectConversation, setActiveFeature, filterCo
                 </div>
               ) : (
                 <button
-                  onClick={(e) => startEditingNote(e, msg)}
+                  onClick={(e) => startEditingNote(e, doc)}
                   style={{
                     border: "none",
                     background: "none",
@@ -470,7 +505,7 @@ const LibraryPanel = ({ isDark, onSelectConversation, setActiveFeature, filterCo
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
                   <Calendar size={10} />
-                  <span>{formatDate(msg.saved_at)}</span>
+                  <span>{formatDate(doc.created_at)}</span>
                 </div>
               </div>
             </div>

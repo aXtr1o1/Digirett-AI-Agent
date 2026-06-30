@@ -26,7 +26,6 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@clerk/clerk-react";
 import hitlService from "../../services/hitlService";
 import conversationService from "../../services/conversationService";
-import libraryService from "../../services/libraryService";
 import { getSupabaseClient } from "../../lib/supabase";
 import UpgradeCard from "../common/UpgradeCard";
 import QuotaPanel from "../chat/QuotaPanel";
@@ -51,7 +50,6 @@ const Sidebar = ({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const [openMenuId, setOpenMenuId] = useState(null);
-  const [savingConvId, setSavingConvId] = useState(null); // tracks which conv is being saved to library
   const [libraryFilterConvId, setLibraryFilterConvId] = useState(null);
   const [sidebarSearchQuery, setSidebarSearchQuery] = useState("");
   const [searchParams] = useSearchParams();
@@ -83,40 +81,7 @@ const Sidebar = ({
     }
   };
 
-  /**
-   * Save all messages (user and AI) from a conversation to the Library, then navigate to Library.
-   */
-  const handleSaveConversationToLibrary = async (conversationId) => {
-    setSavingConvId(conversationId);
-    setOpenMenuId(null);
-    try {
-      // Fetch messages using conversationService to avoid Clerk token / Supabase RLS issues
-      const data = await conversationService.getConversationWithMessages(conversationId);
-      const conversationMessages = data?.messages || [];
 
-      // Save each message to library (skips already-saved ones via upsert)
-      for (const msg of conversationMessages) {
-        if (!msg.message_id) continue;
-        await libraryService.saveMessage({
-          id: msg.message_id,
-          message_id: msg.message_id,
-          content: msg.content,
-          role: msg.role,
-          sources: msg.sources,
-          metadata: msg.metadata
-        });
-      }
-
-      // Navigate to library
-      navigate("/chat?view=library");
-    } catch (err) {
-      console.error("[Sidebar] Failed to save conversation to library:", err);
-      // Still navigate to library even on error
-      navigate("/chat?view=library");
-    } finally {
-      setSavingConvId(null);
-    }
-  };
 
   const { user } = useUser();
   const { signOut } = useClerk();
@@ -926,34 +891,7 @@ const Sidebar = ({
                           </button>
                         )}
 
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSaveConversationToLibrary(c.conversation_id);
-                          }}
-                          style={{
-                            width: "100%",
-                            padding: "8px 12px",
-                            fontSize: "12px",
-                            textAlign: "left",
-                            background: "none",
-                            border: "none",
-                            color: savingConvId === c.conversation_id
-                              ? (isDark ? "#3b82f6" : "#2563eb")
-                              : (isDark ? "#d1d5db" : "#374151"),
-                            cursor: savingConvId === c.conversation_id ? "not-allowed" : "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            opacity: savingConvId === c.conversation_id ? 0.7 : 1,
-                          }}
-                          disabled={savingConvId === c.conversation_id}
-                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)")}
-                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-                        >
-                          <Bookmark size={12} />
-                          <span>{savingConvId === c.conversation_id ? "Saving..." : "Save to Library"}</span>
-                        </button>
+
 
                         <hr style={{ border: 0, borderTop: isDark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(0,0,0,0.05)", margin: "4px 0" }} />
 

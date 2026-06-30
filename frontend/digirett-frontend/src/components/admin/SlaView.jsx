@@ -7,17 +7,17 @@ import {
 
 /* ─── helpers ─────────────────────────────────────────── */
 const fmtHours = (h) => {
-  if (h == null) return "—";
+  if (h == null) return "-";
   if (h < 1) return `${Math.round(h * 60)}m`;
   return `${h.toFixed(1)}h`;
 };
 const fmtDays = (d) => {
-  if (d == null) return "—";
+  if (d == null) return "-";
   if (d < 1) return `${Math.round(d * 24)}h`;
   return `${d.toFixed(1)} days`;
 };
 const fmtWaitingText = (h) => {
-  if (h == null) return "—";
+  if (h == null) return "-";
   if (h < 24) {
     if (h < 1) return `${Math.round(h * 60)}m`;
     return `${Math.round(h)}h`;
@@ -33,7 +33,7 @@ const fmtWaitingText = (h) => {
   }
   return `${days} ${days === 1 ? "day" : "days"} ${remainingHours}h`;
 };
-const fmtTicketId = (id) => (id ? `#${id.slice(0, 8).toUpperCase()}` : "—");
+const fmtTicketId = (id) => (id ? `#${id.slice(0, 8).toUpperCase()}` : "-");
 
 const ALERT_LABEL = {
   unclaimed:   { text: "No lawyer assigned", color: "#ef4444", bg: "rgba(239,68,68,0.08)" },
@@ -42,7 +42,7 @@ const ALERT_LABEL = {
 };
 
 /* ─── sub-components ──────────────────────────────────── */
-function KpiCard({ label, value, sublabel, color, icon: Icon, isDark }) {
+function KpiCard({ label, value, sublabel, statusText, statusColor, color, icon: Icon, isDark }) {
   return (
     <div style={{
       flex: 1,
@@ -50,27 +50,49 @@ function KpiCard({ label, value, sublabel, color, icon: Icon, isDark }) {
       borderRadius: "16px",
       border: `1px solid ${isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"}`,
       background: isDark ? "rgba(15,23,42,0.8)" : "#fff",
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: "space-between",
+      minWidth: "240px",
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: "10px",
-          background: `${color}18`,
-          display: "flex", alignItems: "center", justifyContent: "center"
-        }}>
-          <Icon size={16} color={color} />
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: "10px",
+            background: `${color}18`,
+            display: "flex", alignItems: "center", justifyContent: "center"
+          }}>
+            <Icon size={16} color={color} />
+          </div>
+          <span style={{ fontSize: "12px", fontWeight: 700, color: isDark ? "#94a3b8" : "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            {label}
+          </span>
         </div>
-        <span style={{ fontSize: "12px", fontWeight: 700, color: isDark ? "#94a3b8" : "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-          {label}
-        </span>
-      </div>
-      <p style={{ fontSize: "28px", fontWeight: 800, color: isDark ? "#f1f5f9" : "#0f172a", margin: 0 }}>
-        {value}
-      </p>
-      {sublabel && (
-        <p style={{ fontSize: "11px", color: isDark ? "#64748b" : "#94a3b8", marginTop: "4px" }}>
-          {sublabel}
+        <p style={{ fontSize: "28px", fontWeight: 800, color: isDark ? "#f1f5f9" : "#0f172a", margin: 0 }}>
+          {value}
         </p>
-      )}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "16px", gap: "8px" }}>
+        {sublabel && (
+          <p style={{ fontSize: "11px", color: isDark ? "#64748b" : "#94a3b8", margin: 0 }}>
+            {sublabel}
+          </p>
+        )}
+        {statusText && (
+          <span style={{
+            fontSize: "10px",
+            fontWeight: 700,
+            padding: "2px 8px",
+            borderRadius: "99px",
+            backgroundColor: `${statusColor}15`,
+            color: statusColor,
+            border: `1px solid ${statusColor}30`,
+            whiteSpace: "nowrap"
+          }}>
+            {statusText}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -200,7 +222,7 @@ export default function SlaView({ isDark, onNavigate }) {
               Performance Report
             </h1>
             <p style={{ marginTop: "6px", fontSize: "13px", color: isDark ? "#94a3b8" : "#64748b" }}>
-              Response times, SLA compliance, and lawyer performance — last 30 days
+              Response times, SLA compliance, and lawyer performance - last 30 days
             </p>
           </div>
           <button
@@ -226,7 +248,7 @@ export default function SlaView({ isDark, onNavigate }) {
             <CheckCircle size={18} color="#10b981" />
           )}
           <h2 style={{ fontSize: "15px", fontWeight: 800, color: isDark ? "#f1f5f9" : "#0f172a", margin: 0 }}>
-            {alerts.length > 0 ? `SLA Alerts — ${alerts.length} active` : "All SLA metrics within threshold"}
+            {alerts.length > 0 ? `SLA Alerts - ${alerts.length} active` : "All SLA metrics within threshold"}
           </h2>
         </div>
 
@@ -250,7 +272,7 @@ export default function SlaView({ isDark, onNavigate }) {
                   <AlertTriangle size={15} color={info.color} style={{ flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ fontSize: "13px", fontWeight: 700, color: info.color, margin: 0 }}>
-                      {info.text} — Ticket {fmtTicketId(alert.ticket_id)}
+                      {info.text} - Ticket {fmtTicketId(alert.ticket_id)}
                     </p>
                     <p style={{ fontSize: "12px", color: isDark ? "#94a3b8" : "#64748b", margin: "2px 0 0" }}>
                       {alert.user_name && `User: ${alert.user_name} · `}
@@ -274,7 +296,9 @@ export default function SlaView({ isDark, onNavigate }) {
           label="Avg Time to Claim"
           value={fmtHours(avg.time_to_claim_hours)}
           sublabel={`SLA threshold: ${thresholds.claim_hours}h`}
-          color={avg.time_to_claim_hours > thresholds.claim_hours ? "#ef4444" : "#10b981"}
+          statusText={avg.time_to_claim_hours > thresholds.claim_hours ? "Exceeded Threshold" : null}
+          statusColor="#ef4444"
+          color="#10b981"
           icon={Clock}
           isDark={isDark}
         />
@@ -282,7 +306,9 @@ export default function SlaView({ isDark, onNavigate }) {
           label="Avg Time to Book"
           value={fmtHours(avg.time_to_book_hours)}
           sublabel={`SLA threshold: ${thresholds.booking_hours}h`}
-          color={avg.time_to_book_hours > thresholds.booking_hours ? "#ef4444" : "#3b82f6"}
+          statusText={avg.time_to_book_hours > thresholds.booking_hours ? "Exceeded Threshold" : null}
+          statusColor="#ef4444"
+          color="#3b82f6"
           icon={TrendingUp}
           isDark={isDark}
         />
@@ -290,7 +316,9 @@ export default function SlaView({ isDark, onNavigate }) {
           label="Avg Time to Resolve"
           value={fmtDays(avg.time_to_resolve_days)}
           sublabel={`SLA threshold: ${thresholds.resolve_days} days`}
-          color={avg.time_to_resolve_days > thresholds.resolve_days ? "#ef4444" : "#6366f1"}
+          statusText={avg.time_to_resolve_days > thresholds.resolve_days ? "Exceeded Threshold" : null}
+          statusColor="#ef4444"
+          color="#6366f1"
           icon={CheckCircle}
           isDark={isDark}
         />
@@ -316,7 +344,7 @@ export default function SlaView({ isDark, onNavigate }) {
 
         {sortedLawyers.length === 0 ? (
           <div style={{ padding: "48px", textAlign: "center", color: isDark ? "#64748b" : "#94a3b8", fontSize: "13px" }}>
-            No resolved tickets yet — performance data will appear here once lawyers resolve matters.
+            No resolved tickets yet - performance data will appear here once lawyers resolve matters.
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
@@ -393,7 +421,7 @@ export default function SlaView({ isDark, onNavigate }) {
                     <td style={{ padding: "16px 20px" }}>
                       <span style={{
                         fontSize: "13px", fontWeight: 700,
-                        color: l.avg_resolve_days > thresholds.resolve_days ? "#ef4444" : (isDark ? "#10b981" : "#059669")
+                        color: isDark ? "#10b981" : "#059669"
                       }}>
                         {fmtDays(l.avg_resolve_days)}
                       </span>

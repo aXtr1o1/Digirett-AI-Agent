@@ -590,7 +590,7 @@ async def get_sla_report(
                         "ticket_id": t["ticket_id"],
                         "type": "claim_delay",
                         "hours_delayed": round(waiting_hours, 1),
-                        "message": f"Ticket #{t['ticket_id'][:6]} — waiting {int(waiting_hours)}h with no lawyer claimed"
+                        "message": f"Ticket #{t['ticket_id'][:6]} - waiting {int(waiting_hours)}h with no lawyer claimed"
                     })
             elif status_val == "assigned" and assigned_at and not booking_confirmed_at:
                 waiting_hours = (now - assigned_at).total_seconds() / 3600.0
@@ -599,7 +599,7 @@ async def get_sla_report(
                         "ticket_id": t["ticket_id"],
                         "type": "booking_delay",
                         "hours_delayed": round(waiting_hours, 1),
-                        "message": f"Ticket #{t['ticket_id'][:6]} — accepted but no booking in {int(waiting_hours)}h"
+                        "message": f"Ticket #{t['ticket_id'][:6]} - accepted but no booking in {int(waiting_hours)}h"
                     })
                     
             # Averages calculation
