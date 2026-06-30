@@ -2,126 +2,80 @@
 import api from "./api";
 import { API_ENDPOINTS } from "../utils/constants";
 
-// In-memory cache of saved message IDs to support synchronous checks in the UI (e.g. Message.jsx bookmark icon)
-let savedMessageIds = new Set();
-let isCacheLoaded = false;
-
 const libraryService = {
   /**
-   * Pre-load/fetch the saved message IDs into cache.
-   * Typically called on app initialization or ChatPage load.
-   */
-  loadCache: async () => {
-    try {
-      const response = await api.get(API_ENDPOINTS.LIBRARY.LIST);
-      const messages = response.data || [];
-      savedMessageIds = new Set(messages.map((m) => m.message_id));
-      isCacheLoaded = true;
-      return messages;
-    } catch (error) {
-      console.error("[libraryService] Error loading cache:", error);
-      return [];
-    }
-  },
-
-  /**
-   * Get all saved messages.
-   * @returns {Promise<Array>} List of saved messages.
+   * Get all saved library documents.
+   * @returns {Promise<Array>} List of library documents.
    */
   getSavedMessages: async () => {
     try {
       const response = await api.get(API_ENDPOINTS.LIBRARY.LIST);
-      const messages = response.data || [];
-      
-      // Update cache in case it changed
-      savedMessageIds = new Set(messages.map((m) => m.message_id));
-      isCacheLoaded = true;
-      
-      return messages;
+      return response.data || [];
     } catch (error) {
-      console.error("[libraryService] Error reading saved messages:", error);
+      console.error("[libraryService] Error reading library documents:", error);
       return [];
     }
   },
 
   /**
-   * Save a message to the library.
-   * @param {Object} message - The message object containing message_id/id.
+   * Upload a new document to the library.
+   * @param {File} file - The binary file object.
+   * @param {string} note - Optional initial note.
    */
-  saveMessage: async (message) => {
+  uploadDocument: async (file, note = "") => {
     try {
-      const msgId = message.message_id || message.id;
-      if (!msgId) throw new Error("Message ID is required to save to library");
+      const formData = new FormData();
+      formData.append("file", file);
+      if (note) {
+        formData.append("note", note);
+      }
 
-      const response = await api.post(API_ENDPOINTS.LIBRARY.SAVE, {
-        message_id: msgId,
-        note: ""
+      const response = await api.post(API_ENDPOINTS.LIBRARY.UPLOAD, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
       });
 
-      // Update in-memory cache
-      savedMessageIds.add(msgId);
-      
       // Dispatch a custom event to notify listeners of changes
       window.dispatchEvent(new Event("digirett_library_updated"));
       
       return response.data;
     } catch (error) {
-      console.error("[libraryService] Error saving message:", error);
+      console.error("[libraryService] Error uploading document:", error);
       throw error;
     }
   },
 
   /**
-   * Remove a message from the library.
-   * @param {string} messageId - The ID of the message to remove.
+   * Remove a document from the library.
+   * @param {string} documentId - The ID of the document to remove.
    */
-  unsaveMessage: async (messageId) => {
+  unsaveMessage: async (documentId) => {
     try {
-      if (!messageId) throw new Error("Message ID is required to unsave");
+      if (!documentId) throw new Error("Document ID is required to delete");
 
-      await api.delete(API_ENDPOINTS.LIBRARY.DELETE(messageId));
-      
-      // Update in-memory cache
-      savedMessageIds.delete(messageId);
+      await api.delete(API_ENDPOINTS.LIBRARY.DELETE(documentId));
       
       // Dispatch event
       window.dispatchEvent(new Event("digirett_library_updated"));
       
       return true;
     } catch (error) {
-      console.error("[libraryService] Error unsaving message:", error);
+      console.error("[libraryService] Error deleting document:", error);
       throw error;
     }
   },
 
   /**
-   * Check if a message is saved. (Synchronous, relies on loaded cache)
-   * @param {string} messageId - The message ID to check.
-   * @returns {boolean} True if saved.
-   */
-  isMessageSaved: (messageId) => {
-    if (!messageId) return false;
-    return savedMessageIds.has(messageId);
-  },
-
-  /**
-   * Check if the cache has been loaded from backend.
-   * @returns {boolean}
-   */
-  isCacheLoaded: () => {
-    return isCacheLoaded;
-  },
-
-  /**
-   * Update the user notes/annotations for a saved message.
-   * @param {string} messageId - The message ID.
+   * Update the user notes/annotations for a library document.
+   * @param {string} documentId - The document ID.
    * @param {string} note - The updated annotation string.
    */
-  updateMessageNote: async (messageId, note) => {
+  updateMessageNote: async (documentId, note) => {
     try {
-      if (!messageId) throw new Error("Message ID is required to update note");
+      if (!documentId) throw new Error("Document ID is required to update note");
 
-      const response = await api.patch(API_ENDPOINTS.LIBRARY.UPDATE_NOTE(messageId), {
+      const response = await api.patch(API_ENDPOINTS.LIBRARY.UPDATE_NOTE(documentId), {
         note
       });
       
@@ -130,7 +84,7 @@ const libraryService = {
       
       return response.data;
     } catch (error) {
-      console.error("[libraryService] Error updating message note:", error);
+      console.error("[libraryService] Error updating document note:", error);
       throw error;
     }
   },

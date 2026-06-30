@@ -5,8 +5,6 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import SourceLinks from "./SourceLinks";
 import useCopyToClipboard from "../../hooks/useCopyToClipboard";
-import { API_BASE_URL } from "../../utils/constants";
-import libraryService from "../../services/libraryService";
 
 const Message = ({ message, isStreaming = false, theme = "dark", conversationId, conversationTitle }) => {
   const { user } = useUser();
@@ -15,27 +13,7 @@ const Message = ({ message, isStreaming = false, theme = "dark", conversationId,
   const isDark = theme === "dark";
 
   const msgId = message.message_id || message.id;
-  const [isBookmarked, setIsBookmarked] = useState(() =>
-    libraryService.isMessageSaved(msgId)
-  );
 
-  const handleToggleBookmark = async () => {
-    const originalState = isBookmarked;
-    // Optimistic UI update
-    setIsBookmarked(!originalState);
-    
-    try {
-      if (originalState) {
-        await libraryService.unsaveMessage(msgId);
-      } else {
-        await libraryService.saveMessage(message);
-      }
-    } catch (err) {
-      console.error("Failed to toggle bookmark status:", err);
-      // Revert state on error
-      setIsBookmarked(originalState);
-    }
-  };
 
   // ✅ FILE MESSAGE HANDLING (ADD THIS BLOCK)
   if (message.type === "file") {
@@ -244,24 +222,7 @@ const Message = ({ message, isStreaming = false, theme = "dark", conversationId,
                   )}
                 </button>
 
-                {!isUser && message.role !== "system" && (
-                  <button
-                    onClick={handleToggleBookmark}
-                    className={`flex items-center gap-1.5 text-xs transition-colors ${
-                      isBookmarked
-                        ? "text-blue-500 hover:text-blue-400"
-                        : isDark
-                          ? "text-gray-500 hover:text-gray-300"
-                          : "text-gray-400 hover:text-gray-600"
-                    }`}
-                  >
-                    <Bookmark
-                      className="h-3 w-3"
-                      fill={isBookmarked ? "currentColor" : "none"}
-                    />
-                    <span>{isBookmarked ? "Saved" : "Save to Library"}</span>
-                  </button>
-                )}
+
               </div>
             )}
 

@@ -3,7 +3,6 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import MainLayout from "../components/layout/MainLayout";
 import ChatContainer from "../components/chat/ChatContainer";
 import LibraryDashboard from "../components/chat/LibraryDashboard";
-import libraryService from "../services/libraryService";
 import LegalPanel from "../components/layout/LegalPanel";
 import useConversations from "../hooks/useConversations";
 import { useUser } from "@clerk/clerk-react";
@@ -47,10 +46,7 @@ const ChatPage = () => {
     restoreConversation
   } = useConversations();
 
-  // Prefetch the saved messages cache on mount to ensure bookmark icons render correctly
-  useEffect(() => {
-    libraryService.loadCache().catch(err => console.error("[ChatPage] Failed to load library cache:", err));
-  }, []);
+
 
   // Sync currentConversationId with URL parameter
   // Note: archived conversations should still be loadable/viewable — archivedIds only controls the sidebar filter
