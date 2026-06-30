@@ -39,7 +39,8 @@ import {
   Sun,
   Moon,
   UserX,
-  Star
+  Star,
+  ChevronDown
 } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -105,6 +106,8 @@ export default function LawyerDashboard() {
   const [specializationLabel, setSpecializationLabel] = useState("");
   const [isSpecializationSaving, setIsSpecializationSaving] = useState(false);
   const [isBriefExpanded, setIsBriefExpanded] = useState(true);
+  const [availabilityStatus, setAvailabilityStatus] = useState("available");
+  const [showAvailabilityDropdown, setShowAvailabilityDropdown] = useState(false);
 
   const notesRef = useRef(null);
 
@@ -157,6 +160,15 @@ export default function LawyerDashboard() {
       setQueueMsg({ type: "error", text: err.message || "Failed to update specialization profile." });
     } finally {
       setIsSpecializationSaving(false);
+    }
+  };
+
+  const handleUpdateAvailability = async (status) => {
+    try {
+      await hitlService.updateAvailability(status);
+      setAvailabilityStatus(status);
+    } catch (err) {
+      alert(err.message || "Failed to update availability status");
     }
   };
 
@@ -356,6 +368,7 @@ export default function LawyerDashboard() {
         setCalApiKey(calConfig.cal_api_key || "");
         setExpertiseDomains(calConfig.expertise_domains || []);
         setSpecializationLabel(calConfig.specialization_label || "");
+        setAvailabilityStatus(calConfig.availability_status || "available");
       }
 
     } catch (err) {
@@ -709,6 +722,65 @@ export default function LawyerDashboard() {
             </div>
 
             <div className="flex items-center gap-4">
+              {/* Live Availability Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowAvailabilityDropdown(!showAvailabilityDropdown)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all cursor-pointer select-none outline-none ${
+                    isDark
+                      ? "bg-slate-950/40 border-slate-800 text-slate-300 hover:bg-slate-900"
+                      : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className={`h-2 w-2 rounded-full ${
+                    availabilityStatus === "available"
+                      ? "bg-emerald-500 animate-pulse"
+                      : availabilityStatus === "busy"
+                        ? "bg-amber-500"
+                        : "bg-red-500"
+                  }`} />
+                  <span>{availabilityStatus.charAt(0).toUpperCase() + availabilityStatus.slice(1)}</span>
+                  <ChevronDown size={12} className={`transition-transform duration-200 ${showAvailabilityDropdown ? "rotate-180" : ""}`} />
+                </button>
+
+                {showAvailabilityDropdown && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowAvailabilityDropdown(false)}
+                    />
+                    <div className={`absolute right-0 mt-2 w-40 rounded-xl border shadow-xl z-50 p-1.5 space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150 ${
+                      isDark ? "bg-slate-900 border-slate-800 shadow-black/40" : "bg-white border-slate-200"
+                    }`}>
+                      {[
+                        { value: "available", label: "Available", color: "bg-emerald-500" },
+                        { value: "busy", label: "Busy", color: "bg-amber-500" },
+                        { value: "away", label: "Away", color: "bg-red-500" }
+                      ].map((item) => {
+                        const isActive = availabilityStatus === item.value;
+                        return (
+                          <button
+                            key={item.value}
+                            onClick={() => {
+                              handleUpdateAvailability(item.value);
+                              setShowAvailabilityDropdown(false);
+                            }}
+                            className={`w-full px-3 py-2 flex items-center gap-2.5 rounded-lg text-xs font-medium transition-all text-left ${
+                              isDark
+                                ? `${isActive ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800/50"}`
+                                : `${isActive ? "bg-slate-105 text-slate-900" : "text-slate-600 hover:bg-slate-50"}`
+                            }`}
+                          >
+                            <span className={`h-2 w-2 rounded-full ${item.color}`} />
+                            <span>{item.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="h-8 w-[1px] bg-gray-200 dark:bg-gray-800 mx-1"></div>
               <button
                 onClick={toggleTheme}
                 className={`p-2 rounded-xl transition-all ${isDark ? "bg-gray-800 text-blue-400 hover:bg-gray-700" : "bg-gray-50 text-gray-500 hover:bg-gray-100"}`}
@@ -935,6 +1007,24 @@ export default function LawyerDashboard() {
                                   <div>
                                     <p className="text-sm font-bold flex items-center gap-2">
                                       {ticket.user_display_name || "Anonymous"}
+                                      {ticket.priority === "urgent" && (
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                                          isDark 
+                                            ? "bg-rose-955/20 border-rose-900/30 text-rose-400" 
+                                            : "bg-rose-50 border-rose-100 text-rose-600"
+                                        }`}>
+                                          Urgent
+                                        </span>
+                                      )}
+                                      {ticket.priority === "high" && (
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                                          isDark 
+                                            ? "bg-amber-955/20 border-amber-900/30 text-amber-400" 
+                                            : "bg-amber-50 border-amber-100 text-amber-600"
+                                        }`}>
+                                          High
+                                        </span>
+                                      )}
                                     </p>
                                     <p className="text-[10px] text-slate-500">{ticket.user_email}</p>
                                     {ticket.detected_domain && (
@@ -952,7 +1042,7 @@ export default function LawyerDashboard() {
                                   </div>
                                 </div>
                               </td>
-                             <td className="px-8 py-6">
+                              <td className="px-8 py-6">
                               <p 
                                 onClick={() => {
                                   if (ticket.conversation_summary) {
@@ -964,6 +1054,16 @@ export default function LawyerDashboard() {
                               >
                                 {ticket.conversation_summary || "No summary available."}
                               </p>
+                              {ticket.priority === "urgent" && ticket.urgent_reason && (
+                                <div className={`mt-2 p-2.5 rounded-lg border text-[10px] leading-relaxed font-medium ${
+                                  isDark 
+                                    ? "bg-red-500/5 border-red-500/15 text-red-400" 
+                                    : "bg-red-50 border-red-100 text-red-700"
+                                }`}>
+                                  <span className="font-bold uppercase text-[8px] tracking-wider block mb-0.5">Urgent Reason:</span>
+                                  "{ticket.urgent_reason}"
+                                </div>
+                              )}
                             </td>
                             <td className="px-8 py-6 text-right">
                               <button onClick={() => handleClaim(ticket.ticket_id)} className="px-4 py-2 border border-slate-200 rounded-lg text-xs font-bold hover:bg-slate-50 transition-all">Claim Matter</button>
@@ -993,8 +1093,35 @@ export default function LawyerDashboard() {
                         <p className="text-sm text-slate-500 font-medium">{intakeTicket.user_email}</p>
                       </div>
                     </div>
-                    <div className="px-6 py-2 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-[10px] font-black uppercase tracking-widest">Currently Working</div>
+                    <div className="flex items-center gap-3">
+                      {intakeTicket.priority === "urgent" && (
+                        <span className={`px-3 py-1 rounded-lg text-xs font-semibold border ${
+                          isDark 
+                            ? "bg-rose-955/20 border-rose-900/30 text-rose-400" 
+                            : "bg-rose-50 border-rose-100 text-rose-600"
+                        }`}>
+                          Urgent
+                        </span>
+                      )}
+                      <div className="px-6 py-2 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-[10px] font-black uppercase tracking-widest">Currently Working</div>
+                    </div>
                   </div>
+
+                  {/* Urgent Reason Alert */}
+                  {intakeTicket.priority === "urgent" && intakeTicket.urgent_reason && (
+                    <div className={`p-4 mb-6 rounded-xl border-l-4 ${
+                      isDark 
+                        ? "bg-rose-955/20 border-rose-900/30 border-l-rose-500 text-rose-200" 
+                        : "bg-rose-50 border-rose-100 border-l-rose-500 text-rose-900"
+                    }`}>
+                      <h4 className="text-xs font-bold mb-1">
+                        Urgent Client Request
+                      </h4>
+                      <p className="text-xs leading-relaxed font-medium">
+                        "{intakeTicket.urgent_reason}"
+                      </p>
+                    </div>
+                  )}
 
                   {/* AI CASE BRIEF */}
                   {intakeTicket.ai_brief && (
@@ -1015,7 +1142,7 @@ export default function LawyerDashboard() {
                           </span>
                         </div>
                         <span className="text-[10px] text-slate-500 font-bold">
-                          {isBriefExpanded ? "COLLAPSE ▲" : "EXPAND ▼"}
+                          {isBriefExpanded ? "Minimize ▲" : "Maximize ▼"}
                         </span>
                       </button>
 
@@ -1516,6 +1643,33 @@ export default function LawyerDashboard() {
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Expertise Areas (Select all that apply)</label>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Common (Generalist) Checkbox */}
+                        <label
+                          key="common"
+                          className={`p-4 rounded-xl border flex items-start gap-3 cursor-pointer select-none transition-all ${
+                            expertiseDomains.some(d => d.toLowerCase() === "common")
+                              ? (isDark ? "bg-indigo-500/10 border-indigo-500/40 text-white" : "bg-indigo-50 border-indigo-200 text-indigo-900")
+                              : (isDark ? "bg-slate-950/40 border-slate-800/50 hover:border-slate-750 text-slate-400" : "bg-white border-slate-200 hover:border-slate-300 text-slate-600")
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={expertiseDomains.some(d => d.toLowerCase() === "common")}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setExpertiseDomains(prev => [...prev, "Common"]);
+                              } else {
+                                setExpertiseDomains(prev => prev.filter(d => d.toLowerCase() !== "common"));
+                              }
+                            }}
+                            className="mt-1 rounded text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <div>
+                            <span className="text-xs font-bold block">Generalist (Common)</span>
+                            <span className="text-[10px] opacity-60 block mt-0.5">Receives matches for all case domains</span>
+                          </div>
+                        </label>
+
                         {LEGAL_DOMAINS.map((domain) => {
                           const isChecked = expertiseDomains.some(d => d.toLowerCase() === domain.key.toLowerCase());
                           return (

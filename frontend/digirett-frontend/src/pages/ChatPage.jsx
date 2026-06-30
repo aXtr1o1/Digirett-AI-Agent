@@ -91,6 +91,16 @@ const ChatPage = () => {
 
   const { isDark } = useTheme();
 
+  useEffect(() => {
+    const handleStatusChanged = (e) => {
+      setIsEscalated(e.detail);
+    };
+    window.addEventListener("escalation_status_changed", handleStatusChanged);
+    return () => {
+      window.removeEventListener("escalation_status_changed", handleStatusChanged);
+    };
+  }, []);
+
   // Monitor for persistent status alerts (Accepted/Resolved)
   const checkMatterStatus = useCallback(async () => {
     if (!user?.id) return;

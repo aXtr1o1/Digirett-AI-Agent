@@ -147,7 +147,7 @@ async def list_users(
     try:
         response = (
             _user_service._supabase.table("users")
-            .select("*, user_profiles(display_name), lawyer_profiles!lawyer_profiles_lawyer_id_fkey(expertise_domains, specialization_label)")
+            .select("*, user_profiles(display_name), lawyer_profiles!lawyer_profiles_lawyer_id_fkey(expertise_domains, specialization_label, availability_status, last_seen_at)")
             .order("created_at", desc=True)
             .execute()
         )

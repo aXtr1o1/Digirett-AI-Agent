@@ -1360,11 +1360,12 @@ export default function AdminDashboard() {
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className={`text-left ${isDark ? "bg-slate-950/50" : "bg-slate-50/50"}`}>
+                      <tr className={`text-left ${isDark ? "bg-slate-955/50" : "bg-slate-50/50"}`}>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Lawyer Specialization</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Access Role</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Status</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Availability</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">User Details</th>
                         {isAuthorized && <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Actions</th>}
                       </tr>
@@ -1372,7 +1373,7 @@ export default function AdminDashboard() {
                     <tbody className={`divide-y ${isDark ? "divide-slate-800" : "divide-slate-100"}`}>
                       {loading ? (
                         <tr>
-                          <td colSpan={isAuthorized ? 6 : 5} className="px-8 py-20 text-center">
+                          <td colSpan={isAuthorized ? 7 : 6} className="px-8 py-20 text-center">
                             <Loader2 size={32} className="animate-spin text-indigo-500 mx-auto opacity-20" />
                           </td>
                         </tr>
@@ -1456,6 +1457,32 @@ export default function AdminDashboard() {
                                   {user.status === 'inactive' ? 'Inactive' : (user.status || 'Active')}
                                 </span>
                               </div>
+                            </td>
+                            <td className="px-8 py-6">
+                              {user.role === 'lawyer' ? (
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`h-1.5 w-1.5 rounded-full ${
+                                      user.lawyer_profiles?.availability_status === 'available'
+                                        ? 'bg-emerald-550 animate-pulse'
+                                        : user.lawyer_profiles?.availability_status === 'busy'
+                                          ? 'bg-amber-500'
+                                          : 'bg-red-500'
+                                    }`}
+                                  />
+                                  <span className={`text-[10px] font-black uppercase tracking-widest ${
+                                    user.lawyer_profiles?.availability_status === 'available'
+                                      ? 'text-emerald-500'
+                                      : user.lawyer_profiles?.availability_status === 'busy'
+                                        ? 'text-amber-500'
+                                        : 'text-red-500'
+                                  }`}>
+                                    {user.lawyer_profiles?.availability_status || 'Available'}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 dark:text-slate-650 font-bold">—</span>
+                              )}
                             </td>
 
                             <td className="px-8 py-6 text-right">

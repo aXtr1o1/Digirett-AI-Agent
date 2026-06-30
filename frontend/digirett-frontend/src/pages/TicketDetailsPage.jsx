@@ -391,7 +391,13 @@ export default function TicketDetailsPage() {
                       },
                       ticket.region && { icon: <MapPin size={16} />, label: "Region", value: ticket.region },
                       ticket.category && { icon: <Tag size={16} />, label: "Category", value: ticket.category },
-                      ticket.priority && { icon: <AlertTriangle size={16} />, label: "Priority", value: ticket.priority, valueClass: "text-orange-500" },
+                      { icon: <AlertTriangle size={16} />, label: "Priority", isPriority: true },
+                      ticket.priority === "urgent" && ticket.urgent_reason && {
+                        icon: <AlertTriangle size={16} className="text-red-500" />,
+                        label: "Urgent Reason",
+                        value: ticket.urgent_reason,
+                        valueClass: "text-red-500 max-w-md text-right whitespace-pre-wrap break-words"
+                      },
                       ticket.created_at && { icon: <Calendar size={16} />, label: "Opened", value: new Date(ticket.created_at).toLocaleDateString() }
                     ].filter(Boolean).map((item, i) => (
                       <div key={i} className="flex items-center justify-between py-4">
@@ -399,7 +405,33 @@ export default function TicketDetailsPage() {
                           <div className="text-gray-400">{item.icon}</div>
                           <span className={`text-xs font-medium ${isDark ? "text-slate-400" : "text-gray-500"}`}>{item.label}</span>
                         </div>
-                        <span className={`text-xs font-bold ${item.valueClass || (isDark ? "text-slate-200" : "text-gray-900")}`}>{item.value}</span>
+                        {item.isPriority ? (
+                          <select
+                            value={ticket.priority || "normal"}
+                            onChange={async (e) => {
+                              const newPriority = e.target.value;
+                              try {
+                                await hitlService.updateTicketPriority(id, newPriority);
+                                setTicket(prev => ({ ...prev, priority: newPriority }));
+                              } catch (err) {
+                                alert(err.message || "Failed to update priority");
+                              }
+                            }}
+                            className={`px-3 py-1.5 rounded-xl border text-[11px] font-black uppercase tracking-wider outline-none transition-all cursor-pointer ${
+                              (ticket.priority || "normal").toLowerCase() === "urgent"
+                                ? "bg-red-500/10 text-red-500 border-red-500/20"
+                                : (ticket.priority || "normal").toLowerCase() === "high"
+                                  ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                  : "bg-slate-500/10 text-slate-550 border-slate-500/20"
+                            }`}
+                          >
+                            <option value="normal" className={isDark ? "bg-slate-900 text-slate-300" : "bg-white text-slate-600"}>Normal</option>
+                            <option value="high" className={isDark ? "bg-slate-900 text-amber-500" : "bg-white text-amber-600"}>High</option>
+                            <option value="urgent" className={isDark ? "bg-slate-900 text-red-500" : "bg-white text-red-600"}>Urgent</option>
+                          </select>
+                        ) : (
+                          <span className={`text-xs font-bold ${item.valueClass || (isDark ? "text-slate-200" : "text-gray-900")}`}>{item.value}</span>
+                        )}
                       </div>
                     ))}
                   </div>

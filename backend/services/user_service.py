@@ -587,7 +587,7 @@ class UserService:
     def get_lawyer_cal_config(self, lawyer_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve the Cal.com configuration for a lawyer."""
         try:
-            resp = self._supabase.table("lawyer_profiles").select("cal_event_type_id, cal_api_key, expertise_domains, specialization_label").eq("lawyer_id", lawyer_id).execute()
+            resp = self._supabase.table("lawyer_profiles").select("cal_event_type_id, cal_api_key, expertise_domains, specialization_label, availability_status, last_seen_at").eq("lawyer_id", lawyer_id).execute()
             if resp.data:
                 return resp.data[0]
             return None
