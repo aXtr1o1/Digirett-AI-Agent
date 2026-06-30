@@ -93,12 +93,6 @@ class SearchRequest(BaseModel):
     min_score: float = Field(default=0.45, ge=0.0, le=1.0)
 
 
-class LibrarySaveRequest(BaseModel):
-    """Body for POST /library/save"""
-    message_id: str = Field(..., description="UUID of the message to save")
-    note: Optional[str] = Field("", description="Optional user note/annotation")
-
-
 class LibraryNoteUpdateRequest(BaseModel):
-    """Body for PATCH /library/{message_id}"""
+    """Body for PATCH /library/{document_id}"""
     note: str = Field(..., description="Updated note/annotation content")
