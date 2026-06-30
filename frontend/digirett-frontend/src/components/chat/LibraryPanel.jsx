@@ -63,7 +63,7 @@ const LibraryPanel = ({ isDark }) => {
     e.stopPropagation();
     try {
       const token = await window.Clerk?.session?.getToken();
-      const url = `${API_BASE_URL}/api/v1/documents/view/${docId}${token ? `?token=${token}` : ""}`;
+      const url = `${API_BASE_URL}/api/v1/library/documents/${docId}/view${token ? `?token=${token}` : ""}`;
       window.open(url, "_blank");
     } catch (err) {
       console.error("Failed to view document:", err);
@@ -271,13 +271,12 @@ const LibraryPanel = ({ isDark }) => {
           filteredDocuments.map((doc) => (
             <div
               key={doc.id}
-              onClick={(e) => handleDownload(e, doc.id)}
               style={{
                 padding: "10px",
                 borderRadius: "10px",
                 backgroundColor: isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)",
                 border: isDark ? "1px solid rgba(255, 255, 255, 0.06)" : "1px solid rgba(0, 0, 0, 0.06)",
-                cursor: "pointer",
+                cursor: "default",
                 transition: "all 0.2s",
                 display: "flex",
                 flexDirection: "column",
@@ -300,8 +299,15 @@ const LibraryPanel = ({ isDark }) => {
               {/* Header metadata */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0, flex: 1 }}>
-                  <FileText size={14} className="text-blue-500 flex-shrink-0" />
+                  <FileText 
+                    size={14} 
+                    className="text-blue-500 flex-shrink-0" 
+                    onClick={(e) => handleDownload(e, doc.id)}
+                    style={{ cursor: "pointer" }}
+                    title="Download / View file"
+                  />
                   <span
+                    onClick={(e) => handleDownload(e, doc.id)}
                     style={{
                       fontSize: "12px",
                       fontWeight: "600",
@@ -309,8 +315,11 @@ const LibraryPanel = ({ isDark }) => {
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
+                      cursor: "pointer",
                     }}
                     title={doc.file_name}
+                    onMouseEnter={(e) => e.currentTarget.style.textDecoration = "underline"}
+                    onMouseLeave={(e) => e.currentTarget.style.textDecoration = "none"}
                   >
                     {doc.file_name}
                   </span>
@@ -443,7 +452,7 @@ const LibraryPanel = ({ isDark }) => {
                     gap: "2px",
                   }}
                 >
-                  <div>
+                  <div style={{ wordBreak: "break-word" }}>
                     <strong style={{ fontWeight: "600" }}>Note:</strong> {doc.note}
                   </div>
                   <button

@@ -82,7 +82,7 @@ const LibraryDashboard = ({ theme = "dark" }) => {
     e.stopPropagation();
     try {
       const token = await window.Clerk?.session?.getToken();
-      const url = `${API_BASE_URL}/api/v1/documents/view/${docId}${token ? `?token=${token}` : ""}`;
+      const url = `${API_BASE_URL}/api/v1/library/documents/${docId}/view${token ? `?token=${token}` : ""}`;
       window.open(url, "_blank");
     } catch (err) {
       console.error("Failed to view document:", err);
@@ -380,7 +380,7 @@ const LibraryDashboard = ({ theme = "dark" }) => {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "3fr 1fr 1fr",
+            gridTemplateColumns: "1fr 120px 100px 140px",
             padding: "8px 12px",
             fontSize: "12px",
             fontWeight: "500",
@@ -390,7 +390,8 @@ const LibraryDashboard = ({ theme = "dark" }) => {
         >
           <div>Name</div>
           <div>Modified ↓</div>
-          <div style={{ textAlign: "right", paddingRight: "12px" }}>Size</div>
+          <div style={{ textAlign: "right", paddingRight: "16px" }}>Size</div>
+          <div style={{ textAlign: "right", paddingRight: "12px" }}>Actions</div>
         </div>
 
         {/* Empty State */}
@@ -418,33 +419,29 @@ const LibraryDashboard = ({ theme = "dark" }) => {
           return (
             <div key={doc.id} style={{ borderBottom: `1px solid ${borderColor}` }}>
               <div
-                onClick={(e) => handleDownload(e, doc.id)}
                 className="library-row"
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "3fr 1fr 1fr",
+                  gridTemplateColumns: "1fr 120px 100px 140px",
                   alignItems: "center",
                   padding: "14px 12px",
                   fontSize: "14px",
-                  cursor: "pointer",
+                  cursor: "default",
                   borderRadius: "8px",
                   transition: "background-color 0.15s",
                   position: "relative",
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.backgroundColor = hoverColor;
-                  const actionBox = e.currentTarget.querySelector(".row-actions");
-                  if (actionBox) actionBox.style.opacity = "1";
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = "transparent";
-                  const actionBox = e.currentTarget.querySelector(".row-actions");
-                  if (actionBox) actionBox.style.opacity = "0";
                 }}
               >
                 {/* Name column */}
                 <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
                   <div
+                    onClick={(e) => handleDownload(e, doc.id)}
                     style={{
                       width: "32px",
                       height: "32px",
@@ -455,27 +452,146 @@ const LibraryDashboard = ({ theme = "dark" }) => {
                       alignItems: "center",
                       justifyContent: "center",
                       flexShrink: 0,
+                      cursor: "pointer",
                     }}
+                    title="Download / View file"
                   >
                     <FileText size={16} />
                   </div>
-                  <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: "2px" }}>
+                  <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: "4px", flex: 1 }}>
                     <span
+                      onClick={(e) => handleDownload(e, doc.id)}
                       style={{
                         fontWeight: "500",
                         color: textPrimaryColor,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
+                        cursor: "pointer",
+                        alignSelf: "flex-start",
                       }}
+                      title="Download / View file"
+                      onMouseEnter={(e) => e.currentTarget.style.textDecoration = "underline"}
+                      onMouseLeave={(e) => e.currentTarget.style.textDecoration = "none"}
                     >
                       {doc.file_name}
                     </span>
-                    {doc.note && !isExpanded && (
-                      <span style={{ fontSize: "11px", color: "#d97706", display: "flex", alignItems: "center", gap: "3px" }}>
-                        <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "#d97706" }}></span>
-                        {doc.note.length > 60 ? `${doc.note.substring(0, 60)}...` : doc.note}
-                      </span>
+                    
+                    {/* Render Edit form inline under filename */}
+                    {isEditing ? (
+                      <div 
+                        onClick={(e) => e.stopPropagation()} 
+                        style={{ 
+                          display: "flex", 
+                          flexDirection: "column", 
+                          gap: "8px", 
+                          marginTop: "4px",
+                          width: "100%",
+                          maxWidth: "600px"
+                        }}
+                      >
+                        <textarea
+                          value={editNoteText}
+                          onChange={(e) => setEditNoteText(e.target.value)}
+                          placeholder="Type your personal notes or annotations here..."
+                          rows={2}
+                          style={{
+                            width: "100%",
+                            fontSize: "12px",
+                            lineHeight: "1.4",
+                            padding: "6px 10px",
+                            borderRadius: "6px",
+                            backgroundColor: isDark ? "#212121" : "#ffffff",
+                            color: textPrimaryColor,
+                            border: `1px solid ${borderColor}`,
+                            outline: "none",
+                            resize: "none",
+                            boxSizing: "border-box",
+                          }}
+                        />
+                        <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+                          <button
+                            onClick={cancelEditing}
+                            style={{
+                              padding: "4px 10px",
+                              borderRadius: "4px",
+                              fontSize: "11px",
+                              border: `1px solid ${borderColor}`,
+                              backgroundColor: "transparent",
+                              color: textSecondaryColor,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={(e) => saveNote(e, doc.id)}
+                            style={{
+                              padding: "4px 10px",
+                              borderRadius: "4px",
+                              fontSize: "11px",
+                              fontWeight: "600",
+                              border: "none",
+                              backgroundColor: "#3b82f6",
+                              color: "#ffffff",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Render Full Note professionally inline under filename */
+                      doc.note && (
+                        <div
+                          style={{
+                            marginTop: "4px",
+                            fontSize: "12px",
+                            color: textPrimaryColor,
+                            backgroundColor: isDark ? "rgba(255, 255, 255, 0.02)" : "#f9fafb",
+                            borderLeft: `3px solid #3b82f6`,
+                            padding: "6px 12px",
+                            borderRadius: "4px",
+                            wordBreak: "break-word",
+                            maxWidth: "600px",
+                            lineHeight: "1.5",
+                          }}
+                        >
+                          <span style={{ fontWeight: "700", color: "#3b82f6", marginRight: "6px", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                            Note:
+                          </span>
+                          {doc.note.length <= 140 || expandedNoteId === doc.id ? (
+                            <>
+                              {doc.note}
+                              {doc.note.length > 140 && (
+                                <span
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedNoteId(null);
+                                  }}
+                                  style={{ color: "#3b82f6", marginLeft: "6px", cursor: "pointer", fontWeight: "600" }}
+                                >
+                                  Show less
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {doc.note.substring(0, 140)}...
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedNoteId(doc.id);
+                                }}
+                                style={{ color: "#3b82f6", marginLeft: "6px", cursor: "pointer", fontWeight: "600" }}
+                              >
+                                Show more
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      )
                     )}
                   </div>
                 </div>
@@ -485,179 +601,78 @@ const LibraryDashboard = ({ theme = "dark" }) => {
                   {formatDate(doc.created_at)}
                 </div>
 
-                {/* Size & Action column */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "16px" }}>
-                  <span style={{ color: textSecondaryColor, fontSize: "13px", textAlign: "right" }}>
-                    {formatSize(doc.char_count)}
-                  </span>
+                {/* Size column */}
+                <div style={{ color: textSecondaryColor, fontSize: "13px", textAlign: "right", paddingRight: "16px" }}>
+                  {formatSize(doc.char_count)}
+                </div>
 
-                  {/* Actions overlay (visible on hover) */}
-                  <div
-                    className="row-actions"
+                {/* Actions column */}
+                <div
+                  className="row-actions"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                    gap: "8px",
+                  }}
+                  onClick={(e) => e.stopPropagation()} // Prevent triggering file download
+                >
+                  {/* Download / View */}
+                  <button
+                    onClick={(e) => handleDownload(e, doc.id)}
                     style={{
+                      background: "none",
+                      border: "none",
+                      color: textSecondaryColor,
+                      cursor: "pointer",
+                      padding: "4px",
+                      borderRadius: "4px",
                       display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      opacity: 0,
-                      transition: "opacity 0.1s ease-in-out",
-                      backgroundColor: hoverColor,
-                      paddingLeft: "8px",
                     }}
-                    onClick={(e) => e.stopPropagation()} // Prevent triggering file download
+                    title="Download Document"
+                    onMouseEnter={(e) => e.currentTarget.style.color = "#3b82f6"}
+                    onMouseLeave={(e) => e.currentTarget.style.color = textSecondaryColor}
                   >
-                    {/* Expand/Collapse Note */}
-                    <button
-                      onClick={(e) => toggleExpandNote(e, doc.id)}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        color: textSecondaryColor,
-                        cursor: "pointer",
-                        padding: "4px",
-                        borderRadius: "4px",
-                        display: "flex",
-                      }}
-                      title="View Notes"
-                    >
-                      {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                    </button>
+                    <Download size={15} />
+                  </button>
 
-                    {/* Edit Note */}
-                    <button
-                      onClick={(e) => startEditingNote(e, doc)}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        color: textSecondaryColor,
-                        cursor: "pointer",
-                        padding: "4px",
-                        borderRadius: "4px",
-                        display: "flex",
-                      }}
-                      title="Edit Note"
-                    >
-                      <Edit3 size={15} />
-                    </button>
+                  {/* Edit Note */}
+                  <button
+                    onClick={(e) => startEditingNote(e, doc)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: textSecondaryColor,
+                      cursor: "pointer",
+                      padding: "4px",
+                      borderRadius: "4px",
+                      display: "flex",
+                    }}
+                    title="Edit Note"
+                  >
+                    <Edit3 size={15} />
+                  </button>
 
-                    {/* Delete */}
-                    <button
-                      onClick={(e) => handleRemove(e, doc.id)}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        color: textSecondaryColor,
-                        cursor: "pointer",
-                        padding: "4px",
-                        borderRadius: "4px",
-                        display: "flex",
-                      }}
-                      title="Delete"
-                      onMouseEnter={(e) => e.currentTarget.style.color = "#ef4444"}
-                      onMouseLeave={(e) => e.currentTarget.style.color = textSecondaryColor}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
+                  {/* Delete */}
+                  <button
+                    onClick={(e) => handleRemove(e, doc.id)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: textSecondaryColor,
+                      cursor: "pointer",
+                      padding: "4px",
+                      borderRadius: "4px",
+                      display: "flex",
+                    }}
+                    title="Delete"
+                    onMouseEnter={(e) => e.currentTarget.style.color = "#ef4444"}
+                    onMouseLeave={(e) => e.currentTarget.style.color = textSecondaryColor}
+                  >
+                    <Trash2 size={15} />
+                  </button>
                 </div>
               </div>
-
-              {/* Collapsible Note Section */}
-              {isExpanded && (
-                <div
-                  style={{
-                    backgroundColor: isDark ? "#1e1e1e" : "#f9f9f9",
-                    padding: "16px 20px",
-                    borderTop: `1px solid ${borderColor}`,
-                    borderBottom: isExpanded ? `1px solid ${borderColor}` : "none",
-                    marginLeft: "44px",
-                    marginRight: "12px",
-                    marginBottom: "12px",
-                    borderRadius: "8px",
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {isEditing ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                      <label style={{ fontSize: "11px", fontWeight: "600", color: textSecondaryColor, textTransform: "uppercase" }}>
-                        Edit Annotation Note
-                      </label>
-                      <textarea
-                        value={editNoteText}
-                        onChange={(e) => setEditNoteText(e.target.value)}
-                        placeholder="Add personal note/annotation..."
-                        rows={3}
-                        style={{
-                          width: "100%",
-                          fontSize: "13px",
-                          padding: "10px",
-                          borderRadius: "6px",
-                          backgroundColor: isDark ? "#2d2d2d" : "#ffffff",
-                          color: textPrimaryColor,
-                          border: `1px solid ${borderColor}`,
-                          outline: "none",
-                          resize: "none",
-                          boxSizing: "border-box"
-                        }}
-                      />
-                      <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-                        <button
-                          onClick={cancelEditing}
-                          style={{
-                            padding: "4px 12px",
-                            borderRadius: "6px",
-                            fontSize: "12px",
-                            border: `1px solid ${borderColor}`,
-                            backgroundColor: "transparent",
-                            color: textSecondaryColor,
-                            cursor: "pointer",
-                          }}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={(e) => saveNote(e, doc.id)}
-                          style={{
-                            padding: "4px 12px",
-                            borderRadius: "6px",
-                            fontSize: "12px",
-                            border: "none",
-                            backgroundColor: isDark ? "#ececec" : "#171717",
-                            color: isDark ? "#171717" : "#ffffff",
-                            cursor: "pointer",
-                            fontWeight: "500"
-                          }}
-                        >
-                          Save
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: "11px", fontWeight: "600", color: textSecondaryColor, textTransform: "uppercase" }}>
-                          Annotation Notes
-                        </span>
-                        <button
-                          onClick={(e) => startEditingNote(e, doc)}
-                          style={{
-                            border: "none",
-                            background: "none",
-                            color: accentBlue,
-                            fontSize: "12px",
-                            cursor: "pointer",
-                            padding: 0,
-                          }}
-                        >
-                          Edit
-                        </button>
-                      </div>
-                      <p style={{ margin: 0, fontSize: "13.5px", lineHeight: "1.6", color: textPrimaryColor }}>
-                        {doc.note || <span style={{ color: textSecondaryColor, fontStyle: "italic" }}>No notes added yet. Click edit to add a note.</span>}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           );
         })}

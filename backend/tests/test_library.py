@@ -279,7 +279,7 @@ class TestLibraryService(unittest.TestCase):
         self.mock_table_builder.single.return_value = self.mock_table_builder
         self.mock_table_builder.delete.return_value = self.mock_table_builder
         
-        self.mock_table_builder.execute.side_effect = [single_res, MagicMock()]
+        self.mock_table_builder.execute.side_effect = [single_res, single_res, MagicMock()]
         
         # Act
         success = self.service.delete_library_document("non-existent-id", "user-123")

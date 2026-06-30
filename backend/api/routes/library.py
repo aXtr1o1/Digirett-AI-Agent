@@ -184,3 +184,56 @@ async def update_library_document_note(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc)
         )
+
+@router.get(
+    "/library/documents/{document_id}/view",
+    tags=["Library"],
+    summary="View or download a document from the library",
+)
+async def get_library_document_view(
+    document_id: str,
+    user: ClerkUser = Depends(get_current_user),
+):
+    if _library_service is None or _user_service is None:
+         raise HTTPException(
+             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+             detail="Library service not available.",
+         )
+
+    internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
+    if not internal_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User profile not found in database.",
+        )
+
+    try:
+        result = _library_service.get_library_document_binary(document_id, internal_user_id)
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document not found or could not be retrieved from storage.",
+            )
+
+        file_bytes, filename, content_type = result
+
+        from fastapi.responses import Response
+        import urllib.parse
+
+        # UTF-8 encoded filename for Content-Disposition (handles non-ASCII chars)
+        filename_encoded = urllib.parse.quote(filename)
+        
+        return Response(
+            content=file_bytes,
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f"inline; filename*=UTF-8''{filename_encoded}",
+                "Access-Control-Expose-Headers": "Content-Disposition",
+            },
+        )
+    except Exception as exc:
+        logger.error(f"Error viewing library document: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc)
+        )
