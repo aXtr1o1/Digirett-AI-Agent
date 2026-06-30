@@ -98,15 +98,13 @@ class SearchResponse(BaseModel):
     query_time: float
 
 
-class LibraryItemResponse(BaseModel):
-    """A saved message item in user's library."""
+class LibraryDocumentResponse(BaseModel):
+    """A document saved in user's library."""
     id: str
-    message_id: str
-    content: str
-    role: str
-    conversation_id: str
-    conversation_title: str
-    saved_at: datetime
+    user_id: str
+    file_name: str
+    file_type: str
+    char_count: int
     note: str = ""
-    sources: List[Dict[str, Any]] = Field(default_factory=list)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    expires_at: datetime

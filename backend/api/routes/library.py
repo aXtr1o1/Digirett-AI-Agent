@@ -1,12 +1,12 @@
 import logging
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Request, status, File, Form, UploadFile
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from core.auth import ClerkUser, get_current_user
-from schemas.requests import LibrarySaveRequest, LibraryNoteUpdateRequest
-from schemas.responses import LibraryItemResponse
+from schemas.requests import LibraryNoteUpdateRequest
+from schemas.responses import LibraryDocumentResponse
 
 logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
@@ -21,17 +21,24 @@ def set_services(library_service, user_service) -> None:
     _user_service = user_service
 
 @router.post(
-    "/library/save",
-    response_model=LibraryItemResponse,
+    "/library/documents/upload",
+    response_model=LibraryDocumentResponse,
     tags=["Library"],
-    summary="Save a message to the library",
+    summary="Upload a new document directly to the library",
 )
 @limiter.limit("60/minute")
-async def save_to_library(
+async def upload_to_library(
     request: Request,
-    body: LibrarySaveRequest,
+    file: UploadFile = File(...),
+    note: Optional[str] = Form(""),
     user: ClerkUser = Depends(get_current_user),
 ):
+    if _library_service is None or _user_service is None:
+         raise HTTPException(
+             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+             detail="Library service not available.",
+         )
+
     internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
     if not internal_user_id:
         raise HTTPException(
@@ -39,46 +46,53 @@ async def save_to_library(
             detail="User profile not found in database.",
         )
 
+    filename = file.filename or ""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in ("pdf", "docx", "doc"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file type: .{ext}. Please upload a PDF or DOCX file.",
+        )
+
     try:
-        saved = _library_service.save_message(
+        file_bytes = await file.read()
+        saved = _library_service.save_document(
             user_id=internal_user_id,
-            message_id=body.message_id,
-            note=body.note
+            file_name=filename,
+            file_type=ext,
+            file_bytes=file_bytes,
+            note=note
         )
         if not saved:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to save message to library."
+                detail="Failed to save document to library."
             )
-        
-        # Load the saved message to return in full LibraryItemResponse format
-        messages = _library_service.get_saved_messages(internal_user_id)
-        for msg in messages:
-            if msg["message_id"] == body.message_id:
-                return LibraryItemResponse(**msg)
-                
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Saved message could not be fetched."
-        )
+        return LibraryDocumentResponse(**saved)
     except Exception as exc:
-        logger.error(f"Error saving to library: {exc}")
+        logger.error(f"Error uploading to library: {exc}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc)
         )
 
 @router.get(
-    "/library",
-    response_model=List[LibraryItemResponse],
+    "/library/documents",
+    response_model=List[LibraryDocumentResponse],
     tags=["Library"],
-    summary="Get all saved messages in user library",
+    summary="Get all saved documents in user library",
 )
 @limiter.limit("60/minute")
-async def get_library(
+async def get_library_documents(
     request: Request,
     user: ClerkUser = Depends(get_current_user),
 ):
+    if _library_service is None or _user_service is None:
+         raise HTTPException(
+             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+             detail="Library service not available.",
+         )
+
     internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
     if not internal_user_id:
         raise HTTPException(
@@ -87,26 +101,32 @@ async def get_library(
         )
 
     try:
-        messages = _library_service.get_saved_messages(internal_user_id)
-        return [LibraryItemResponse(**m) for m in messages]
+        documents = _library_service.get_library_documents(internal_user_id)
+        return [LibraryDocumentResponse(**d) for d in documents]
     except Exception as exc:
-        logger.error(f"Error getting library: {exc}")
+        logger.error(f"Error getting library documents: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc)
         )
 
 @router.delete(
-    "/library/{message_id}",
+    "/library/documents/{document_id}",
     tags=["Library"],
-    summary="Remove a message from the library",
+    summary="Remove a document from the library",
 )
 @limiter.limit("60/minute")
-async def unsave_from_library(
+async def delete_library_document(
     request: Request,
-    message_id: str,
+    document_id: str,
     user: ClerkUser = Depends(get_current_user),
 ):
+    if _library_service is None or _user_service is None:
+         raise HTTPException(
+             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+             detail="Library service not available.",
+         )
+
     internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
     if not internal_user_id:
         raise HTTPException(
@@ -115,7 +135,7 @@ async def unsave_from_library(
         )
 
     try:
-        success = _library_service.delete_saved_message(message_id, internal_user_id)
+        success = _library_service.delete_library_document(document_id, internal_user_id)
         return {"success": success}
     except Exception as exc:
         logger.error(f"Error deleting from library: {exc}")
@@ -125,18 +145,24 @@ async def unsave_from_library(
         )
 
 @router.patch(
-    "/library/{message_id}",
-    response_model=LibraryItemResponse,
+    "/library/documents/{document_id}",
+    response_model=LibraryDocumentResponse,
     tags=["Library"],
-    summary="Update notes/annotations for a saved message",
+    summary="Update notes/annotations for a saved document",
 )
 @limiter.limit("60/minute")
-async def update_library_note(
+async def update_library_document_note(
     request: Request,
-    message_id: str,
+    document_id: str,
     body: LibraryNoteUpdateRequest,
     user: ClerkUser = Depends(get_current_user),
 ):
+    if _library_service is None or _user_service is None:
+         raise HTTPException(
+             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+             detail="Library service not available.",
+         )
+
     internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
     if not internal_user_id:
         raise HTTPException(
@@ -145,20 +171,15 @@ async def update_library_note(
         )
 
     try:
-        _library_service.update_saved_message_note(message_id, internal_user_id, body.note)
-        
-        # Return updated item
-        messages = _library_service.get_saved_messages(internal_user_id)
-        for msg in messages:
-            if msg["message_id"] == message_id:
-                return LibraryItemResponse(**msg)
-                
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Saved message not found."
-        )
+        updated = _library_service.update_library_document_note(document_id, internal_user_id, body.note)
+        if not updated:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Library document not found."
+            )
+        return LibraryDocumentResponse(**updated)
     except Exception as exc:
-        logger.error(f"Error updating note: {exc}")
+        logger.error(f"Error updating library document note: {exc}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc)
