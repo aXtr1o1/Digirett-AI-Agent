@@ -1044,7 +1044,7 @@ export default function LawyerDashboard() {
                               >
                                 {ticket.conversation_summary || "No summary available."}
                               </p>
-                              {ticket.priority === "urgent" && ticket.urgent_reason && (
+                              {/* {ticket.priority === "urgent" && ticket.urgent_reason && (
                                 <div className={`mt-2 p-2.5 rounded-lg border text-[10px] leading-relaxed font-medium ${
                                   isDark 
                                     ? "bg-red-500/5 border-red-500/15 text-red-400" 
@@ -1053,7 +1053,7 @@ export default function LawyerDashboard() {
                                   <span className="font-bold uppercase text-[8px] tracking-wider block mb-0.5">Urgent Reason:</span>
                                   "{ticket.urgent_reason}"
                                 </div>
-                              )}
+                              )} */}
                             </td>
                             <td className="px-8 py-6 text-right">
                               <button onClick={() => handleClaim(ticket.ticket_id)} className="px-4 py-2 border border-slate-200 rounded-lg text-xs font-bold hover:bg-slate-50 transition-all">Claim Matter</button>
@@ -1084,7 +1084,7 @@ export default function LawyerDashboard() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      {intakeTicket.priority === "urgent" && (
+                      {/* {intakeTicket.priority === "urgent" && (
                         <span className={`px-3 py-1 rounded-lg text-xs font-semibold border ${
                           isDark 
                             ? "bg-rose-955/20 border-rose-900/30 text-rose-400" 
@@ -1092,13 +1092,13 @@ export default function LawyerDashboard() {
                         }`}>
                           Urgent
                         </span>
-                      )}
+                      )} */}
                       <div className="px-6 py-2 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-[10px] font-black uppercase tracking-widest">Currently Working</div>
                     </div>
                   </div>
 
                   {/* Urgent Reason Alert */}
-                  {intakeTicket.priority === "urgent" && intakeTicket.urgent_reason && (
+                  {/* {intakeTicket.priority === "urgent" && intakeTicket.urgent_reason && (
                     <div className={`p-4 mb-6 rounded-xl border-l-4 ${
                       isDark 
                         ? "bg-rose-955/20 border-rose-900/30 border-l-rose-500 text-rose-200" 
@@ -1111,7 +1111,7 @@ export default function LawyerDashboard() {
                         "{intakeTicket.urgent_reason}"
                       </p>
                     </div>
-                  )}
+                  )} */}
 
                   {/* AI CASE BRIEF */}
                   {intakeTicket.ai_brief && (

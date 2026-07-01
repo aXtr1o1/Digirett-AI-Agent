@@ -49,22 +49,22 @@ class HitlService:
         Creates a new escalation ticket. Called when a user is unsatisfied.
         """
         try:
-            # Enforce limits on urgent tickets
-            if priority.lower() == "urgent":
-                # Check 1: Active urgent ticket
-                try:
-                    active_res = self._supabase.table("hitl_tickets") \
-                        .select("ticket_id") \
-                        .eq("user_id", user_id) \
-                        .eq("priority", "urgent") \
-                        .in_("status", ["open", "assigned", "booked"]) \
-                        .execute()
-                    if active_res.data:
-                        raise ValueError("You already have an active urgent request. Please wait until it is resolved.")
-                except ValueError as ve:
-                    raise ve
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed checking urgent tickets limit rule | {e}")
+            # Enforce limits on urgent tickets (Disabled - Priority system on hold)
+            # if priority.lower() == "urgent":
+            #     # Check 1: Active urgent ticket
+            #     try:
+            #         active_res = self._supabase.table("hitl_tickets") \
+            #             .select("ticket_id") \
+            #             .eq("user_id", user_id) \
+            #             .eq("priority", "urgent") \
+            #             .in_("status", ["open", "assigned", "booked"]) \
+            #             .execute()
+            #         if active_res.data:
+            #             raise ValueError("You already have an active urgent request. Please wait until it is resolved.")
+            #     except ValueError as ve:
+            #         raise ve
+            #     except Exception as e:
+            #         logger.warning(f"⚠️ Failed checking urgent tickets limit rule | {e}")
 
             ticket_id = str(uuid4())
             # Retrieve detected_domain from the latest assistant message metadata
