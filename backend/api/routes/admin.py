@@ -568,6 +568,14 @@ async def get_sla_report(
         
         # Per lawyer aggregators
         lawyer_stats = {} # lawyer_id -> {"tickets": int, "resolve_times": list, "rating": float}
+        for l_id in lawyers_map:
+            l_reviews = lawyer_ratings.get(l_id, [])
+            real_rating = sum(l_reviews) / len(l_reviews) if l_reviews else None
+            lawyer_stats[l_id] = {
+                "tickets": 0,
+                "resolve_times": [],
+                "rating": real_rating
+            }
         
         for t in tickets:
             status_val = t.get("status")
@@ -614,7 +622,7 @@ async def get_sla_report(
             if lawyer_id:
                 if lawyer_id not in lawyer_stats:
                     l_reviews = lawyer_ratings.get(lawyer_id, [])
-                    real_rating = sum(l_reviews) / len(l_reviews) if l_reviews else 4.8
+                    real_rating = sum(l_reviews) / len(l_reviews) if l_reviews else None
                     lawyer_stats[lawyer_id] = {
                         "tickets": 0,
                         "resolve_times": [],
@@ -634,13 +642,13 @@ async def get_sla_report(
         for l_id, stats in lawyer_stats.items():
             name = lawyers_map.get(l_id, f"Lawyer #{l_id[:6]}")
             l_resolves = stats["resolve_times"]
-            avg_l_resolve = sum(l_resolves) / len(l_resolves) if l_resolves else 0.0
+            avg_l_resolve = sum(l_resolves) / len(l_resolves) if l_resolves else None
             performance_table.append({
                 "lawyer_id": l_id,
                 "name": name,
                 "tickets": stats["tickets"],
-                "avg_resolve_days": round(avg_l_resolve, 1),
-                "rating": round(stats["rating"], 1)
+                "avg_resolve_days": round(avg_l_resolve, 1) if avg_l_resolve is not None else None,
+                "rating": round(stats["rating"], 1) if stats["rating"] is not None else None
             })
             
         return {
