@@ -107,7 +107,8 @@ export default function LawyerDashboard() {
   const [isSpecializationSaving, setIsSpecializationSaving] = useState(false);
   const [isBriefExpanded, setIsBriefExpanded] = useState(true);
   const [availabilityStatus, setAvailabilityStatus] = useState("available");
-  const [showAvailabilityDropdown, setShowAvailabilityDropdown] = useState(false);
+  const [showAvailabilityDropdown, setShowAvailabilityDropdown] = useState(false);
+  const [hasInitializedConfig, setHasInitializedConfig] = useState(false);
 
   const notesRef = useRef(null);
 
@@ -141,7 +142,8 @@ export default function LawyerDashboard() {
         cal_api_key: calApiKey
       });
       setQueueMsg({ type: "success", text: "Cal.com configuration saved successfully." });
-      setIsCalConfigured(true);
+      setIsCalConfigured(true);
+      setHasInitializedConfig(false);
     } catch (err) {
       console.error("Failed to save Cal.com config:", err);
       setQueueMsg({ type: "error", text: err.message || "Failed to save configuration." });
@@ -154,7 +156,8 @@ export default function LawyerDashboard() {
     setIsSpecializationSaving(true);
     try {
       await hitlService.updateSpecialization(expertiseDomains, specializationLabel);
-      setQueueMsg({ type: "success", text: "Specialization profile updated successfully." });
+      setQueueMsg({ type: "success", text: "Specialization profile updated successfully." });
+      setHasInitializedConfig(false);
     } catch (err) {
       console.error("Failed to save specialization:", err);
       setQueueMsg({ type: "error", text: err.message || "Failed to update specialization profile." });
@@ -364,11 +367,16 @@ export default function LawyerDashboard() {
 
       if (calConfig) {
         setIsCalConfigured(!!calConfig.cal_event_type_id && !!calConfig.cal_api_key);
-        setCalEventTypeId(calConfig.cal_event_type_id || "");
-        setCalApiKey(calConfig.cal_api_key || "");
-        setExpertiseDomains(calConfig.expertise_domains || []);
-        setSpecializationLabel(calConfig.specialization_label || "");
         setAvailabilityStatus(calConfig.availability_status || "available");
+        
+        // Only set the editable form fields if they have not been initialized yet
+        if (!hasInitializedConfig) {
+          setCalEventTypeId(calConfig.cal_event_type_id || "");
+          setCalApiKey(calConfig.cal_api_key || "");
+          setExpertiseDomains(calConfig.expertise_domains || []);
+          setSpecializationLabel(calConfig.specialization_label || "");
+          setHasInitializedConfig(true);
+        }
       }
 
     } catch (err) {
@@ -1711,7 +1719,7 @@ export default function LawyerDashboard() {
 
           {/* VIEW: CALENDAR */}
           {activeView === "calendar" && (
-            <CalendarView tickets={activeTickets} role="lawyer" />
+            <CalendarView tickets={[...activeTickets, ...resolvedTickets]} role="lawyer" />
           )}
 
         </main>

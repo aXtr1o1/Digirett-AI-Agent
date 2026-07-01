@@ -38,7 +38,7 @@ const fmtTicketId = (id) => (id ? `#${id.slice(0, 8).toUpperCase()}` : "-");
 const ALERT_LABEL = {
   unclaimed:   { text: "No lawyer assigned", color: "#ef4444", bg: "rgba(239,68,68,0.08)" },
   no_booking:  { text: "No booking scheduled", color: "#f59e0b", bg: "rgba(245,158,11,0.08)" },
-  no_resolve:  { text: "Unresolved after SLA", color: "#8b5cf6", bg: "rgba(139,92,246,0.08)" },
+  no_resolve:  { text: "Unresolved after Response Target", color: "#8b5cf6", bg: "rgba(139,92,246,0.08)" },
 };
 
 /* ─── sub-components ──────────────────────────────────── */
@@ -149,7 +149,7 @@ export default function SlaView({ isDark, onNavigate }) {
 
       setData(formattedReport);
     } catch (err) {
-      setError(err.message || "Failed to load SLA report");
+      setError(err.message || "Failed to load Response Target report");
     } finally {
       setLoading(false);
     }
@@ -177,7 +177,7 @@ export default function SlaView({ isDark, onNavigate }) {
   if (loading) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "50vh", flexDirection: "column", gap: "12px" }}>
       <Loader2 size={28} className="animate-spin" style={{ color: "#6366f1", animation: "spin 1s linear infinite" }} />
-      <p style={{ color: isDark ? "#94a3b8" : "#64748b", fontSize: "14px" }}>Loading SLA report…</p>
+      <p style={{ color: isDark ? "#94a3b8" : "#64748b", fontSize: "14px" }}>Loading Response Target report…</p>
     </div>
   );
 
@@ -190,7 +190,7 @@ export default function SlaView({ isDark, onNavigate }) {
     }}>
       <AlertTriangle size={18} color="#ef4444" />
       <div style={{ flex: 1 }}>
-        <p style={{ color: "#ef4444", fontWeight: 700, fontSize: "14px" }}>Failed to load SLA report</p>
+        <p style={{ color: "#ef4444", fontWeight: 700, fontSize: "14px" }}>Failed to load Response Target report</p>
         <p style={{ color: isDark ? "#94a3b8" : "#64748b", fontSize: "12px", marginTop: "2px" }}>{error}</p>
       </div>
       <button
@@ -222,7 +222,7 @@ export default function SlaView({ isDark, onNavigate }) {
               Performance Report
             </h1>
             <p style={{ marginTop: "6px", fontSize: "13px", color: isDark ? "#94a3b8" : "#64748b" }}>
-              Response times, SLA compliance, and lawyer performance - last 30 days
+              Response times, Response Target compliance, and lawyer performance - last 30 days
             </p>
           </div>
           <button
@@ -242,13 +242,11 @@ export default function SlaView({ isDark, onNavigate }) {
         background: isDark ? "rgba(15,23,42,0.8)" : "#fff",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: alerts.length > 0 ? "20px" : "0" }}>
-          {alerts.length > 0 ? (
-            <AlertTriangle size={18} color="#ef4444" />
-          ) : (
+          {alerts.length === 0 && (
             <CheckCircle size={18} color="#10b981" />
           )}
           <h2 style={{ fontSize: "15px", fontWeight: 800, color: isDark ? "#f1f5f9" : "#0f172a", margin: 0 }}>
-            {alerts.length > 0 ? `SLA Alerts - ${alerts.length} active` : "All SLA metrics within threshold"}
+            {alerts.length > 0 ? `Response Target Alerts - ${alerts.length} active` : "All response targets within threshold"}
           </h2>
         </div>
 
@@ -269,7 +267,6 @@ export default function SlaView({ isDark, onNavigate }) {
                   onMouseEnter={e => e.currentTarget.style.opacity = "0.8"}
                   onMouseLeave={e => e.currentTarget.style.opacity = "1"}
                 >
-                  <AlertTriangle size={15} color={info.color} style={{ flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ fontSize: "13px", fontWeight: 700, color: info.color, margin: 0 }}>
                       {info.text} - Ticket {fmtTicketId(alert.ticket_id)}
@@ -295,7 +292,7 @@ export default function SlaView({ isDark, onNavigate }) {
         <KpiCard
           label="Avg Time to Claim"
           value={fmtHours(avg.time_to_claim_hours)}
-          sublabel={`SLA threshold: ${thresholds.claim_hours}h`}
+          sublabel={`Response target: ${thresholds.claim_hours}h`}
           statusText={avg.time_to_claim_hours > thresholds.claim_hours ? "Exceeded Threshold" : null}
           statusColor="#ef4444"
           color="#10b981"
@@ -305,7 +302,7 @@ export default function SlaView({ isDark, onNavigate }) {
         <KpiCard
           label="Avg Time to Book"
           value={fmtHours(avg.time_to_book_hours)}
-          sublabel={`SLA threshold: ${thresholds.booking_hours}h`}
+          sublabel={`Response target: ${thresholds.booking_hours}h`}
           statusText={avg.time_to_book_hours > thresholds.booking_hours ? "Exceeded Threshold" : null}
           statusColor="#ef4444"
           color="#3b82f6"
@@ -315,7 +312,7 @@ export default function SlaView({ isDark, onNavigate }) {
         <KpiCard
           label="Avg Time to Resolve"
           value={fmtDays(avg.time_to_resolve_days)}
-          sublabel={`SLA threshold: ${thresholds.resolve_days} days`}
+          sublabel={`Response target: ${thresholds.resolve_days} days`}
           statusText={avg.time_to_resolve_days > thresholds.resolve_days ? "Exceeded Threshold" : null}
           statusColor="#ef4444"
           color="#6366f1"

@@ -800,7 +800,9 @@ export default function AdminDashboard() {
                     ? 'System Admin Schedule'
                     : activeView === 'distribution'
                       ? 'Classified Categories'
-                      : activeView.replace('-', ' ')}
+                      : activeView === 'sla'
+                        ? 'Response Targets'
+                        : activeView.replace('-', ' ')}
             </h2>
           </div>
 
@@ -1073,7 +1075,7 @@ export default function AdminDashboard() {
                             dataKey="queries"
                             nameKey="name"
                             stroke="none"
-                            label={({ name, percentage }) => `${name} (${percentage}%)`}
+                            label={({ name, value, percentage }) => `${name}: ${value} (${percentage}%)`}
                           >
                             {domainAnalytics.distribution.map((entry, index) => (
                               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -1451,35 +1453,21 @@ export default function AdminDashboard() {
                               </span>
                             </td>
                             <td className="px-8 py-6">
-                              <div className="flex items-center gap-2">
-                                <div className={`h-1.5 w-1.5 rounded-full ${(user.status !== 'inactive' && user.status !== 'suspended') ? "bg-emerald-500" : "bg-slate-400"}`} />
-                                <span className={`text-[10px] font-black uppercase tracking-widest ${(user.status !== 'inactive' && user.status !== 'suspended') ? "text-emerald-500" : "text-slate-400"}`}>
-                                  {user.status === 'inactive' ? 'Inactive' : (user.status || 'Active')}
-                                </span>
-                              </div>
+                              <span className={`text-[10px] font-black uppercase tracking-widest ${(user.status !== 'inactive' && user.status !== 'suspended') ? "text-emerald-500" : "text-slate-400"}`}>
+                                {user.status === 'inactive' ? 'Inactive' : (user.status || 'Active')}
+                              </span>
                             </td>
                             <td className="px-8 py-6">
                               {user.role === 'lawyer' ? (
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    className={`h-1.5 w-1.5 rounded-full ${
-                                      user.lawyer_profiles?.availability_status === 'available'
-                                        ? 'bg-emerald-550 animate-pulse'
-                                        : user.lawyer_profiles?.availability_status === 'busy'
-                                          ? 'bg-amber-500'
-                                          : 'bg-red-500'
-                                    }`}
-                                  />
-                                  <span className={`text-[10px] font-black uppercase tracking-widest ${
-                                    user.lawyer_profiles?.availability_status === 'available'
-                                      ? 'text-emerald-500'
-                                      : user.lawyer_profiles?.availability_status === 'busy'
-                                        ? 'text-amber-500'
-                                        : 'text-red-500'
-                                  }`}>
-                                    {user.lawyer_profiles?.availability_status || 'Available'}
-                                  </span>
-                                </div>
+                                <span className={`text-[10px] font-black uppercase tracking-widest ${
+                                  user.lawyer_profiles?.availability_status === 'available'
+                                    ? 'text-emerald-500'
+                                    : user.lawyer_profiles?.availability_status === 'busy'
+                                      ? 'text-amber-500'
+                                      : 'text-red-500'
+                                }`}>
+                                  {user.lawyer_profiles?.availability_status || 'Available'}
+                                </span>
                               ) : (
                                 <span className="text-[10px] text-slate-400 dark:text-slate-650 font-bold">—</span>
                               )}
