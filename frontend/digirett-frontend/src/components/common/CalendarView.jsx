@@ -722,11 +722,11 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
                     isDark ? "bg-slate-950/30 border-slate-800/80" : "bg-slate-50 border-slate-200"
                   }`}>
                     <div>
-                      <span className="text-[9px] text-slate-400 font-bold block">Professional Name</span>
+                      <span className="text-[9px] text-slate-400 font-bold block">Lawyer Name</span>
                       <span className={`text-xs font-bold ${isDark ? "text-slate-200" : "text-slate-855"}`}>{selectedEvent.lawyer_name || "N/A"}</span>
                     </div>
                     <div>
-                      <span className="text-[9px] text-slate-400 font-bold block">Professional Email</span>
+                      <span className="text-[9px] text-slate-400 font-bold block">Lawyer Email</span>
                       <span className={`text-xs font-bold truncate block ${isDark ? "text-slate-200" : "text-slate-855"}`} title={selectedEvent.lawyer_email}>
                         {selectedEvent.lawyer_email || "N/A"}
                       </span>
@@ -735,24 +735,14 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
                 </div>
               )}
 
-              {/* Status & Reference Side-by-Side */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className={`flex items-center justify-between text-xs py-2 px-3.5 rounded-xl border ${
-                  isDark ? "bg-slate-950/20 border-slate-800/60 text-slate-400" : "bg-slate-50 border-slate-200 text-slate-500"
-                }`}>
-                  <span className="font-semibold text-[10px]">Status:</span>
-                  <span className={`font-bold capitalize ${selectedEvent.status === 'resolved' ? 'text-emerald-500' : 'text-indigo-500'}`}>
-                    {selectedEvent.status}
-                  </span>
-                </div>
-                <div className={`flex items-center justify-between text-xs py-2 px-3.5 rounded-xl border ${
-                  isDark ? "bg-slate-950/20 border-slate-800/60 text-slate-400" : "bg-slate-50 border-slate-200 text-slate-500"
-                }`}>
-                  <span className="font-semibold text-[10px]">Reference:</span>
-                  <span className="font-mono text-indigo-400 font-bold truncate max-w-[80px]" title={selectedEvent.ticket_id}>
-                    {selectedEvent.ticket_id ? selectedEvent.ticket_id.slice(0, 8).toUpperCase() : "N/A"}
-                  </span>
-                </div>
+              {/* Status */}
+              <div className={`flex items-center justify-between text-xs py-2 px-3.5 rounded-xl border ${
+                isDark ? "bg-slate-950/20 border-slate-800/60 text-slate-400" : "bg-slate-50 border-slate-200 text-slate-500"
+              }`}>
+                <span className="font-semibold text-[10px]">Status:</span>
+                <span className={`font-bold capitalize ${selectedEvent.status === 'resolved' ? 'text-emerald-500' : 'text-indigo-500'}`}>
+                  {selectedEvent.status}
+                </span>
               </div>
             </div>
 

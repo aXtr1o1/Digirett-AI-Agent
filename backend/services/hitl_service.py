@@ -637,6 +637,7 @@ class HitlService:
                 .select(
                     "*, "
                     "users!hitl_tickets_user_id_fkey("
+                    "  email, "
                     "  user_profiles(display_name)"
                     ")"
                 ) \
@@ -651,6 +652,7 @@ class HitlService:
                 raw_user = ticket.pop("users", {}) or {}
                 raw_profile = raw_user.get("user_profiles", {}) or {}
                 ticket["user_display_name"] = raw_profile.get("display_name")
+                ticket["user_email"] = raw_user.get("email")
                 
             return data
         except Exception as exc:
