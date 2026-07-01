@@ -1,5 +1,3 @@
-# backend/router/taxonomy_loader.py
-
 import os
 import json
 import logging
@@ -24,13 +22,15 @@ class TaxonomyLoader:
 
     def load(self) -> None:
         try:
-            # Find workspace root directory (three parents up from backend/router/taxonomy_loader.py)
-            root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            # Find backend directory (two parents up from backend/router/taxonomy_loader.py)
+            backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            # Path to the new taxonomy folder inside backend
+            taxonomy_dir = os.path.join(backend_dir, "taxonomy")
             
-            path_remaining = os.path.join(root_dir, "taxonomy_remaining_10_domains_v1_1_0.json")
-            path_contract_employment = os.path.join(root_dir, "taxonomy_contract_employment_v1.0.1.json")
+            path_remaining = os.path.join(taxonomy_dir, "taxonomy_remaining_10_domains_v1_1_0.json")
+            path_contract_employment = os.path.join(taxonomy_dir, "taxonomy_contract_employment_v1.0.1.json")
 
-            logger.info(f"📂 Loading taxonomy files from: {root_dir}")
+            logger.info(f"📂 Loading taxonomy files from: {taxonomy_dir}")
             
             # Read taxonomy remaining 10 domains
             if os.path.exists(path_remaining):

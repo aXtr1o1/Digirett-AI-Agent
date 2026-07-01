@@ -258,6 +258,7 @@ def assign_ticket(
 )
 def update_lawyer_specialization(
     req: SpecializationRequest,
+    background_tasks: BackgroundTasks,
     current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
 ):
     lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
@@ -268,6 +269,42 @@ def update_lawyer_specialization(
             "specialization_label": req.specialization_label,
             "updated_at": datetime.utcnow().isoformat()
         }).execute()
+
+        # Send email notification to admins
+        if _email_service:
+            try:
+                # 1. Fetch lawyer details
+                lawyer_user_resp = _user_service._supabase.table("users")\
+                    .select("email, user_profiles(display_name)")\
+                    .eq("user_id", lawyer_id)\
+                    .execute()
+                
+                if lawyer_user_resp.data:
+                    lawyer_user = lawyer_user_resp.data[0]
+                    lawyer_email = lawyer_user.get("email")
+                    lawyer_profile = lawyer_user.get("user_profiles") or {}
+                    lawyer_name = lawyer_profile.get("display_name") or (lawyer_email.split("@")[0] if lawyer_email else "Lawyer")
+                    
+                    # 2. Fetch all admin emails
+                    admins_resp = _user_service._supabase.table("users")\
+                        .select("email")\
+                        .in_("role", ["admin", "system_admin"])\
+                        .execute()
+                    
+                    admin_emails = [admin["email"] for admin in (admins_resp.data or []) if admin.get("email")]
+                    
+                    if admin_emails:
+                        background_tasks.add_task(
+                            _email_service.send_specialization_update_to_admins,
+                            admin_emails=admin_emails,
+                            lawyer_name=lawyer_name,
+                            lawyer_email=lawyer_email,
+                            specialization_label=req.specialization_label,
+                            expertise_domains=req.expertise_domains
+                        )
+            except Exception as mail_err:
+                logger.warning(f"⚠️ Failed to queue lawyer specialization update email to admins: {mail_err}")
+
         return {"message": "Specialization updated successfully.", "profile": resp.data[0] if resp.data else {}}
     except Exception as e:
         logger.error(f"❌ Failed to update lawyer specialization | {e}")

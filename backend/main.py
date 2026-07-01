@@ -285,6 +285,22 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_unassigned_ticket_alert_task())
         logger.info("⏰ 30-min unassigned ticket alert task started")
 
+        # ── 15-minute background auto-close task ──────────────────────────────
+        async def _auto_close_tickets_task():
+            INTERVAL_SECONDS = 15 * 60  # 15 minutes
+            await asyncio.sleep(120)  # offset delay to not clash on startup
+            while True:
+                try:
+                    closed_count = hitl_service.auto_close_stale_resolved_tickets()
+                    if closed_count > 0:
+                        logger.info(f"⏰ Auto-closed {closed_count} stale resolved tickets.")
+                except Exception as bg_exc:
+                    logger.warning(f"⚠️ Auto-close background task error (non-fatal) | {bg_exc}")
+                await asyncio.sleep(INTERVAL_SECONDS)
+
+        asyncio.create_task(_auto_close_tickets_task())
+        logger.info("⏰ 15-min auto-close resolved tickets task started")
+
         yield
 
     except Exception as exc:

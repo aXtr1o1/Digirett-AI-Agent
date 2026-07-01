@@ -1015,7 +1015,6 @@ class HitlService:
             update_payload: Dict[str, Any] = {
                 "status": "resolved",
                 "resolved_at": now,
-                "closed_at": now,
             }
             if outcome_notes:
                 update_payload["outcome_notes"] = outcome_notes
@@ -1121,3 +1120,52 @@ class HitlService:
             logger.info(f"✅ Alert marked sent for {len(ticket_ids)} tickets")
         except Exception as exc:
             logger.warning(f"⚠️ mark_alert_sent failed | {exc}")
+
+    def auto_close_stale_resolved_tickets(self) -> int:
+        """
+        Finds all resolved tickets older than 24 hours, updates status to 'closed',
+        and inserts a system message to inform the user in the conversation chat.
+        """
+        try:
+            cutoff = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+            resp = self._supabase.table("hitl_tickets") \
+                .select("ticket_id, conversation_id") \
+                .eq("status", "resolved") \
+                .lte("resolved_at", cutoff) \
+                .execute()
+            
+            tickets_to_close = resp.data or []
+            closed_count = 0
+            
+            for t in tickets_to_close:
+                ticket_id = t["ticket_id"]
+                conv_id = t["conversation_id"]
+                now = datetime.utcnow().isoformat()
+                
+                # 1. Update ticket in DB
+                self._supabase.table("hitl_tickets").update({
+                    "status": "closed",
+                    "closed_at": now,
+                    "outcome_notes": "Case automatically closed as no user action was taken within 24 hours of resolution."
+                }).eq("ticket_id", ticket_id).execute()
+                
+                # 2. Insert system message in messages table
+                if conv_id:
+                    self._supabase.table("messages").insert({
+                        "message_id": str(uuid4()),
+                        "conversation_id": conv_id,
+                        "role": "assistant",
+                        "type": "system",
+                        "content": "Denne saken har blitt automatisk lukket fordi det ikke ble foretatt noen handling innen 24 timer etter at advokaten markerte den som løst. / This case has been automatically closed as no action was taken within 24 hours of lawyer resolution.",
+                        "created_at": now
+                    }).execute()
+                
+                self._log_audit("ticket.auto_closed", None, {"ticket_id": ticket_id})
+                closed_count += 1
+                
+            if closed_count > 0:
+                logger.info(f"⏰ Auto-closed {closed_count} stale resolved tickets.")
+            return closed_count
+        except Exception as exc:
+            logger.error(f"❌ Error during auto-closing stale tickets | {exc}")
+            return 0

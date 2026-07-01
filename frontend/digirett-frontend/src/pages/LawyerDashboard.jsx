@@ -1039,7 +1039,7 @@ export default function LawyerDashboard() {
                                     setActiveSummaryModal(ticket.conversation_summary);
                                   }
                                 }}
-                                className="text-xs text-slate-500 truncate max-w-xs cursor-pointer hover:text-indigo-500 hover:underline transition-all"
+                                className="text-xs text-slate-500 italic leading-relaxed line-clamp-2 max-w-xs cursor-pointer transition-all"
                                 title={ticket.conversation_summary ? "Click to view full summary" : ""}
                               >
                                 {ticket.conversation_summary || "No summary available."}
