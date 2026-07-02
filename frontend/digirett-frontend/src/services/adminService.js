@@ -131,6 +131,49 @@ const adminService = {
     const response = await api.get(API_ENDPOINTS.HEALTH);
     return response.data;
   },
+
+  /**
+   * Get User Query Domain Distribution Analytics
+   * GET /api/v1/admin/domain-analytics
+   */
+  getDomainAnalytics: async () => {
+    const response = await api.get(API_ENDPOINTS.ADMIN.DOMAIN_ANALYTICS);
+    return response.data;
+  },
+
+  /**
+   * GET /admin/sla-report
+   * Returns SLA alerts, avg response times, and per-lawyer performance.
+   */
+  getSlaReport: async () => {
+    const response = await api.get(API_ENDPOINTS.ADMIN.SLA_REPORT);
+    return response.data;
+  },
+
+  /**
+   * Admin overrides a lawyer's specialization settings
+   * PATCH /admin/lawyers/{lawyer_id}/specialization
+   */
+  overrideSpecialization: async (lawyerId, expertiseDomains, specializationLabel = null) => {
+    const response = await api.patch(`/admin/lawyers/${lawyerId}/specialization`, {
+      expertise_domains: expertiseDomains,
+      specialization_label: specializationLabel
+    });
+    return response.data;
+  },
+
+  /**
+   * Get all admin ratings
+   */
+  getAdminRatings: async () => {
+    try {
+      const response = await api.get(API_ENDPOINTS.ADMIN.RATINGS);
+      return response.data;
+    } catch (err) {
+      console.warn("Backend admin ratings route failed, using localStorage fallback:", err);
+      return JSON.parse(localStorage.getItem("digirett_ratings") || "[]");
+    }
+  },
 };
 
 export default adminService;

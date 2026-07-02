@@ -53,7 +53,7 @@ def set_services(
 
 class InviteRequest(BaseModel):
     email: EmailStr
-    role: str  # 'lawyer' | 'admin'
+    role: str  # 'lawyer' | 'admin' | 'system_admin'
 
 
 class PromoteLawyerRequest(BaseModel):
@@ -78,13 +78,23 @@ class AdminCloseTicketRequest(BaseModel):
 @router.post("/invite", summary="Invite a new lawyer or admin via email")
 async def invite_user(
     req: InviteRequest,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
-    if req.role not in ["lawyer", "admin"]:
-        raise HTTPException(status_code=400, detail="Invalid role. Must be 'lawyer' or 'admin'.")
+    if req.role not in ["lawyer", "admin", "system_admin"]:
+        raise HTTPException(status_code=400, detail="Invalid role. Must be 'lawyer', 'admin', or 'system_admin'.")
 
     admin_id = _user_service.get_user_id_from_clerk_id(current_admin.clerk_user_id)
     admin_email = current_admin.email
+    if not admin_email:
+        # Fallback to fetch email from Supabase if not present in Clerk JWT
+        from db.supabase_client import get_supabase
+        supabase = get_supabase()
+        try:
+            db_res = supabase.table("users").select("email").eq("clerk_user_id", current_admin.clerk_user_id).single().execute()
+            if db_res.data:
+                admin_email = db_res.data.get("email")
+        except Exception as e:
+            logger.error(f"Failed to fetch admin email from DB: {e}")
 
     try:
         success = await _user_service.invite_user(
@@ -104,7 +114,7 @@ async def invite_user(
 
 @router.get("/invitations", summary="List all pending/active role invitations")
 async def list_invitations(
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     """
     Fetches all invitation records from the role_invites table.
@@ -116,7 +126,7 @@ async def list_invitations(
 @router.delete("/invitations/{invite_id}", summary="Revoke a sent invitation")
 async def revoke_invitation(
     invite_id: str,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     """
     Deletes a pending invitation record from the database.
@@ -132,12 +142,12 @@ async def revoke_invitation(
 
 @router.get("/users", summary="List all users in the system")
 async def list_users(
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     try:
         response = (
             _user_service._supabase.table("users")
-            .select("*, user_profiles(display_name)")
+            .select("*, user_profiles(display_name), lawyer_profiles!lawyer_profiles_lawyer_id_fkey(expertise_domains, specialization_label, availability_status, last_seen_at)")
             .order("created_at", desc=True)
             .execute()
         )
@@ -150,7 +160,7 @@ async def list_users(
 async def get_audit_logs(
     limit: int = 50,
     offset: int = 0,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     logs = _user_service.get_audit_logs(limit=limit, offset=offset)
     return logs
@@ -159,7 +169,7 @@ async def get_audit_logs(
 @router.post("/promote/lawyer", summary="Promote a user to Lawyer role")
 async def promote_to_lawyer(
     req: PromoteLawyerRequest,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     admin_id = _user_service.get_user_id_from_clerk_id(current_admin.clerk_user_id)
     success = await _user_service.promote_to_lawyer(
@@ -176,7 +186,7 @@ async def promote_to_lawyer(
 @router.post("/promote/admin", summary="Promote a user to Admin role")
 async def promote_to_admin(
     req: PromoteAdminRequest,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     admin_id = _user_service.get_user_id_from_clerk_id(current_admin.clerk_user_id)
     success = await _user_service.promote_to_admin(
@@ -192,12 +202,17 @@ async def promote_to_admin(
 @router.patch("/users/{user_id}/demote", summary="Demote a lawyer back to user")
 async def admin_demote_user(
     user_id: str,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     try:
         user_info = _user_service.get_user_by_id(user_id)
         if not user_info:
             raise HTTPException(status_code=404, detail="User not found.")
+        
+        # Hierarchy safeguard
+        if current_admin.db_role == "system_admin" and user_info.get("role") in ["admin", "system_admin"]:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied. System Admins cannot demote Admin or System Admin accounts.")
+
         _user_service._supabase.table("users").update({"role": "user"}).eq("user_id", user_id).execute()
         _user_service._sync_clerk_role(user_info["clerk_user_id"], "user")
         return {"status": "success", "message": "User demoted to standard user."}
@@ -210,13 +225,19 @@ async def admin_demote_user(
 @router.patch("/users/{user_id}/suspend", summary="Suspend a user account")
 async def admin_suspend_user(
     user_id: str,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     try:
+        user_info = _user_service.get_user_by_id(user_id)
+        if user_info and current_admin.db_role == "system_admin" and user_info.get("role") in ["admin", "system_admin"]:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied. System Admins cannot suspend Admin or System Admin accounts.")
+
         success = _user_service.suspend_user(user_id)
         if not success:
             raise HTTPException(status_code=500, detail="Failed to suspend user and sync to Clerk.")
         return {"status": "success", "message": "User suspended."}
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -224,13 +245,19 @@ async def admin_suspend_user(
 @router.patch("/users/{user_id}/activate", summary="Unsuspend a user account")
 async def admin_unsuspend_user(
     user_id: str,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     try:
+        user_info = _user_service.get_user_by_id(user_id)
+        if user_info and current_admin.db_role == "system_admin" and user_info.get("role") in ["admin", "system_admin"]:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied. System Admins cannot activate Admin or System Admin accounts.")
+
         success = _user_service.reactivate_user(user_id)
         if not success:
             raise HTTPException(status_code=500, detail="Failed to unsuspend user and sync to Clerk.")
         return {"status": "success", "message": "User suspension revoked."}
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -244,7 +271,7 @@ async def admin_unsuspend_user(
     summary="Admin view of ALL tickets across all statuses",
 )
 async def admin_get_all_tickets(
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     """
     Phase 5: Admin sees the full case queue with all statuses:
@@ -270,7 +297,7 @@ async def admin_assign_ticket(
     ticket_id: str,
     lawyer_id: str,
     background_tasks: BackgroundTasks,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     """
     Phase 5: Admin can force-assign a ticket to any lawyer regardless of
@@ -335,7 +362,7 @@ async def _send_admin_assignment_notification(ticket_id: str, lawyer_id: str):
 )
 async def admin_unassign_ticket(
     ticket_id: str,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     """
     Phase 5: Admin removes the current lawyer from a ticket and resets it
@@ -359,7 +386,7 @@ async def admin_unassign_ticket(
 async def admin_close_ticket(
     ticket_id: str,
     req: AdminCloseTicketRequest = AdminCloseTicketRequest(),
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     """
     Phase 8: Admin closes a ticket from any status.
@@ -382,7 +409,7 @@ async def admin_close_ticket(
     summary="Admin fetches list of all lawyers (for assignment dropdowns)",
 )
 async def admin_list_lawyers(
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     """
     Returns all users with role='lawyer' for use in the admin assignment dropdown.
@@ -395,7 +422,7 @@ async def admin_list_lawyers(
             .select(
                 "user_id, email, user_name, role, "
                 "user_profiles(display_name), "
-                "lawyer_profiles!inner(cal_event_type_id, cal_api_key, verification_status)"
+                "lawyer_profiles!inner(cal_event_type_id, cal_api_key, verification_status, expertise_domains, specialization_label)"
             )
             .order("created_at", desc=False)
             .execute()
@@ -409,6 +436,8 @@ async def admin_list_lawyers(
                 "email": u.get("email"),
                 "display_name": profile.get("display_name") or u.get("user_name"),
                 "cal_configured": bool(lp.get("cal_api_key") and lp.get("cal_event_type_id")),
+                "expertise_domains": lp.get("expertise_domains") or [],
+                "specialization_label": lp.get("specialization_label"),
             })
         return lawyers
     except Exception as exc:
@@ -423,7 +452,7 @@ async def admin_set_lawyer_cal_credentials(
     lawyer_id: str,
     cal_api_key: str,
     cal_event_type_id: str,
-    current_admin: ClerkUser = Depends(require_db_role("admin")),
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     """
     Admin sets the Cal.com API key and event type ID for a specific lawyer.
@@ -448,6 +477,291 @@ async def admin_set_lawyer_cal_credentials(
                 detail="Lawyer profile not found. Ensure the user has been promoted to lawyer.",
             )
         return {"status": "success", "message": "Cal.com credentials saved."}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+DOMAIN_DISPLAY_NAMES = {
+    "arbeidsrett": "Employment Law (Arbeidsrett)",
+    "arsregnskap_og_selskapsrapportering": "Financial Statements & Reporting (Årsregnskap og Selskapsrapportering)",
+    "avtalerett": "Contract Law (Avtalerett)",
+    "inkasso_og_tvangsfullbyrdelse": "Debt Collection & Enforcement (Inkasso og Tvangsfullbyrdelse)",
+    "konkursrett_og_insolvens": "Bankruptcy & Insolvency (Konkursrett og Insolvens)",
+    "manda_fusjon_fisjon": "M&A, Mergers & Acquisitions (M&A, Fusjon, Fisjon)",
+    "obligasjonsrett": "Law of Obligations (Obligasjonsrett)",
+    "panterett_og_sikkerhetsrett": "Liens & Security Rights (Panterett og Sikkerhetsrett)",
+    "pengekravsrett_fordringer": "Monetary Claims & Debt (Pengekravsrett og Fordringer)",
+    "personvern_gdpr_business_compliance": "Privacy & GDPR Compliance (Personvern, GDPR & Compliance)",
+    "selskapsrett": "Company Law (Selskapsrett)",
+    "tvistelosning_smb": "Dispute Resolution for SMBs (Tvisteløsning, SMB)",
+    
+    # Other domains
+    "straffeloven": "Criminal Law (Straffeloven)",
+    "strafferett": "Criminal Law (Strafferett)",
+    "familierett": "Family Law (Familierett)",
+    "arverett": "Inheritance Law (Arverett)",
+    "skatterett": "Tax Law (Skatterett)",
+    "utlendingsrett": "Immigration Law (Utlendingsrett)",
+    "forvaltningsrett": "Administrative Law (Forvaltningsrett)",
+    "tingsrett": "Property Law (Tingsrett)",
+    "erstatningsrett": "Tort Law (Erstatningsrett)",
+    "immaterialrett": "Intellectual Property Law (Immaterialrett)",
+    "entrepriserett": "Construction Law (Entrepriserett)",
+    "miljorett": "Environmental Law (Miljørett)",
+}
+
+
+@router.get("/domain-analytics", summary="Get user query domain distribution analytics")
+async def get_domain_analytics(
+    current_user: ClerkUser = Depends(require_db_role("admin", "system_admin")),
+):
+    from config_domains import DOMAINS_CANONICAL
+    try:
+        resp = _user_service._supabase.table("messages")\
+            .select("metadata")\
+            .eq("role", "assistant")\
+            .execute()
+        
+        counts = {}
+        total = 0
+        for msg in (resp.data or []):
+            meta = msg.get("metadata") or {}
+            domain = meta.get("detected_domain")
+            if domain:
+                counts[domain] = counts.get(domain, 0) + 1
+                total += 1
+        
+        distribution = []
+        for domain, count in counts.items():
+            lower_domain = domain.lower()
+            if lower_domain in DOMAIN_DISPLAY_NAMES:
+                display_name = DOMAIN_DISPLAY_NAMES[lower_domain]
+            else:
+                display_name = lower_domain.replace("_", " ").title()
+                display_name = f"{display_name} ({domain})"
+                
+            distribution.append({
+                "name": display_name,
+                "raw_key": lower_domain,
+                "is_canonical": lower_domain in DOMAINS_CANONICAL,
+                "queries": count,
+                "percentage": round((count / total) * 100, 1) if total > 0 else 0
+            })
+        
+        distribution.sort(key=lambda x: x["queries"], reverse=True)
+        return {"total": total, "distribution": distribution}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/sla-report", summary="Get SLA alerts, average response times, and lawyer performance")
+async def get_sla_report(
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
+):
+    try:
+        from datetime import datetime, timezone
+        import time
+
+        # 1. Fetch all tickets
+        tickets_resp = _user_service._supabase.table("hitl_tickets") \
+            .select("ticket_id, status, created_at, assigned_at, resolved_at, booking_confirmed_at, assigned_lawyer_id") \
+            .execute()
+        
+        tickets = tickets_resp.data or []
+        
+        # 2. Fetch all lawyers to map names
+        lawyers_resp = _user_service._supabase.table("users") \
+            .select("user_id, email, user_name, user_profiles(display_name)") \
+            .eq("role", "lawyer") \
+            .execute()
+        
+        lawyers_map = {}
+        for l in (lawyers_resp.data or []):
+            profile = l.get("user_profiles") or {}
+            display_name = profile.get("display_name") or l.get("user_name") or l.get("email") or "Unknown Lawyer"
+            lawyers_map[l["user_id"]] = display_name
+            
+        # 2b. Fetch lawyer ratings from database
+        lawyer_ratings = {}
+        try:
+            ratings_resp = _user_service._supabase.table("consultation_ratings") \
+                .select("lawyer_id, rating") \
+                .execute()
+            for r in (ratings_resp.data or []):
+                lid = r.get("lawyer_id")
+                val = r.get("rating")
+                if lid and val is not None:
+                    lawyer_ratings.setdefault(lid, []).append(val)
+        except Exception as e:
+            logger.warning(f"Could not load consultation ratings (using default 4.8): {e}")
+
+        now = datetime.now(timezone.utc)
+        
+        # Metrics aggregators
+        claim_durations = []
+        book_durations = []
+        resolve_durations = []
+        
+        active_breaches = []
+        
+        # Per lawyer aggregators
+        lawyer_stats = {} # lawyer_id -> {"tickets": int, "resolve_times": list, "rating": float}
+        for l_id in lawyers_map:
+            l_reviews = lawyer_ratings.get(l_id, [])
+            real_rating = sum(l_reviews) / len(l_reviews) if l_reviews else None
+            lawyer_stats[l_id] = {
+                "tickets": 0,
+                "resolve_times": [],
+                "rating": real_rating
+            }
+        
+        for t in tickets:
+            status_val = t.get("status")
+            created_at_str = t.get("created_at")
+            assigned_at_str = t.get("assigned_at")
+            resolved_at_str = t.get("resolved_at")
+            booking_confirmed_at_str = t.get("booking_confirmed_at")
+            lawyer_id = t.get("assigned_lawyer_id")
+            
+            created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00")) if created_at_str else None
+            assigned_at = datetime.fromisoformat(assigned_at_str.replace("Z", "+00:00")) if assigned_at_str else None
+            resolved_at = datetime.fromisoformat(resolved_at_str.replace("Z", "+00:00")) if resolved_at_str else None
+            booking_confirmed_at = datetime.fromisoformat(booking_confirmed_at_str.replace("Z", "+00:00")) if booking_confirmed_at_str else None
+            
+            # SLA Breaches calculation
+            if status_val == "open" and created_at:
+                waiting_hours = (now - created_at).total_seconds() / 3600.0
+                if waiting_hours > 24:
+                    active_breaches.append({
+                        "ticket_id": t["ticket_id"],
+                        "type": "claim_delay",
+                        "hours_delayed": round(waiting_hours, 1),
+                        "message": f"Ticket #{t['ticket_id'][:6]} - waiting {int(waiting_hours)}h with no lawyer claimed"
+                    })
+            elif status_val == "assigned" and assigned_at and not booking_confirmed_at:
+                waiting_hours = (now - assigned_at).total_seconds() / 3600.0
+                if waiting_hours > 48:
+                    active_breaches.append({
+                        "ticket_id": t["ticket_id"],
+                        "type": "booking_delay",
+                        "hours_delayed": round(waiting_hours, 1),
+                        "message": f"Ticket #{t['ticket_id'][:6]} - accepted but no booking in {int(waiting_hours)}h"
+                    })
+                    
+            # Averages calculation
+            if created_at and assigned_at:
+                claim_durations.append((assigned_at - created_at).total_seconds() / 3600.0)
+            if assigned_at and booking_confirmed_at:
+                book_durations.append((booking_confirmed_at - assigned_at).total_seconds() / 3600.0)
+            if assigned_at and resolved_at:
+                resolve_durations.append((resolved_at - assigned_at).total_seconds() / 86400.0)
+                
+            # Lawyer performance tracking
+            if lawyer_id:
+                if lawyer_id not in lawyer_stats:
+                    l_reviews = lawyer_ratings.get(lawyer_id, [])
+                    real_rating = sum(l_reviews) / len(l_reviews) if l_reviews else None
+                    lawyer_stats[lawyer_id] = {
+                        "tickets": 0,
+                        "resolve_times": [],
+                        "rating": real_rating
+                    }
+                lawyer_stats[lawyer_id]["tickets"] += 1
+                if assigned_at and resolved_at:
+                    lawyer_stats[lawyer_id]["resolve_times"].append((resolved_at - assigned_at).total_seconds() / 86400.0)
+                    
+        # Format output averages
+        avg_claim = sum(claim_durations) / len(claim_durations) if claim_durations else 0.0
+        avg_book = sum(book_durations) / len(book_durations) if book_durations else 0.0
+        avg_resolve = sum(resolve_durations) / len(resolve_durations) if resolve_durations else 0.0
+        
+        # Format lawyer table
+        performance_table = []
+        for l_id, stats in lawyer_stats.items():
+            name = lawyers_map.get(l_id, f"Lawyer #{l_id[:6]}")
+            l_resolves = stats["resolve_times"]
+            avg_l_resolve = sum(l_resolves) / len(l_resolves) if l_resolves else None
+            performance_table.append({
+                "lawyer_id": l_id,
+                "name": name,
+                "tickets": stats["tickets"],
+                "avg_resolve_days": round(avg_l_resolve, 1) if avg_l_resolve is not None else None,
+                "rating": round(stats["rating"], 1) if stats["rating"] is not None else None
+            })
+            
+        return {
+            "active_breaches": active_breaches,
+            "average_response_times": {
+                "avg_claim_hours": round(avg_claim, 1),
+                "avg_book_hours": round(avg_book, 1),
+                "avg_resolve_days": round(avg_resolve, 1)
+            },
+            "lawyer_performance": performance_table
+        }
+    except Exception as exc:
+        logger.error(f"❌ Failed to generate SLA report: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class AdminSpecializationRequest(BaseModel):
+    expertise_domains: List[str]
+    specialization_label: Optional[str] = None
+
+
+@router.patch(
+    "/lawyers/{lawyer_id}/specialization",
+    summary="Admin overrides a lawyer's specialization settings",
+)
+async def admin_set_lawyer_specialization(
+    lawyer_id: str,
+    req: AdminSpecializationRequest,
+    background_tasks: BackgroundTasks,
+    current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
+):
+    try:
+        resp = (
+            _user_service._supabase.table("lawyer_profiles")
+            .update({
+                "expertise_domains": req.expertise_domains,
+                "specialization_label": req.specialization_label,
+            })
+            .eq("lawyer_id", lawyer_id)
+            .execute()
+        )
+        if not resp.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Lawyer profile not found. Ensure the user has been promoted to lawyer.",
+            )
+
+        # Send email notification to the lawyer
+        if _email_service:
+            try:
+                lawyer_user_resp = _user_service._supabase.table("users")\
+                    .select("email, user_profiles(display_name)")\
+                    .eq("user_id", lawyer_id)\
+                    .execute()
+                
+                if lawyer_user_resp.data:
+                    lawyer_user = lawyer_user_resp.data[0]
+                    lawyer_email = lawyer_user.get("email")
+                    lawyer_profile = lawyer_user.get("user_profiles") or {}
+                    lawyer_name = lawyer_profile.get("display_name") or (lawyer_email.split("@")[0] if lawyer_email else "Lawyer")
+                    
+                    if lawyer_email:
+                        background_tasks.add_task(
+                            _email_service.send_specialization_override_to_lawyer,
+                            to_email=lawyer_email,
+                            lawyer_name=lawyer_name,
+                            specialization_label=req.specialization_label,
+                            expertise_domains=req.expertise_domains
+                        )
+            except Exception as mail_err:
+                logger.warning(f"⚠️ Failed to queue lawyer specialization override email: {mail_err}")
+
+        return {"status": "success", "message": "Lawyer specialization updated by admin.", "profile": resp.data[0]}
     except HTTPException:
         raise
     except Exception as exc:

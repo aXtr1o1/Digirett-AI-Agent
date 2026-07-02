@@ -19,6 +19,31 @@ from services.document_service import DocumentService
 from config import settings
 from config_domains import normalize_domain
 
+# ── Import Integrated Router Modules ──
+from router.taxonomy_loader import taxonomy_loader
+from router.deterministic_rules import DeterministicRules
+from router.keyword_scorer import KeywordScorer
+from router.confuser_resolver import ConfuserResolver
+from router.alias_resolver import AliasResolver
+from router.thin_pointer_resolver import ThinPointerResolver
+from router.co_retrieval_resolver import CoRetrievalResolver
+from router.result_merger import ResultMerger
+
+TAXONOMY_DOMAIN_TO_CANONICAL = {
+    "D01_COMPANY": "selskapsrett",
+    "D02_MA": "manda_fusjon_fisjon",
+    "D03_ACCOUNTS": "arsregnskap_og_selskapsrapportering",
+    "D04_CONTRACT": "avtalerett",
+    "D05_OBLIGATIONS": "obligasjonsrett",
+    "D06_DEBT": "inkasso_og_tvangsfullbyrdelse",
+    "D07_INSOLVENCY": "konkursrett_og_insolvens",
+    "D08_MONETARY": "pengekravsrett_fordringer",
+    "D09_SECURITY": "panterett_og_sikkerhetsrett",
+    "D10_DISPUTE": "tvistelosning_smb",
+    "D12_EMPLOYMENT": "arbeidsrett",
+    "D12_PRIVACY": "personvern_gdpr_business_compliance"
+}
+
 logger = logging.getLogger(__name__)
 
 # Redis key template for storing reasoning context between turns
@@ -423,26 +448,85 @@ class RAGService:
             f"domain={domain} | jurisdiction={jurisdiction} | style=\'{response_style}\'"
         )
  
-        # ── [2] RouterAgent ────────────────────────────────────────────────
-        router_result = await self._router_agent.run(
-            raw_query=query,
-            enriched_query=enriched_query,
-            domain_hint=domain,
-        )
-        final_domain          = domain or router_result.get("domain") or None
-        final_jurisdiction    = jurisdiction or router_result.get("jurisdiction") or None
-        subdomain_candidates  = router_result.get("subdomain_candidates") or []
-        b2b_b2c               = router_result.get("b2b_b2c") or "BOTH"
- 
+        # ── [2] New Integrated Routing Pipeline ──
+        # 1. Deterministic Pre-Router
+        resolved_subdomain = DeterministicRules.evaluate(query)
+        routing_confidence = 1.0
+        routing_method = "DETERMINISTIC"
+
+        # 2. Keyword Overlap Scorer (utilizing Norwegian concepts from QueryReasoningAgent for English query mapping)
+        if not resolved_subdomain:
+            key_concepts_list = []
+            if primary_statute_id:
+                key_concepts_list.append(primary_statute_id)
+            if domain:
+                key_concepts_list.append(domain)
+            
+            keyword_candidates = KeywordScorer.score_query(query, key_concepts=key_concepts_list)
+            
+            if keyword_candidates and keyword_candidates[0][1] >= 0.6:
+                resolved_subdomain = keyword_candidates[0][0]
+                routing_confidence = keyword_candidates[0][1]
+                routing_method = "KEYWORD_OVERLAP"
+                logger.info(f"🎯 Keyword Scorer selected primary subdomain: {resolved_subdomain} (confidence={routing_confidence})")
+            else:
+                # 3. Fallback LLM Router when keyword scoring confidence is low
+                logger.info("ℹ️ Low keyword confidence — calling LLM RouterAgent fallback...")
+                router_result = await self._router_agent.run(
+                    raw_query=query,
+                    enriched_query=enriched_query,
+                    domain_hint=domain,
+                )
+                resolved_subdomain = router_result.get("subdomain_candidates")[0] if router_result.get("subdomain_candidates") else None
+                routing_confidence = router_result.get("confidence", 0.5)
+                routing_method = "LLM_FALLBACK"
+
+        # Initialize defaults
+        final_domain = domain
+        final_jurisdiction = jurisdiction
+        b2b_b2c = "BOTH"
+        target_subdomains = []
+
+        if resolved_subdomain:
+            # 4. Confuser Check
+            resolved_subdomain = ConfuserResolver.resolve(resolved_subdomain, query)
+            
+            # 5. Alias Resolution
+            resolved_subdomain = AliasResolver.resolve(resolved_subdomain)
+            
+            # 6. Thin Pointer Resolution
+            subdomain_list = ThinPointerResolver.resolve(resolved_subdomain)
+            
+            # 7. Co-Retrieval Checks
+            target_subdomains = CoRetrievalResolver.get_targets(subdomain_list, query)
+            
+            # Extract metadata dynamically from taxonomy for the resolved primary subdomain
+            primary_sub_data = taxonomy_loader.get_subdomain(resolved_subdomain)
+            if primary_sub_data:
+                taxonomy_domain_id = primary_sub_data.get("domain_id")
+                final_domain = TAXONOMY_DOMAIN_TO_CANONICAL.get(taxonomy_domain_id, domain)
+                
+                constraints = primary_sub_data.get("routing_constraints", {})
+                if constraints:
+                    allowed_j = constraints.get("jurisdiction", [])
+                    if allowed_j:
+                        final_jurisdiction = allowed_j[0]
+                    allowed_b = constraints.get("b2b_b2c", [])
+                    if allowed_b:
+                        b2b_b2c = allowed_b[0]
+
+        if not target_subdomains and resolved_subdomain:
+            target_subdomains = [resolved_subdomain]
+
         if final_domain:
             final_domain = normalize_domain(final_domain) or final_domain
- 
+
         logger.info(
-            f"🔀 Router: domain={final_domain} | subdomains={subdomain_candidates} | "
-            f"b2b_b2c={b2b_b2c} | jurisdiction={final_jurisdiction} | "
-            f"confidence={router_result.get('confidence')}"
+            f"🔀 Integrated Router Output: method={routing_method} | "
+            f"primary={resolved_subdomain} | targets={target_subdomains} | "
+            f"domain={final_domain} | jurisdiction={final_jurisdiction} | b2b_b2c={b2b_b2c}"
         )
- 
+
         # ── Persist reasoning context ──────────────────────────────────────
         try:
             redis_key = _REASONING_META_KEY.format(conversation_id=conversation_id)
@@ -453,25 +537,43 @@ class RAGService:
             )
         except Exception as exc:
             logger.warning(f"⚠️  Could not save reasoning meta to Redis | {exc}")
- 
+
         # ── [3] Resolve statute → Lovdata URL ─────────────────────────────
         statute_filter = _resolve_statute_url(primary_statute_id)
         logger.info(f"🗂  statute_filter: \'{primary_statute_id}\' → \'{statute_filter}\'")
- 
-        # ── [4] RetrieverAgent (5-level fallback + BM25) ──────────────────
-        search_results = await self._retriever_agent.run(
-            query=query,
-            enriched_query=enriched_query,
-            top_k=top_k,
-            min_score=min_score,
-            history=history,
-            statute_filter=statute_filter,
-            domain=final_domain,
-            jurisdiction=final_jurisdiction,
-            subdomain_candidates=subdomain_candidates,
-            b2b_b2c=b2b_b2c,
-            statute_from_registry=statute_from_registry,
-        )
+
+        # ── [4] Multi-Pass Retrieval & Deduplication ──────────────────────
+        raw_retrieved_chunks = []
+        
+        # Execute a search pass for each target subdomain to prevent domain-level filtering issues
+        for sub_candidate in (target_subdomains or [None]):
+            sub_subdomain_candidates = [sub_candidate] if sub_candidate else None
+            
+            # Look up domain for this specific subdomain if it is co-retrieved from a different domain
+            sub_domain = final_domain
+            if sub_candidate:
+                sub_data = taxonomy_loader.get_subdomain(sub_candidate)
+                if sub_data:
+                    sub_domain_id = sub_data.get("domain_id")
+                    sub_domain = TAXONOMY_DOMAIN_TO_CANONICAL.get(sub_domain_id, final_domain)
+            
+            sub_results = await self._retriever_agent.run(
+                query=query,
+                enriched_query=enriched_query,
+                top_k=top_k,
+                min_score=min_score,
+                history=history,
+                statute_filter=statute_filter,
+                domain=sub_domain,
+                jurisdiction=final_jurisdiction,
+                subdomain_candidates=sub_subdomain_candidates,
+                b2b_b2c=b2b_b2c,
+                statute_from_registry=statute_from_registry,
+            )
+            raw_retrieved_chunks.extend(sub_results)
+
+        # Merge and deduplicate results
+        search_results = ResultMerger.merge(raw_retrieved_chunks)
  
         # ── [5] Handle empty retrieval ─────────────────────────────────────
         if not search_results:
@@ -596,6 +698,7 @@ class RAGService:
                 "confidence": confidence,
                 "full_answer": full_answer,
                 "rag_chunks": search_results,
+                "detected_domain": final_domain,
             },
         }
         logger.info(

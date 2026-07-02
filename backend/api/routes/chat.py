@@ -27,8 +27,7 @@ import asyncio
 
 from core.auth import verify_ws_token
 from schemas.requests import ChatRequest
-
-from schemas.requests import ChatRequest
+from services.lovdata_title_fetcher import normalize_and_redirect_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -496,6 +495,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
                             "score":            metadata.get("score", 1.0),
                             "confidence":       metadata.get("confidence", "Unknown"),
                             "chunks_retrieved": metadata.get("chunks_retrieved", 0),
+                            "detected_domain":  metadata.get("detected_domain"),
                         },
                         rag_chunks=chunks_to_save,
                         skip_save_user=chat_request.skip_save_user,

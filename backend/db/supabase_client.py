@@ -3,7 +3,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from supabase import create_client, Client
+from supabase import create_client, Client, ClientOptions
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +28,25 @@ class SupabaseClient:
         
         try:
             logger.info(f"🔌 Connecting to Supabase at {url[:40]}...")
-            self._client = create_client(url, key)
+            
+            # Configure custom httpx.Client with http2=False to prevent connection drops/Server disconnected errors
+            http_client = httpx.Client(
+                http2=False,
+                limits=httpx.Limits(
+                    max_keepalive_connections=20,
+                    max_connections=100,
+                    keepalive_expiry=30.0
+                ),
+                timeout=httpx.Timeout(60.0, connect=30.0),  # Increase connect timeout to 30s to allow handshake under load
+                trust_env=False  # Speed up handshake by bypassing system proxy scanning
+            )
+            options = ClientOptions(httpx_client=http_client)
+            
+            self._client = create_client(url, key, options=options)
 
             # Smoke-test: query the users table
-            self._client.table("users").select("user_id").limit(1).execute()
+            smoke_query = self._client.table("users").select("user_id").limit(1)
+            self.execute_query(smoke_query)
 
             self._ready = True
             logger.info(" Supabase connected")
@@ -59,7 +75,7 @@ class SupabaseClient:
             logger.error(f" Supabase health check failed | {exc}")
             return False
 
-    def _execute_with_retry(self, query, max_retries: int = 3):
+    def execute_query(self, query, max_retries: int = 3):
         import time
         import httpx
         import httpcore
@@ -67,9 +83,9 @@ class SupabaseClient:
         for attempt in range(max_retries):
             try:
                 return query.execute()
-            except (httpx.RemoteProtocolError, httpcore.RemoteProtocolError, httpx.NetworkError) as exc:
+            except (httpx.HTTPError, httpcore.HTTPCoreError) as exc:
                 last_exc = exc
-                logger.warning(f"⚠️ Supabase connection dropped (attempt {attempt+1}/{max_retries}) | {exc}")
+                logger.warning(f"⚠️ Supabase connection dropped/timed out (attempt {attempt+1}/{max_retries}) | {exc}")
                 time.sleep(0.5)
         raise last_exc
 
@@ -212,13 +228,13 @@ class SupabaseClient:
                 "metadata": metadata,
                 "created_at": now,
             })
-            self._execute_with_retry(query)
+            self.execute_query(query)
 
             # Keep conversation updated_at current
             update_query = self._get().table("conversations").update({
                 "updated_at": now,
             }).eq("conversation_id", conversation_id)
-            self._execute_with_retry(update_query)
+            self.execute_query(update_query)
 
             logger.debug(f" Saved {role} message {message_id}")
             return message_id
@@ -247,7 +263,7 @@ class SupabaseClient:
                 "is_cached": is_cached,
                 "created_at": datetime.utcnow().isoformat(),
             })
-            self._execute_with_retry(query)
+            self.execute_query(query)
             return True
         except Exception as exc:
             logger.error(f" save_message_metadata failed | {exc}")
@@ -275,7 +291,7 @@ class SupabaseClient:
                 return True
 
             query = self._get().table("rag_retrievals").insert(rows)
-            self._execute_with_retry(query)
+            self.execute_query(query)
             logger.debug(f"✅ Saved {len(rows)} RAG retrievals for message {message_id}")
             return True
         except Exception as exc:

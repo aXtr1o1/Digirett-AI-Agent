@@ -368,6 +368,8 @@ class UserService:
             elif role == "admin":
                 full_name = user_info.get("user_name") if user_info else "Admin"
                 success = self.promote_to_admin(user_id=user_id, admin_id="system", full_name=full_name)
+            elif role == "system_admin":
+                success = self.promote_to_system_admin(user_id=user_id, admin_id="system")
                 
             if not success:
                 return False
@@ -395,7 +397,7 @@ class UserService:
             if existing_user_resp.data:
                 existing_role = existing_user_resp.data[0].get("role", "user")
                 # Allow Admin to invite themselves as a Lawyer
-                if existing_role == "lawyer" or (existing_role == "admin" and role == "admin"):
+                if existing_role == "lawyer" or (existing_role == "admin" and role == "admin") or (existing_role == "system_admin" and role == "system_admin"):
                     logger.warning(f"⚠️ User {email} already has role {existing_role}. Invitation blocked.")
                     raise ValueError(f"An account with this email is already registered as a {existing_role.capitalize()}. Duplicate invitations are restricted.")
 
@@ -410,7 +412,8 @@ class UserService:
             }
             
             # Upsert (allow re-inviting or updating role)
-            self._supabase.table("role_invites").upsert(invite_data, on_conflict="email").execute()
+            upsert_query = self._supabase.table("role_invites").upsert(invite_data, on_conflict="email")
+            self._supabase.execute_query(upsert_query)
             
             # Send email (await async call)
             success = await email_service.send_invitation_email(email, role, token, admin_email=admin_email)
@@ -431,7 +434,8 @@ class UserService:
         Fetches all rows from the role_invites table.
         """
         try:
-            resp = self._supabase.table("role_invites").select("*").order("created_at", desc=True).execute()
+            query = self._supabase.table("role_invites").select("*").order("created_at", desc=True)
+            resp = self._supabase.execute_query(query)
             return resp.data or []
         except Exception as exc:
             logger.error(f"❌ get_all_invitations failed | {exc}")
@@ -442,7 +446,8 @@ class UserService:
         Deletes a pending invitation from the role_invites table.
         """
         try:
-            resp = self._supabase.table("role_invites").delete().eq("invite_id", invite_id).execute()
+            query = self._supabase.table("role_invites").delete().eq("invite_id", invite_id)
+            resp = self._supabase.execute_query(query)
             return len(resp.data or []) > 0
         except Exception as exc:
             logger.error(f"❌ revoke_invitation failed | {invite_id} | {exc}")
@@ -525,6 +530,31 @@ class UserService:
             logger.error(f"❌ promote_to_admin failed | {user_id} | {exc}")
             return False
 
+    def promote_to_system_admin(self, user_id: str, admin_id: str) -> bool:
+        """Promotes a user to System Admin role."""
+        try:
+            user = self.get_user_by_id(user_id)
+            if not user: return False
+            
+            now = datetime.utcnow().isoformat()
+            
+            # 1. Update users table
+            self._supabase.table("users").update({
+                "role": "system_admin",
+                "updated_at": now
+            }).eq("user_id", user_id).execute()
+            
+            # 2. Sync Clerk
+            self._sync_clerk_role(user["clerk_user_id"], "system_admin")
+            
+            # 3. Audit
+            self._log_audit("admin.user_promoted", admin_id, {"target_user_id": user_id, "new_role": "system_admin"})
+            
+            return True
+        except Exception as exc:
+            logger.error(f"❌ promote_to_system_admin failed | {user_id} | {exc}")
+            return False
+
     def enable_lawyer_dashboard_for_admin(self, user_id: str, admin_id: str) -> bool:
         """Adds a lawyer profile to an existing admin without changing their role."""
         try:
@@ -560,7 +590,8 @@ class UserService:
     def get_lawyer_cal_config(self, lawyer_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve the Cal.com configuration for a lawyer."""
         try:
-            resp = self._supabase.table("lawyer_profiles").select("cal_event_type_id, cal_api_key").eq("lawyer_id", lawyer_id).execute()
+            query = self._supabase.table("lawyer_profiles").select("cal_event_type_id, cal_api_key, expertise_domains, specialization_label, availability_status, last_seen_at").eq("lawyer_id", lawyer_id)
+            resp = self._supabase.execute_query(query)
             if resp.data:
                 return resp.data[0]
             return None
@@ -571,11 +602,12 @@ class UserService:
     def update_lawyer_cal_config(self, lawyer_id: str, event_type_id: str, api_key: str) -> bool:
         """Update the Cal.com configuration for a lawyer."""
         try:
-            self._supabase.table("lawyer_profiles").update({
+            query = self._supabase.table("lawyer_profiles").update({
                 "cal_event_type_id": event_type_id,
                 "cal_api_key": api_key,
                 "updated_at": datetime.utcnow().isoformat()
-            }).eq("lawyer_id", lawyer_id).execute()
+            }).eq("lawyer_id", lawyer_id)
+            self._supabase.execute_query(query)
             logger.info(f"✅ Updated Cal.com config for lawyer | {lawyer_id}")
             return True
         except Exception as exc:

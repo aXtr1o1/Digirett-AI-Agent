@@ -96,3 +96,15 @@ class SearchResponse(BaseModel):
     results: List[SearchResult] = Field(default_factory=list)
     total_found: int
     query_time: float
+
+
+class LibraryDocumentResponse(BaseModel):
+    """A document saved in user's library."""
+    id: str
+    user_id: str
+    file_name: str
+    file_type: str
+    char_count: int
+    note: str = ""
+    created_at: datetime
+    expires_at: datetime

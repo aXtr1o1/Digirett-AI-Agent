@@ -263,9 +263,278 @@ class EmailService:
             plain_content=plain_content,
         )
 
+    async def send_ticket_message_notification(
+        self,
+        to_email: str,
+        recipient_name: str,
+        sender_name: str,
+        message_content: str,
+        ticket_id: str,
+    ) -> bool:
+        """
+        Notifies a user or lawyer of a new message in their pre-consultation chat.
+        """
+        subject = f"New message from {sender_name} — Digirett"
+        # Truncate content in email preview if long
+        preview_content = message_content if len(message_content) <= 120 else f"{message_content[:117]}..."
+        
+        html_content = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
+            <h2 style="color: #2D3748;">New Message Received</h2>
+            <p>Hi <strong>{recipient_name}</strong>,</p>
+            <p>You have a new message from <strong>{sender_name}</strong> regarding case reference <strong>{ticket_id[:8].upper()}</strong>:</p>
+            
+            <div style="background:#f7f7f7; border-left:4px solid #3182ce; padding:16px; margin:24px 0; border-radius:4px; font-style:italic; color:#2d3748; white-space: pre-wrap;">
+                "{preview_content}"
+            </div>
+            
+            <p style="color:#4a5568;">Please log in to the Digirett platform to view the thread and reply.</p>
+            
+            <div style="text-align:center; margin:30px 0;">
+                <a href="{settings.FRONTEND_URL}"
+                   style="background-color:#3182ce; color:white; padding:12px 28px;
+                          text-decoration:none; border-radius:6px; font-weight:bold;">
+                   Open Digirett
+                </a>
+            </div>
+            
+            <hr style="border:none; border-top:1px solid #eee; margin:30px 0;">
+            <p style="font-size:0.8em; color:#A0AEC0;">This is an automated notification from the Digirett platform.</p>
+        </div>
+        """
+        return await self._send(
+            to_email=to_email,
+            subject=subject,
+            html_content=html_content,
+        )
+
+
+    async def send_ticket_created_confirmation_email(
+        self,
+        to_email: str,
+        user_name: str,
+        ticket_id: str,
+    ) -> bool:
+        """
+        Confirms to the user that their escalation ticket has been created and is awaiting a lawyer.
+        """
+        subject = f"We have received your request — Ticket {ticket_id[:8].upper()}"
+        html_content = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
+            <h2 style="color: #2D3748;">Consultation Request Received</h2>
+            <p>Hi <strong>{user_name}</strong>,</p>
+            <p>Your request to speak with a lawyer has been successfully submitted. We are assigning your case to our legal team.</p>
+            <div style="background:#f7f7f7; border-left:4px solid #4A5568; padding:12px 16px; margin:24px 0; border-radius:4px;">
+                <p style="margin:0; font-size:13px; color:#718096;">Case Reference</p>
+                <p style="margin:4px 0 0; font-weight:bold; font-size:15px; color:#2d3748;">{ticket_id[:8].upper()}</p>
+            </div>
+            <p style="color:#4a5568;">You will receive an email as soon as a lawyer accepts your case.</p>
+            <hr style="border:none; border-top:1px solid #eee; margin:30px 0;">
+            <p style="font-size:0.8em; color:#A0AEC0;">Digirett Legal Platform — automated notification</p>
+        </div>
+        """
+        return await self._send(to_email=to_email, subject=subject, html_content=html_content)
+
+    async def send_ticket_resolved_email(
+        self,
+        to_email: str,
+        user_name: str,
+        lawyer_name: str,
+        response_content: str,
+        ticket_id: str,
+    ) -> bool:
+        """
+        Notifies the user that their ticket is resolved and sends the lawyer's written response.
+        """
+        subject = f"Your consultation summary is ready — Ticket {ticket_id[:8].upper()}"
+        preview_content = response_content if len(response_content) <= 300 else f"{response_content[:297]}..."
+        html_content = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
+            <h2 style="color: #2D3748;">Case Resolved</h2>
+            <p>Hi <strong>{user_name}</strong>,</p>
+            <p>Your assigned lawyer, <strong>{lawyer_name}</strong>, has resolved your ticket and provided the final response/consultation summary:</p>
+            
+            <div style="background:#f7f7f7; border-left:4px solid #48bb78; padding:16px; margin:24px 0; border-radius:4px; font-style:italic; color:#2d3748; white-space: pre-wrap;">
+                "{preview_content}"
+            </div>
+            
+            <p style="color:#4a5568;">Please log in to the Digirett platform to view the full details and provide your feedback.</p>
+            <div style="text-align:center; margin:30px 0;">
+                <a href="{settings.FRONTEND_URL}"
+                   style="background-color:#48bb78; color:white; padding:12px 28px;
+                          text-decoration:none; border-radius:6px; font-weight:bold;">
+                   View Resolved Case
+                </a>
+            </div>
+            <hr style="border:none; border-top:1px solid #eee; margin:30px 0;">
+            <p style="font-size:0.8em; color:#A0AEC0;">Digirett Legal Platform — automated notification</p>
+        </div>
+        """
+        return await self._send(to_email=to_email, subject=subject, html_content=html_content)
+
+    async def send_new_ticket_broadcast_email(
+        self,
+        to_email: str,
+        ticket_id: str,
+        user_display_name: str,
+    ) -> bool:
+        """
+        Alerts a lawyer that a new open case has entered the queue.
+        """
+        subject = f"📢 New open case waiting in queue — Ticket {ticket_id[:8].upper()}"
+        html_content = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
+            <h2 style="color: #2D3748;">New Open Case Escalated</h2>
+            <p>A new escalation ticket has been created by <strong>{user_display_name}</strong> and is currently waiting for assignment.</p>
+            <div style="background:#f7f7f7; border-left:4px solid #3182ce; padding:12px 16px; margin:24px 0; border-radius:4px;">
+                <p style="margin:0; font-size:13px; color:#718096;">Ticket Reference</p>
+                <p style="margin:4px 0 0; font-weight:bold; font-size:15px; color:#2d3748;">{ticket_id[:8].upper()}</p>
+            </div>
+            <p style="color:#4a5568;">Please log in to the lawyer dashboard queue to claim this case.</p>
+            <div style="text-align:center; margin:30px 0;">
+                <a href="{settings.FRONTEND_URL}"
+                   style="background-color:#3182ce; color:white; padding:12px 28px;
+                          text-decoration:none; border-radius:6px; font-weight:bold;">
+                   Go to Ticket Queue
+                </a>
+            </div>
+            <hr style="border:none; border-top:1px solid #eee; margin:30px 0;">
+            <p style="font-size:0.8em; color:#A0AEC0;">Digirett Legal Platform — automated notification</p>
+        </div>
+        """
+        return await self._send(to_email=to_email, subject=subject, html_content=html_content)
+
+    async def send_booking_cancelled_email(
+        self,
+        to_email: str,
+        recipient_name: str,
+        ticket_id: str,
+    ) -> bool:
+        """
+        Notifies a user or lawyer that their booking has been cancelled.
+        """
+        subject = f"Consultation Cancelled — Ticket {ticket_id[:8].upper()}"
+        html_content = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
+            <h2 style="color: #e53e3e;">Consultation Cancelled</h2>
+            <p>Hi <strong>{recipient_name}</strong>,</p>
+            <p>We are notifying you that the scheduled consultation for Case Reference <strong>{ticket_id[:8].upper()}</strong> has been cancelled.</p>
+            <p style="color:#4a5568;">If this was unexpected, please contact support or log back into the Digirett dashboard to check the status or reschedule.</p>
+            <hr style="border:none; border-top:1px solid #eee; margin:30px 0;">
+            <p style="font-size:0.8em; color:#A0AEC0;">Digirett Legal Platform — automated notification</p>
+        </div>
+        """
+        return await self._send(to_email=to_email, subject=subject, html_content=html_content)
+
+    async def send_consultation_feedback_email(
+        self,
+        to_email: str,
+        lawyer_name: str,
+        ticket_id: str,
+        rating: int,
+        comment: Optional[str] = None,
+    ) -> bool:
+        """
+        Sends consultation feedback rating and comment to the lawyer.
+        """
+        subject = f"⭐ New consultation feedback received — Ticket {ticket_id[:8].upper()}"
+        stars = "★" * rating + "☆" * (5 - rating)
+        comment_section = f"""
+        <p style="margin:0; font-size:13px; color:#718096;">Comment</p>
+        <p style="margin:4px 0 0; font-style:italic; color:#2d3748;">"{comment}"</p>
+        """ if comment else ""
+
+        html_content = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
+            <h2 style="color: #2D3748;">New Consultation Feedback</h2>
+            <p>Hi <strong>{lawyer_name}</strong>,</p>
+            <p>A client has submitted feedback for your consultation on Case Reference <strong>{ticket_id[:8].upper()}</strong>:</p>
+            
+            <div style="background:#f7f7f7; border-left:4px solid #ecc94b; padding:16px; margin:24px 0; border-radius:4px;">
+                <p style="margin:0 0 8px; font-size:13px; color:#718096;">Rating</p>
+                <p style="margin:0 0 12px; font-size:20px; color:#d69e2e; font-weight:bold;">{stars} ({rating}/5)</p>
+                {comment_section}
+            </div>
+            
+            <p style="color:#4a5568;">Thank you for your service!</p>
+            <hr style="border:none; border-top:1px solid #eee; margin:30px 0;">
+            <p style="font-size:0.8em; color:#A0AEC0;">Digirett Legal Platform — automated notification</p>
+        </div>
+        """
+        return await self._send(to_email=to_email, subject=subject, html_content=html_content)
+
+    async def send_specialization_update_to_admins(
+        self,
+        admin_emails: list[str],
+        lawyer_name: str,
+        lawyer_email: str,
+        specialization_label: Optional[str],
+        expertise_domains: list[str],
+    ) -> bool:
+        """
+        Notifies all admin users that a lawyer has updated their specialization.
+        """
+        if not admin_emails:
+            return False
+            
+        subject = f"⚖️ Lawyer Specialization Updated: {lawyer_name}"
+        domains_list = ", ".join(expertise_domains) if expertise_domains else "None"
+        html_content = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
+            <h2 style="color: #2D3748;">Lawyer Specialization Updated</h2>
+            <p>Hi Admin,</p>
+            <p>The lawyer <strong>{lawyer_name}</strong> ({lawyer_email}) has updated their specialization settings:</p>
+            <div style="background:#f7f7f7; border-left:4px solid #4a5568; padding:16px; margin:24px 0; border-radius:4px;">
+                <p style="margin:0 0 8px; font-size:13px; color:#718096;">Specialization Title</p>
+                <p style="margin:0 0 12px; font-weight:bold; color:#2d3748;">{specialization_label or 'N/A'}</p>
+                <p style="margin:0 0 8px; font-size:13px; color:#718096;">Expertise Domains</p>
+                <p style="margin:0; font-weight:bold; color:#2d3748;">{domains_list}</p>
+            </div>
+            <p style="font-size:0.8em; color:#A0AEC0;">Digirett Legal Platform — automated notification</p>
+        </div>
+        """
+        
+        success = True
+        for email in admin_emails:
+            sent = await self._send(to_email=email, subject=subject, html_content=html_content)
+            if not sent:
+                success = False
+        return success
+
+    async def send_specialization_override_to_lawyer(
+        self,
+        to_email: str,
+        lawyer_name: str,
+        specialization_label: Optional[str],
+        expertise_domains: list[str],
+    ) -> bool:
+        """
+        Notifies a lawyer that their specialization has been overridden by an administrator.
+        """
+        subject = "⚖️ Specialization Overridden by Administrator — Digirett"
+        domains_list = ", ".join(expertise_domains) if expertise_domains else "None"
+        html_content = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
+            <h2 style="color: #2D3748;">Specialization Overrides Applied</h2>
+            <p>Hi <strong>{lawyer_name}</strong>,</p>
+            <p>An administrator has updated your specialization and expertise domains. Here are your updated details:</p>
+            <div style="background:#f7f7f7; border-left:4px solid #3182ce; padding:16px; margin:24px 0; border-radius:4px;">
+                <p style="margin:0 0 8px; font-size:13px; color:#718096;">Specialization Title</p>
+                <p style="margin:0 0 12px; font-weight:bold; color:#2d3748;">{specialization_label or 'N/A'}</p>
+                <p style="margin:0 0 8px; font-size:13px; color:#718096;">Expertise Domains</p>
+                <p style="margin:0; font-weight:bold; color:#2d3748;">{domains_list}</p>
+            </div>
+            <p style="color:#4a5568;">These changes are now active and will govern your case matching and routing queue.</p>
+            <hr style="border:none; border-top:1px solid #eee; margin:30px 0;">
+            <p style="font-size:0.8em; color:#A0AEC0;">Digirett Legal Platform — automated notification</p>
+        </div>
+        """
+        return await self._send(to_email=to_email, subject=subject, html_content=html_content)
+
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # INTERNAL — shared SMTP sender
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 
     async def _send(self, to_email: str, subject: str, html_content: str, plain_content: Optional[str] = None) -> bool:
         """Shared SMTP send helper used by all email methods."""

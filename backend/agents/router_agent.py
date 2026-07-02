@@ -35,7 +35,7 @@ KEYWORDS: ansette, arbeidsavtale, oppsigelse av ansatt, arbeidstid, overtid, fer
   permittering, virksomhetsoverdragelse, drøftelsesmøte, usaklig oppsigelse, prøvetid,
   diskriminering, likestilling, pensjon, tariffavtale, allmenngjøring, sjøfolk, skip
 
-DOMAIN: Arsregnskap_og_selskapsrapporte
+DOMAIN: Arsregnskap_og_selskapsrapportering
 SUBDOMAINS (use EXACTLY these labels):
   - Annual Accounts & Notes
   - Audit: Duty / Opting Out
@@ -89,7 +89,7 @@ SUBDOMAINS (use EXACTLY these labels):
 KEYWORDS: pengekrav, fordring, gjeldsbrev, rente, forsinkelsesrente, cesjon,
   gjeldsoverføring, kausjon, regresskrav, motregning
 
-DOMAIN: Personvern_gdpr_business_compli
+DOMAIN: Personvern_gdpr_business_compliance
 SUBDOMAINS (use EXACTLY these labels):
   - Lawful Basis & Internal Control
   - Data Subject Rights
@@ -128,8 +128,10 @@ class RouterAgent:
         "Your job is NOT to answer the legal question.\n"
         "Your job is to classify the query into structured retrieval filters "
         "using the provided taxonomy.\n\n"
-        "You MUST use ONLY the taxonomy domain keys and subdomain labels below.\n"
-        "DO NOT invent domains or subdomains.\n\n"
+        "If the query fits one of the 12 canonical domains in the taxonomy, you MUST use that domain key.\n"
+        "If the query does NOT fit any of the 12 canonical domains (e.g., it is about criminal law, family law, tax law, traffic law, etc.), you should classify it into an appropriate custom domain key (e.g. 'criminal_law', 'family_law', 'tax_law') and leave the subdomain_candidates list empty.\n\n"
+        "You MUST use the taxonomy domain keys and subdomain labels below for canonical domains.\n"
+        "DO NOT invent subdomains.\n\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         "TAXONOMY\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -138,7 +140,7 @@ class RouterAgent:
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         "CANONICAL DOMAIN KEYS — you MUST output one of these EXACTLY:\n"
         "  arbeidsrett\n"
-        "  arsregnskap_og_selskapsrapporte\n"
+        "  arsregnskap_og_selskapsrapportering\n"
         "  avtalerett\n"
         "  inkasso_og_tvangsfullbyrdelse\n"
         "  konkursrett_og_insolvens\n"
@@ -146,7 +148,7 @@ class RouterAgent:
         "  obligasjonsrett\n"
         "  panterett_og_sikkerhetsrett\n"
         "  pengekravsrett_fordringer\n"
-        "  personvern_gdpr_business_compli\n"
+        "  personvern_gdpr_business_compliance\n"
         "  selskapsrett\n"
         "  tvistelosning_smb\n\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -189,7 +191,7 @@ class RouterAgent:
             "Business Transfers (Virksomhetsoverdragelse)",
             "Termination & Dismissal Procedure",
         ],
-        "arsregnskap_og_selskapsrapporte": [
+        "arsregnskap_og_selskapsrapportering": [
             "Annual Accounts & Notes",
             "Audit: Duty / Opting Out",
             "Accounting Duty & Reporting",
@@ -222,7 +224,7 @@ class RouterAgent:
             "Interest & Late Interest",
             "Assignment / Cessio & Debtor Change",
         ],
-        "personvern_gdpr_business_compli": [
+        "personvern_gdpr_business_compliance": [
             "Lawful Basis & Internal Control",
             "Data Subject Rights",
             "Processor Agreements (DPA)",
@@ -327,10 +329,13 @@ class RouterAgent:
         # ── Domain: normalize to canonical lowercase ───────────────────────
         raw_domain = data.get("domain", "")
         domain = normalize_domain(raw_domain)
-        if not domain or domain not in self._VALID_DOMAINS:
+        if not domain:
+            # If not in the 12 canonical domains, keep it as a custom lowercase string
+            domain = raw_domain.strip().lower() if raw_domain else ""
+        if not domain:
             # Try hint
-            domain = normalize_domain(domain_hint)
-        domain = domain if domain in self._VALID_DOMAINS else ""
+            hint = normalize_domain(domain_hint)
+            domain = hint if hint else (domain_hint.strip().lower() if domain_hint else "")
 
         # ── Subdomains: validate against the domain's list ────────────────
         valid_subs = self._VALID_SUBDOMAINS.get(domain, [])

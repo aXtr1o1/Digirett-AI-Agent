@@ -3,7 +3,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import hitlService from "../services/hitlService";
 import notesService from "../services/notesService";
 import { useUser, useClerk } from "@clerk/clerk-react";
+import CalendarView from "../components/common/CalendarView";
 import {
+  Calendar,
   Ticket,
   Clock,
   CheckCircle2,
@@ -36,7 +38,9 @@ import {
   ClipboardList,
   Sun,
   Moon,
-  UserX
+  UserX,
+  Star,
+  ChevronDown
 } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -46,16 +50,48 @@ import { useTheme } from "../providers/ThemeProvider";
 import { Link } from "react-router-dom";
 import SystemNotification from "../components/chat/ResolutionNotification";
 
+const DOMAIN_DISPLAY_NAMES = {
+  "arbeidsrett": "Employment Law (Arbeidsrett)",
+  "arsregnskap_og_selskapsrapportering": "Financial Statements & Reporting (Årsregnskap og Selskapsrapportering)",
+  "avtalerett": "Contract Law (Avtalerett)",
+  "inkasso_og_tvangsfullbyrdelse": "Debt Collection & Enforcement (Inkasso og Tvangsfullbyrdelse)",
+  "konkursrett_og_insolvens": "Bankruptcy & Insolvency (Konkursrett og Insolvens)",
+  "manda_fusjon_fisjon": "M&A, Mergers & Acquisitions (M&A, Fusjon, Fisjon)",
+  "obligasjonsrett": "Law of Obligations (Obligasjonsrett)",
+  "panterett_og_sikkerhetsrett": "Liens & Security Rights (Panterett og Sikkerhetsrett)",
+  "pengekravsrett_fordringer": "Monetary Claims & Debt (Pengekravsrett og Fordringer)",
+  "personvern_gdpr_business_compliance": "Privacy & GDPR Compliance (Personvern, GDPR & Compliance)",
+  "selskapsrett": "Company Law (Selskapsrett)",
+  "tvistelosning_smb": "Dispute Resolution for SMBs (Tvisteløsning, SMB)"
+};
+
+const LEGAL_DOMAINS = [
+  { key: "arbeidsrett", en: "Employment Law", no: "Arbeidsrett" },
+  { key: "arsregnskap_og_selskapsrapportering", en: "Financial Statements & Reporting", no: "Årsregnskap og Selskapsrapportering" },
+  { key: "avtalerett", en: "Contract Law", no: "Avtalerett" },
+  { key: "inkasso_og_tvangsfullbyrdelse", en: "Debt Collection & Enforcement", no: "Inkasso og Tvangsfullbyrdelse" },
+  { key: "konkursrett_og_insolvens", en: "Bankruptcy & Insolvency", no: "Konkursrett og Insolvens" },
+  { key: "manda_fusjon_fisjon", en: "M&A, Mergers & Acquisitions", no: "M&A, Fusjon, Fisjon" },
+  { key: "obligasjonsrett", en: "Law of Obligations", no: "Obligasjonsrett" },
+  { key: "panterett_og_sikkerhetsrett", en: "Liens & Security Rights", no: "Panterett og Sikkerhetsrett" },
+  { key: "pengekravsrett_fordringer", en: "Monetary Claims & Debt", no: "Pengekravsrett og Fordringer" },
+  { key: "personvern_gdpr_business_compliance", en: "Privacy & GDPR Compliance", no: "Personvern, GDPR & Compliance" },
+  { key: "selskapsrett", en: "Company Law", no: "Selskapsrett" },
+  { key: "tvistelosning_smb", en: "Dispute Resolution for SMBs", no: "Tvisteløsning, SMB" }
+];
+
 export default function LawyerDashboard() {
   const { theme, isDark, toggleTheme } = useTheme();
   const [queueTickets, setQueueTickets] = useState([]);
   const [resolvedTickets, setResolvedTickets] = useState([]);
+  const [activeSummaryModal, setActiveSummaryModal] = useState(null);
+  const [ratings, setRatings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const activeView = searchParams.get("view") || "dashboard";
   const setActiveView = (view) => setSearchParams({ view });
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 1024);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [queueMsg, setQueueMsg] = useState(null);
   const [notes, setNotes] = useState("");
@@ -66,6 +102,13 @@ export default function LawyerDashboard() {
   const [calApiKey, setCalApiKey] = useState("");
   const [isCalSaving, setIsCalSaving] = useState(false);
   const [isCalConfigured, setIsCalConfigured] = useState(true);
+  const [expertiseDomains, setExpertiseDomains] = useState([]);
+  const [specializationLabel, setSpecializationLabel] = useState("");
+  const [isSpecializationSaving, setIsSpecializationSaving] = useState(false);
+  const [isBriefExpanded, setIsBriefExpanded] = useState(true);
+  const [availabilityStatus, setAvailabilityStatus] = useState("available");
+  const [showAvailabilityDropdown, setShowAvailabilityDropdown] = useState(false);
+  const [hasInitializedConfig, setHasInitializedConfig] = useState(false);
 
   const notesRef = useRef(null);
 
@@ -99,12 +142,36 @@ export default function LawyerDashboard() {
         cal_api_key: calApiKey
       });
       setQueueMsg({ type: "success", text: "Cal.com configuration saved successfully." });
-      setIsCalConfigured(true);
+      setIsCalConfigured(true);
+      setHasInitializedConfig(false);
     } catch (err) {
       console.error("Failed to save Cal.com config:", err);
       setQueueMsg({ type: "error", text: err.message || "Failed to save configuration." });
     } finally {
       setIsCalSaving(false);
+    }
+  };
+
+  const handleSaveSpecialization = async () => {
+    setIsSpecializationSaving(true);
+    try {
+      await hitlService.updateSpecialization(expertiseDomains, specializationLabel);
+      setQueueMsg({ type: "success", text: "Specialization profile updated successfully." });
+      setHasInitializedConfig(false);
+    } catch (err) {
+      console.error("Failed to save specialization:", err);
+      setQueueMsg({ type: "error", text: err.message || "Failed to update specialization profile." });
+    } finally {
+      setIsSpecializationSaving(false);
+    }
+  };
+
+  const handleUpdateAvailability = async (status) => {
+    try {
+      await hitlService.updateAvailability(status);
+      setAvailabilityStatus(status);
+    } catch (err) {
+      alert(err.message || "Failed to update availability status");
     }
   };
 
@@ -230,8 +297,9 @@ export default function LawyerDashboard() {
 
       if (Array.isArray(activeData)) {
         activeData.forEach(ticket => {
+          const ticketId = ticket.ticket_id || ticket.id;
+
           if (ticket.status === "booked" && ticket.booking_confirmed_at) {
-            const ticketId = ticket.ticket_id || ticket.id;
             const eventId = `booked_${ticketId}`;
 
             if (!currentDismissed.includes(eventId)) {
@@ -243,6 +311,22 @@ export default function LawyerDashboard() {
                 caseRef: ticketId,
                 message: `Meeting Scheduled: ${userName} has booked a consultation for ${meetingTime}.`,
                 view: 'pending'
+              });
+            }
+          }
+
+          if (ticket.has_unread_messages) {
+            const eventId = `unread_msg_${ticketId}_${ticket.latest_unread_message_id || 'default'}`;
+
+            if (!currentDismissed.includes(eventId)) {
+              const userName = ticket.user_display_name || ticket.user_name || ticket.user_email || "A client";
+              newNotifications.push({
+                id: eventId,
+                type: 'new_message',
+                caseRef: ticketId,
+                message: `New Message: ${userName} has sent a new message in pre-consultation.`,
+                view: 'intake',
+                ticketId: ticketId
               });
             }
           }
@@ -269,18 +353,30 @@ export default function LawyerDashboard() {
     if (isManual) setRefreshing(true);
     setGlobalError(null);
     try {
-      const [queueData, resolvedData, activeData, calConfig] = await Promise.all([
+      const [queueData, resolvedData, activeData, calConfig, ratingsData] = await Promise.all([
         hitlService.getQueue(),
         hitlService.getResolvedHistory(),
         hitlService.getActiveTickets(),
-        hitlService.getCalConfig().catch(() => null)
+        hitlService.getCalConfig().catch(() => null),
+        hitlService.getLawyerRatings().catch(() => [])
       ]);
       setQueueTickets(queueData || []);
       setResolvedTickets(resolvedData || []);
       setActiveTickets(activeData || []);
-      
+      setRatings(ratingsData || []);
+
       if (calConfig) {
         setIsCalConfigured(!!calConfig.cal_event_type_id && !!calConfig.cal_api_key);
+        setAvailabilityStatus(calConfig.availability_status || "available");
+        
+        // Only set the editable form fields if they have not been initialized yet
+        if (!hasInitializedConfig) {
+          setCalEventTypeId(calConfig.cal_event_type_id || "");
+          setCalApiKey(calConfig.cal_api_key || "");
+          setExpertiseDomains(calConfig.expertise_domains || []);
+          setSpecializationLabel(calConfig.specialization_label || "");
+          setHasInitializedConfig(true);
+        }
       }
 
     } catch (err) {
@@ -295,8 +391,8 @@ export default function LawyerDashboard() {
   useEffect(() => {
     fetchData();
     checkQueueStatus();
-    const dataInterval = setInterval(fetchData, 30000);
-    const notifInterval = setInterval(checkQueueStatus, 30000);
+    const dataInterval = setInterval(fetchData, 4000);
+    const notifInterval = setInterval(checkQueueStatus, 4000);
     return () => {
       clearInterval(dataInterval);
       clearInterval(notifInterval);
@@ -324,10 +420,18 @@ export default function LawyerDashboard() {
     }
   }, [activeTickets]);
 
+
+
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(() => fetchData(), 30000);
-    return () => clearInterval(interval);
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setIsSidebarOpen(true);
+      } else {
+        setIsSidebarOpen(false);
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   const handleClaim = async (ticketId) => {
@@ -441,15 +545,29 @@ export default function LawyerDashboard() {
   const activeVelocityData = resolutionTrend.map(d => ({
     ...d,
     active: activeTickets.length // Simplified for real-time overview
-  })); const stats = [
+  }));
+
+  const totalRating = ratings.reduce((sum, r) => sum + r.rating, 0);
+  const avgRating = ratings.length > 0 ? (totalRating / ratings.length).toFixed(1) : "N/A";
+
+  const stats = [
     { label: "Resolved", value: resolvedTickets.length, icon: CheckCircle2, color: "emerald" },
     { label: "Active Matters", value: activeTickets.length, icon: Activity, color: "blue" },
     { label: "Queue Load", value: queueTickets.length, icon: Ticket, color: "indigo" },
-    { label: "Pending Review", value: pendingTickets.length, icon: Clock, color: "amber" }
+    { label: "Pending Review", value: pendingTickets.length, icon: Clock, color: "amber" },
+    { label: "Average Rating", value: avgRating, icon: Star, color: "amber" }
   ];
 
   return (
     <div className={`flex h-screen overflow-hidden ${isDark ? "bg-[#020617] text-slate-200" : "bg-[#f1f5f9] text-slate-900"}`}>
+
+      {/* Sidebar Overlay for Mobile */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-slate-950/60 z-40 lg:hidden backdrop-blur-sm transition-opacity duration-300"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
 
       {/* SIDEBAR */}
       <aside className={`fixed lg:relative z-50 inset-y-0 left-0 w-64 transform transition-transform duration-300 ease-in-out border-r ${isDark ? "bg-slate-900 border-slate-800" : "bg-[#0f172a] border-slate-800"
@@ -491,6 +609,14 @@ export default function LawyerDashboard() {
                   Matter Queue
                   <span className="ml-auto bg-white/10 text-white px-1.5 py-0.5 rounded text-[10px]">{queueTickets.length}</span>
                 </button>
+                <button
+                  onClick={() => { setActiveView("specialization"); setIsSidebarOpen(false); }}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "specialization" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
+                    }`}
+                >
+                  <Scale size={18} />
+                  Specialization
+                </button>
               </nav>
             </div>
 
@@ -504,7 +630,9 @@ export default function LawyerDashboard() {
                 >
                   <Inbox size={18} />
                   My Intake
-                  {intakeTicket && <span className="ml-auto bg-emerald-500 w-2 h-2 rounded-full"></span>}
+                  {intakeTicket && (
+                    <span className={`ml-auto w-2 h-2 rounded-full ${intakeTicket.has_unread_messages ? "bg-red-500 animate-pulse" : "bg-emerald-500"}`}></span>
+                  )}
                 </button>
                 <button
                   onClick={() => { setActiveView("pending"); setIsSidebarOpen(false); }}
@@ -513,7 +641,11 @@ export default function LawyerDashboard() {
                 >
                   <Layers size={18} />
                   Pending Matters
-                  {pendingTickets.length > 0 && <span className="ml-auto bg-white/10 text-white px-1.5 py-0.5 rounded text-[10px]">{pendingTickets.length}</span>}
+                  {pendingTickets.some(t => t.has_unread_messages) ? (
+                    <span className="ml-auto bg-red-500 w-2 h-2 rounded-full animate-pulse"></span>
+                  ) : (
+                    pendingTickets.length > 0 && <span className="ml-auto bg-white/10 text-white px-1.5 py-0.5 rounded text-[10px]">{pendingTickets.length}</span>
+                  )}
                 </button>
               </nav>
             </div>
@@ -531,6 +663,13 @@ export default function LawyerDashboard() {
                   <span className="ml-auto text-slate-500 text-[10px]">{resolvedTickets.length}</span>
                 </button>
                 <button
+                  onClick={() => { setActiveView("calendar"); setIsSidebarOpen(false); }}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "calendar" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
+                >
+                  <Calendar size={18} />
+                  My Schedule
+                </button>
+                <button
                   onClick={() => { setActiveView("notes"); setIsSidebarOpen(false); }}
                   className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "notes" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
                     }`}
@@ -545,7 +684,7 @@ export default function LawyerDashboard() {
                   <ArrowLeft size={18} />
                   Go to Chat
                 </Link>
-                {clerkUser?.publicMetadata?.role === "admin" && (
+                {(clerkUser?.publicMetadata?.role === "admin" || clerkUser?.publicMetadata?.role === "system_admin") && (
                   <Link
                     to="/admin"
                     className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/5 transition-all border border-indigo-500/20 mt-4"
@@ -591,6 +730,65 @@ export default function LawyerDashboard() {
             </div>
 
             <div className="flex items-center gap-4">
+              {/* Live Availability Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowAvailabilityDropdown(!showAvailabilityDropdown)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all cursor-pointer select-none outline-none ${
+                    isDark
+                      ? "bg-slate-950/40 border-slate-800 text-slate-300 hover:bg-slate-900"
+                      : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className={`h-2 w-2 rounded-full ${
+                    availabilityStatus === "available"
+                      ? "bg-emerald-500 animate-pulse"
+                      : availabilityStatus === "busy"
+                        ? "bg-amber-500"
+                        : "bg-red-500"
+                  }`} />
+                  <span>{availabilityStatus.charAt(0).toUpperCase() + availabilityStatus.slice(1)}</span>
+                  <ChevronDown size={12} className={`transition-transform duration-200 ${showAvailabilityDropdown ? "rotate-180" : ""}`} />
+                </button>
+
+                {showAvailabilityDropdown && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowAvailabilityDropdown(false)}
+                    />
+                    <div className={`absolute right-0 mt-2 w-40 rounded-xl border shadow-xl z-50 p-1.5 space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150 ${
+                      isDark ? "bg-slate-900 border-slate-800 shadow-black/40" : "bg-white border-slate-200"
+                    }`}>
+                      {[
+                        { value: "available", label: "Available", color: "bg-emerald-500" },
+                        { value: "busy", label: "Busy", color: "bg-amber-500" },
+                        { value: "away", label: "Away", color: "bg-red-500" }
+                      ].map((item) => {
+                        const isActive = availabilityStatus === item.value;
+                        return (
+                          <button
+                            key={item.value}
+                            onClick={() => {
+                              handleUpdateAvailability(item.value);
+                              setShowAvailabilityDropdown(false);
+                            }}
+                            className={`w-full px-3 py-2 flex items-center gap-2.5 rounded-lg text-xs font-medium transition-all text-left ${
+                              isDark
+                                ? `${isActive ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800/50"}`
+                                : `${isActive ? "bg-slate-105 text-slate-900" : "text-slate-600 hover:bg-slate-50"}`
+                            }`}
+                          >
+                            <span className={`h-2 w-2 rounded-full ${item.color}`} />
+                            <span>{item.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="h-8 w-[1px] bg-gray-200 dark:bg-gray-800 mx-1"></div>
               <button
                 onClick={toggleTheme}
                 className={`p-2 rounded-xl transition-all ${isDark ? "bg-gray-800 text-blue-400 hover:bg-gray-700" : "bg-gray-50 text-gray-500 hover:bg-gray-100"}`}
@@ -685,7 +883,7 @@ export default function LawyerDashboard() {
                   </p>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => setActiveView("settings")}
                 className={`px-4 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition-all shadow-sm ${isDark ? "bg-amber-500 text-amber-950 hover:bg-amber-400" : "bg-amber-500 text-white hover:bg-amber-600"}`}
               >
@@ -706,16 +904,16 @@ export default function LawyerDashboard() {
               </div>
 
               {/* KPI Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
                 {stats.map((stat, idx) => (
-                  <div key={idx} className={`p-6 rounded-2xl border shadow-sm flex flex-col gap-2 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                  <div key={idx} className={`p-4 rounded-xl border shadow-sm flex flex-col gap-1.5 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
                     }`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{stat.label}</span>
-                      <stat.icon size={14} className="text-slate-300" />
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">{stat.label}</span>
+                      <stat.icon size={13} className="text-slate-400" />
                     </div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-3xl font-black tracking-tighter">{stat.value}</span>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-2xl font-black tracking-tighter">{stat.value}</span>
                     </div>
                   </div>
                 ))}
@@ -807,25 +1005,61 @@ export default function LawyerDashboard() {
                       ) : queueTickets.length === 0 ? (
                         <tr><td colSpan="3" className="px-8 py-20 text-center text-xs font-bold text-slate-400 uppercase tracking-widest">No open matters found</td></tr>
                       ) : (
-                        queueTickets.map((ticket) => (
-                          <tr key={ticket.ticket_id} className={`group transition-colors ${isDark ? "hover:bg-slate-800/30" : "hover:bg-slate-50/50"}`}>
-                            <td className="px-8 py-6">
-                              <div className="flex items-center gap-4">
-                                <div className="h-10 w-10 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-bold">{(ticket.user_display_name || "U").charAt(0)}</div>
-                                <div>
-                                  <p className="text-sm font-bold">{ticket.user_display_name || "Anonymous"}</p>
-                                  <p className="text-[10px] text-slate-500">{ticket.user_email}</p>
+                        queueTickets.map((ticket) => {
+                          const isDomainMatch = ticket.detected_domain && expertiseDomains.some(d => d.toLowerCase() === ticket.detected_domain.toLowerCase());
+                          return (
+                            <tr key={ticket.ticket_id} className={`group transition-colors ${isDark ? "hover:bg-slate-800/30" : "hover:bg-slate-50/50"}`}>
+                              <td className="px-8 py-6">
+                                <div className="flex items-center gap-4">
+                                  <div className="h-10 w-10 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-bold">{(ticket.user_display_name || "U").charAt(0)}</div>
+                                  <div>
+                                    <p className="text-sm font-bold flex items-center gap-2">
+                                      {ticket.user_display_name || "Anonymous"}
+                                    </p>
+                                    <p className="text-[10px] text-slate-500">{ticket.user_email}</p>
+                                    {ticket.detected_domain && (
+                                      <p className="mt-1.5">
+                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider border ${
+                                          isDomainMatch
+                                            ? (isDark ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-emerald-50 text-emerald-700 border-emerald-200")
+                                            : (isDark ? "bg-slate-900 text-slate-400 border-slate-800" : "bg-slate-100 text-slate-600 border-slate-200")
+                                        }`}>
+                                          {isDomainMatch && <span className="text-emerald-500 font-black">✓</span>}
+                                          {DOMAIN_DISPLAY_NAMES[ticket.detected_domain.toLowerCase()] || ticket.detected_domain}
+                                        </span>
+                                      </p>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            </td>
-                            <td className="px-8 py-6">
-                              <p className="text-xs text-slate-500 truncate max-w-xs">{ticket.conversation_summary || "No summary available."}</p>
+                              </td>
+                              <td className="px-8 py-6">
+                              <p 
+                                onClick={() => {
+                                  if (ticket.conversation_summary) {
+                                    setActiveSummaryModal(ticket.conversation_summary);
+                                  }
+                                }}
+                                className="text-xs text-slate-500 italic leading-relaxed line-clamp-2 max-w-xs cursor-pointer transition-all"
+                                title={ticket.conversation_summary ? "Click to view full summary" : ""}
+                              >
+                                {ticket.conversation_summary || "No summary available."}
+                              </p>
+                              {/* {ticket.priority === "urgent" && ticket.urgent_reason && (
+                                <div className={`mt-2 p-2.5 rounded-lg border text-[10px] leading-relaxed font-medium ${
+                                  isDark 
+                                    ? "bg-red-500/5 border-red-500/15 text-red-400" 
+                                    : "bg-red-50 border-red-100 text-red-700"
+                                }`}>
+                                  <span className="font-bold uppercase text-[8px] tracking-wider block mb-0.5">Urgent Reason:</span>
+                                  "{ticket.urgent_reason}"
+                                </div>
+                              )} */}
                             </td>
                             <td className="px-8 py-6 text-right">
                               <button onClick={() => handleClaim(ticket.ticket_id)} className="px-4 py-2 border border-slate-200 rounded-lg text-xs font-bold hover:bg-slate-50 transition-all">Claim Matter</button>
                             </td>
                           </tr>
-                        ))
+                        )})
                       )}
                     </tbody>
                   </table>
@@ -849,8 +1083,120 @@ export default function LawyerDashboard() {
                         <p className="text-sm text-slate-500 font-medium">{intakeTicket.user_email}</p>
                       </div>
                     </div>
-                    <div className="px-6 py-2 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-[10px] font-black uppercase tracking-widest">Currently Working</div>
+                    <div className="flex items-center gap-3">
+                      {/* {intakeTicket.priority === "urgent" && (
+                        <span className={`px-3 py-1 rounded-lg text-xs font-semibold border ${
+                          isDark 
+                            ? "bg-rose-955/20 border-rose-900/30 text-rose-400" 
+                            : "bg-rose-50 border-rose-100 text-rose-600"
+                        }`}>
+                          Urgent
+                        </span>
+                      )} */}
+                      <div className="px-6 py-2 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-[10px] font-black uppercase tracking-widest">Currently Working</div>
+                    </div>
                   </div>
+
+                  {/* Urgent Reason Alert */}
+                  {/* {intakeTicket.priority === "urgent" && intakeTicket.urgent_reason && (
+                    <div className={`p-4 mb-6 rounded-xl border-l-4 ${
+                      isDark 
+                        ? "bg-rose-955/20 border-rose-900/30 border-l-rose-500 text-rose-200" 
+                        : "bg-rose-50 border-rose-100 border-l-rose-500 text-rose-900"
+                    }`}>
+                      <h4 className="text-xs font-bold mb-1">
+                        Urgent Client Request
+                      </h4>
+                      <p className="text-xs leading-relaxed font-medium">
+                        "{intakeTicket.urgent_reason}"
+                      </p>
+                    </div>
+                  )} */}
+
+                  {/* AI CASE BRIEF */}
+                  {intakeTicket.ai_brief && (
+                    <div className={`mb-8 border rounded-2xl overflow-hidden shadow-sm transition-all duration-300 ${
+                      isDark ? "bg-slate-950/40 border-slate-800" : "bg-slate-50 border-slate-200"
+                    }`}>
+                      <button
+                        onClick={() => setIsBriefExpanded(!isBriefExpanded)}
+                        className={`w-full px-6 py-4 flex items-center justify-between font-bold text-xs ${
+                          isDark ? "hover:bg-slate-900/40" : "hover:bg-slate-100/50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-indigo-500 text-sm">📋</span>
+                          <span className="uppercase tracking-wider">Case Brief</span>
+                          <span className="px-2 py-0.5 bg-indigo-500/10 text-indigo-400 rounded-md text-[8px] font-black uppercase tracking-widest border border-indigo-500/20">
+                            AI Generated
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-bold">
+                          {isBriefExpanded ? "Minimize ▲" : "Maximize ▼"}
+                        </span>
+                      </button>
+
+                      {isBriefExpanded && (
+                        <div className={`p-6 border-t space-y-6 ${isDark ? "border-slate-850" : "border-slate-200"}`}>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Matter Type */}
+                            <div className="space-y-1">
+                              <span className="text-[9px] font-black uppercase tracking-widest text-slate-450 dark:text-slate-500">Matter Type</span>
+                              <p className="text-xs font-bold text-slate-850 dark:text-slate-200">
+                                {intakeTicket.ai_brief.matter_type || "N/A"}
+                              </p>
+                            </div>
+
+                            {/* Risk Level */}
+                            <div className="space-y-1">
+                              <span className="text-[9px] font-black uppercase tracking-widest text-slate-450 dark:text-slate-500">Risk Level</span>
+                              <div>
+                                <span className={`inline-block px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
+                                  intakeTicket.ai_brief.risk_level?.toLowerCase() === "high"
+                                    ? "bg-red-500/10 text-red-500 border-red-500/20"
+                                    : intakeTicket.ai_brief.risk_level?.toLowerCase() === "moderate" || intakeTicket.ai_brief.risk_level?.toLowerCase() === "medium"
+                                      ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                      : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                                }`}>
+                                  {intakeTicket.ai_brief.risk_level || "Low"}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Key Issues */}
+                          <div className="space-y-2">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-450 dark:text-slate-500">Key Issues</span>
+                            {Array.isArray(intakeTicket.ai_brief.key_issues) && intakeTicket.ai_brief.key_issues.length > 0 ? (
+                              <ul className="list-disc list-inside space-y-1 text-xs text-slate-500 font-medium">
+                                {intakeTicket.ai_brief.key_issues.map((issue, idx) => (
+                                  <li key={idx} className="leading-relaxed">{issue}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-xs text-slate-455 dark:text-slate-500 italic">None identified</p>
+                            )}
+                          </div>
+
+                          {/* Relevant Law */}
+                          <div className="space-y-2">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-450 dark:text-slate-500">Relevant Law</span>
+                            <div className="flex flex-wrap gap-2">
+                              {Array.isArray(intakeTicket.ai_brief.relevant_laws) && intakeTicket.ai_brief.relevant_laws.length > 0 ? (
+                                intakeTicket.ai_brief.relevant_laws.map((law, idx) => (
+                                  <span key={idx} className="px-2 py-0.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md text-[9px] font-bold border border-slate-300 dark:border-slate-700">
+                                    {law}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-xs text-slate-455 dark:text-slate-500 italic">None specified</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                     <div className="space-y-6">
@@ -920,7 +1266,12 @@ export default function LawyerDashboard() {
                             <div className="flex items-center gap-4">
                               <div className="h-10 w-10 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-bold">{(t.user_display_name || "U").charAt(0)}</div>
                               <div>
-                                <p className="text-sm font-bold">{t.user_display_name || "Anonymous"}</p>
+                                <p className="text-sm font-bold flex items-center gap-2">
+                                  {t.user_display_name || "Anonymous"}
+                                  {t.has_unread_messages && (
+                                    <span className="px-1.5 py-0.5 bg-red-500/10 text-red-500 rounded text-[8px] font-black uppercase tracking-widest animate-pulse">New Msg</span>
+                                  )}
+                                </p>
                                 <p className="text-[10px] text-slate-500">{t.user_email}</p>
                                 {(t.outcome_notes?.includes("[USER-NO-SHOW]") || t.outcome_notes?.includes("[BOTH-NO-SHOW]")) && (
                                   <div className="mt-1 flex items-center gap-1 text-[9px] font-black text-red-500 uppercase tracking-tighter">
@@ -977,27 +1328,40 @@ export default function LawyerDashboard() {
                       <tr className="text-left border-b border-slate-100 dark:border-slate-800">
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Matter</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Resolved At</th>
+                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Rating</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {resolvedTickets.map((t) => (
-                        <tr key={t.ticket_id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="px-8 py-6">
-                            <div className="flex items-center gap-4">
-                              <div className="h-10 w-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-bold">{(t.user_display_name || "U").charAt(0)}</div>
-                              <div>
-                                <p className="text-sm font-bold">{t.user_display_name || "Anonymous"}</p>
-                                <p className="text-[10px] text-slate-500">{t.user_email}</p>
+                      {resolvedTickets.map((t) => {
+                        const ticketRating = ratings.find(r => r.ticket_id === t.ticket_id);
+                        return (
+                          <tr key={t.ticket_id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-8 py-6">
+                              <div className="flex items-center gap-4">
+                                <div className="h-10 w-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-bold">{(t.user_display_name || "U").charAt(0)}</div>
+                                <div>
+                                  <p className="text-sm font-bold">{t.user_display_name || "Anonymous"}</p>
+                                  <p className="text-[10px] text-slate-500">{t.user_email}</p>
+                                </div>
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-8 py-6 text-xs font-medium text-slate-500">{formatDate(t.resolved_at)}</td>
-                          <td className="px-8 py-6 text-right">
-                            <button onClick={() => navigate(`/lawyer/tickets/${t.ticket_id}`)} className="text-indigo-500 text-xs font-bold hover:underline">View Details</button>
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="px-8 py-6 text-xs font-medium text-slate-500">{formatDate(t.resolved_at)}</td>
+                            <td className="px-8 py-6 text-center">
+                              {ticketRating ? (
+                                <div className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-500 px-2.5 py-0.5 rounded-lg text-xs font-bold border border-amber-500/20">
+                                  <span>{ticketRating.rating}</span>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-slate-400 font-medium">—</span>
+                              )}
+                            </td>
+                            <td className="px-8 py-6 text-right">
+                              <button onClick={() => navigate(`/lawyer/tickets/${t.ticket_id}`)} className="text-indigo-500 text-xs font-bold hover:underline">View Details</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1014,7 +1378,7 @@ export default function LawyerDashboard() {
           {activeView === "notes" && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300 pb-10">
               <div className="flex flex-col md:flex-row gap-8">
-                
+
                 {/* NOTE EDITOR (Left Column / Main Section) */}
                 <div className={`flex-1 p-8 rounded-2xl border shadow-sm h-fit ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
                   <div className="flex items-center justify-between mb-8">
@@ -1090,7 +1454,7 @@ export default function LawyerDashboard() {
                 <div className="w-full md:w-[380px] space-y-6">
                   <div className={`p-6 rounded-2xl border shadow-sm max-h-[640px] flex flex-col ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
                     <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-4">Past Notes</h3>
-                    
+
                     <div className="overflow-y-auto space-y-4 pr-1 flex-1">
                       {notesList.length === 0 ? (
                         <div className="py-20 text-center text-slate-400">
@@ -1102,11 +1466,10 @@ export default function LawyerDashboard() {
                           <div
                             key={note.id}
                             onClick={() => handleEditNote(note)}
-                            className={`p-4 rounded-xl border transition-all flex flex-col justify-between gap-3 cursor-pointer ${
-                              currentNoteId === note.id
-                                ? (isDark ? "bg-indigo-500/10 border-indigo-500/50" : "bg-indigo-50 border-indigo-300")
-                                : (isDark ? "bg-slate-950/40 border-slate-800/80 hover:border-slate-700" : "bg-slate-50/50 border-slate-100 hover:border-slate-200")
-                            }`}
+                            className={`p-4 rounded-xl border transition-all flex flex-col justify-between gap-3 cursor-pointer ${currentNoteId === note.id
+                              ? (isDark ? "bg-indigo-500/10 border-indigo-500/50" : "bg-indigo-50 border-indigo-300")
+                              : (isDark ? "bg-slate-950/40 border-slate-800/80 hover:border-slate-700" : "bg-slate-50/50 border-slate-100 hover:border-slate-200")
+                              }`}
                           >
                             <div>
                               <div className="flex items-start justify-between gap-2">
@@ -1123,9 +1486,8 @@ export default function LawyerDashboard() {
                                   e.stopPropagation();
                                   handleEditNote(note);
                                 }}
-                                className={`px-2.5 py-1 rounded text-[9px] font-black uppercase tracking-widest transition-all ${
-                                  isDark ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                                }`}
+                                className={`px-2.5 py-1 rounded text-[9px] font-black uppercase tracking-widest transition-all ${isDark ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                  }`}
                               >
                                 Edit
                               </button>
@@ -1228,6 +1590,138 @@ export default function LawyerDashboard() {
             </div>
           )}
 
+          {/* VIEW: SPECIALIZATION */}
+          {activeView === "specialization" && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className={`p-8 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="h-12 w-12 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
+                    <Scale size={24} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold tracking-tight">Legal Expertise & Specialization</h2>
+                    <p className="text-sm text-slate-500 mt-1">Select the legal domains you specialize in to get prioritized in the queue</p>
+                  </div>
+                </div>
+
+                {queueMsg && activeView === "specialization" && (
+                  <div className={`mb-6 p-4 rounded-xl flex items-center justify-between text-sm font-bold animate-in fade-in zoom-in-95 ${queueMsg.type === 'success'
+                    ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                    : 'bg-red-500/10 text-red-500 border border-red-500/20'
+                    }`}>
+                    <div className="flex items-center gap-3">
+                      {queueMsg.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
+                      {queueMsg.text}
+                    </div>
+                    <button onClick={() => setQueueMsg(null)} className="text-lg opacity-50 hover:opacity-100">&times;</button>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                  <div className="lg:col-span-2 space-y-6">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Specialization Title / Label</label>
+                      <input
+                        type="text"
+                        value={specializationLabel}
+                        onChange={(e) => setSpecializationLabel(e.target.value)}
+                        placeholder="e.g. Senior Partner, Employment Specialist"
+                        className={`w-full px-4 py-3 rounded-xl border text-sm transition-all focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 ${isDark ? "bg-slate-950 border-slate-800 text-white placeholder-slate-600" : "bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400"}`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Expertise Areas (Select all that apply)</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Common (Generalist) Checkbox */}
+                        <label
+                          key="common"
+                          className={`p-4 rounded-xl border flex items-start gap-3 cursor-pointer select-none transition-all ${
+                            expertiseDomains.some(d => d.toLowerCase() === "common")
+                              ? (isDark ? "bg-indigo-500/10 border-indigo-500/40 text-white" : "bg-indigo-50 border-indigo-200 text-indigo-900")
+                              : (isDark ? "bg-slate-950/40 border-slate-800/50 hover:border-slate-750 text-slate-400" : "bg-white border-slate-200 hover:border-slate-300 text-slate-600")
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={expertiseDomains.some(d => d.toLowerCase() === "common")}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setExpertiseDomains(prev => [...prev, "Common"]);
+                              } else {
+                                setExpertiseDomains(prev => prev.filter(d => d.toLowerCase() !== "common"));
+                              }
+                            }}
+                            className="mt-1 rounded text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <div>
+                            <span className="text-xs font-bold block">Generalist (Common)</span>
+                            <span className="text-[10px] opacity-60 block mt-0.5">Receives matches for all case domains</span>
+                          </div>
+                        </label>
+
+                        {LEGAL_DOMAINS.map((domain) => {
+                          const isChecked = expertiseDomains.some(d => d.toLowerCase() === domain.key.toLowerCase());
+                          return (
+                            <label
+                              key={domain.key}
+                              className={`p-4 rounded-xl border flex items-start gap-3 cursor-pointer select-none transition-all ${
+                                isChecked
+                                  ? (isDark ? "bg-indigo-500/10 border-indigo-500/40 text-white" : "bg-indigo-50 border-indigo-200 text-indigo-900")
+                                  : (isDark ? "bg-slate-950/40 border-slate-800/50 hover:border-slate-750 text-slate-400" : "bg-white border-slate-200 hover:border-slate-300 text-slate-600")
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setExpertiseDomains(prev => [...prev, domain.key]);
+                                  } else {
+                                    setExpertiseDomains(prev => prev.filter(d => d.toLowerCase() !== domain.key.toLowerCase()));
+                                  }
+                                }}
+                                className="mt-1 rounded text-indigo-600 focus:ring-indigo-500"
+                              />
+                              <div>
+                                <span className="text-xs font-bold block">{domain.en}</span>
+                                <span className="text-[10px] opacity-60 block mt-0.5">{domain.no}</span>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleSaveSpecialization}
+                      disabled={isSpecializationSaving}
+                      className="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50"
+                    >
+                      {isSpecializationSaving ? "Saving..." : "Save Specialization Profile"}
+                    </button>
+                  </div>
+
+                  <div className={`p-6 rounded-2xl border h-fit ${isDark ? "bg-indigo-500/5 border-indigo-500/10 text-indigo-200" : "bg-indigo-50 border-indigo-100 text-indigo-900"}`}>
+                    <h3 className="font-bold flex items-center gap-2 mb-4">
+                      <Scale size={18} />
+                      Queue Prioritization
+                    </h3>
+                    <p className="text-xs font-medium opacity-80 leading-relaxed">
+                      By selecting your areas of expertise, the system will automatically match you with relevant incoming client matters. 
+                      These matters will be sorted to the top of your queue and highlighted with a <b>Domain Match</b> badge.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* VIEW: CALENDAR */}
+          {activeView === "calendar" && (
+            <CalendarView tickets={[...activeTickets, ...resolvedTickets]} role="lawyer" />
+          )}
+
         </main>
       </div>
 
@@ -1261,15 +1755,48 @@ export default function LawyerDashboard() {
         </div>
       )}
 
+      {/* FULL SUMMARY MODAL */}
+      {activeSummaryModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`w-full max-w-lg rounded-3xl border p-8 shadow-2xl animate-in zoom-in-95 duration-200 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-gray-100"}`}>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold">Full Matter Summary</h3>
+              <button 
+                onClick={() => setActiveSummaryModal(null)} 
+                className={`p-1.5 rounded-xl transition-colors ${isDark ? "hover:bg-slate-800 text-slate-400" : "hover:bg-slate-100 text-slate-500"}`}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className={`p-6 rounded-2xl border text-sm leading-relaxed max-h-[60vh] overflow-y-auto ${isDark ? "bg-slate-950/50 border-slate-800 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-700"}`}>
+              {activeSummaryModal}
+            </div>
+            <div className="mt-8 flex justify-end">
+              <button
+                onClick={() => setActiveSummaryModal(null)}
+                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Real-time Notifications Overlay */}
       <SystemNotification
         notifications={notifications}
         currentView={activeView}
         onDismiss={handleDismissNotification}
-        onNavigate={(view) => {
+        onNavigate={(view, notif) => {
           if (view) {
-            setActiveView(view === "pending" ? "intake" : view); // Redirect pending notifications to intake page as requested
-            setIsSidebarOpen(false);
+            if (notif && notif.type === "new_message" && notif.ticketId) {
+              handleWorkOn(notif.ticketId);
+              navigate(`/lawyer/tickets/${notif.ticketId}?view=messages`);
+            } else {
+              setActiveView(view === "pending" ? "intake" : view); // Redirect pending notifications to intake page as requested
+              setIsSidebarOpen(false);
+            }
           }
         }}
         isDark={isDark}

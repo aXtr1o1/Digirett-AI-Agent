@@ -10,6 +10,8 @@ const MessageList = ({
   isStreaming,
   isProcessingDoc,
   theme = "dark",
+  conversationId,
+  conversationTitle,
 }) => {
   const messagesEndRef = useRef(null);
   const isDark = theme === "dark";
@@ -47,6 +49,8 @@ const MessageList = ({
           key={message.id || Math.random()}
           message={message}
           theme={theme}
+          conversationId={conversationId}
+          conversationTitle={conversationTitle}
         />
       ))}
 

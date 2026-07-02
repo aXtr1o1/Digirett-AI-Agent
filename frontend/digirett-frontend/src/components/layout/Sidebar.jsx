@@ -16,17 +16,27 @@ import {
   User,
   Shield,
   Gavel,
-  AlertTriangle
+  AlertTriangle,
+  MoreHorizontal,
+  Bookmark,
+  X
 } from "lucide-react";
 import { useUser, useClerk } from "@clerk/clerk-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth } from "@clerk/clerk-react";
 import hitlService from "../../services/hitlService";
 import conversationService from "../../services/conversationService";
+import { getSupabaseClient } from "../../lib/supabase";
 import UpgradeCard from "../common/UpgradeCard";
+import QuotaPanel from "../chat/QuotaPanel";
+import LibraryPanel from "../chat/LibraryPanel";
 
 const Sidebar = ({
   conversations,
   currentConversationId,
+  archivedIds = [],
+  archiveConversation,
+  restoreConversation,
   onSelectConversation,
   onNewChat,
   onDeleteConversation,
@@ -39,6 +49,39 @@ const Sidebar = ({
   const [activeWorkspace, setActiveWorkspace] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const [libraryFilterConvId, setLibraryFilterConvId] = useState(null);
+  const [sidebarSearchQuery, setSidebarSearchQuery] = useState("");
+  const [searchParams] = useSearchParams();
+  const activeView = searchParams.get("view"); // "library" or null
+  const { getToken } = useAuth();
+
+  // Sync activeFeature with URL view param
+  useEffect(() => {
+    if (activeView === "library") {
+      setActiveFeature("library");
+    } else if (activeFeature === "library") {
+      setActiveFeature("chat");
+    }
+  }, [activeView]);
+
+  const handleArchive = (id) => {
+    if (archiveConversation) archiveConversation(id);
+    setOpenMenuId(null);
+    if (id === currentConversationId) {
+      if (onNewChat) onNewChat();
+    }
+  };
+
+  const handleRestore = (id) => {
+    if (restoreConversation) restoreConversation(id);
+    setOpenMenuId(null);
+    if (id === currentConversationId) {
+      if (onNewChat) onNewChat();
+    }
+  };
+
+
 
   const { user } = useUser();
   const { signOut } = useClerk();
@@ -51,22 +94,22 @@ const Sidebar = ({
 
   const displayName = user?.username || user?.primaryEmailAddress?.emailAddress || "User";
 
-  // Close menu when clicking outside
+  // Close menus when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         setMenuOpen(false);
       }
+      if (openMenuId && !event.target.closest(".conv-menu-container")) {
+        setOpenMenuId(null);
+      }
     };
 
-    if (menuOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-
+    document.addEventListener("mousedown", handleClickOutside);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [menuOpen]);
+  }, [menuOpen, openMenuId]);
 
   const handleEscalate = () => {
     // This is a placeholder for now to avoid the crash.
@@ -81,11 +124,16 @@ const Sidebar = ({
   const features = [
     { id: "chat", label: "Chat", icon: MessageSquare, path: "/chat" },
     { id: "archived", label: "Archived", icon: Archive },
-    { id: "library", label: "Library", icon: Menu },
+    { id: "library", label: "Library", icon: Bookmark },
   ];
 
-  if (role === "admin") {
-    features.push({ id: "admin", label: "Admin Dashboard", icon: Shield, path: "/admin" });
+  if (role === "admin" || role === "system_admin") {
+    features.push({
+      id: "admin",
+      label: role === "system_admin" ? "System Admin Dashboard" : "Admin Dashboard",
+      icon: Shield,
+      path: "/admin"
+    });
   }
   if (role === "lawyer") {
     features.push({ id: "lawyer", label: "Lawyer Dashboard", icon: FileText, path: "/lawyer" });
@@ -97,17 +145,54 @@ const Sidebar = ({
       return;
     }
     setActiveFeature(feature.id);
+
+    if (feature.id === "library") {
+      // Navigate to library full-page view
+      navigate("/chat?view=library");
+      return;
+    }
+
+    // Prevent displaying a mismatched conversation when toggling tabs
+    if (feature.id === "chat") {
+      if (currentConversationId && archivedIds.includes(currentConversationId)) {
+        if (onNewChat) onNewChat();
+      }
+      // Clear ?view param if set
+      if (!window.location.pathname.startsWith("/chat")) {
+        navigate("/chat");
+      } else {
+        navigate("/chat", { replace: true });
+      }
+      return;
+    } else if (feature.id === "archived") {
+      if (currentConversationId && !archivedIds.includes(currentConversationId)) {
+        if (onNewChat) onNewChat();
+      }
+    }
+
     if (feature.path) {
       navigate(feature.path);
+    } else {
+      if (!window.location.pathname.startsWith("/chat")) {
+        navigate("/chat");
+      }
     }
   };
 
-  const workspaces = [
-    { id: "new-project", label: "New Project", icon: FolderPlus },
-    { id: "image", label: "Image", icon: ImageIcon },
-    { id: "presentation", label: "Presentation", icon: FileText },
-    { id: "research", label: "Research", icon: Search },
-  ];
+  const activeConversations = (conversations || []).filter(c => !archivedIds.includes(c.conversation_id));
+  const archivedConversations = (conversations || []).filter(c => archivedIds.includes(c.conversation_id));
+  
+  // Filter conversations by search query if provided
+  const filterConversations = (list) => {
+    if (!sidebarSearchQuery.trim()) return list;
+    const q = sidebarSearchQuery.toLowerCase();
+    return list.filter(c => (c.title || "New Conversation").toLowerCase().includes(q));
+  };
+
+  // Library view shows the regular chat list in the sidebar (Library is a main-content view)
+  const displayedConversations = filterConversations(
+    activeFeature === "archived" ? archivedConversations : activeConversations
+  );
 
   return (
     <aside
@@ -463,222 +548,390 @@ const Sidebar = ({
         </button>
       </div>
 
-      {/* FEATURES SECTION */}
-      <div style={{ flexShrink: 0, marginBottom: "8px" }}>
-        <div style={{
-          padding: "0 16px 8px",
-          fontSize: "11px",
-          fontWeight: "600",
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-          color: isDark ? "#6b7280" : "#9ca3af",
-        }}>
-          Features
-        </div>
-        <div style={{ padding: "4px 8px" }}>
-          {features.map((feature) => {
-            const Icon = feature.icon;
-            const isActive = activeFeature === feature.id;
-            return (
-              <button
-                key={feature.id}
-                onClick={() => {
-                  handleFeatureClick(feature);
+      {/* ── SCROLLABLE MIDDLE SECTION ─────────────────────────────────────
+           Everything between New Chat and Beta Version lives here.
+           One scroll area = no space competition between QuotaPanel + Features + Conv list.
+      ──────────────────────────────────────────────────────────────────── */}
+      <div
+        className="sidebar-scrollbar-hidden"
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          overflowX: "hidden",
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
+        }}
+      >
+
+        {/* QUOTA PANEL — top of scrollable area */}
+        {activeFeature === "chat" && (
+          <QuotaPanel
+            conversationId={currentConversationId}
+            isDark={isDark}
+          />
+        )}
+
+        {/* SEARCH HISTORY INPUT */}
+        {(activeFeature === "chat" || activeFeature === "archived" || activeFeature === "library") && (
+          <div style={{ padding: "4px 8px", flexShrink: 0 }}>
+            <div style={{ margin: "0 8px 8px", position: "relative" }}>
+              <Search
+                size={12}
+                style={{
+                  position: "absolute",
+                  left: "10px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: isDark ? "#6b7280" : "#9ca3af",
+                  pointerEvents: "none",
                 }}
+              />
+              <input
+                type="text"
+                placeholder="Search history..."
+                value={sidebarSearchQuery}
+                onChange={(e) => setSidebarSearchQuery(e.target.value)}
                 style={{
                   width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "10px 12px",
-                  borderRadius: "10px",
-                  fontSize: "13px",
-                  fontWeight: "500",
-                  backgroundColor: isActive
-                    ? isDark
-                      ? "rgba(59, 130, 246, 0.15)"
-                      : "rgba(59, 130, 246, 0.1)"
-                    : "transparent",
-                  color: isActive
-                    ? isDark ? "#3B82F6" : "#2563EB"
-                    : isDark ? "#d1d5db" : "#374151",
-                  border: "none",
-                  cursor: "pointer",
-                  transition: "all 0.15s",
-                  textAlign: "left",
+                  padding: "6px 24px 6px 26px",
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                  backgroundColor: isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.03)",
+                  color: isDark ? "#ffffff" : "#111827",
+                  border: isDark ? "1px solid rgba(255, 255, 255, 0.08)" : "1px solid rgba(0, 0, 0, 0.08)",
+                  outline: "none",
+                  transition: "border-color 0.15s",
+                  boxSizing: "border-box",
                 }}
-                onMouseEnter={(e) => {
-                  if (!isActive) {
-                    e.currentTarget.style.backgroundColor = isDark
-                      ? "rgba(42, 42, 42, 0.5)"
-                      : "rgba(243, 244, 246, 0.8)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) {
-                    e.currentTarget.style.backgroundColor = "transparent";
-                  }
-                }}
-              >
-                <Icon
-                  size={16}
+                onFocus={(e) => (e.target.style.borderColor = "#3b82f6")}
+                onBlur={(e) => (e.target.style.borderColor = isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.08)")}
+              />
+              {sidebarSearchQuery && (
+                <button
+                  onClick={() => setSidebarSearchQuery("")}
                   style={{
-                    flexShrink: 0,
-                    color: isActive
-                      ? (isDark ? "#3B82F6" : "#2563EB")
-                      : (isDark ? "#d1d5db" : "#374151")
+                    position: "absolute",
+                    right: "6px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: isDark ? "#6b7280" : "#9ca3af",
+                    padding: "2px",
+                    display: "flex",
                   }}
-                />
-                <span>{feature.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* CHAT HISTORY (when Chat feature is active) */}
-      {activeFeature === "chat" && (
-        <div
-          className="sidebar-scrollbar-hidden"
-          style={{
-            flex: conversations.length > 0 ? 1 : "none",
-            overflowY: conversations.length > 0 ? "scroll" : "hidden",
-            overflowX: "hidden",
-            padding: "4px 8px",
-            minHeight: 0,
-            scrollbarWidth: "none", /* Firefox */
-            msOverflowStyle: "none", /* IE and Edge */
-          }}>
-          {conversations.length === 0 ? (
-            <div style={{
-              padding: "16px 12px",
-              textAlign: "center",
-              fontSize: "12px",
-              color: isDark ? "#6b7280" : "#9ca3af",
-            }}>
-              No conversations yet
+                >
+                  <X size={10} />
+                </button>
+              )}
             </div>
-          ) : (
-            conversations.map((c) => (
-              <div
-                key={c.conversation_id}
-                onClick={() => onSelectConversation(c.conversation_id)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "8px",
-                  padding: "10px 12px",
-                  borderRadius: "10px",
-                  cursor: "pointer",
-                  marginBottom: "2px",
-                  backgroundColor:
-                    c.conversation_id === currentConversationId
+          </div>
+        )}
+
+        {/* FEATURES SECTION */}
+        <div style={{ flexShrink: 0, marginBottom: "8px" }}>
+          <div style={{
+            padding: "0 16px 8px",
+            fontSize: "11px",
+            fontWeight: "600",
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            color: isDark ? "#6b7280" : "#9ca3af",
+          }}>
+            Features
+          </div>
+          <div style={{ padding: "4px 8px" }}>
+            {features.map((feature) => {
+              const Icon = feature.icon;
+              const isActive = activeFeature === feature.id;
+              return (
+                <button
+                  key={feature.id}
+                  onClick={() => {
+                    handleFeatureClick(feature);
+                  }}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    padding: "10px 12px",
+                    borderRadius: "10px",
+                    fontSize: "13px",
+                    fontWeight: "500",
+                    backgroundColor: isActive
                       ? isDark
                         ? "rgba(59, 130, 246, 0.15)"
                         : "rgba(59, 130, 246, 0.1)"
                       : "transparent",
-                  color: c.conversation_id === currentConversationId
-                    ? isDark ? "#3B82F6" : "#2563EB"
-                    : isDark ? "#d1d5db" : "#374151",
-                  transition: "all 0.15s",
-                }}
-                onMouseEnter={(e) => {
-                  if (c.conversation_id !== currentConversationId) {
-                    e.currentTarget.style.backgroundColor = isDark
-                      ? "rgba(42, 42, 42, 0.5)"
-                      : "rgba(243, 244, 246, 0.8)";
-                  }
-                  const trash = e.currentTarget.querySelector(".trash-icon");
-                  if (trash) trash.style.opacity = "1";
-                }}
-                onMouseLeave={(e) => {
-                  if (c.conversation_id !== currentConversationId) {
-                    e.currentTarget.style.backgroundColor = "transparent";
-                  }
-                  const trash = e.currentTarget.querySelector(".trash-icon");
-                  if (trash) trash.style.opacity = "0";
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0, flex: 1 }}>
-                  <MessageSquare size={13} style={{
-                    flexShrink: 0, color: c.conversation_id === currentConversationId
-                      ? (isDark ? "#3B82F6" : "#2563EB")
-                      : (isDark ? "#6b7280" : "#9ca3af")
-                  }} />
-                  <span style={{
-                    fontSize: "13px",
-                    lineHeight: "1.4",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}>
-                    {c.title || "New Conversation"}
-                  </span>
-                </div>
-
-                <Trash2
-                  size={13}
-                  className="trash-icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteConversation(c.conversation_id);
-                  }}
-                  style={{
-                    flexShrink: 0,
-                    opacity: 0,
+                    color: isActive
+                      ? isDark ? "#3B82F6" : "#2563EB"
+                      : isDark ? "#d1d5db" : "#374151",
+                    border: "none",
                     cursor: "pointer",
-                    color: isDark ? "#6b7280" : "#9ca3af",
-                    transition: "opacity 0.15s, color 0.15s",
+                    transition: "all 0.15s",
+                    textAlign: "left",
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = "#ef4444"}
-                  onMouseLeave={(e) => e.currentTarget.style.color = isDark ? "#6b7280" : "#9ca3af"}
-                />
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* YET TO BE IMPLEMENTED MESSAGE (for Archived and Library) */}
-      {(activeFeature === "archived" || activeFeature === "library") && (
-        <div style={{
-          flex: 1,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "32px 16px",
-        }}>
-          <div style={{
-            textAlign: "center",
-            padding: "24px",
-            borderRadius: "12px",
-            backgroundColor: isDark
-              ? "rgba(26, 26, 26, 0.6)"
-              : "rgba(255, 255, 255, 0.6)",
-            border: isDark
-              ? "1px solid rgba(42, 42, 42, 0.5)"
-              : "1px solid rgba(229, 231, 235, 0.5)",
-            backdropFilter: "blur(16px)",
-            WebkitBackdropFilter: "blur(16px)",
-          }}>
-            <div style={{
-              fontSize: "14px",
-              fontWeight: "500",
-              color: isDark ? "#d1d5db" : "#374151",
-              marginBottom: "8px",
-            }}>
-              {activeFeature === "archived" ? "Archived" : "Library"}
-            </div>
-            <div style={{
-              fontSize: "12px",
-              color: isDark ? "#9ca3af" : "#6b7280",
-            }}>
-              Yet to be implemented
-            </div>
+                  onMouseEnter={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.backgroundColor = isDark
+                        ? "rgba(42, 42, 42, 0.5)"
+                        : "rgba(243, 244, 246, 0.8)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.backgroundColor = "transparent";
+                    }
+                  }}
+                >
+                  <Icon
+                    size={16}
+                    style={{
+                      flexShrink: 0,
+                      color: isActive
+                        ? (isDark ? "#3B82F6" : "#2563EB")
+                        : (isDark ? "#d1d5db" : "#374151")
+                    }}
+                  />
+                  <span>{feature.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
-      )}
+
+        {/* CHAT HISTORY (always visible; shows chat list for chat+library, archived list for archived) */}
+        {(activeFeature === "chat" || activeFeature === "archived" || activeFeature === "library") && (
+          <div
+            style={{
+              padding: "4px 8px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "4px",
+            }}>
+
+            {displayedConversations.length === 0 ? (
+              <div style={{
+                padding: "16px 12px",
+                textAlign: "center",
+                fontSize: "12px",
+                color: isDark ? "#6b7280" : "#9ca3af",
+              }}>
+                {activeFeature === "archived" ? "No archived conversations yet" : "No conversations yet"}
+              </div>
+            ) : (
+              displayedConversations.map((c) => (
+                <div
+                  key={c.conversation_id}
+                  onClick={() => onSelectConversation(c.conversation_id)}
+                  style={{
+                    position: "relative",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "8px",
+                    padding: "10px 12px",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    marginBottom: "2px",
+                    backgroundColor:
+                      c.conversation_id === currentConversationId
+                        ? isDark
+                          ? "rgba(59, 130, 246, 0.15)"
+                          : "rgba(59, 130, 246, 0.1)"
+                        : "transparent",
+                    color: c.conversation_id === currentConversationId
+                      ? isDark ? "#3B82F6" : "#2563EB"
+                      : isDark ? "#d1d5db" : "#374151",
+                    transition: "all 0.15s",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (c.conversation_id !== currentConversationId) {
+                      e.currentTarget.style.backgroundColor = isDark
+                        ? "rgba(42, 42, 42, 0.5)"
+                        : "rgba(243, 244, 246, 0.8)";
+                    }
+                    const optionsButton = e.currentTarget.querySelector(".options-btn");
+                    if (optionsButton) optionsButton.style.opacity = "1";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (c.conversation_id !== currentConversationId) {
+                      e.currentTarget.style.backgroundColor = "transparent";
+                    }
+                    const optionsButton = e.currentTarget.querySelector(".options-btn");
+                    if (optionsButton) optionsButton.style.opacity = "0";
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0, flex: 1 }}>
+                    <MessageSquare size={13} style={{
+                      flexShrink: 0, color: c.conversation_id === currentConversationId
+                        ? (isDark ? "#3B82F6" : "#2563EB")
+                        : (isDark ? "#6b7280" : "#9ca3af")
+                    }} />
+                    <span style={{
+                      fontSize: "13px",
+                      lineHeight: "1.4",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}>
+                      {c.title || "New Conversation"}
+                    </span>
+                  </div>
+
+                  <div
+                    className="conv-menu-container"
+                    style={{ position: "relative" }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      className="options-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenMenuId(openMenuId === c.conversation_id ? null : c.conversation_id);
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        padding: "4px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: isDark ? "#9ca3af" : "#6b7280",
+                        borderRadius: "6px",
+                        opacity: openMenuId === c.conversation_id ? 1 : 0,
+                        transition: "opacity 0.15s, background-color 0.15s, color 0.15s",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)";
+                        e.currentTarget.style.color = isDark ? "#ffffff" : "#111827";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "transparent";
+                        e.currentTarget.style.color = isDark ? "#9ca3af" : "#6b7280";
+                      }}
+                      title="Options"
+                    >
+                      <MoreHorizontal size={14} />
+                    </button>
+
+                    {openMenuId === c.conversation_id && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "100%",
+                          right: 0,
+                          marginTop: "4px",
+                          width: "140px",
+                          borderRadius: "8px",
+                          backgroundColor: isDark ? "rgba(26, 26, 26, 0.98)" : "rgba(255, 255, 255, 0.98)",
+                          border: isDark ? "1px solid rgba(255, 255, 255, 0.08)" : "1px solid rgba(0, 0, 0, 0.08)",
+                          backdropFilter: "blur(12px)",
+                          WebkitBackdropFilter: "blur(12px)",
+                          boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2)",
+                          zIndex: 100,
+                          padding: "4px 0",
+                        }}
+                      >
+                        {activeFeature === "chat" ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleArchive(c.conversation_id);
+                            }}
+                            style={{
+                              width: "100%",
+                              padding: "8px 12px",
+                              fontSize: "12px",
+                              textAlign: "left",
+                              background: "none",
+                              border: "none",
+                              color: isDark ? "#d1d5db" : "#374151",
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)")}
+                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                          >
+                            <Archive size={12} />
+                            <span>Archive</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRestore(c.conversation_id);
+                            }}
+                            style={{
+                              width: "100%",
+                              padding: "8px 12px",
+                              fontSize: "12px",
+                              textAlign: "left",
+                              background: "none",
+                              border: "none",
+                              color: isDark ? "#d1d5db" : "#374151",
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)")}
+                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                          >
+                            <Archive size={12} />
+                            <span>Restore</span>
+                          </button>
+                        )}
+
+
+
+                        <hr style={{ border: 0, borderTop: isDark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(0,0,0,0.05)", margin: "4px 0" }} />
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteConversation(c.conversation_id);
+                            setOpenMenuId(null);
+                          }}
+                          style={{
+                            width: "100%",
+                            padding: "8px 12px",
+                            fontSize: "12px",
+                            textAlign: "left",
+                            background: "none",
+                            border: "none",
+                            color: "#ef4444",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDark ? "rgba(239, 68, 68, 0.08)" : "rgba(239, 68, 68, 0.04)")}
+                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                        >
+                          <Trash2 size={12} />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+      </div>{/* end scrollable middle section */}
+
+      {/* Library View — now rendered as full-page in main content area, removed from sidebar */}
 
       {/* WORKSPACES SECTION
       <div style={{ flexShrink: 0, marginTop: "8px", marginBottom: "8px" }}>

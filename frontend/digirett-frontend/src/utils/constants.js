@@ -32,6 +32,8 @@ export const API_ENDPOINTS = {
     MY_TICKETS: "/hitl/my-tickets",
     MY_RESOLVED: "/hitl/my-resolved-tickets",
     STATUS: (conversationId) => `/hitl/status/${conversationId}`,
+    RATINGS: "/ratings",
+    LAWYER_RATINGS: "/ratings/lawyer",
   },
   CAL: {
     SLOTS: (ticketId) => `/cal/slots/${ticketId}`,
@@ -52,12 +54,21 @@ export const API_ENDPOINTS = {
     SUSPEND_USER: (userId) => `/admin/users/${userId}/suspend`,
     ACTIVATE_USER: (userId) => `/admin/users/${userId}/activate`,
     REVOKE_INVITATION: (inviteId) => `/admin/invitations/${inviteId}`,
+    DOMAIN_ANALYTICS: "/admin/domain-analytics",
+    SLA_REPORT: "/admin/sla-report",
+    RATINGS: "/ratings/admin",
   },
   INVITE: {
     VERIFY: "/invite/verify",
     ACCEPT: "/auth/accept-invite",
   },
   HEALTH: "/health",
+  LIBRARY: {
+    LIST: "/library/documents",
+    UPLOAD: "/library/documents/upload",
+    DELETE: (documentId) => `/library/documents/${documentId}`,
+    UPDATE_NOTE: (documentId) => `/library/documents/${documentId}`,
+  },
 };
 
 export const MESSAGE_ROLES = {

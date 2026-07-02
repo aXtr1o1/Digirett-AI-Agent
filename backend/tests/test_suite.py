@@ -12,7 +12,15 @@ if _BACKEND not in sys.path:
 # ── Stub every heavy import BEFORE any project file is touched ────────
 
 # 1. config  (agents/intent_agent.py does `from config import settings`)
-_s = MagicMock()
+if "config" in sys.modules:
+    import config
+    _s = config.settings
+else:
+    _s = MagicMock()
+    _fake_config          = types.ModuleType("config")
+    _fake_config.settings = _s
+    sys.modules["config"] = _fake_config
+
 _s.AZURE_OPENAI_ENDPOINT             = "https://fake.openai.azure.com"
 _s.AZURE_OPENAI_API_KEY              = "fake-key"
 _s.AZURE_OPENAI_API_VERSION          = "2024-02-01"
@@ -20,9 +28,6 @@ _s.AZURE_OPENAI_DEPLOYMENT           = "gpt-4o-mini"
 _s.AZURE_OPENAI_EMBEDDING_DEPLOYMENT = "text-embedding-3-small"
 _s.AZURE_OPENAI_EMBEDDING_API_VERSION= "2024-02-01"
 _s.OPENAI_TEMPERATURE                = 0.4
-_fake_config          = types.ModuleType("config")
-_fake_config.settings = _s
-sys.modules["config"] = _fake_config
 
 # 2. Third-party packages that would fail without installation/servers
 for _m in [

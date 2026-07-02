@@ -514,15 +514,21 @@ const useChat = (
     isUploadDisabled,
     isChatDisabled,
     isEscalated,
-    escalate: async (userNote) => {
-      if (!conversationId || isEscalated || isEscalatingRef.current) return;
+    escalate: async (userNote, priority = "normal", urgentReason = null) => {
+      const activeId = activeConversationIdRef.current || conversationId;
+      if (!activeId || !isUuid(activeId)) {
+        throw new Error("No active conversation session found. Please wait or send a message first.");
+      }
+      if (isEscalated) return;
+      if (isEscalatingRef.current) return;
 
       isEscalatingRef.current = true;
       const lastMessage = messages[messages.length - 1];
       const triggerId = lastMessage?.id;
       try {
-        const result = await hitlService.escalateConversation(conversationId, triggerId, userNote);
+        const result = await hitlService.escalateConversation(activeId, triggerId, userNote, priority, urgentReason);
         setIsEscalated(true);
+        isEscalatingRef.current = false;
         return result;
       } catch (err) {
         isEscalatingRef.current = false;

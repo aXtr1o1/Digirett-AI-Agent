@@ -198,7 +198,7 @@ async def get_conversation(
             db_role = user.role
 
         internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
-        if conversation.get("user_id") != internal_user_id and db_role not in ["admin", "lawyer"]:
+        if conversation.get("user_id") != internal_user_id and db_role not in ["admin", "lawyer", "system_admin"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to access this conversation.",

@@ -45,10 +45,13 @@ class SessionStatusResponse(BaseModel):
     conversation_id:  str
     doc_count:        int
     turn_count:       int
+    token_count:      int = 0
     docs_remaining:   int
     turns_remaining:  int
+    tokens_remaining: int = 0
     has_documents:    bool
     session_active:   bool
+    reset_at:         Optional[str] = None
     docs:             list = []
 
 
@@ -290,15 +293,23 @@ async def get_session_status(
     conv_session = _document_service.get_or_create_session(conversation_id)
     
     from config import settings
+    from datetime import datetime
+    
+    session_start = quota.get("session_start", time.time())
+    reset_time = session_start + settings.DOC_SESSION_TTL_SECONDS
+    reset_at_iso = datetime.utcfromtimestamp(reset_time).isoformat() + "Z"
 
     return SessionStatusResponse(
         conversation_id=conversation_id,
         doc_count=quota.get("doc_count", 0),
         turn_count=quota.get("turn_count", 0),
+        token_count=quota.get("token_count", 0),
         docs_remaining=max(0, settings.DOC_MAX_PER_SESSION - quota.get("doc_count", 0)),
         turns_remaining=max(0, settings.DOC_MAX_TURNS_PER_SESSION - quota.get("turn_count", 0)),
+        tokens_remaining=max(0, settings.DOC_MAX_TOKENS_PER_SESSION - quota.get("token_count", 0)),
         has_documents=_document_service.has_documents(conversation_id),
         session_active=True,
+        reset_at=reset_at_iso,
         docs=conv_session.get("docs", []),
     )
 

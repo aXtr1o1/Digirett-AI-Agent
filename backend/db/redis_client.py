@@ -46,14 +46,15 @@ class RedisClient:
         try:
             logger.info(f"🔌 Connecting to Redis at {host}:{port} (DB: {db})...")
 
+            is_upstash = "upstash.io" in host.lower()
             self._client = redis.Redis(
                 host=host,
                 port=port,
                 username="default",        # 🔥 REQUIRED
                 password=password,
                 db=db,
-                # ssl=True,                  # 🔥 MUST for Redis Cloud
-                # ssl_cert_reqs=None,        # 🔥 avoid cert issues
+                ssl=is_upstash,            # 🔥 MUST for Upstash
+                ssl_cert_reqs=None if is_upstash else "required",
                 decode_responses=True,
                 socket_timeout=5,
                 socket_connect_timeout=5,

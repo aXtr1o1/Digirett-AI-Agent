@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import BackgroundLayer from "../common/BackgroundLayer";
 import { useTheme } from "../../providers/ThemeProvider";
@@ -8,17 +9,44 @@ const MainLayout = ({
   children,
   conversations,
   currentConversationId,
+  archivedIds = [],
+  archiveConversation,
+  restoreConversation,
   onSelectConversation,
   onNewChat,
   onDeleteConversation,
   rightSidebar,
 }) => {
   const { theme, toggleTheme, isDark } = useTheme();
+  const location = useLocation();
 
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+    if (window.innerWidth < 1024) return false;
     const saved = localStorage.getItem("sidebar_open");
     return saved !== null ? JSON.parse(saved) : true;
   });
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+      if (mobile) {
+        setIsSidebarOpen(false);
+      } else {
+        const saved = localStorage.getItem("sidebar_open");
+        setIsSidebarOpen(saved !== null ? JSON.parse(saved) : true);
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (isMobile) {
+      setIsSidebarOpen(false);
+    }
+  }, [location.pathname, isMobile]);
 
   const toggleSidebar = () => {
     setIsSidebarOpen(prev => {
@@ -33,26 +61,44 @@ const MainLayout = ({
       {/* Background Layer - Fixed behind everything (both themes) */}
       <BackgroundLayer theme={theme} />
 
+      {/* Sidebar Overlay for Mobile */}
+      {isMobile && isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-slate-950/60 z-40 backdrop-blur-sm transition-opacity duration-300"
+          onClick={toggleSidebar}
+        />
+      )}
+
       {/* Main Content Container with padding on all sides */}
       <div
         className={`relative flex h-full w-full p-2 gap-2 ${isDark ? "text-gray-200" : "text-gray-900"
           }`}
       >
-        {/* SIDEBAR — fixed, never shrinks */}
+        {/* SIDEBAR — fixed/absolute on mobile, relative on desktop */}
         <div
           style={{
+            position: isMobile ? "fixed" : "relative",
+            left: isMobile ? "8px" : "auto",
+            top: isMobile ? "8px" : "auto",
+            bottom: isMobile ? "8px" : "auto",
+            height: isMobile ? "calc(100% - 16px)" : "100%",
             width: isSidebarOpen ? "260px" : "0px",
             minWidth: isSidebarOpen ? "260px" : "0px",
             maxWidth: isSidebarOpen ? "260px" : "0px",
             opacity: isSidebarOpen ? 1 : 0,
+            transform: isMobile ? (isSidebarOpen ? "translateX(0)" : "translateX(-110%)") : "none",
+            zIndex: 50,
             overflow: "hidden",
             transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
           }}
-          className="relative z-10 flex-shrink-0 h-full"
+          className="flex-shrink-0"
         >
           <Sidebar
             conversations={conversations}
             currentConversationId={currentConversationId}
+            archivedIds={archivedIds}
+            archiveConversation={archiveConversation}
+            restoreConversation={restoreConversation}
             onSelectConversation={onSelectConversation}
             onNewChat={onNewChat}
             onDeleteConversation={onDeleteConversation}
