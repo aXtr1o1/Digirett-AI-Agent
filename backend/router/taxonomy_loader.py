@@ -1,5 +1,3 @@
-# backend/router/taxonomy_loader.py
-
 import os
 import json
 import logging

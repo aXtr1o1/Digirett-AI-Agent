@@ -463,6 +463,74 @@ class EmailService:
         """
         return await self._send(to_email=to_email, subject=subject, html_content=html_content)
 
+    async def send_specialization_update_to_admins(
+        self,
+        admin_emails: list[str],
+        lawyer_name: str,
+        lawyer_email: str,
+        specialization_label: Optional[str],
+        expertise_domains: list[str],
+    ) -> bool:
+        """
+        Notifies all admin users that a lawyer has updated their specialization.
+        """
+        if not admin_emails:
+            return False
+            
+        subject = f"⚖️ Lawyer Specialization Updated: {lawyer_name}"
+        domains_list = ", ".join(expertise_domains) if expertise_domains else "None"
+        html_content = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
+            <h2 style="color: #2D3748;">Lawyer Specialization Updated</h2>
+            <p>Hi Admin,</p>
+            <p>The lawyer <strong>{lawyer_name}</strong> ({lawyer_email}) has updated their specialization settings:</p>
+            <div style="background:#f7f7f7; border-left:4px solid #4a5568; padding:16px; margin:24px 0; border-radius:4px;">
+                <p style="margin:0 0 8px; font-size:13px; color:#718096;">Specialization Title</p>
+                <p style="margin:0 0 12px; font-weight:bold; color:#2d3748;">{specialization_label or 'N/A'}</p>
+                <p style="margin:0 0 8px; font-size:13px; color:#718096;">Expertise Domains</p>
+                <p style="margin:0; font-weight:bold; color:#2d3748;">{domains_list}</p>
+            </div>
+            <p style="font-size:0.8em; color:#A0AEC0;">Digirett Legal Platform — automated notification</p>
+        </div>
+        """
+        
+        success = True
+        for email in admin_emails:
+            sent = await self._send(to_email=email, subject=subject, html_content=html_content)
+            if not sent:
+                success = False
+        return success
+
+    async def send_specialization_override_to_lawyer(
+        self,
+        to_email: str,
+        lawyer_name: str,
+        specialization_label: Optional[str],
+        expertise_domains: list[str],
+    ) -> bool:
+        """
+        Notifies a lawyer that their specialization has been overridden by an administrator.
+        """
+        subject = "⚖️ Specialization Overridden by Administrator — Digirett"
+        domains_list = ", ".join(expertise_domains) if expertise_domains else "None"
+        html_content = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
+            <h2 style="color: #2D3748;">Specialization Overrides Applied</h2>
+            <p>Hi <strong>{lawyer_name}</strong>,</p>
+            <p>An administrator has updated your specialization and expertise domains. Here are your updated details:</p>
+            <div style="background:#f7f7f7; border-left:4px solid #3182ce; padding:16px; margin:24px 0; border-radius:4px;">
+                <p style="margin:0 0 8px; font-size:13px; color:#718096;">Specialization Title</p>
+                <p style="margin:0 0 12px; font-weight:bold; color:#2d3748;">{specialization_label or 'N/A'}</p>
+                <p style="margin:0 0 8px; font-size:13px; color:#718096;">Expertise Domains</p>
+                <p style="margin:0; font-weight:bold; color:#2d3748;">{domains_list}</p>
+            </div>
+            <p style="color:#4a5568;">These changes are now active and will govern your case matching and routing queue.</p>
+            <hr style="border:none; border-top:1px solid #eee; margin:30px 0;">
+            <p style="font-size:0.8em; color:#A0AEC0;">Digirett Legal Platform — automated notification</p>
+        </div>
+        """
+        return await self._send(to_email=to_email, subject=subject, html_content=html_content)
+
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # INTERNAL — shared SMTP sender
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

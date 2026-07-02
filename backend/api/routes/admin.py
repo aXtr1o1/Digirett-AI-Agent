@@ -483,10 +483,41 @@ async def admin_set_lawyer_cal_credentials(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+DOMAIN_DISPLAY_NAMES = {
+    "arbeidsrett": "Employment Law (Arbeidsrett)",
+    "arsregnskap_og_selskapsrapportering": "Financial Statements & Reporting (Årsregnskap og Selskapsrapportering)",
+    "avtalerett": "Contract Law (Avtalerett)",
+    "inkasso_og_tvangsfullbyrdelse": "Debt Collection & Enforcement (Inkasso og Tvangsfullbyrdelse)",
+    "konkursrett_og_insolvens": "Bankruptcy & Insolvency (Konkursrett og Insolvens)",
+    "manda_fusjon_fisjon": "M&A, Mergers & Acquisitions (M&A, Fusjon, Fisjon)",
+    "obligasjonsrett": "Law of Obligations (Obligasjonsrett)",
+    "panterett_og_sikkerhetsrett": "Liens & Security Rights (Panterett og Sikkerhetsrett)",
+    "pengekravsrett_fordringer": "Monetary Claims & Debt (Pengekravsrett og Fordringer)",
+    "personvern_gdpr_business_compliance": "Privacy & GDPR Compliance (Personvern, GDPR & Compliance)",
+    "selskapsrett": "Company Law (Selskapsrett)",
+    "tvistelosning_smb": "Dispute Resolution for SMBs (Tvisteløsning, SMB)",
+    
+    # Other domains
+    "straffeloven": "Criminal Law (Straffeloven)",
+    "strafferett": "Criminal Law (Strafferett)",
+    "familierett": "Family Law (Familierett)",
+    "arverett": "Inheritance Law (Arverett)",
+    "skatterett": "Tax Law (Skatterett)",
+    "utlendingsrett": "Immigration Law (Utlendingsrett)",
+    "forvaltningsrett": "Administrative Law (Forvaltningsrett)",
+    "tingsrett": "Property Law (Tingsrett)",
+    "erstatningsrett": "Tort Law (Erstatningsrett)",
+    "immaterialrett": "Intellectual Property Law (Immaterialrett)",
+    "entrepriserett": "Construction Law (Entrepriserett)",
+    "miljorett": "Environmental Law (Miljørett)",
+}
+
+
 @router.get("/domain-analytics", summary="Get user query domain distribution analytics")
 async def get_domain_analytics(
     current_user: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
+    from config_domains import DOMAINS_CANONICAL
     try:
         resp = _user_service._supabase.table("messages")\
             .select("metadata")\
@@ -504,8 +535,17 @@ async def get_domain_analytics(
         
         distribution = []
         for domain, count in counts.items():
+            lower_domain = domain.lower()
+            if lower_domain in DOMAIN_DISPLAY_NAMES:
+                display_name = DOMAIN_DISPLAY_NAMES[lower_domain]
+            else:
+                display_name = lower_domain.replace("_", " ").title()
+                display_name = f"{display_name} ({domain})"
+                
             distribution.append({
-                "name": domain,
+                "name": display_name,
+                "raw_key": lower_domain,
+                "is_canonical": lower_domain in DOMAINS_CANONICAL,
                 "queries": count,
                 "percentage": round((count / total) * 100, 1) if total > 0 else 0
             })
@@ -677,6 +717,7 @@ class AdminSpecializationRequest(BaseModel):
 async def admin_set_lawyer_specialization(
     lawyer_id: str,
     req: AdminSpecializationRequest,
+    background_tasks: BackgroundTasks,
     current_admin: ClerkUser = Depends(require_db_role("admin", "system_admin")),
 ):
     try:
@@ -694,6 +735,32 @@ async def admin_set_lawyer_specialization(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Lawyer profile not found. Ensure the user has been promoted to lawyer.",
             )
+
+        # Send email notification to the lawyer
+        if _email_service:
+            try:
+                lawyer_user_resp = _user_service._supabase.table("users")\
+                    .select("email, user_profiles(display_name)")\
+                    .eq("user_id", lawyer_id)\
+                    .execute()
+                
+                if lawyer_user_resp.data:
+                    lawyer_user = lawyer_user_resp.data[0]
+                    lawyer_email = lawyer_user.get("email")
+                    lawyer_profile = lawyer_user.get("user_profiles") or {}
+                    lawyer_name = lawyer_profile.get("display_name") or (lawyer_email.split("@")[0] if lawyer_email else "Lawyer")
+                    
+                    if lawyer_email:
+                        background_tasks.add_task(
+                            _email_service.send_specialization_override_to_lawyer,
+                            to_email=lawyer_email,
+                            lawyer_name=lawyer_name,
+                            specialization_label=req.specialization_label,
+                            expertise_domains=req.expertise_domains
+                        )
+            except Exception as mail_err:
+                logger.warning(f"⚠️ Failed to queue lawyer specialization override email: {mail_err}")
+
         return {"status": "success", "message": "Lawyer specialization updated by admin.", "profile": resp.data[0]}
     except HTTPException:
         raise

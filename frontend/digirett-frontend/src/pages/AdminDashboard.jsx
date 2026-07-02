@@ -188,6 +188,7 @@ export default function AdminDashboard() {
   const [specSpecializationLabel, setSpecSpecializationLabel] = useState("");
   const [specExpertiseDomains, setSpecExpertiseDomains] = useState([]);
   const [savingSpec, setSavingSpec] = useState(false);
+  const [isEditingSpec, setIsEditingSpec] = useState(false);
 
   const handleSaveSpecPageOverride = async () => {
     if (!specLawyer || specLawyer.role !== 'lawyer') return;
@@ -310,23 +311,25 @@ export default function AdminDashboard() {
       const formattedDomainData = { ...domainData };
       if (formattedDomainData.distribution && Array.isArray(formattedDomainData.distribution)) {
         formattedDomainData.distribution = formattedDomainData.distribution.map(entry => {
-          const lowerKey = entry.name.toLowerCase();
-          const isCanonical = lowerKey in DOMAIN_DISPLAY_NAMES;
+          const rawKey = entry.raw_key || entry.name.toLowerCase();
+          const isCanonical = entry.is_canonical !== undefined ? entry.is_canonical : (rawKey in DOMAIN_DISPLAY_NAMES);
 
           let displayName = entry.name;
-          if (isCanonical) {
-            displayName = DOMAIN_DISPLAY_NAMES[lowerKey];
-          } else if (lowerKey in OTHER_DOMAIN_DISPLAY_NAMES) {
-            displayName = OTHER_DOMAIN_DISPLAY_NAMES[lowerKey];
-          } else {
-            // Capitalize and format unknown custom domains: "custom_domain" -> "Custom Domain (custom_domain)"
-            const capitalized = entry.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-            displayName = `${capitalized} (${entry.name})`;
+          // Fallback if backend sent raw name instead of display name (old backend compat)
+          if (displayName.toLowerCase() === rawKey) {
+            if (isCanonical) {
+              displayName = DOMAIN_DISPLAY_NAMES[rawKey];
+            } else if (rawKey in OTHER_DOMAIN_DISPLAY_NAMES) {
+              displayName = OTHER_DOMAIN_DISPLAY_NAMES[rawKey];
+            } else {
+              const capitalized = entry.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+              displayName = `${capitalized} (${entry.name})`;
+            }
           }
 
           return {
             ...entry,
-            rawKey: lowerKey,
+            rawKey,
             isCanonical,
             name: displayName
           };
@@ -604,30 +607,32 @@ export default function AdminDashboard() {
   };
 
   const lawyerWorkloadData = () => {
-    const counts = {};
-    tickets.forEach(t => {
-      if (t.assigned_lawyer_id) {
-        counts[t.assigned_lawyer_id] = (counts[t.assigned_lawyer_id] || 0) + 1;
-      }
-    });
-    return Object.keys(counts).map(id => {
-      const lawyer = users.find(u => u.user_id === id);
+    const lawyers = users.filter(u => u.role === 'lawyer');
+    return lawyers.map(lawyer => {
+      const lawyerTicketsCount = tickets.filter(t => t.assigned_lawyer_id === lawyer.user_id).length;
       return {
-        name: lawyer?.user_profiles?.display_name || lawyer?.email || id.substring(0, 8),
-        tickets: counts[id]
+        name: lawyer.user_profiles?.display_name || lawyer.user_name || lawyer.email || lawyer.user_id.substring(0, 8),
+        tickets: lawyerTicketsCount
       };
     }).sort((a, b) => b.tickets - a.tickets);
   };
 
   const getThroughputData = () => {
     const intake = {};
-    const output = {};
+    const resolved = {};
+    const closed = {};
     tickets.forEach(t => {
       const cKey = new Date(t.created_at).toISOString().split('T')[0];
       intake[cKey] = (intake[cKey] || 0) + 1;
+
       if (t.resolved_at) {
         const rKey = new Date(t.resolved_at).toISOString().split('T')[0];
-        output[rKey] = (output[rKey] || 0) + 1;
+        resolved[rKey] = (resolved[rKey] || 0) + 1;
+      }
+
+      if (t.status === 'closed' && t.closed_at) {
+        const clKey = new Date(t.closed_at).toISOString().split('T')[0];
+        closed[clKey] = (closed[clKey] || 0) + 1;
       }
     });
     const result = [];
@@ -638,7 +643,8 @@ export default function AdminDashboard() {
       result.push({
         date: d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }),
         intake: intake[sKey] || 0,
-        resolved: output[sKey] || 0
+        resolved: resolved[sKey] || 0,
+        closed: closed[sKey] || 0
       });
     }
     return result;
@@ -885,28 +891,53 @@ export default function AdminDashboard() {
           {/* VIEW: DASHBOARD */}
           {activeView === "dashboard" && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300 pb-10">
+              {/* Row 1: User & Platform Demographics */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">User & Platform Metrics</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-6">
+                  {[
+                    { label: "System Admins", value: systemAdminCount, color: "red" },
+                    { label: "Admins", value: adminCount, color: "purple" },
+                    { label: "Active Lawyers", value: lawyerCount, color: "blue" },
+                    { label: "Standard Users", value: standardUserCount, color: "green" },
+                    { label: "Pending Invitations", value: pendingInvites, color: "amber" },
+                    { label: "Total Platform Users", value: totalUsers, color: "indigo" },
+                  ].map((stat, idx) => (
+                    <div key={idx} className={`p-6 rounded-2xl border shadow-sm flex flex-col gap-2 min-h-[120px] ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                      }`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{stat.label}</span>
+                      </div>
+                      <div className="mt-auto flex items-baseline gap-2">
+                        <span className="text-3xl font-black">{stat.value}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
-              {/* KPI Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-6">
-                {[
-                  { label: "System Admins", value: systemAdminCount, color: "red" },
-                  { label: "Admins", value: adminCount, color: "purple" },
-                  { label: "Active Lawyers", value: lawyerCount, color: "blue" },
-                  { label: "Standard Users", value: standardUserCount, color: "green" },
-                  { label: "Open Tickets", value: tickets.filter(t => t.status === 'open' && !t.assigned_lawyer_id).length, color: "orange" },
-                  { label: "Pending Invitations", value: pendingInvites, color: "amber" },
-                  { label: "Total Platform Users", value: totalUsers, color: "indigo" },
-                ].map((stat, idx) => (
-                  <div key={idx} className={`p-6 rounded-2xl border shadow-sm flex flex-col gap-2 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
-                    }`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{stat.label}</span>
+              {/* Row 2: Ticket & Case Metrics */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Ticket & Case Metrics</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-6">
+                  {[
+                    { label: "Open Tickets", value: tickets.filter(t => t.status === 'open' && !t.assigned_lawyer_id).length, color: "orange" },
+                    { label: "Claimed Tickets", value: tickets.filter(t => t.status === 'assigned').length, color: "rose" },
+                    { label: "Booked Tickets", value: tickets.filter(t => t.status === 'booked').length, color: "blue" },
+                    { label: "Resolved Tickets", value: tickets.filter(t => t.status === 'resolved').length, color: "emerald" },
+                    { label: "Closed Tickets", value: tickets.filter(t => t.status === 'closed').length, color: "slate" },
+                  ].map((stat, idx) => (
+                    <div key={idx} className={`p-6 rounded-2xl border shadow-sm flex flex-col gap-2 min-h-[120px] ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                      }`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{stat.label}</span>
+                      </div>
+                      <div className="mt-auto flex items-baseline gap-2">
+                        <span className="text-3xl font-black">{stat.value}</span>
+                      </div>
                     </div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-3xl font-black">{stat.value}</span>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
 
               {/* Row 1: User Role Distribution + Status Breakdown + Onboarding Trend */}
@@ -1030,6 +1061,7 @@ export default function AdminDashboard() {
                         <Legend iconType="circle" />
                         <Bar dataKey="intake" name="New Tickets" fill="#6366f1" radius={[4, 4, 0, 0]} />
                         <Bar dataKey="resolved" name="Resolved" fill="#10b981" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="closed" name="Closed" fill="#94a3b8" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -1459,13 +1491,12 @@ export default function AdminDashboard() {
                             </td>
                             <td className="px-8 py-6">
                               {user.role === 'lawyer' ? (
-                                <span className={`text-[10px] font-black uppercase tracking-widest ${
-                                  user.lawyer_profiles?.availability_status === 'available'
-                                    ? 'text-emerald-500'
-                                    : user.lawyer_profiles?.availability_status === 'busy'
-                                      ? 'text-amber-500'
-                                      : 'text-red-500'
-                                }`}>
+                                <span className={`text-[10px] font-black uppercase tracking-widest ${user.lawyer_profiles?.availability_status === 'available'
+                                  ? 'text-emerald-500'
+                                  : user.lawyer_profiles?.availability_status === 'busy'
+                                    ? 'text-amber-500'
+                                    : 'text-red-500'
+                                  }`}>
                                   {user.lawyer_profiles?.availability_status || 'Available'}
                                 </span>
                               ) : (
@@ -1574,7 +1605,7 @@ export default function AdminDashboard() {
                                 <div className="max-w-xs">
                                   <p
                                     onClick={() => setActiveSummaryModal(ticket.conversation_summary)}
-                                    className="text-[11px] text-slate-600 dark:text-slate-400 italic leading-relaxed line-clamp-2 cursor-pointer hover:text-indigo-500 hover:underline transition-all"
+                                    className="text-[11px] text-slate-650 dark:text-slate-400 italic leading-relaxed line-clamp-2 cursor-pointer transition-all"
                                     title="Click to view full summary"
                                   >
                                     "{ticket.conversation_summary}"
@@ -1878,7 +1909,8 @@ export default function AdminDashboard() {
                     <select
                       value={specLawyer?.user_id || ""}
                       onChange={(e) => {
-                        const selected = users.find(u => u.user_id === e.target.value);
+                        const lawyerId = e.target.value;
+                        const selected = users.find(u => u.user_id === lawyerId);
                         setSpecLawyer(selected || null);
                         if (selected) {
                           setSpecSpecializationLabel(selected.lawyer_profiles?.specialization_label || "");
@@ -1887,8 +1919,9 @@ export default function AdminDashboard() {
                           setSpecSpecializationLabel("");
                           setSpecExpertiseDomains([]);
                         }
+                        setIsEditingSpec(false);
                       }}
-                      className={`w-full h-12 px-4 rounded-xl border text-sm outline-none transition-all focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-550 ${isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-white border-slate-300 text-slate-955"}`}
+                      className={`w-full h-12 px-4 rounded-xl border text-sm outline-none transition-all focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-550 ${isDark ? "bg-slate-955 border-slate-800 text-white" : "bg-white border-slate-300 text-slate-955"}`}
                     >
                       <option value="">Choose a Lawyer</option>
                       {users.filter(u => u.role === 'lawyer').map(l => (
@@ -1902,59 +1935,154 @@ export default function AdminDashboard() {
                   {specLawyer && specLawyer.role === 'lawyer' && (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 pt-6 border-t dark:border-slate-800 animate-in fade-in duration-300">
                       <div className="lg:col-span-2 space-y-6">
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Specialization Title / Label</label>
-                          <input
-                            type="text"
-                            value={specSpecializationLabel}
-                            onChange={(e) => setSpecSpecializationLabel(e.target.value)}
-                            placeholder="e.g. Senior Partner, Employment Specialist"
-                            className={`w-full px-4 py-3 rounded-xl border text-sm transition-all focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-550 ${isDark ? "bg-slate-955 border-slate-800 text-white placeholder-slate-600" : "bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400"}`}
-                          />
-                        </div>
+                        {!isEditingSpec ? (
+                          <>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Specialization Title / Label</label>
+                              <p className={`text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                                {specSpecializationLabel || <span className="italic opacity-50 font-normal">No specialization title configured.</span>}
+                              </p>
+                            </div>
 
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Expertise Areas</label>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {LEGAL_DOMAINS.map((domain) => {
-                              const isChecked = specExpertiseDomains.some(d => d.toLowerCase() === domain.key.toLowerCase());
-                              return (
-                                <label
-                                  key={domain.key}
-                                  className={`p-4 rounded-xl border flex items-start gap-3 cursor-pointer select-none transition-all ${isChecked
-                                    ? (isDark ? "bg-indigo-500/10 border-indigo-500/40 text-white" : "bg-indigo-50 border-indigo-200 text-indigo-900")
-                                    : (isDark ? "bg-slate-955/40 border-slate-800/50 hover:border-slate-750 text-slate-400" : "bg-white border-slate-200 hover:border-slate-300 text-slate-600")
-                                    }`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setSpecExpertiseDomains(prev => [...prev, domain.key]);
-                                      } else {
-                                        setSpecExpertiseDomains(prev => prev.filter(d => d.toLowerCase() !== domain.key.toLowerCase()));
-                                      }
-                                    }}
-                                    className="mt-1 rounded text-indigo-600 focus:ring-indigo-500"
-                                  />
-                                  <div>
-                                    <span className="text-xs font-bold block">{domain.en}</span>
-                                    <span className="text-[10px] opacity-60 block mt-0.5">{domain.no}</span>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Expertise Areas</label>
+                              {specExpertiseDomains.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                  {specExpertiseDomains.map((domKey) => {
+                                    const domain = LEGAL_DOMAINS.find(d => d.key.toLowerCase() === domKey.toLowerCase()) || { en: domKey, no: domKey };
+                                    return (
+                                      <div
+                                        key={domKey}
+                                        className={`px-3 py-2 rounded-lg border text-xs font-bold ${isDark
+                                            ? "bg-indigo-500/10 border-indigo-500/35 text-indigo-400"
+                                            : "bg-indigo-50 border-indigo-100 text-indigo-700"
+                                          }`}
+                                      >
+                                        <div>{domain.en}</div>
+                                        <div className="text-[9px] opacity-60 font-medium mt-0.5">{domain.no}</div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <p className="text-sm italic text-slate-500 opacity-50 font-normal">No expertise areas configured.</p>
+                              )}
+                            </div>
+
+                            <div className="pt-2">
+                              <button
+                                onClick={() => setIsEditingSpec(true)}
+                                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-black uppercase tracking-widest shadow-md hover:shadow-lg transition-all"
+                              >
+                                Edit Specialization
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Specialization Title / Label</label>
+                              <input
+                                type="text"
+                                value={specSpecializationLabel}
+                                onChange={(e) => setSpecSpecializationLabel(e.target.value)}
+                                placeholder="e.g. Senior Partner, Employment Specialist"
+                                className={`w-full px-4 py-3 rounded-xl border text-sm transition-all focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-550 ${isDark ? "bg-slate-955 border-slate-800 text-white placeholder-slate-600" : "bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400"}`}
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Expertise Areas (Chosen)</label>
+                              {specExpertiseDomains.length > 0 ? (
+                                <div className="flex flex-wrap gap-2 mb-4">
+                                  {specExpertiseDomains.map((domKey) => {
+                                    const domain = LEGAL_DOMAINS.find(d => d.key.toLowerCase() === domKey.toLowerCase()) || { en: domKey, no: domKey };
+                                    return (
+                                      <div
+                                        key={domKey}
+                                        onClick={() => {
+                                          setSpecExpertiseDomains(prev => prev.filter(d => d.toLowerCase() !== domKey.toLowerCase()));
+                                        }}
+                                        className={`px-3 py-2 rounded-lg border text-xs font-bold cursor-pointer transition-all hover:bg-red-50 hover:border-red-200 hover:text-red-650 dark:hover:bg-red-950/20 dark:hover:border-red-900/40 dark:hover:text-red-400 ${isDark
+                                            ? "bg-indigo-500/10 border-indigo-500/35 text-indigo-400"
+                                            : "bg-indigo-50 border-indigo-100 text-indigo-700"
+                                          }`}
+                                        title="Click to remove"
+                                      >
+                                        <span className="flex items-center gap-1.5">
+                                          <span>{domain.en}</span>
+                                          <span className="text-[10px] opacity-70">✕</span>
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <p className="text-sm italic text-slate-500 opacity-50 mb-4">No expertise areas chosen yet.</p>
+                              )}
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Remaining Areas (Click to Add)</label>
+                              {(() => {
+                                const remaining = LEGAL_DOMAINS.filter(
+                                  domain => !specExpertiseDomains.some(d => d.toLowerCase() === domain.key.toLowerCase())
+                                );
+                                if (remaining.length === 0) {
+                                  return <p className="text-xs italic text-slate-500 opacity-50">All domains have been selected.</p>;
+                                }
+                                return (
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {remaining.map((domain) => (
+                                      <div
+                                        key={domain.key}
+                                        onClick={() => {
+                                          setSpecExpertiseDomains(prev => [...prev, domain.key]);
+                                        }}
+                                        className={`p-4 rounded-xl border flex items-start gap-3 cursor-pointer select-none transition-all ${isDark
+                                            ? "bg-slate-955/40 border-slate-800/50 hover:border-indigo-500/50 hover:bg-indigo-500/5 text-slate-400 hover:text-indigo-400"
+                                            : "bg-white border-slate-200 hover:border-indigo-300 hover:bg-indigo-550/5 text-slate-655 hover:text-indigo-900"
+                                          }`}
+                                      >
+                                        <div>
+                                          <span className="text-xs font-bold block">{domain.en}</span>
+                                          <span className="text-[10px] opacity-60 block mt-0.5">{domain.no}</span>
+                                        </div>
+                                      </div>
+                                    ))}
                                   </div>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
+                                );
+                              })()}
+                            </div>
 
-                        <button
-                          onClick={handleSaveSpecPageOverride}
-                          disabled={savingSpec}
-                          className="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50"
-                        >
-                          {savingSpec ? "Saving..." : "Save Specialization Override"}
-                        </button>
+                            <div className="flex gap-4 pt-4">
+                              <button
+                                onClick={async () => {
+                                  await handleSaveSpecPageOverride();
+                                  setIsEditingSpec(false);
+                                }}
+                                disabled={savingSpec}
+                                className="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50"
+                              >
+                                {savingSpec ? "Saving..." : "Save Overrides"}
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  setSpecExpertiseDomains(specLawyer.lawyer_profiles?.expertise_domains || []);
+                                  setSpecSpecializationLabel(specLawyer.lawyer_profiles?.specialization_label || "");
+                                  setIsEditingSpec(false);
+                                }}
+                                className={`px-8 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${isDark
+                                    ? "border-slate-800 text-slate-400 hover:bg-slate-800"
+                                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                                  }`}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </div>
 
                       <div className={`p-6 rounded-2xl border h-fit ${isDark ? "bg-indigo-500/5 border-indigo-500/10 text-indigo-200" : "bg-indigo-50 border-indigo-100 text-indigo-900"}`}>

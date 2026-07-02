@@ -207,8 +207,17 @@ async def get_library_document_view(
             detail="User profile not found in database.",
         )
 
+    # Get user role from the database to check for support privileges
     try:
-        result = _library_service.get_library_document_binary(document_id, internal_user_id)
+        user_data = _user_service._supabase.table("users").select("role").eq("user_id", internal_user_id).single().execute()
+        user_role = user_data.data.get("role", "user") if user_data.data else "user"
+    except Exception:
+        user_role = "user"
+
+    is_privileged = user_role in ("lawyer", "admin", "system_admin")
+
+    try:
+        result = _library_service.get_library_document_binary(document_id, internal_user_id, is_privileged=is_privileged)
         if not result:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

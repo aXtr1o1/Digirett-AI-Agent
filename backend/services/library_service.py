@@ -279,16 +279,16 @@ class LibraryService:
             logger.error(f"Failed to update note for library document {document_id} (user {user_id}): {exc}")
             raise
 
-    def get_library_document_binary(self, document_id: str, user_id: str) -> Optional[tuple]:
+    def get_library_document_binary(self, document_id: str, user_id: str, is_privileged: bool = False) -> Optional[tuple]:
         """Get the binary bytes, filename, and content-type of a library document."""
         try:
             # 1. Try fetching from library_documents first
-            doc_data = self._supabase.table("library_documents") \
+            query = self._supabase.table("library_documents") \
                 .select("storage_path, file_name, file_type") \
-                .eq("id", document_id) \
-                .eq("user_id", user_id) \
-                .single() \
-                .execute()
+                .eq("id", document_id)
+            if not is_privileged:
+                query = query.eq("user_id", user_id)
+            doc_data = query.single().execute()
             
             if doc_data.data and isinstance(doc_data.data, dict):
                 storage_path = doc_data.data.get("storage_path")
@@ -296,12 +296,12 @@ class LibraryService:
                 file_type = doc_data.data.get("file_type")
             else:
                 # 2. Fall back to documents (chat-uploaded files)
-                chat_doc_data = self._supabase.table("documents") \
+                chat_query = self._supabase.table("documents") \
                     .select("file_name, file_type") \
-                    .eq("document_id", document_id) \
-                    .eq("user_id", user_id) \
-                    .single() \
-                    .execute()
+                    .eq("document_id", document_id)
+                if not is_privileged:
+                    chat_query = chat_query.eq("user_id", user_id)
+                chat_doc_data = chat_query.single().execute()
                 
                 if not chat_doc_data.data or not isinstance(chat_doc_data.data, dict):
                     return None

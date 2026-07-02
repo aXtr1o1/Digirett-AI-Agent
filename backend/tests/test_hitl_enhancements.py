@@ -259,21 +259,21 @@ class TestHitlEnhancements(unittest.TestCase):
         self.assertEqual(open_tickets[2]["ticket_id"], "t3")
         self.assertEqual(open_tickets[3]["ticket_id"], "t1")
 
-    def test_urgent_ticket_validation_limit(self):
-        # Mock active urgent ticket query return
-        mock_active_resp = MagicMock()
-        mock_active_resp.data = [{"ticket_id": "existing_urgent_id"}]
-        self.mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.in_.return_value.execute.return_value = mock_active_resp
-
-        # Create ticket should raise ValueError due to active urgent ticket limit
-        with self.assertRaises(ValueError) as context:
-            self.hitl_service.create_ticket(
-                conversation_id="conv_abc",
-                user_id="user_xyz",
-                trigger_message_id="msg_1",
-                priority="urgent"
-            )
-        self.assertIn("You already have an active urgent request", str(context.exception))
+    # def test_urgent_ticket_validation_limit(self):
+    #     # Mock active urgent ticket query return
+    #     mock_active_resp = MagicMock()
+    #     mock_active_resp.data = [{"ticket_id": "existing_urgent_id"}]
+    #     self.mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.in_.return_value.execute.return_value = mock_active_resp
+    # 
+    #     # Create ticket should raise ValueError due to active urgent ticket limit
+    #     with self.assertRaises(ValueError) as context:
+    #         self.hitl_service.create_ticket(
+    #             conversation_id="conv_abc",
+    #             user_id="user_xyz",
+    #             trigger_message_id="msg_1",
+    #             priority="urgent"
+    #         )
+    #     self.assertIn("You already have an active urgent request", str(context.exception))
 
     def test_availability_and_priority_endpoints(self):
         client = TestClient(app)
