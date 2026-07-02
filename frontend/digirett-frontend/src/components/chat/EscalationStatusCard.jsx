@@ -373,7 +373,11 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
             {isClosedOrResolvedClosed ? "Matter Closed" : "Resolution Ready"}
           </h4>
           <p className="text-[11px] text-slate-500 font-medium">
-            {isClosedOrResolvedClosed ? "This case has been closed. Please rate your experience." : "Your legal consultation has been completed."}
+            {isClosedOrResolvedClosed
+              ? (ticket.outcome_notes && ticket.outcome_notes.toLowerCase().includes("automatically closed")
+                  ? "Denne saken har blitt automatisk lukket fordi det ikke ble foretatt noen handling innen 24 timer etter løsning. Vennligst vurder opplevelsen din. / This case has been automatically closed as no action was taken within 24 hours of lawyer resolution. Please rate your experience."
+                  : "This case has been closed. Please rate your experience.")
+              : "Your legal consultation has been completed."}
           </p>
         </div>
 

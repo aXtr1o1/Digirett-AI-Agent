@@ -391,13 +391,13 @@ export default function TicketDetailsPage() {
                       },
                       ticket.region && { icon: <MapPin size={16} />, label: "Region", value: ticket.region },
                       ticket.category && { icon: <Tag size={16} />, label: "Category", value: ticket.category },
-                      { icon: <AlertTriangle size={16} />, label: "Priority", isPriority: true },
-                      ticket.priority === "urgent" && ticket.urgent_reason && {
-                        icon: <AlertTriangle size={16} className="text-red-500" />,
-                        label: "Urgent Reason",
-                        value: ticket.urgent_reason,
-                        valueClass: "text-red-500 max-w-md text-right whitespace-pre-wrap break-words"
-                      },
+                      // { icon: <AlertTriangle size={16} />, label: "Priority", isPriority: true },
+                      // ticket.priority === "urgent" && ticket.urgent_reason && {
+                      //   icon: <AlertTriangle size={16} className="text-red-500" />,
+                      //   label: "Urgent Reason",
+                      //   value: ticket.urgent_reason,
+                      //   valueClass: "text-red-500 max-w-md text-right whitespace-pre-wrap break-words"
+                      // },
                       ticket.created_at && { icon: <Calendar size={16} />, label: "Opened", value: new Date(ticket.created_at).toLocaleDateString() }
                     ].filter(Boolean).map((item, i) => (
                       <div key={i} className="flex items-center justify-between py-4">

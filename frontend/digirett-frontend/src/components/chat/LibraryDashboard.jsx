@@ -29,6 +29,7 @@ const LibraryDashboard = ({ theme = "dark" }) => {
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [editNoteText, setEditNoteText] = useState("");
   const [expandedNoteId, setExpandedNoteId] = useState(null);
+  const [deletingDocId, setDeletingDocId] = useState(null);
   
   // Upload states
   const [isUploading, setIsUploading] = useState(false);
@@ -69,7 +70,6 @@ const LibraryDashboard = ({ theme = "dark" }) => {
 
   const handleRemove = async (e, docId) => {
     e.stopPropagation();
-    if (!window.confirm("Are you sure you want to delete this document from the library?")) return;
     try {
       await libraryService.unsaveMessage(docId);
       loadSaved();
