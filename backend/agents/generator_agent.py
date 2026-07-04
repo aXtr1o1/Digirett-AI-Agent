@@ -93,6 +93,7 @@ LANGUAGE RULE:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
         language: Optional[str] = None,
+        user_memory: str = "",
     ) -> AsyncIterator[str]:
         logger.info(" GeneratorAgent: casual stream starting")
 
@@ -105,6 +106,9 @@ LANGUAGE RULE:
                 f"You MUST respond ONLY in {lang_name}. Do NOT use Norwegian unless {lang_name} is Norwegian.\n"
                 f"Even though the legal sources (KILDER) are in Norwegian, you must write your entire explanation, analysis, and response in {lang_name}."
             )
+
+        if user_memory:
+            system_prompt += f"\n\n{user_memory}"
 
         messages = [SystemMessage(content=system_prompt)]
 
@@ -133,6 +137,7 @@ LANGUAGE RULE:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
         response_style: str = "",
+        user_memory: str = "",
     ) -> AsyncIterator[str]:
         import json
         logger.info(" GeneratorAgent: legal stream starting")
@@ -150,7 +155,11 @@ LANGUAGE RULE:
             yield "\n[SCORE:0.1]"
             return
 
-        messages = [SystemMessage(content=self.LEGAL_SYSTEM_PROMPT)]
+        system_prompt = self.LEGAL_SYSTEM_PROMPT
+        if user_memory:
+            system_prompt += f"\n\n{user_memory}"
+            
+        messages = [SystemMessage(content=system_prompt)]
 
         if conversation_history:
             logger.info(

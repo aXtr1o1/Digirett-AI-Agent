@@ -77,6 +77,7 @@ class LLMService:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
         language: Optional[str] = None,
+        user_memory: str = "",
     ) -> AsyncIterator[str]:
         """Stream casual response tokens. No RAG context involved."""
         async with llm_span("casual_generation"):
@@ -85,6 +86,7 @@ class LLMService:
                 conversation_history=conversation_history,
                 temperature=temperature,
                 language=language,
+                user_memory=user_memory,
             ):
                 yield token
 
@@ -142,6 +144,7 @@ class LLMService:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
         response_style: str = "",
+        user_memory: str = "",
     ) -> AsyncIterator[str]:
         
         if not rag_context or not rag_context.strip():
@@ -167,6 +170,7 @@ class LLMService:
                 conversation_history=conversation_history,
                 temperature=temperature,
                 response_style=response_style,
+                user_memory=user_memory,
             ):
                 if not score_emitted:
                     buffer += token

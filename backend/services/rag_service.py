@@ -3,6 +3,7 @@ import re
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from agents.memory_agent import MemoryAgent
+from agents.user_memory_agent import UserMemoryAgent
 from agents.orchestrator_agent import OrchestratorAgent
 from agents.retriever_agent import RetrieverAgent
 from agents.query_reasoning_agent import QueryReasoningAgent
@@ -158,6 +159,9 @@ class RAGService:
             redis_client=redis_client,
             supabase_client=supabase_client,
         )
+        self._user_memory_agent = UserMemoryAgent(
+            supabase_client=supabase_client
+        )
         self._retriever_agent = RetrieverAgent(
             embedding_service=embedding_service,
             milvus_client=milvus_client,
@@ -182,6 +186,7 @@ class RAGService:
         self,
         query: str,
         conversation_id: str,
+        user_id: Optional[str] = None,
         top_k: int = 50,
         min_score: float = 0.0,
     ) -> AsyncIterator[Dict[str, Any]]:
@@ -191,11 +196,15 @@ class RAGService:
 
             # Quotas are now handled at the route level (chat.py)
 
-            # ── Load history ───────────────────────────────────────────────
+            # ── Load history and user memory ───────────────────────────────────────────────
             history = self._orchestrator.load_history(
                 conversation_id=conversation_id,
                 limit=10,
             )
+            user_memory = self._user_memory_agent.get_user_context(user_id) if user_id else ""
+            
+            if user_memory:
+                logger.info("🧠 Loaded user specific cross-conversation memory")
 
             # ── Classify intent ────────────────────────────────────────────
             logger.info("🎯 Classifying query intent...")
@@ -279,6 +288,7 @@ class RAGService:
                             min_score=min_score,
                             history=history,
                             conversation_id=conversation_id,
+                            user_memory=user_memory,
                         ):
                             yield event
                 else:
@@ -290,6 +300,7 @@ class RAGService:
                         min_score=min_score,
                         history=history,
                         conversation_id=conversation_id,
+                        user_memory=user_memory,
                     ):
                         yield event
             else:
@@ -344,11 +355,11 @@ class RAGService:
                     else:
                         # doc_intent == "LEGAL" or truly unrelated — casual is fine
                         logger.info("💬 CASUAL query (doc present but unrelated)")
-                        async for event in self._handle_casual(query, history, language):
+                        async for event in self._handle_casual(query, history, language, user_memory):
                             yield event
                 else:
                     logger.info("💬 CASUAL query")
-                    async for event in self._handle_casual(query, history, language):
+                    async for event in self._handle_casual(query, history, language, user_memory):
                         yield event
 
         except Exception as exc:
@@ -363,6 +374,7 @@ class RAGService:
         query: str,
         history: List[Dict[str, str]],
         language: str,
+        user_memory: str = "",
     ) -> AsyncIterator[Dict[str, Any]]:
         logger.info("💬 CASUAL pipeline")
 
@@ -375,6 +387,7 @@ class RAGService:
             query=query,
             conversation_history=history,
             language=language,
+            user_memory=user_memory,
         ):
             token_count += 1
             full_answer += token
@@ -626,6 +639,7 @@ class RAGService:
             language=language,
             conversation_history=history,
             response_style=response_style,
+            user_memory=user_memory,
         ):
             if first_token and token.startswith("__SCORE__"):
                 first_token = False

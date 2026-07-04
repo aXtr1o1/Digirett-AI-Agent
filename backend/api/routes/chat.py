@@ -393,6 +393,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
         async for event in _rag_service.process_query(
             query=chat_request.query,
             conversation_id=conversation_id,
+            user_id=user_id,
             top_k=chat_request.top_k,
         ):
             event_type = event.get("type")
@@ -509,6 +510,16 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
                         llm_service=_llm_service,
                         conversation_service=_conversation_service,
                     )
+                    
+                    # Zero-latency background extraction of user personal facts
+                    if hasattr(_rag_service, "_user_memory_agent"):
+                        asyncio.create_task(
+                            _rag_service._user_memory_agent.extract_and_save_facts(
+                                user_id=user_id,
+                                message=chat_request.query,
+                                llm_service=_llm_service
+                            )
+                        )
                 except Exception as save_exc:
                     logger.error(
                         f"❌ Save failed | conv={conversation_id} | {save_exc}",
