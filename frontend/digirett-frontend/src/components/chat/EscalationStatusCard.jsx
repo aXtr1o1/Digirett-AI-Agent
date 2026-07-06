@@ -937,6 +937,7 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", conversation
           onChange={(e) => setNewMessage(e.target.value)}
           placeholder="Type a message to your lawyer..."
           disabled={sending || isUploading}
+          style={{ flex: "1 1 0%", minWidth: "0" }}
           className={`flex-1 min-w-0 px-3 py-2 rounded-xl text-[11px] font-medium outline-none transition-all ${
             isDark
               ? "bg-slate-950 border border-white/5 text-slate-300 focus:border-indigo-500/30"

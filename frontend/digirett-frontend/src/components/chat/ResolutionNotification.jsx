@@ -1,29 +1,150 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { CheckCircle, X, Scale, Bell } from "lucide-react";
 
 const SystemNotification = ({ notifications, onDismiss, onNavigate, isDark, currentView }) => {
   const [isOpen, setIsOpen] = useState(false); // Default to closed, requiring click to view
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
+  const [isMobileOrTablet, setIsMobileOrTablet] = useState(window.innerWidth < 1024);
+  const containerRef = useRef(null);
 
   // Close the dropdown when the view changes
   useEffect(() => {
     setIsOpen(false);
   }, [currentView]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 640);
+      setIsMobileOrTablet(window.innerWidth < 1024);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Close the dropdown when clicking outside of the notification area
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("touchstart", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [isOpen]);
+
+  // Dragging interaction state
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const isDraggingRef = useRef(false);
+  const totalDragDistanceRef = useRef(0);
+
+  const handleDragStart = (clientX, clientY) => {
+    dragStartRef.current = { x: clientX, y: clientY };
+    isDraggingRef.current = true;
+    setIsDragging(true);
+    totalDragDistanceRef.current = 0;
+  };
+
+  const handleDragMove = (clientX, clientY) => {
+    if (!isDraggingRef.current || !containerRef.current) return;
+    const dx = clientX - dragStartRef.current.x;
+    const dy = clientY - dragStartRef.current.y;
+    
+    const rect = containerRef.current.getBoundingClientRect();
+    const newLeft = rect.left + dx;
+    const newTop = rect.top + dy;
+    
+    // Clamp inside viewport borders with a 8px margin
+    const clampedLeft = Math.max(8, Math.min(window.innerWidth - rect.width - 8, newLeft));
+    const clampedTop = Math.max(8, Math.min(window.innerHeight - rect.height - 8, newTop));
+    
+    const dx_clamped = clampedLeft - rect.left;
+    const dy_clamped = clampedTop - rect.top;
+    
+    setPosition((prev) => ({
+      x: prev.x + dx_clamped,
+      y: prev.y + dy_clamped,
+    }));
+    
+    dragStartRef.current = { x: clientX, y: clientY };
+    totalDragDistanceRef.current += Math.sqrt(dx_clamped * dx_clamped + dy_clamped * dy_clamped);
+  };
+
+  const handleDragEnd = () => {
+    isDraggingRef.current = false;
+    setIsDragging(false);
+  };
+
+  const onMouseDown = (e) => {
+    if (!isMobileOrTablet) return;
+    handleDragStart(e.clientX, e.clientY);
+    
+    const handleMouseMove = (event) => {
+      handleDragMove(event.clientX, event.clientY);
+    };
+    
+    const handleMouseUp = () => {
+      handleDragEnd();
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+    
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const onTouchStart = (e) => {
+    if (!isMobileOrTablet) return;
+    const touch = e.touches[0];
+    handleDragStart(touch.clientX, touch.clientY);
+  };
+
+  const onTouchMove = (e) => {
+    if (!isMobileOrTablet) return;
+    const touch = e.touches[0];
+    handleDragMove(touch.clientX, touch.clientY);
+  };
+
+  const onTouchEnd = () => {
+    handleDragEnd();
+  };
+
+  const handleToggleClick = (e) => {
+    if (totalDragDistanceRef.current > 5) {
+      return;
+    }
+    setIsOpen(!isOpen);
+  };
+
   if (!notifications || notifications.length === 0) return null;
 
   const count = notifications.length;
 
   return (
     <div
+      ref={containerRef}
       style={{
         position: "fixed",
-        bottom: "32px",
-        right: "32px",
+        bottom: (window.location.pathname === "/" || window.location.pathname.startsWith("/chat")) && currentView !== "library"
+          ? "calc(max(var(--composer-height, 90px), 90px) + 24px)"
+          : (isMobile ? "16px" : "32px"),
+        right: isMobile ? "16px" : "32px",
+        left: "auto",
         zIndex: 2147483647,
         display: "flex",
         flexDirection: "column",
-        alignItems: "flex-end",
+        alignItems: isMobile ? "stretch" : "flex-end",
         gap: "16px",
         pointerEvents: "none",
+        transform: `translate(${position.x}px, ${position.y}px)`,
       }}
     >
       {/* Notification Stack */}
@@ -33,7 +154,7 @@ const SystemNotification = ({ notifications, onDismiss, onNavigate, isDark, curr
             display: "flex",
             flexDirection: "column", // Stack from top to bottom
             gap: "12px",
-            width: "420px",
+            width: isMobile ? "calc(100vw - 32px)" : "420px",
             pointerEvents: "none",
             maxHeight: "70vh",
             overflowY: "auto",
@@ -56,9 +177,14 @@ const SystemNotification = ({ notifications, onDismiss, onNavigate, isDark, curr
 
       {/* Notification Toggle Badge */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={handleToggleClick}
+        onMouseDown={onMouseDown}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
         style={{
           pointerEvents: "auto",
+          alignSelf: "flex-end",
           background: isDark ? "#1e293b" : "#ffffff",
           color: isDark ? "#ffffff" : "#1e293b",
           border: `1px solid ${isDark ? "#334155" : "#e2e8f0"}`,
@@ -69,13 +195,22 @@ const SystemNotification = ({ notifications, onDismiss, onNavigate, isDark, curr
           alignItems: "center",
           justifyContent: "center",
           boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
-          cursor: "pointer",
+          cursor: isMobileOrTablet ? (isDragging ? "grabbing" : "grab") : "pointer",
           position: "relative",
           transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
           transform: isOpen ? "scale(1)" : "scale(1.1)",
+          touchAction: "none", // Prevent scrolling the page while dragging the button
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.1) translateY(-2px)")}
-        onMouseLeave={(e) => (e.currentTarget.style.transform = isOpen ? "scale(1)" : "scale(1.1)")}
+        onMouseEnter={(e) => {
+          if (!isDragging) {
+            e.currentTarget.style.transform = "scale(1.1) translateY(-2px)";
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!isDragging) {
+            e.currentTarget.style.transform = isOpen ? "scale(1)" : "scale(1.1)";
+          }
+        }}
       >
         <Bell size={24} className={count > 0 ? "animate-bounce" : ""} />
 

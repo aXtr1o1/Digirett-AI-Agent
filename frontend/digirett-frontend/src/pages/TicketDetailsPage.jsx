@@ -30,7 +30,8 @@ import {
   LayoutDashboard,
   Star,
   FileText,
-  Download
+  Download,
+  Menu
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import useDocumentUpload from "../hooks/useDocumentUpload";
@@ -61,6 +62,7 @@ export default function TicketDetailsPage() {
   const [noShowType, setNoShowType] = useState("user");
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const [isBriefExpanded, setIsBriefExpanded] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const fileInputRef = React.useRef(null);
 
   const { uploadDocument, isUploading, uploadError } = useDocumentUpload(ticket?.conversation_id);
@@ -196,21 +198,43 @@ export default function TicketDetailsPage() {
   const initials = (userInfo.display_name || "U").split(' ').map(n => n[0]).join('').toUpperCase();
 
   return (
-    <div className="h-screen overflow-hidden flex bg-[#F8F9FC] text-[#1E293B] font-sans">
+    <div className="flex flex-col lg:flex-row h-dynamic-screen lg:h-screen overflow-hidden bg-[#F8F9FC] text-[#1E293B] font-sans">
+      {/* Sidebar Overlay for Mobile */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-slate-950/60 z-40 lg:hidden backdrop-blur-sm transition-opacity duration-300"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
 
       {/* 1) REFINED SIDEBAR (2nd SS Style) */}
-      <aside className="w-[260px] flex-shrink-0 flex flex-col bg-[#0F172A] text-white relative h-full z-50">
-        <div className="p-6 flex items-center gap-3 mb-2">
-          <div className="h-7 w-7 overflow-hidden flex items-center justify-center bg-transparent">
-            <img src="/digirett-logo.png" alt="Digirett Logo" className="w-full h-full object-contain" />
+      <aside className={`fixed lg:relative z-50 inset-y-0 left-0 w-64 flex-shrink-0 flex flex-col bg-[#0F172A] text-white transform transition-transform duration-300 ease-in-out h-full border-r border-white/5 ${
+        isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+      }`}>
+        <div className="p-6 flex items-center justify-between mb-2">
+          <div className="flex items-center gap-3">
+            <div className="h-7 w-7 overflow-hidden flex items-center justify-center bg-transparent">
+              <img src="/digirett-logo.png" alt="Digirett Logo" className="w-full h-full object-contain" />
+            </div>
+            <div>
+              <h1 className="font-bold text-base tracking-tight leading-none text-white">Lawyer Panel</h1>
+            </div>
           </div>
-          <div>
-            <h1 className="font-bold text-base tracking-tight leading-none text-white">Lawyer Panel</h1>
-          </div>
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 p-1 hover:bg-white/5 rounded-lg">
+            <X size={18} />
+          </button>
         </div>
 
         <div className="px-3 py-4 flex-1 space-y-1">
           <p className="px-4 py-2 text-[10px] font-black text-gray-500 uppercase tracking-widest opacity-50">Main Console</p>
+
+          <button
+            onClick={() => navigate("/lawyer")}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-gray-400 hover:bg-white/5 hover:text-white"
+          >
+            <LayoutDashboard size={18} />
+            <span className="text-sm font-semibold tracking-wide">Go to Dashboard</span>
+          </button>
 
           <button
             onClick={() => setCurrentView("details")}
@@ -221,58 +245,21 @@ export default function TicketDetailsPage() {
             <span className="text-sm font-semibold tracking-wide">User Details</span>
           </button>
 
-          {ticket?.ai_brief && (
+          {ticket?.status !== 'resolved' && ticket?.status !== 'closed' && (
             <button
-              onClick={() => setCurrentView("brief")}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${currentView === "brief" ? "bg-blue-600/90 text-white shadow-lg shadow-blue-600/20" : "text-gray-400 hover:bg-white/5 hover:text-white"
+              onClick={() => setCurrentView("messages")}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all group ${currentView === "messages" ? "bg-blue-600/90 text-white shadow-lg shadow-blue-600/20" : "text-gray-400 hover:bg-white/5 hover:text-white"
                 }`}
             >
-              <FileText size={18} />
-              <span className="text-sm font-semibold tracking-wide">Case Brief</span>
+              <div className="flex items-center gap-3">
+                <MessageSquare size={18} />
+                <span className="text-sm font-semibold tracking-wide">Pre-Consultation Chat</span>
+              </div>
+              {hasUnreadMessages && (
+                <div className="h-2 w-2 rounded-full bg-red-500 animate-ping"></div>
+              )}
             </button>
           )}
-
-          <button
-            onClick={() => setCurrentView("resolve")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${currentView === "resolve" ? "bg-blue-600/90 text-white shadow-lg shadow-blue-600/20" : "text-gray-400 hover:bg-white/5 hover:text-white"
-              }`}
-          >
-            <CheckCircle2 size={18} />
-            <span className="text-sm font-semibold tracking-wide">Resolve Matter</span>
-          </button>
-
-          {(ticket?.status === 'resolved' || ticket?.status === 'closed') && (
-            <button
-              onClick={() => setCurrentView("feedback")}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${currentView === "feedback" ? "bg-blue-600/90 text-white shadow-lg shadow-blue-600/20" : "text-gray-400 hover:bg-white/5 hover:text-white"
-                }`}
-            >
-              <Star size={18} />
-              <span className="text-sm font-semibold tracking-wide">Client Feedback</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => setShowNoShowConfirm(true)}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group text-gray-400 hover:bg-red-500/10 hover:text-red-400"
-          >
-            <UserX size={18} />
-            <span className="text-sm font-semibold tracking-wide">Mark No-Show</span>
-          </button>
-
-          <button
-            onClick={() => setCurrentView("messages")}
-            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all group ${currentView === "messages" ? "bg-blue-600/90 text-white shadow-lg shadow-blue-600/20" : "text-gray-400 hover:bg-white/5 hover:text-white"
-              }`}
-          >
-            <div className="flex items-center gap-3">
-              <MessageSquare size={18} />
-              <span className="text-sm font-semibold tracking-wide">Pre-Consultation Chat</span>
-            </div>
-            {hasUnreadMessages && (
-              <div className="h-2 w-2 rounded-full bg-red-500 animate-ping"></div>
-            )}
-          </button>
 
           <button
             onClick={() => setCurrentView("context")}
@@ -287,12 +274,34 @@ export default function TicketDetailsPage() {
           </button>
 
           <button
-            onClick={() => navigate("/lawyer")}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-gray-400 hover:bg-white/5 hover:text-white"
+            onClick={() => setCurrentView("resolve")}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${currentView === "resolve" ? "bg-blue-600/90 text-white shadow-lg shadow-blue-600/20" : "text-gray-400 hover:bg-white/5 hover:text-white"
+              }`}
           >
-            <LayoutDashboard size={18} />
-            <span className="text-sm font-semibold tracking-wide">Go to Dashboard</span>
+            <CheckCircle2 size={18} />
+            <span className="text-sm font-semibold tracking-wide">Resolve Matter</span>
           </button>
+
+          {ticket?.status !== 'resolved' && ticket?.status !== 'closed' && (
+            <button
+              onClick={() => setShowNoShowConfirm(true)}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group text-gray-400 hover:bg-red-500/10 hover:text-red-400"
+            >
+              <UserX size={18} />
+              <span className="text-sm font-semibold tracking-wide">Mark No-Show</span>
+            </button>
+          )}
+
+          {(ticket?.status === 'resolved' || ticket?.status === 'closed') && (
+            <button
+              onClick={() => setCurrentView("feedback")}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${currentView === "feedback" ? "bg-blue-600/90 text-white shadow-lg shadow-blue-600/20" : "text-gray-400 hover:bg-white/5 hover:text-white"
+                }`}
+            >
+              <Star size={18} />
+              <span className="text-sm font-semibold tracking-wide">Client Feedback</span>
+            </button>
+          )}
 
         </div>
 
@@ -308,11 +317,17 @@ export default function TicketDetailsPage() {
       </aside>
 
       {/* Main Content Area */}
-      <main className={`flex-1 flex flex-col h-screen overflow-hidden ${isDark ? "bg-[#020617] text-slate-200" : "bg-[#f1f5f9] text-slate-900"}`}>
+      <main className={`flex-1 flex flex-col h-full overflow-hidden ${isDark ? "bg-[#020617] text-slate-200" : "bg-[#f1f5f9] text-slate-900"}`}>
         {/* COMPACT TOP BAR */}
         <header className={`px-8 h-16 border-b flex items-center justify-between z-10 shrink-0 ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
           <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">
-            <button onClick={() => navigate("/lawyer")} className={`transition-colors ${isDark ? "hover:text-white" : "hover:text-gray-900"}`}>
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="lg:hidden text-slate-500 mr-1 p-1 hover:bg-slate-100 dark:hover:bg-slate-850 rounded-lg transition-colors"
+            >
+              <Menu size={20} />
+            </button>
+            <button onClick={() => navigate("/lawyer?view=intake")} className={`transition-colors ${isDark ? "hover:text-white" : "hover:text-gray-900"}`}>
               Matter Review
             </button>
             <ChevronRight size={12} />
@@ -328,17 +343,6 @@ export default function TicketDetailsPage() {
             >
               {isDark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border ${ticket.status === 'resolved' || ticket.status === 'closed'
-              ? (isDark ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-emerald-50 text-emerald-600 border-emerald-100")
-              : ticket.status === 'booked'
-                ? (isDark ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-blue-50 text-blue-600 border-blue-100")
-                : (isDark ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-amber-50 text-amber-600 border-amber-100")
-              }`}>
-              <div className={`h-1 w-1 rounded-full ${ticket.status === 'resolved' || ticket.status === 'closed' ? "bg-emerald-500" : ticket.status === 'booked' ? "bg-blue-500" : "bg-amber-500"
-                }`}></div>
-              {ticket.status?.toUpperCase() || 'OPEN'}
-            </div>
           </div>
         </header>
 
@@ -378,7 +382,7 @@ export default function TicketDetailsPage() {
 
                   <div className={`grid grid-cols-1 divide-y ${isDark ? "divide-slate-800" : "divide-gray-50"}`}>
                     {[
-                      { icon: <Hash size={16} />, label: "Matter ID", value: `#${ticket.ticket_id || id.slice(0, 8).toUpperCase()}`, valueClass: "text-blue-600" },
+                      { icon: <Hash size={16} />, label: "Matter ID", value: `#${ticket.ticket_id || id.slice(0, 8).toUpperCase()}` },
                       {
                         icon: <Clock size={16} />,
                         label: "Assigned",
@@ -443,6 +447,78 @@ export default function TicketDetailsPage() {
                         <p className="text-sm leading-relaxed text-slate-500 italic">
                           {ticket.conversation_summary}
                         </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {ticket.ai_brief && (
+                    <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800 space-y-6">
+                      <div className="flex items-center justify-between border-b pb-4 dark:border-slate-800">
+                        <div className="flex items-center gap-3">
+                          <span className="text-xl">📋</span>
+                          <div>
+                            <h3 className={`text-base font-bold tracking-tight ${isDark ? "text-white" : "text-gray-900"}`}>AI Case Brief</h3>
+                            <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5 font-medium">Pre-Consultation Summary</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {/* Matter Type */}
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-450 dark:text-slate-500 font-bold">Matter Type</span>
+                            <p className="text-sm font-bold text-slate-850 dark:text-slate-200">
+                              {ticket.ai_brief.matter_type || "N/A"}
+                            </p>
+                          </div>
+
+                          {/* Risk Level */}
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-450 dark:text-slate-500 font-bold">Risk Level</span>
+                            <div>
+                              <span className={`inline-block px-3 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-widest border ${
+                                ticket.ai_brief.risk_level?.toLowerCase() === "high"
+                                  ? "bg-red-500/10 text-red-500 border-red-500/20"
+                                  : ticket.ai_brief.risk_level?.toLowerCase() === "moderate" || ticket.ai_brief.risk_level?.toLowerCase() === "medium"
+                                    ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                    : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                              }`}>
+                                {ticket.ai_brief.risk_level || "Low"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Key Issues */}
+                        <div className="space-y-2 pt-4 border-t dark:border-slate-800">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-455 dark:text-slate-500 font-bold">Key Issues</span>
+                          {Array.isArray(ticket.ai_brief.key_issues) && ticket.ai_brief.key_issues.length > 0 ? (
+                            <ul className="list-disc list-inside space-y-1.5 text-sm text-slate-600 dark:text-slate-300 font-medium">
+                              {ticket.ai_brief.key_issues.map((issue, idx) => (
+                                <li key={idx} className="leading-relaxed">{issue}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-sm text-slate-455 dark:text-slate-500 italic">None identified</p>
+                          )}
+                        </div>
+
+                        {/* Relevant Law */}
+                        <div className="space-y-2 pt-4 border-t dark:border-slate-800">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-455 dark:text-slate-500 font-bold">Relevant Law</span>
+                          <div className="flex flex-wrap gap-2">
+                            {Array.isArray(ticket.ai_brief.relevant_laws) && ticket.ai_brief.relevant_laws.length > 0 ? (
+                              ticket.ai_brief.relevant_laws.map((law, idx) => (
+                                <span key={idx} className="px-2.5 py-1 bg-slate-200 dark:bg-slate-850 text-slate-700 dark:text-slate-350 rounded-lg text-[11px] font-bold border border-slate-300 dark:border-slate-800">
+                                  {law}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-sm text-slate-455 dark:text-slate-500 italic">None specified</span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -528,85 +604,7 @@ export default function TicketDetailsPage() {
               </div>
             )}
 
-            {/* VIEW: CASE BRIEF */}
-            {currentView === "brief" && ticket.ai_brief && (
-              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 mb-4">AI Matter Intelligence</p>
 
-                <div className={`rounded-2xl border p-8 shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-gray-100"}`}>
-                  <div className="flex items-center justify-between mb-8 border-b pb-6 dark:border-slate-800">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">📋</span>
-                      <div>
-                        <h2 className={`text-xl font-bold tracking-tight ${isDark ? "text-white" : "text-gray-900"}`}>Case Brief</h2>
-                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">Automated Pre-Consultation Summary</p>
-                      </div>
-                    </div>
-                    <span className="px-3 py-1 bg-indigo-500/10 text-indigo-400 rounded-lg text-[10px] font-black uppercase tracking-widest border border-indigo-500/20">
-                      AI Generated
-                    </span>
-                  </div>
-
-                  <div className="space-y-8">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      {/* Matter Type */}
-                      <div className="space-y-2">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-450 dark:text-slate-500">Matter Type</span>
-                        <p className="text-sm font-bold text-slate-850 dark:text-slate-200">
-                          {ticket.ai_brief.matter_type || "N/A"}
-                        </p>
-                      </div>
-
-                      {/* Risk Level */}
-                      <div className="space-y-2">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-450 dark:text-slate-500">Risk Level</span>
-                        <div>
-                          <span className={`inline-block px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${
-                            ticket.ai_brief.risk_level?.toLowerCase() === "high"
-                              ? "bg-red-500/10 text-red-500 border-red-500/20"
-                              : ticket.ai_brief.risk_level?.toLowerCase() === "moderate" || ticket.ai_brief.risk_level?.toLowerCase() === "medium"
-                                ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
-                                : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                          }`}>
-                            {ticket.ai_brief.risk_level || "Low"}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Key Issues */}
-                    <div className="space-y-3 pt-6 border-t dark:border-slate-800">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-455 dark:text-slate-500">Key Issues</span>
-                      {Array.isArray(ticket.ai_brief.key_issues) && ticket.ai_brief.key_issues.length > 0 ? (
-                        <ul className="list-disc list-inside space-y-2.5 text-sm text-slate-600 dark:text-slate-300 font-medium">
-                          {ticket.ai_brief.key_issues.map((issue, idx) => (
-                            <li key={idx} className="leading-relaxed">{issue}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-sm text-slate-455 dark:text-slate-500 italic">None identified</p>
-                      )}
-                    </div>
-
-                    {/* Relevant Law */}
-                    <div className="space-y-3 pt-6 border-t dark:border-slate-800">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-455 dark:text-slate-500">Relevant Law</span>
-                      <div className="flex flex-wrap gap-2.5">
-                        {Array.isArray(ticket.ai_brief.relevant_laws) && ticket.ai_brief.relevant_laws.length > 0 ? (
-                          ticket.ai_brief.relevant_laws.map((law, idx) => (
-                            <span key={idx} className="px-3 py-1.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold border border-slate-300 dark:border-slate-700">
-                              {law}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-sm text-slate-455 dark:text-slate-500 italic">None specified</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* VIEW: PRE-CONSULTATION CHAT */}
             {currentView === "messages" && (
@@ -873,7 +871,7 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", onReadMarked
           </span>
         </div>
         {messages.some(m => !m.is_read && m.sender_role !== userRole) && (
-          <span className="px-2 py-0.5 bg-red-500/10 text-red-500 text-[9px] font-black uppercase tracking-widest rounded animate-pulse">
+          <span className="px-2 py-0.5 bg-red-500/10 text-red-500 text-[9px] font-black uppercase tracking-widest rounded">
             New
           </span>
         )}
@@ -1002,6 +1000,7 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", onReadMarked
           onChange={(e) => setNewMessage(e.target.value)}
           placeholder="Type a message to the client..."
           disabled={sending || isUploading}
+          style={{ flex: "1 1 0%", minWidth: "0" }}
           className={`flex-1 min-w-0 px-4 py-3 rounded-xl text-xs font-medium outline-none transition-all ${
             isDark
               ? "bg-slate-950 border border-white/5 text-slate-300 focus:border-blue-500/30"

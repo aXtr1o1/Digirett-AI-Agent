@@ -65,7 +65,8 @@ const useDocumentUpload = (conversationId, userId, addMessage) => {
       return {
         file_name: result.fileName,
         document_id: result.documentId,
-        summary_text: result.summaryText
+        summary_text: result.summaryText,
+        duplicate: result.duplicate
       };
 
     } catch (err) {

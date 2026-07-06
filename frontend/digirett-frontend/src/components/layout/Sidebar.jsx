@@ -43,6 +43,7 @@ const Sidebar = ({
   theme = "dark",
   onToggleTheme,
   onCollapseSidebar,
+  isMobile = false,
 }) => {
   const isDark = theme === "dark";
   const [activeFeature, setActiveFeature] = useState("chat");
@@ -202,23 +203,22 @@ const Sidebar = ({
         maxWidth: "260px",
         display: "flex",
         flexDirection: "column",
-        height: "100%",
         backgroundColor: isDark
           ? "rgba(17, 17, 17, 0.5)"
           : "rgba(250, 250, 250, 0.6)",
         borderRight: isDark
           ? "1px solid rgba(42, 42, 42, 0.4)"
           : "1px solid rgba(229, 231, 235, 0.4)",
-        borderTopLeftRadius: "16px",
-        borderTopRightRadius: "16px",
-        borderBottomLeftRadius: "16px",
-        borderBottomRightRadius: "16px",
+        borderTopLeftRadius: isMobile ? "0px" : "16px",
+        borderTopRightRadius: isMobile ? "0px" : "16px",
+        borderBottomLeftRadius: isMobile ? "0px" : "16px",
+        borderBottomRightRadius: isMobile ? "0px" : "16px",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
         overflow: "hidden",
-        height: "calc(100% - 16px)",
-        marginTop: "8px",
-        marginBottom: "8px",
+        height: isMobile ? "100%" : "calc(100% - 16px)",
+        marginTop: isMobile ? "0px" : "8px",
+        marginBottom: isMobile ? "0px" : "8px",
       }}
     >
       {/* APP BRANDING with Hamburger Menu & User Profile */}
@@ -567,7 +567,7 @@ const Sidebar = ({
       >
 
         {/* QUOTA PANEL — top of scrollable area */}
-        {activeFeature === "chat" && (
+        {(activeFeature === "chat" || activeFeature === "archived") && (
           <QuotaPanel
             conversationId={currentConversationId}
             isDark={isDark}

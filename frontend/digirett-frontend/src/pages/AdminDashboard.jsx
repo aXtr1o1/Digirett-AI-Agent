@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import adminService from "../services/adminService";
 import {
   Users, Mail, Shield, Loader2, Search,
@@ -93,6 +93,33 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 1024);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
+  const [isSpecSelectOpen, setIsSpecSelectOpen] = useState(false);
+  const specSelectRef = useRef(null);
+  const [mobileAssignTicketId, setMobileAssignTicketId] = useState(null);
+
+  useEffect(() => {
+    const handleGlobalClick = (event) => {
+      if (mobileAssignTicketId) {
+        const activeElem = document.getElementById(`assign-dropdown-${mobileAssignTicketId}`);
+        if (activeElem && !activeElem.contains(event.target)) {
+          setMobileAssignTicketId(null);
+        }
+      }
+    };
+    document.addEventListener("mousedown", handleGlobalClick);
+    return () => document.removeEventListener("mousedown", handleGlobalClick);
+  }, [mobileAssignTicketId]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (specSelectRef.current && !specSelectRef.current.contains(event.target)) {
+        setIsSpecSelectOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Local sub-navigation state (Synced with URL for refresh persistence & back-button support)
   const [searchParams, setSearchParams] = useSearchParams();
@@ -365,6 +392,7 @@ export default function AdminDashboard() {
       } else {
         setIsSidebarOpen(false);
       }
+      setIsMobile(window.innerWidth < 640);
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
@@ -653,7 +681,7 @@ export default function AdminDashboard() {
   const selectedRole = roleInfo[inviteRole] || roleInfo.lawyer;
 
   return (
-    <div className={`flex h-screen overflow-hidden ${isDark ? "bg-[#020617] text-slate-200" : "bg-[#f1f5f9] text-slate-900"}`}>
+    <div className={`flex flex-col lg:flex-row h-dynamic-screen lg:h-screen overflow-hidden ${isDark ? "bg-[#020617] text-slate-200" : "bg-[#f1f5f9] text-slate-900"}`}>
 
       {/* Sidebar Overlay for Mobile */}
       {isSidebarOpen && (
@@ -1096,7 +1124,7 @@ export default function AdminDashboard() {
                 {/* Classified Categories Section */}
                 <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
                   <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Classified Categories</h3>
-                  <div className="h-[300px] w-full">
+                  <div className="h-[320px] w-full">
                     {domainAnalytics && domainAnalytics.distribution && domainAnalytics.distribution.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
@@ -1107,7 +1135,7 @@ export default function AdminDashboard() {
                             dataKey="queries"
                             nameKey="name"
                             stroke="none"
-                            label={({ name, value, percentage }) => `${name}: ${value} (${percentage}%)`}
+                            label={({ name, value, percentage }) => isMobile ? `${percentage}%` : `${name}: ${value} (${percentage}%)`}
                           >
                             {domainAnalytics.distribution.map((entry, index) => (
                               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -1124,6 +1152,16 @@ export default function AdminDashboard() {
                               `${value} (${entry.payload?.percentage ?? 0}%)`,
                               "Queries"
                             ]}
+                          />
+                          <Legend
+                            verticalAlign="bottom"
+                            layout="horizontal"
+                            align="center"
+                            wrapperStyle={{
+                              paddingTop: '20px',
+                              fontSize: isMobile ? '10px' : '11px',
+                              color: isDark ? '#9ca3af' : '#4b5563'
+                            }}
                           />
                         </PieChart>
                       </ResponsiveContainer>
@@ -1399,7 +1437,6 @@ export default function AdminDashboard() {
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Lawyer Specialization</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Access Role</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Status</th>
-                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Availability</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">User Details</th>
                         {isAuthorized && <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Actions</th>}
                       </tr>
@@ -1407,7 +1444,7 @@ export default function AdminDashboard() {
                     <tbody className={`divide-y ${isDark ? "divide-slate-800" : "divide-slate-100"}`}>
                       {loading ? (
                         <tr>
-                          <td colSpan={isAuthorized ? 7 : 6} className="px-8 py-20 text-center">
+                          <td colSpan={isAuthorized ? 6 : 5} className="px-8 py-20 text-center">
                             <Loader2 size={32} className="animate-spin text-indigo-500 mx-auto opacity-20" />
                           </td>
                         </tr>
@@ -1488,20 +1525,6 @@ export default function AdminDashboard() {
                               <span className={`text-[10px] font-black uppercase tracking-widest ${(user.status !== 'inactive' && user.status !== 'suspended') ? "text-emerald-500" : "text-slate-400"}`}>
                                 {user.status === 'inactive' ? 'Inactive' : (user.status || 'Active')}
                               </span>
-                            </td>
-                            <td className="px-8 py-6">
-                              {user.role === 'lawyer' ? (
-                                <span className={`text-[10px] font-black uppercase tracking-widest ${user.lawyer_profiles?.availability_status === 'available'
-                                  ? 'text-emerald-500'
-                                  : user.lawyer_profiles?.availability_status === 'busy'
-                                    ? 'text-amber-500'
-                                    : 'text-red-500'
-                                  }`}>
-                                  {user.lawyer_profiles?.availability_status || 'Available'}
-                                </span>
-                              ) : (
-                                <span className="text-[10px] text-slate-400 dark:text-slate-650 font-bold">—</span>
-                              )}
                             </td>
 
                             <td className="px-8 py-6 text-right">
@@ -1625,17 +1648,53 @@ export default function AdminDashboard() {
                                 </div>
                               ) : (
                                 isAuthorized ? (
-                                  <select
-                                    onChange={(e) => handleAssignTicket(ticket.ticket_id, e.target.value)}
-                                    className={`text-xs font-bold py-2 px-3 rounded-lg border outline-none ${isDark ? "bg-slate-950 border-slate-800 text-slate-300" : "bg-white border-slate-200 text-slate-600"}`}
-                                  >
-                                    <option value="">Assign Lawyer...</option>
-                                    {users.filter(u => u.role?.toLowerCase() === 'lawyer').map(lawyer => (
-                                      <option key={lawyer.user_id} value={lawyer.user_id}>
-                                        {lawyer.user_profiles?.display_name || lawyer.email}
-                                      </option>
-                                    ))}
-                                  </select>
+                                  window.innerWidth < 1024 ? (
+                                    <div className="relative inline-block text-left" id={`assign-dropdown-${ticket.ticket_id}`}>
+                                      <button
+                                        type="button"
+                                        onClick={() => setMobileAssignTicketId(mobileAssignTicketId === ticket.ticket_id ? null : ticket.ticket_id)}
+                                        className={`flex items-center justify-between gap-1 text-xs font-bold py-2 px-3 rounded-lg border outline-none ${isDark ? "bg-slate-950 border-slate-800 text-slate-300" : "bg-white border-slate-200 text-slate-600"
+                                          }`}
+                                      >
+                                        <span>Assign Lawyer...</span>
+                                        <ChevronDown size={12} className={`transition-transform duration-200 ${mobileAssignTicketId === ticket.ticket_id ? "rotate-180" : ""}`} />
+                                      </button>
+
+                                      {mobileAssignTicketId === ticket.ticket_id && (
+                                        <div
+                                          className={`absolute right-0 mt-1.5 py-1.5 rounded-lg border shadow-xl z-50 min-w-[160px] max-h-48 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-150 ${isDark ? "bg-slate-950 border-slate-850 text-white" : "bg-white border-slate-200 text-slate-955"
+                                            }`}
+                                        >
+                                          {users.filter(u => u.role?.toLowerCase() === 'lawyer').map(lawyer => (
+                                            <button
+                                              key={lawyer.user_id}
+                                              type="button"
+                                              onClick={() => {
+                                                handleAssignTicket(ticket.ticket_id, lawyer.user_id);
+                                                setMobileAssignTicketId(null);
+                                              }}
+                                              className={`w-full text-left px-3 py-2 text-xs transition-colors truncate ${isDark ? "hover:bg-slate-855 text-slate-200" : "hover:bg-slate-50 text-slate-700"
+                                                }`}
+                                            >
+                                              {lawyer.user_profiles?.display_name || lawyer.email}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <select
+                                      onChange={(e) => handleAssignTicket(ticket.ticket_id, e.target.value)}
+                                      className={`text-xs font-bold py-2 px-3 rounded-lg border outline-none ${isDark ? "bg-slate-950 border-slate-800 text-slate-300" : "bg-white border-slate-200 text-slate-600"}`}
+                                    >
+                                      <option value="">Assign Lawyer...</option>
+                                      {users.filter(u => u.role?.toLowerCase() === 'lawyer').map(lawyer => (
+                                        <option key={lawyer.user_id} value={lawyer.user_id}>
+                                          {lawyer.user_profiles?.display_name || lawyer.email}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )
                                 ) : (
                                   <span className="text-xs text-slate-500 font-semibold italic">Unassigned</span>
                                 )
@@ -1904,32 +1963,62 @@ export default function AdminDashboard() {
                 )}
 
                 <div className="space-y-8">
-                  <div className="max-w-md">
+                  <div className="max-w-md relative" ref={specSelectRef}>
                     <label className="block text-xs font-bold tracking-wide text-slate-500 uppercase mb-3">Select Lawyer</label>
-                    <select
-                      value={specLawyer?.user_id || ""}
-                      onChange={(e) => {
-                        const lawyerId = e.target.value;
-                        const selected = users.find(u => u.user_id === lawyerId);
-                        setSpecLawyer(selected || null);
-                        if (selected) {
-                          setSpecSpecializationLabel(selected.lawyer_profiles?.specialization_label || "");
-                          setSpecExpertiseDomains(selected.lawyer_profiles?.expertise_domains || []);
-                        } else {
-                          setSpecSpecializationLabel("");
-                          setSpecExpertiseDomains([]);
-                        }
-                        setIsEditingSpec(false);
-                      }}
-                      className={`w-full h-12 px-4 rounded-xl border text-sm outline-none transition-all focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-550 ${isDark ? "bg-slate-955 border-slate-800 text-white" : "bg-white border-slate-300 text-slate-955"}`}
+                    <button
+                      type="button"
+                      onClick={() => setIsSpecSelectOpen(!isSpecSelectOpen)}
+                      className={`flex items-center justify-between w-full h-12 px-4 rounded-xl border text-sm outline-none transition-all focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-550 ${isDark ? "bg-slate-955 border-slate-800 text-white" : "bg-white border-slate-300 text-slate-955"
+                        }`}
                     >
-                      <option value="">Choose a Lawyer</option>
-                      {users.filter(u => u.role === 'lawyer').map(l => (
-                        <option key={l.user_id} value={l.user_id}>
-                          {l.user_profiles?.display_name || l.email} ({l.email})
-                        </option>
-                      ))}
-                    </select>
+                      <span className="truncate">{specLawyer ? (specLawyer.user_profiles?.display_name || specLawyer.email) : "Choose a Lawyer"}</span>
+                      <ChevronDown size={18} className={`flex-shrink-0 transition-transform duration-200 ${isSpecSelectOpen ? "rotate-180" : ""}`} />
+                    </button>
+
+                    {isSpecSelectOpen && (
+                      <div
+                        className={`absolute left-0 right-0 mt-2 py-1.5 rounded-xl border shadow-xl z-50 max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-150 ${isDark ? "bg-slate-950 border-slate-850 text-white" : "bg-white border-slate-200 text-slate-955"
+                          }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSpecLawyer(null);
+                            setSpecSpecializationLabel("");
+                            setSpecExpertiseDomains([]);
+                            setIsEditingSpec(false);
+                            setIsSpecSelectOpen(false);
+                          }}
+                          className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${isDark ? "hover:bg-slate-855 text-slate-200" : "hover:bg-slate-50 text-slate-700"
+                            }`}
+                        >
+                          Choose a Lawyer
+                        </button>
+                        {users.filter(u => u.role === 'lawyer').map(l => {
+                          const name = l.user_profiles?.display_name || l.email;
+                          const hasName = name !== l.email;
+                          const labelText = hasName ? `${name} (${l.email})` : l.email;
+
+                          return (
+                            <button
+                              key={l.user_id}
+                              type="button"
+                              onClick={() => {
+                                setSpecLawyer(l);
+                                setSpecSpecializationLabel(l.lawyer_profiles?.specialization_label || "");
+                                setSpecExpertiseDomains(l.lawyer_profiles?.expertise_domains || []);
+                                setIsEditingSpec(false);
+                                setIsSpecSelectOpen(false);
+                              }}
+                              className={`w-full text-left px-4 py-2.5 text-sm transition-colors truncate ${isDark ? "hover:bg-slate-855 text-slate-200" : "hover:bg-slate-50 text-slate-700"
+                                }`}
+                            >
+                              {labelText}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {specLawyer && specLawyer.role === 'lawyer' && (
@@ -1954,8 +2043,8 @@ export default function AdminDashboard() {
                                       <div
                                         key={domKey}
                                         className={`px-3 py-2 rounded-lg border text-xs font-bold ${isDark
-                                            ? "bg-indigo-500/10 border-indigo-500/35 text-indigo-400"
-                                            : "bg-indigo-50 border-indigo-100 text-indigo-700"
+                                          ? "bg-indigo-500/10 border-indigo-500/35 text-indigo-400"
+                                          : "bg-indigo-50 border-indigo-100 text-indigo-700"
                                           }`}
                                       >
                                         <div>{domain.en}</div>
@@ -2004,8 +2093,8 @@ export default function AdminDashboard() {
                                           setSpecExpertiseDomains(prev => prev.filter(d => d.toLowerCase() !== domKey.toLowerCase()));
                                         }}
                                         className={`px-3 py-2 rounded-lg border text-xs font-bold cursor-pointer transition-all hover:bg-red-50 hover:border-red-200 hover:text-red-650 dark:hover:bg-red-950/20 dark:hover:border-red-900/40 dark:hover:text-red-400 ${isDark
-                                            ? "bg-indigo-500/10 border-indigo-500/35 text-indigo-400"
-                                            : "bg-indigo-50 border-indigo-100 text-indigo-700"
+                                          ? "bg-indigo-500/10 border-indigo-500/35 text-indigo-400"
+                                          : "bg-indigo-50 border-indigo-100 text-indigo-700"
                                           }`}
                                         title="Click to remove"
                                       >
@@ -2040,8 +2129,8 @@ export default function AdminDashboard() {
                                           setSpecExpertiseDomains(prev => [...prev, domain.key]);
                                         }}
                                         className={`p-4 rounded-xl border flex items-start gap-3 cursor-pointer select-none transition-all ${isDark
-                                            ? "bg-slate-955/40 border-slate-800/50 hover:border-indigo-500/50 hover:bg-indigo-500/5 text-slate-400 hover:text-indigo-400"
-                                            : "bg-white border-slate-200 hover:border-indigo-300 hover:bg-indigo-550/5 text-slate-655 hover:text-indigo-900"
+                                          ? "bg-slate-955/40 border-slate-800/50 hover:border-indigo-500/50 hover:bg-indigo-500/5 text-slate-400 hover:text-indigo-400"
+                                          : "bg-white border-slate-200 hover:border-indigo-300 hover:bg-indigo-550/5 text-slate-655 hover:text-indigo-900"
                                           }`}
                                       >
                                         <div>
@@ -2074,8 +2163,8 @@ export default function AdminDashboard() {
                                   setIsEditingSpec(false);
                                 }}
                                 className={`px-8 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${isDark
-                                    ? "border-slate-800 text-slate-400 hover:bg-slate-800"
-                                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                                  ? "border-slate-800 text-slate-400 hover:bg-slate-800"
+                                  : "border-slate-200 text-slate-600 hover:bg-slate-50"
                                   }`}
                               >
                                 Cancel
@@ -2255,7 +2344,7 @@ export default function AdminDashboard() {
       )}
       {/* Floating Notifications */}
       {queueMsg && (
-        <div className="fixed bottom-8 right-8 z-[200] w-full max-w-md animate-in slide-in-from-bottom-4 duration-500">
+        <div className="fixed bottom-4 left-4 right-4 sm:bottom-8 sm:right-8 sm:left-auto w-auto sm:w-full sm:max-w-md z-[200] animate-in slide-in-from-bottom-4 duration-500">
           <div className={`p-5 rounded-2xl flex items-center justify-between text-sm font-bold shadow-2xl backdrop-blur-md border ${queueMsg.type === 'success'
             ? 'bg-emerald-600/90 text-white border-emerald-400'
             : 'bg-red-600/90 text-white border-red-400'
