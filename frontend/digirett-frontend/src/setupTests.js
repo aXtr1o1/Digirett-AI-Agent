@@ -48,6 +48,18 @@ class MockWebSocket {
 global.WebSocket = MockWebSocket;
 
 /* ------------------------------------------------------------------ */
+/* 2️⃣b Mock ResizeObserver (Prevents ResizeObserver undefined error) */
+/* ------------------------------------------------------------------ */
+
+class MockResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+global.ResizeObserver = MockResizeObserver;
+
+/* ------------------------------------------------------------------ */
 /* 3️⃣  Silence Expected Console Errors (Optional)                    */
 /* ------------------------------------------------------------------ */
 
