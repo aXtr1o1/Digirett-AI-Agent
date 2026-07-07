@@ -18,6 +18,26 @@ const MessageComposer = ({
   const [file, setFile] = useState(null);
   const [showEscalateConfirm, setShowEscalateConfirm] = useState(false);
   const [isEscalating, setIsEscalating] = useState(false);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const handleHeightUpdate = () => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      if (rect.height > 0) {
+        document.documentElement.style.setProperty("--composer-height", `${rect.height}px`);
+      }
+    };
+    handleHeightUpdate();
+
+    const observer = new ResizeObserver(() => {
+      handleHeightUpdate();
+    });
+    observer.observe(containerRef.current);
+
+    return () => observer.disconnect();
+  }, []);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [localEscalated, setLocalEscalated] = useState(false);
   const [escalatePriority, setEscalatePriority] = useState("normal");
@@ -120,6 +140,7 @@ const MessageComposer = ({
 
   return (
     <div
+      ref={containerRef}
       style={{
         display: "flex",
         flexDirection: "column",

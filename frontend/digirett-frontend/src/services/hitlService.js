@@ -228,6 +228,13 @@ const hitlService = {
     const response = await api.patch(`/hitl/tickets/${ticketId}/priority`, { priority });
     return response.data;
   },
+  /**
+   * Get current lawyer's personal analytics metrics
+   */
+  getPersonalAnalytics: async () => {
+    const response = await api.get("/hitl/lawyer/analytics/personal");
+    return response.data;
+  }
 };
 
 export default hitlService;

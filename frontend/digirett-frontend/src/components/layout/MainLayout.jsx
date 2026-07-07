@@ -57,7 +57,7 @@ const MainLayout = ({
   };
 
   return (
-    <div className="relative flex h-screen w-screen overflow-hidden">
+    <div className="relative flex h-dynamic-screen w-full overflow-hidden">
       {/* Background Layer - Fixed behind everything (both themes) */}
       <BackgroundLayer theme={theme} />
 
@@ -71,21 +71,27 @@ const MainLayout = ({
 
       {/* Main Content Container with padding on all sides */}
       <div
-        className={`relative flex h-full w-full p-2 gap-2 ${isDark ? "text-gray-200" : "text-gray-900"
+        className={`relative flex h-full w-full p-0 lg:p-2 gap-0 lg:gap-2 ${isDark ? "text-gray-200" : "text-gray-900"
           }`}
       >
         {/* SIDEBAR — fixed/absolute on mobile, relative on desktop */}
         <div
           style={{
             position: isMobile ? "fixed" : "relative",
-            left: isMobile ? "8px" : "auto",
-            top: isMobile ? "8px" : "auto",
-            bottom: isMobile ? "8px" : "auto",
-            height: isMobile ? "calc(100% - 16px)" : "100%",
-            width: isSidebarOpen ? "260px" : "0px",
-            minWidth: isSidebarOpen ? "260px" : "0px",
-            maxWidth: isSidebarOpen ? "260px" : "0px",
-            opacity: isSidebarOpen ? 1 : 0,
+            left: isMobile ? "0px" : "auto",
+            top: isMobile ? "0px" : "auto",
+            bottom: isMobile ? "0px" : "auto",
+            height: "100%",
+            width: isMobile
+              ? (isSidebarOpen ? "260px" : "0px")
+              : (isSidebarOpen ? "260px" : "68px"),
+            minWidth: isMobile
+              ? (isSidebarOpen ? "260px" : "0px")
+              : (isSidebarOpen ? "260px" : "68px"),
+            maxWidth: isMobile
+              ? (isSidebarOpen ? "260px" : "0px")
+              : (isSidebarOpen ? "260px" : "68px"),
+            opacity: isMobile ? (isSidebarOpen ? 1 : 0) : 1,
             transform: isMobile ? (isSidebarOpen ? "translateX(0)" : "translateX(-110%)") : "none",
             zIndex: 50,
             overflow: "hidden",
@@ -94,6 +100,8 @@ const MainLayout = ({
           className="flex-shrink-0"
         >
           <Sidebar
+            isCollapsed={!isSidebarOpen && !isMobile}
+            isMobile={isMobile}
             conversations={conversations}
             currentConversationId={currentConversationId}
             archivedIds={archivedIds}
@@ -110,8 +118,8 @@ const MainLayout = ({
 
         {/* MAIN CONTENT */}
         <div className="relative z-10 flex flex-col flex-1 min-w-0 h-full overflow-hidden">
-          {/* Floating Menu Toggle Button (visible only when sidebar is closed) */}
-          {!isSidebarOpen && (
+          {/* Floating Menu Toggle Button (visible only on mobile when sidebar is closed) */}
+          {!isSidebarOpen && isMobile && (
             <button
               onClick={toggleSidebar}
               style={{
