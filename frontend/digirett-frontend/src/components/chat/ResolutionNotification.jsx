@@ -57,23 +57,23 @@ const SystemNotification = ({ notifications, onDismiss, onNavigate, isDark, curr
     if (!isDraggingRef.current || !containerRef.current) return;
     const dx = clientX - dragStartRef.current.x;
     const dy = clientY - dragStartRef.current.y;
-    
+
     const rect = containerRef.current.getBoundingClientRect();
     const newLeft = rect.left + dx;
     const newTop = rect.top + dy;
-    
+
     // Clamp inside viewport borders with a 8px margin
     const clampedLeft = Math.max(8, Math.min(window.innerWidth - rect.width - 8, newLeft));
     const clampedTop = Math.max(8, Math.min(window.innerHeight - rect.height - 8, newTop));
-    
+
     const dx_clamped = clampedLeft - rect.left;
     const dy_clamped = clampedTop - rect.top;
-    
+
     setPosition((prev) => ({
       x: prev.x + dx_clamped,
       y: prev.y + dy_clamped,
     }));
-    
+
     dragStartRef.current = { x: clientX, y: clientY };
     totalDragDistanceRef.current += Math.sqrt(dx_clamped * dx_clamped + dy_clamped * dy_clamped);
   };
@@ -86,17 +86,17 @@ const SystemNotification = ({ notifications, onDismiss, onNavigate, isDark, curr
   const onMouseDown = (e) => {
     if (!isMobileOrTablet) return;
     handleDragStart(e.clientX, e.clientY);
-    
+
     const handleMouseMove = (event) => {
       handleDragMove(event.clientX, event.clientY);
     };
-    
+
     const handleMouseUp = () => {
       handleDragEnd();
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
-    
+
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
   };
@@ -124,6 +124,29 @@ const SystemNotification = ({ notifications, onDismiss, onNavigate, isDark, curr
     setIsOpen(!isOpen);
   };
 
+  const [rightOffset, setRightOffset] = useState(32);
+
+  useEffect(() => {
+    const updatePosition = () => {
+      const legalPanel = document.getElementById("legal-panel-aside");
+      const isPanelOpen = legalPanel !== null;
+      setRightOffset(isPanelOpen ? 320 + 32 : 32);
+    };
+
+    updatePosition();
+
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("transitionend", updatePosition);
+
+    const interval = setInterval(updatePosition, 300);
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("transitionend", updatePosition);
+      clearInterval(interval);
+    };
+  }, [currentView, notifications]);
+
   if (!notifications || notifications.length === 0) return null;
 
   const count = notifications.length;
@@ -134,9 +157,9 @@ const SystemNotification = ({ notifications, onDismiss, onNavigate, isDark, curr
       style={{
         position: "fixed",
         bottom: (window.location.pathname === "/" || window.location.pathname.startsWith("/chat")) && currentView !== "library"
-          ? "calc(max(var(--composer-height, 90px), 90px) + 24px)"
+          ? "calc((var(--composer-height, 90px) - 56px) / 2 + 10px)"
           : (isMobile ? "16px" : "32px"),
-        right: isMobile ? "16px" : "32px",
+        right: isMobile ? "16px" : `${rightOffset}px`,
         left: "auto",
         zIndex: 2147483647,
         display: "flex",
@@ -185,53 +208,56 @@ const SystemNotification = ({ notifications, onDismiss, onNavigate, isDark, curr
         style={{
           pointerEvents: "auto",
           alignSelf: "flex-end",
-          background: isDark ? "#1e293b" : "#ffffff",
-          color: isDark ? "#ffffff" : "#1e293b",
-          border: `1px solid ${isDark ? "#334155" : "#e2e8f0"}`,
-          borderRadius: "16px",
-          width: "56px",
-          height: "56px",
+          backgroundColor: "transparent",
+          color: isDark ? "#ffffff" : "#374151",
+          border: "none",
+          borderRadius: "12px",
+          width: "40px",
+          height: "40px",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
           cursor: isMobileOrTablet ? (isDragging ? "grabbing" : "grab") : "pointer",
           position: "relative",
-          transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+          transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
           transform: isOpen ? "scale(1)" : "scale(1.1)",
           touchAction: "none", // Prevent scrolling the page while dragging the button
         }}
         onMouseEnter={(e) => {
           if (!isDragging) {
             e.currentTarget.style.transform = "scale(1.1) translateY(-2px)";
+            e.currentTarget.style.backgroundColor = isDark
+              ? "rgba(42, 42, 42, 0.5)"
+              : "rgba(243, 244, 246, 0.8)";
           }
         }}
         onMouseLeave={(e) => {
           if (!isDragging) {
             e.currentTarget.style.transform = isOpen ? "scale(1)" : "scale(1.1)";
+            e.currentTarget.style.backgroundColor = "transparent";
           }
         }}
       >
-        <Bell size={24} className={count > 0 ? "animate-bounce" : ""} />
+        <Bell size={20} className={count > 0 ? "animate-bounce" : ""} />
 
         {count > 0 && (
           <div
             style={{
               position: "absolute",
-              top: "-4px",
-              right: "-4px",
+              top: "-2px",
+              right: "-2px",
               background: "#ef4444",
               color: "white",
-              fontSize: "10px",
+              fontSize: "9px",
               fontWeight: "900",
-              width: "22px",
-              height: "22px",
+              width: "18px",
+              height: "18px",
               borderRadius: "50%",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              border: `3px solid ${isDark ? "#1e293b" : "#ffffff"}`,
-              boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+              border: "none",
+              boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
             }}
           >
             {count}

@@ -382,7 +382,7 @@ export default function TicketDetailsPage() {
 
                   <div className={`grid grid-cols-1 divide-y ${isDark ? "divide-slate-800" : "divide-gray-50"}`}>
                     {[
-                      { icon: <Hash size={16} />, label: "Matter ID", value: `#${ticket.ticket_id || id.slice(0, 8).toUpperCase()}` },
+                      { icon: <Hash size={16} />, label: "Ticket ID", value: `#${(ticket.ticket_id || id).substring(0, 8)}` },
                       {
                         icon: <Clock size={16} />,
                         label: "Assigned",

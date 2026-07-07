@@ -8,6 +8,7 @@ const LegalPanel = ({ conversationId, theme = "dark", onClose }) => {
 
   return (
     <aside
+      id="legal-panel-aside"
       style={{
         width: "320px",
         minWidth: "320px",

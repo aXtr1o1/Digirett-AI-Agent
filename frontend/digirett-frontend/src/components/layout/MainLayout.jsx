@@ -82,10 +82,16 @@ const MainLayout = ({
             top: isMobile ? "0px" : "auto",
             bottom: isMobile ? "0px" : "auto",
             height: "100%",
-            width: isSidebarOpen ? "260px" : "0px",
-            minWidth: isSidebarOpen ? "260px" : "0px",
-            maxWidth: isSidebarOpen ? "260px" : "0px",
-            opacity: isSidebarOpen ? 1 : 0,
+            width: isMobile
+              ? (isSidebarOpen ? "260px" : "0px")
+              : (isSidebarOpen ? "260px" : "68px"),
+            minWidth: isMobile
+              ? (isSidebarOpen ? "260px" : "0px")
+              : (isSidebarOpen ? "260px" : "68px"),
+            maxWidth: isMobile
+              ? (isSidebarOpen ? "260px" : "0px")
+              : (isSidebarOpen ? "260px" : "68px"),
+            opacity: isMobile ? (isSidebarOpen ? 1 : 0) : 1,
             transform: isMobile ? (isSidebarOpen ? "translateX(0)" : "translateX(-110%)") : "none",
             zIndex: 50,
             overflow: "hidden",
@@ -94,6 +100,7 @@ const MainLayout = ({
           className="flex-shrink-0"
         >
           <Sidebar
+            isCollapsed={!isSidebarOpen && !isMobile}
             isMobile={isMobile}
             conversations={conversations}
             currentConversationId={currentConversationId}
@@ -111,8 +118,8 @@ const MainLayout = ({
 
         {/* MAIN CONTENT */}
         <div className="relative z-10 flex flex-col flex-1 min-w-0 h-full overflow-hidden">
-          {/* Floating Menu Toggle Button (visible only when sidebar is closed) */}
-          {!isSidebarOpen && (
+          {/* Floating Menu Toggle Button (visible only on mobile when sidebar is closed) */}
+          {!isSidebarOpen && isMobile && (
             <button
               onClick={toggleSidebar}
               style={{

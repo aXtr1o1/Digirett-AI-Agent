@@ -84,6 +84,7 @@ const LEGAL_DOMAINS = [
 export default function AdminDashboard() {
   const { theme, isDark, toggleTheme } = useTheme();
   const [users, setUsers] = useState([]);
+  const [ratings, setRatings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("lawyer");
@@ -169,6 +170,12 @@ export default function AdminDashboard() {
       setEditingExpertiseDomains([]);
     }
   }, [viewUser]);
+
+  useEffect(() => {
+    if (isSystemAdmin && inviteRole !== "lawyer") {
+      setInviteRole("lawyer");
+    }
+  }, [isSystemAdmin, inviteRole]);
 
   const handleSaveSpecializationOverride = async () => {
     if (!viewUser || viewUser.role !== 'lawyer') return;
@@ -319,13 +326,14 @@ export default function AdminDashboard() {
   const fetchDashboardData = async () => {
     try {
       setDashboardLoading(true);
-      const [usersData, invitesData, ticketsData, logsData, healthData, domainData] = await Promise.all([
+      const [usersData, invitesData, ticketsData, logsData, healthData, domainData, ratingsData] = await Promise.all([
         adminService.listUsers(),
         adminService.listInvitations(),
         adminService.getAllTickets(),
         adminService.getAuditLogs(100),
         adminService.getHealthStatus(),
-        adminService.getDomainAnalytics()
+        adminService.getDomainAnalytics(),
+        adminService.getAdminRatings().catch(() => [])
       ]);
 
       setUsers(usersData.filter(u => u.email));
@@ -333,6 +341,7 @@ export default function AdminDashboard() {
       setTickets(ticketsData);
       setAuditLogs(logsData);
       setHealthStatus(healthData);
+      setRatings(ratingsData || []);
 
       // Format domain analytics names for display
       const formattedDomainData = { ...domainData };
@@ -425,6 +434,18 @@ export default function AdminDashboard() {
         "Manage system users",
         "Invite lawyers and admins",
         "View platform analytics",
+      ],
+    },
+    system_admin: {
+      title: "System Admin Access",
+      icon: <Crown className="w-5 h-5" />,
+      description:
+        "System Admins have full administrative ownership over the platform metrics, users, roles, and master settings.",
+      permissions: [
+        "Full system access",
+        "Manage system configurations",
+        "Override lawyer profiles",
+        "Configure core systems",
       ],
     },
   };
@@ -562,7 +583,7 @@ export default function AdminDashboard() {
 
   const statusData = [
     { name: 'Active', value: users.filter(u => u.status === 'active').length, color: '#10b981' },
-    { name: 'Inactive', value: users.filter(u => u.status === 'inactive' || u.status === 'suspended').length, color: '#ef4444' },
+    { name: 'Suspended', value: users.filter(u => u.status === 'inactive' || u.status === 'suspended').length, color: '#ef4444' },
   ];
 
   const getOnboardingTrend = () => {
@@ -758,26 +779,6 @@ export default function AdminDashboard() {
             Classified Category
           </button>
 
-          {isAuthorized && (
-            <button
-              onClick={() => { setActiveView("sla"); setIsSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "sla" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
-            >
-              <Activity size={18} />
-              Performance Report
-            </button>
-          )}
-
-          {isAuthorized && (
-            <button
-              onClick={() => { setActiveView("calendar"); setIsSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "calendar" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
-            >
-              <Calendar size={18} />
-              Calendar
-            </button>
-          )}
-
           <button
             onClick={() => { setActiveView("settings"); setIsSidebarOpen(false); }}
             className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeView === "settings" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
@@ -830,13 +831,9 @@ export default function AdminDashboard() {
                 ? (isSystemAdmin ? 'System Admin Dashboard' : 'Admin Dashboard')
                 : activeView === 'settings'
                   ? (isSystemAdmin ? 'System Admin Settings' : 'Admin Settings')
-                  : activeView === 'calendar'
-                    ? 'System Admin Schedule'
-                    : activeView === 'distribution'
-                      ? 'Classified Categories'
-                      : activeView === 'sla'
-                        ? 'Response Targets'
-                        : activeView.replace('-', ' ')}
+                  : activeView === 'distribution'
+                    ? 'Classified Categories'
+                    : activeView.replace('-', ' ')}
             </h2>
           </div>
 
@@ -922,14 +919,13 @@ export default function AdminDashboard() {
               {/* Row 1: User & Platform Demographics */}
               <div className="space-y-3">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">User & Platform Metrics</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-6">
                   {[
-                    { label: "System Admins", value: systemAdminCount, color: "red" },
                     { label: "Admins", value: adminCount, color: "purple" },
-                    { label: "Active Lawyers", value: lawyerCount, color: "blue" },
-                    { label: "Standard Users", value: standardUserCount, color: "green" },
+                    { label: "System Admins", value: systemAdminCount, color: "red" },
+                    { label: "Lawyers", value: lawyerCount, color: "blue" },
+                    { label: "Users", value: standardUserCount, color: "green" },
                     { label: "Pending Invitations", value: pendingInvites, color: "amber" },
-                    { label: "Total Platform Users", value: totalUsers, color: "indigo" },
                   ].map((stat, idx) => (
                     <div key={idx} className={`p-6 rounded-2xl border shadow-sm flex flex-col gap-2 min-h-[120px] ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
                       }`}>
@@ -944,14 +940,13 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Row 2: Ticket & Case Metrics */}
+              {/* Row 2: Ticket & Matter Metrics */}
               <div className="space-y-3">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Ticket & Case Metrics</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-6">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Ticket & Matter Metrics</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
                   {[
                     { label: "Open Tickets", value: tickets.filter(t => t.status === 'open' && !t.assigned_lawyer_id).length, color: "orange" },
                     { label: "Claimed Tickets", value: tickets.filter(t => t.status === 'assigned').length, color: "rose" },
-                    { label: "Booked Tickets", value: tickets.filter(t => t.status === 'booked').length, color: "blue" },
                     { label: "Resolved Tickets", value: tickets.filter(t => t.status === 'resolved').length, color: "emerald" },
                     { label: "Closed Tickets", value: tickets.filter(t => t.status === 'closed').length, color: "slate" },
                   ].map((stat, idx) => (
@@ -968,29 +963,11 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Row 1: User Role Distribution + Status Breakdown + Onboarding Trend */}
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-                {/* Role Distribution */}
-                <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Role Distribution</h3>
-                  <div className="h-[250px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={roleData} innerRadius={60} outerRadius={80} dataKey="value" stroke="none">
-                          {roleData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip cursor={false} />
-                        <Legend iconType="circle" />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
+              {/* Row 1: Status Breakdown + Onboarding Trend */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
                 {/* Status Breakdown */}
                 <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">User Status</h3>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Registered Accounts</h3>
                   <div className="h-[250px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
@@ -1011,10 +988,24 @@ export default function AdminDashboard() {
                   <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Onboarding Trend</h3>
                   <div className="h-[250px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={getOnboardingTrend()}>
+                      <LineChart data={getOnboardingTrend()} margin={{ top: 10, right: 10, left: 5, bottom: 10 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#1e293b" : "#f1f5f9"} />
-                        <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <XAxis
+                          dataKey="date"
+                          tick={{ fontSize: 10 }}
+                          axisLine={false}
+                          tickLine={false}
+                          label={{ value: 'Registration Date', position: 'insideBottom', offset: -5, fontSize: 10, fill: '#64748b', fontWeight: 'bold' }}
+                          height={35}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 10 }}
+                          axisLine={false}
+                          tickLine={false}
+                          allowDecimals={false}
+                          label={{ value: 'New Registrations', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fill: '#64748b', fontWeight: 'bold' }}
+                          width={45}
+                        />
                         <Tooltip cursor={false} />
                         <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={3} dot={{ r: 4 }} />
                       </LineChart>
@@ -1060,114 +1051,6 @@ export default function AdminDashboard() {
                     ) : (
                       <div className="h-full flex items-center justify-center text-slate-500 text-xs font-bold italic opacity-40">
                         No active assignments currently.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 3: Audit Event Breakdown + Throughput */}
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                {/* Case Throughput */}
-                <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Matter Throughput Metrics</h3>
-                  <div className="h-[300px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={getThroughputData()}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#1e293b" : "#f1f5f9"} />
-                        <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <Tooltip
-                          cursor={false}
-                          contentStyle={{
-                            backgroundColor: isDark ? '#0f172a' : '#fff',
-                            border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
-                            borderRadius: '8px',
-                            fontSize: '10px'
-                          }}
-                        />
-                        <Legend iconType="circle" />
-                        <Bar dataKey="intake" name="New Tickets" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="resolved" name="Resolved" fill="#10b981" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="closed" name="Closed" fill="#94a3b8" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Audit Event Breakdown */}
-                <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Audit Event Breakdown</h3>
-                  <div className="h-[300px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={auditTypeData()} layout="vertical">
-                        <XAxis type="number" hide />
-                        <YAxis dataKey="action" type="category" tick={{ fontSize: 9 }} width={100} axisLine={false} tickLine={false} />
-                        <Tooltip
-                          cursor={false}
-                          contentStyle={{
-                            backgroundColor: isDark ? '#0f172a' : '#fff',
-                            border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
-                            borderRadius: '8px',
-                            fontSize: '10px'
-                          }}
-                        />
-                        <Bar dataKey="count" fill="#a855f7" radius={[0, 4, 4, 0]} barSize={25} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 4: Classified Categories */}
-              <div className="grid grid-cols-1 gap-8">
-                {/* Classified Categories Section */}
-                <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-6">Classified Categories</h3>
-                  <div className="h-[320px] w-full">
-                    {domainAnalytics && domainAnalytics.distribution && domainAnalytics.distribution.length > 0 ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={domainAnalytics.distribution}
-                            innerRadius={50}
-                            outerRadius={75}
-                            dataKey="queries"
-                            nameKey="name"
-                            stroke="none"
-                            label={({ name, value, percentage }) => isMobile ? `${percentage}%` : `${name}: ${value} (${percentage}%)`}
-                          >
-                            {domainAnalytics.distribution.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                          </Pie>
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: isDark ? '#0f172a' : '#fff',
-                              border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
-                              borderRadius: '8px',
-                              fontSize: '10px'
-                            }}
-                            formatter={(value, name, entry) => [
-                              `${value} (${entry.payload?.percentage ?? 0}%)`,
-                              "Queries"
-                            ]}
-                          />
-                          <Legend
-                            verticalAlign="bottom"
-                            layout="horizontal"
-                            align="center"
-                            wrapperStyle={{
-                              paddingTop: '20px',
-                              fontSize: isMobile ? '10px' : '11px',
-                              color: isDark ? '#9ca3af' : '#4b5563'
-                            }}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <div className="h-full flex items-center justify-center text-slate-500 text-xs font-bold italic opacity-40">
-                        No classified user queries recorded yet.
                       </div>
                     )}
                   </div>
@@ -1236,7 +1119,12 @@ export default function AdminDashboard() {
                           className={`w-full h-14 px-4 rounded-xl border text-sm outline-none appearance-none transition-all focus:ring-2 focus:ring-indigo-500 ${isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-white border-slate-300 text-slate-950"}`}
                         >
                           <option value="lawyer">Lawyer</option>
-                          <option value="admin">Administrator</option>
+                          {!isSystemAdmin && (
+                            <>
+                              <option value="admin">Administrator</option>
+                              <option value="system_admin">System Admin</option>
+                            </>
+                          )}
                         </select>
                       </div>
                       {/* Security Box */}
@@ -1434,7 +1322,6 @@ export default function AdminDashboard() {
                     <thead>
                       <tr className={`text-left ${isDark ? "bg-slate-955/50" : "bg-slate-50/50"}`}>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity</th>
-                        <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Lawyer Specialization</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Access Role</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Status</th>
                         <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">User Details</th>
@@ -1444,7 +1331,7 @@ export default function AdminDashboard() {
                     <tbody className={`divide-y ${isDark ? "divide-slate-800" : "divide-slate-100"}`}>
                       {loading ? (
                         <tr>
-                          <td colSpan={isAuthorized ? 6 : 5} className="px-8 py-20 text-center">
+                          <td colSpan={isAuthorized ? 5 : 4} className="px-8 py-20 text-center">
                             <Loader2 size={32} className="animate-spin text-indigo-500 mx-auto opacity-20" />
                           </td>
                         </tr>
@@ -1461,55 +1348,6 @@ export default function AdminDashboard() {
                                   <p className="text-[11px] text-slate-500 truncate font-medium">{user.email}</p>
                                 </div>
                               </div>
-                            </td>
-                            <td className="px-8 py-6">
-                              {user.role === 'lawyer' && user.lawyer_profiles ? (
-                                <div className="relative">
-                                  {(user.lawyer_profiles.expertise_domains && user.lawyer_profiles.expertise_domains.length > 0) ? (
-                                    <div className="relative inline-block text-left">
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setOpenDropdownUserId(openDropdownUserId === user.user_id ? null : user.user_id);
-                                        }}
-                                        className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider border transition-all ${openDropdownUserId === user.user_id
-                                          ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-600/10"
-                                          : (isDark ? "bg-slate-850 border-slate-750 text-slate-300 hover:bg-slate-800" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50")
-                                          }`}
-                                      >
-                                        <span>{user.lawyer_profiles.expertise_domains.length} {user.lawyer_profiles.expertise_domains.length === 1 ? "Domain" : "Domains"}</span>
-                                        <ChevronDown size={10} className={`transition-transform duration-200 ${openDropdownUserId === user.user_id ? "rotate-180" : ""}`} />
-                                      </button>
-
-                                      {openDropdownUserId === user.user_id && (
-                                        <>
-                                          <div
-                                            className="fixed inset-0 z-40"
-                                            onClick={() => setOpenDropdownUserId(null)}
-                                          />
-                                          <div className={`absolute left-0 mt-2 w-56 rounded-xl border shadow-2xl z-50 p-2 space-y-1 animate-in fade-in slide-in-from-top-1 duration-150 ${isDark ? "bg-slate-900 border-slate-800 shadow-black/40" : "bg-white border-slate-200"
-                                            }`}>
-                                            {user.lawyer_profiles.expertise_domains.map((dom, i) => (
-                                              <div
-                                                key={i}
-                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border truncate ${isDark ? "bg-slate-950 border-slate-850 text-slate-300" : "bg-slate-50 border-slate-100 text-slate-700"
-                                                  }`}
-                                                title={DOMAIN_DISPLAY_NAMES[dom.toLowerCase()] || dom}
-                                              >
-                                                {DOMAIN_DISPLAY_NAMES[dom.toLowerCase()] || dom}
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <span className="text-[9px] text-slate-400 italic">No domains set</span>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-[10px] text-slate-400 dark:text-slate-600 font-bold">—</span>
-                              )}
                             </td>
                             <td className="px-8 py-6">
                               <span className={`inline-flex items-center px-4 py-1.5 rounded-full text-[10px] font-black tracking-widest uppercase border ${user.role === 'admin'
@@ -1624,11 +1462,11 @@ export default function AdminDashboard() {
                               </div>
                             </td>
                             <td className="px-8 py-6">
-                              {!ticket.assigned_lawyer_id && ticket.conversation_summary ? (
+                              {ticket.conversation_summary ? (
                                 <div className="max-w-xs">
                                   <p
                                     onClick={() => setActiveSummaryModal(ticket.conversation_summary)}
-                                    className="text-[11px] text-slate-650 dark:text-slate-400 italic leading-relaxed line-clamp-2 cursor-pointer transition-all"
+                                    className="text-[11px] text-slate-655 dark:text-slate-400 italic leading-relaxed line-clamp-2 cursor-pointer transition-all"
                                     title="Click to view full summary"
                                   >
                                     "{ticket.conversation_summary}"
@@ -1636,7 +1474,7 @@ export default function AdminDashboard() {
                                 </div>
                               ) : (
                                 <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">
-                                  {ticket.assigned_lawyer_id ? "Matter in Progress" : "No Summary"}
+                                  No Summary
                                 </span>
                               )}
                             </td>
@@ -1731,9 +1569,9 @@ export default function AdminDashboard() {
                 queries: 0,
                 percentage: 0
               };
-            }).sort((a, b) => b.queries - a.queries);
+            }).filter(entry => entry.queries > 0).sort((a, b) => b.queries - a.queries);
 
-            const otherList = (domainAnalytics?.distribution || []).filter(d => !d.isCanonical);
+            const otherList = (domainAnalytics?.distribution || []).filter(d => !d.isCanonical && d.queries > 0);
 
             return (
               <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
@@ -1749,31 +1587,18 @@ export default function AdminDashboard() {
 
                     {/* Section 1: Default Legal Domains */}
                     <div className="space-y-4">
-                      <h3 className="text-xs font-black uppercase tracking-widest text-indigo-500 flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                        Default Legal Domains (12)
+                      <h3 className="text-sm font-bold uppercase tracking-widest text-slate-900 dark:text-slate-100">
+                        Legal Classified Area ({canonicalList.length})
                       </h3>
-                      <div className="w-full overflow-y-auto pr-2 max-h-[550px] space-y-6">
+                      <div className="w-full overflow-y-auto pr-2 max-h-[550px] divide-y divide-slate-100 dark:divide-slate-800/60">
                         {canonicalList.map((entry, index) => {
                           const pct = entry.percentage ?? 0;
-                          const color = COLORS[index % COLORS.length];
                           return (
-                            <div key={index} className="space-y-2">
-                              <div className="flex items-center justify-between text-xs font-semibold">
-                                <span className={isDark ? "text-slate-200" : "text-slate-700"}>{entry.name}</span>
-                                <span className={isDark ? "text-slate-400" : "text-slate-500"}>
-                                  {entry.queries} queries ({pct}%)
-                                </span>
-                              </div>
-                              <div className={`w-full h-3 rounded-full ${isDark ? "bg-slate-800" : "bg-slate-100"}`}>
-                                <div
-                                  className="h-full rounded-full transition-all duration-500"
-                                  style={{
-                                    width: `${pct}%`,
-                                    backgroundColor: color
-                                  }}
-                                />
-                              </div>
+                            <div key={index} className="py-4 first:pt-0 last:pb-0 flex items-center justify-between text-xs font-semibold">
+                              <span className={isDark ? "text-slate-200" : "text-slate-700"}>{entry.name}</span>
+                              <span className={isDark ? "text-slate-400" : "text-slate-500"}>
+                                {entry.queries} queries ({pct}%)
+                              </span>
                             </div>
                           );
                         })}
@@ -1782,32 +1607,19 @@ export default function AdminDashboard() {
 
                     {/* Section 2: Other Categories */}
                     <div className="space-y-4 border-t lg:border-t-0 lg:border-l pt-8 lg:pt-0 lg:pl-12 border-slate-150 dark:border-slate-800/80">
-                      <h3 className="text-xs font-black uppercase tracking-widest text-amber-550 flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                        Other Categories ({otherList.length})
+                      <h3 className="text-sm font-bold uppercase tracking-widest text-slate-900 dark:text-slate-100">
+                        Other Areas ({otherList.length})
                       </h3>
                       {otherList.length > 0 ? (
-                        <div className="w-full overflow-y-auto pr-2 max-h-[550px] space-y-6">
+                        <div className="w-full overflow-y-auto pr-2 max-h-[550px] divide-y divide-slate-100 dark:divide-slate-800/60">
                           {otherList.map((entry, index) => {
                             const pct = entry.percentage ?? 0;
-                            const color = COLORS[(index + 12) % COLORS.length];
                             return (
-                              <div key={index} className="space-y-2">
-                                <div className="flex items-center justify-between text-xs font-semibold">
-                                  <span className={isDark ? "text-slate-200" : "text-slate-700"}>{entry.name}</span>
-                                  <span className={isDark ? "text-slate-400" : "text-slate-500"}>
-                                    {entry.queries} queries ({pct}%)
-                                  </span>
-                                </div>
-                                <div className={`w-full h-3 rounded-full ${isDark ? "bg-slate-800" : "bg-slate-100"}`}>
-                                  <div
-                                    className="h-full rounded-full transition-all duration-500"
-                                    style={{
-                                      width: `${pct}%`,
-                                      backgroundColor: color
-                                    }}
-                                  />
-                                </div>
+                              <div key={index} className="py-4 first:pt-0 last:pb-0 flex items-center justify-between text-xs font-semibold">
+                                <span className={isDark ? "text-slate-200" : "text-slate-700"}>{entry.name}</span>
+                                <span className={isDark ? "text-slate-400" : "text-slate-500"}>
+                                  {entry.queries} queries ({pct}%)
+                                </span>
                               </div>
                             );
                           })}
@@ -1824,16 +1636,6 @@ export default function AdminDashboard() {
               </div>
             );
           })()}
-
-          {/* VIEW: SLA & OPERATIONS */}
-          {activeView === "sla" && isAuthorized && (
-            <SlaView isDark={isDark} onNavigate={setActiveView} />
-          )}
-
-          {/* VIEW: CALENDAR */}
-          {activeView === "calendar" && isAuthorized && (
-            <CalendarView tickets={tickets} role="admin" />
-          )}
 
           {/* VIEW: ADMIN SETTINGS */}
           {activeView === "settings" && (
@@ -1891,7 +1693,7 @@ export default function AdminDashboard() {
                   </div>
                   <div className="p-7 space-y-6">
                     <p className="text-sm text-slate-500 leading-relaxed">
-                      As an administrator, you can enable a parallel <strong>Lawyer Profile</strong>. This allows you to claim and manage cases while retaining full administrative authority.
+                      As an administrator, you can enable a parallel <strong>Lawyer Profile</strong>. This allows you to claim and manage matters while retaining full administrative authority.
                     </p>
 
                     {hasLawyerDashboard ? (
@@ -1917,7 +1719,7 @@ export default function AdminDashboard() {
                         </div>
                         <div>
                           <h3 className="font-bold">Enable Lawyer Features</h3>
-                          <p className="text-xs text-slate-500 mt-1">Activate your profile in the lawyer case queue.</p>
+                          <p className="text-xs text-slate-500 mt-1">Activate your profile in the lawyer matter queue.</p>
                         </div>
                         <button
                           onClick={handleEnableLawyerFeatures}
@@ -1945,7 +1747,7 @@ export default function AdminDashboard() {
                   </div>
                   <div>
                     <h2 className="text-xl font-bold tracking-tight">Lawyer Specialization</h2>
-                    <p className="text-sm text-slate-500 mt-1">Select a lawyer to override their title and expertise domains</p>
+                    <p className="text-sm text-slate-500 mt-1">Select a lawyer to override their expertise domains</p>
                   </div>
                 </div>
 
@@ -2021,171 +1823,96 @@ export default function AdminDashboard() {
                     )}
                   </div>
 
-                  {specLawyer && specLawyer.role === 'lawyer' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 pt-6 border-t dark:border-slate-800 animate-in fade-in duration-300">
-                      <div className="lg:col-span-2 space-y-6">
-                        {!isEditingSpec ? (
-                          <>
-                            <div>
-                              <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Specialization Title / Label</label>
-                              <p className={`text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
-                                {specSpecializationLabel || <span className="italic opacity-50 font-normal">No specialization title configured.</span>}
-                              </p>
-                            </div>
+                  {specLawyer && specLawyer.role === 'lawyer' && (() => {
+                    const lawyerTicketsList = tickets.filter(t => t.assigned_lawyer_id === specLawyer.user_id);
+                    const resolvedTicketsList = lawyerTicketsList.filter(t => t.status === 'resolved' || t.status === 'closed');
+                    const lawyerRatingsList = ratings.filter(r => r.lawyer_id === specLawyer.user_id);
+                    const averageRating = lawyerRatingsList.length > 0
+                      ? (lawyerRatingsList.reduce((sum, r) => sum + r.rating, 0) / lawyerRatingsList.length).toFixed(1)
+                      : "N/A";
 
-                            <div>
-                              <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Expertise Areas</label>
-                              {specExpertiseDomains.length > 0 ? (
-                                <div className="flex flex-wrap gap-2">
-                                  {specExpertiseDomains.map((domKey) => {
-                                    const domain = LEGAL_DOMAINS.find(d => d.key.toLowerCase() === domKey.toLowerCase()) || { en: domKey, no: domKey };
-                                    return (
-                                      <div
-                                        key={domKey}
-                                        className={`px-3 py-2 rounded-lg border text-xs font-bold ${isDark
-                                          ? "bg-indigo-500/10 border-indigo-500/35 text-indigo-400"
-                                          : "bg-indigo-50 border-indigo-100 text-indigo-700"
-                                          }`}
-                                      >
-                                        <div>{domain.en}</div>
-                                        <div className="text-[9px] opacity-60 font-medium mt-0.5">{domain.no}</div>
-                                      </div>
-                                    );
-                                  })}
+                    return (
+                      <div className="space-y-8 pt-6 border-t dark:border-slate-800 animate-in fade-in duration-300">
+                        {/* Number of Tickets & Rating Side-by-Side */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
+                          {/* Number of Tickets */}
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Number of Tickets</label>
+                            <p className={`text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                              {lawyerTicketsList.length} {lawyerTicketsList.length === 1 ? "ticket" : "tickets"} assigned
+                            </p>
+                          </div>
+
+                          {/* Rating */}
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Rating</label>
+                            {averageRating !== "N/A" ? (
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center text-amber-500">
+                                  {[1, 2, 3, 4, 5].map((star) => (
+                                    <Star
+                                      key={star}
+                                      size={16}
+                                      fill={star <= Math.round(Number(averageRating)) ? "#f59e0b" : "none"}
+                                      color={star <= Math.round(Number(averageRating)) ? "#f59e0b" : "#475569"}
+                                    />
+                                  ))}
                                 </div>
-                              ) : (
-                                <p className="text-sm italic text-slate-500 opacity-50 font-normal">No expertise areas configured.</p>
-                              )}
-                            </div>
+                                <span className={`text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                                  {averageRating} / 5.0
+                                </span>
+                              </div>
+                            ) : (
+                              <p className="text-sm italic text-slate-500 opacity-50 font-normal">No ratings submitted yet.</p>
+                            )}
+                          </div>
+                        </div>
 
-                            <div className="pt-2">
-                              <button
-                                onClick={() => setIsEditingSpec(true)}
-                                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-black uppercase tracking-widest shadow-md hover:shadow-lg transition-all"
-                              >
-                                Edit Specialization
-                              </button>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div>
-                              <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Specialization Title / Label</label>
-                              <input
-                                type="text"
-                                value={specSpecializationLabel}
-                                onChange={(e) => setSpecSpecializationLabel(e.target.value)}
-                                placeholder="e.g. Senior Partner, Employment Specialist"
-                                className={`w-full px-4 py-3 rounded-xl border text-sm transition-all focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-550 ${isDark ? "bg-slate-955 border-slate-800 text-white placeholder-slate-600" : "bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400"}`}
-                              />
-                            </div>
+                        {/* Expertise Areas */}
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Expertise Areas</label>
+                          {(() => {
+                            const selectedDomains = LEGAL_DOMAINS.filter(domain =>
+                              specExpertiseDomains.some(d => d.toLowerCase() === domain.key.toLowerCase())
+                            );
+                            const hasCommon = specExpertiseDomains.some(d => d.toLowerCase() === "common");
 
-                            <div>
-                              <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Expertise Areas (Chosen)</label>
-                              {specExpertiseDomains.length > 0 ? (
-                                <div className="flex flex-wrap gap-2 mb-4">
-                                  {specExpertiseDomains.map((domKey) => {
-                                    const domain = LEGAL_DOMAINS.find(d => d.key.toLowerCase() === domKey.toLowerCase()) || { en: domKey, no: domKey };
-                                    return (
-                                      <div
-                                        key={domKey}
-                                        onClick={() => {
-                                          setSpecExpertiseDomains(prev => prev.filter(d => d.toLowerCase() !== domKey.toLowerCase()));
-                                        }}
-                                        className={`px-3 py-2 rounded-lg border text-xs font-bold cursor-pointer transition-all hover:bg-red-50 hover:border-red-200 hover:text-red-650 dark:hover:bg-red-950/20 dark:hover:border-red-900/40 dark:hover:text-red-400 ${isDark
-                                          ? "bg-indigo-500/10 border-indigo-500/35 text-indigo-400"
-                                          : "bg-indigo-50 border-indigo-100 text-indigo-700"
-                                          }`}
-                                        title="Click to remove"
-                                      >
-                                        <span className="flex items-center gap-1.5">
-                                          <span>{domain.en}</span>
-                                          <span className="text-[10px] opacity-70">✕</span>
-                                        </span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              ) : (
-                                <p className="text-sm italic text-slate-500 opacity-50 mb-4">No expertise areas chosen yet.</p>
-                              )}
-                            </div>
+                            if (!hasCommon && selectedDomains.length === 0) {
+                              return <p className="text-sm italic text-slate-500 opacity-50 font-normal">No expertise areas configured.</p>;
+                            }
 
-                            <div>
-                              <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Remaining Areas (Click to Add)</label>
-                              {(() => {
-                                const remaining = LEGAL_DOMAINS.filter(
-                                  domain => !specExpertiseDomains.some(d => d.toLowerCase() === domain.key.toLowerCase())
-                                );
-                                if (remaining.length === 0) {
-                                  return <p className="text-xs italic text-slate-500 opacity-50">All domains have been selected.</p>;
-                                }
-                                return (
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    {remaining.map((domain) => (
-                                      <div
-                                        key={domain.key}
-                                        onClick={() => {
-                                          setSpecExpertiseDomains(prev => [...prev, domain.key]);
-                                        }}
-                                        className={`p-4 rounded-xl border flex items-start gap-3 cursor-pointer select-none transition-all ${isDark
-                                          ? "bg-slate-955/40 border-slate-800/50 hover:border-indigo-500/50 hover:bg-indigo-500/5 text-slate-400 hover:text-indigo-400"
-                                          : "bg-white border-slate-200 hover:border-indigo-300 hover:bg-indigo-550/5 text-slate-655 hover:text-indigo-900"
-                                          }`}
-                                      >
-                                        <div>
-                                          <span className="text-xs font-bold block">{domain.en}</span>
-                                          <span className="text-[10px] opacity-60 block mt-0.5">{domain.no}</span>
-                                        </div>
-                                      </div>
-                                    ))}
+                            return (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {hasCommon && (
+                                  <div
+                                    className={`p-4 rounded-xl border flex items-start gap-3 select-none ${isDark ? "bg-indigo-500/10 border-indigo-500/30 text-white" : "bg-indigo-50 border-indigo-150 text-indigo-900"
+                                      }`}
+                                  >
+                                    <div>
+                                      <span className="text-xs font-bold block">Generalist (Common)</span>
+                                      <span className="text-[10px] opacity-60 block mt-0.5">Receives matches for all matter domains</span>
+                                    </div>
                                   </div>
-                                );
-                              })()}
-                            </div>
-
-                            <div className="flex gap-4 pt-4">
-                              <button
-                                onClick={async () => {
-                                  await handleSaveSpecPageOverride();
-                                  setIsEditingSpec(false);
-                                }}
-                                disabled={savingSpec}
-                                className="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50"
-                              >
-                                {savingSpec ? "Saving..." : "Save Overrides"}
-                              </button>
-
-                              <button
-                                onClick={() => {
-                                  setSpecExpertiseDomains(specLawyer.lawyer_profiles?.expertise_domains || []);
-                                  setSpecSpecializationLabel(specLawyer.lawyer_profiles?.specialization_label || "");
-                                  setIsEditingSpec(false);
-                                }}
-                                className={`px-8 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${isDark
-                                  ? "border-slate-800 text-slate-400 hover:bg-slate-800"
-                                  : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                                  }`}
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </>
-                        )}
+                                )}
+                                {selectedDomains.map((domain) => (
+                                  <div
+                                    key={domain.key}
+                                    className={`p-4 rounded-xl border flex items-start gap-3 select-none ${isDark ? "bg-indigo-500/10 border-indigo-500/30 text-white" : "bg-indigo-50 border-indigo-150 text-indigo-900"
+                                      }`}
+                                  >
+                                    <div>
+                                      <span className="text-xs font-bold block">{domain.en}</span>
+                                      <span className="text-[10px] opacity-60 block mt-0.5">{domain.no}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                        </div>
                       </div>
-
-                      <div className={`p-6 rounded-2xl border h-fit ${isDark ? "bg-indigo-500/5 border-indigo-500/10 text-indigo-200" : "bg-indigo-50 border-indigo-100 text-indigo-900"}`}>
-                        <h3 className="font-bold flex items-center gap-2 mb-4">
-                          <ShieldCheck size={18} />
-                          Admin
-                        </h3>
-                        <p className="text-xs font-medium opacity-80 leading-relaxed">
-                          Modifying these settings will immediately update the lawyer's profile and matching logic in the queue.
-                          The lawyer will be prioritized for any incoming matters that match the updated domains.
-                        </p>
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               </div>
             </div>

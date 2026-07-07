@@ -1204,14 +1204,17 @@ export default function LawyerDashboard() {
                         const isDomainMatch = ticket.detected_domain && expertiseDomains.some(d => d.toLowerCase() === ticket.detected_domain.toLowerCase());
                         return (
                           <div key={ticket.ticket_id} className={`p-4 rounded-xl border flex flex-col gap-3.5 ${isDark ? "bg-slate-950/40 border-slate-800" : "bg-slate-50 border-slate-200"}`}>
-                            <div className="flex items-center gap-3">
-                              <div className="h-10 w-10 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-bold shrink-0">
-                                {(ticket.user_display_name || "U").charAt(0)}
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="h-10 w-10 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-bold shrink-0">
+                                  {(ticket.user_display_name || "U").charAt(0)}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-bold truncate">{ticket.user_display_name || "Anonymous"}</p>
+                                  <p className="text-[10px] text-slate-500 truncate">{ticket.user_email}</p>
+                                </div>
                               </div>
-                              <div className="min-w-0">
-                                <p className="text-sm font-bold truncate">{ticket.user_display_name || "Anonymous"}</p>
-                                <p className="text-[10px] text-slate-500 truncate">{ticket.user_email}</p>
-                              </div>
+                              <span className="font-mono text-xs text-slate-500 shrink-0">#{ticket.ticket_id.substring(0, 8)}</span>
                             </div>
                             {ticket.detected_domain && (
                               <div>
@@ -1250,6 +1253,7 @@ export default function LawyerDashboard() {
                     <table className="w-full">
                       <thead>
                         <tr className="text-left border-b border-slate-100 dark:border-slate-800">
+                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Ticket ID</th>
                           <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity Details</th>
                           <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500">Matter Summary</th>
                           <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Actions</th>
@@ -1257,14 +1261,17 @@ export default function LawyerDashboard() {
                       </thead>
                       <tbody className={`divide-y ${isDark ? "divide-slate-800" : "divide-slate-100"}`}>
                         {loading ? (
-                          <tr><td colSpan="3" className="px-8 py-20 text-center text-xs font-bold text-slate-400">Loading Queue...</td></tr>
+                          <tr><td colSpan="4" className="px-8 py-20 text-center text-xs font-bold text-slate-400">Loading Queue...</td></tr>
                         ) : queueTickets.length === 0 ? (
-                          <tr><td colSpan="3" className="px-8 py-20 text-center text-xs font-bold text-slate-400 uppercase tracking-widest">No open matters found</td></tr>
+                          <tr><td colSpan="4" className="px-8 py-20 text-center text-xs font-bold text-slate-400 uppercase tracking-widest">No open matters found</td></tr>
                         ) : (
                           queueTickets.map((ticket) => {
                             const isDomainMatch = ticket.detected_domain && expertiseDomains.some(d => d.toLowerCase() === ticket.detected_domain.toLowerCase());
                             return (
                               <tr key={ticket.ticket_id} className={`group transition-colors ${isDark ? "hover:bg-slate-800/30" : "hover:bg-slate-50/50"}`}>
+                                <td className="px-8 py-6">
+                                  <span className="font-mono text-xs text-slate-500">#{ticket.ticket_id.substring(0, 8)}</span>
+                                </td>
                                 <td className="px-8 py-6">
                                   <div className="flex items-center gap-4">
                                     <div className="h-10 w-10 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-bold">{(ticket.user_display_name || "U").charAt(0)}</div>
@@ -1836,67 +1843,120 @@ export default function LawyerDashboard() {
                   <div className="lg:col-span-2 space-y-6">
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Expertise Areas (Select all that apply)</label>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">
+                        {isEditingSpecialization ? "Expertise Areas (Select all that apply)" : "Your Specializations"}
+                      </label>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {/* Common (Generalist) Checkbox */}
-                        <label
-                          key="common"
-                          className={`p-4 rounded-xl border flex items-start gap-3 select-none transition-all ${!isEditingSpecialization ? "cursor-not-allowed opacity-60" : "cursor-pointer"
-                            } ${expertiseDomains.some(d => d.toLowerCase() === "common")
-                              ? (isDark ? "bg-indigo-500/10 border-indigo-500/40 text-white" : "bg-indigo-50 border-indigo-200 text-indigo-900")
-                              : (isDark ? "bg-slate-950/40 border-slate-800/50 hover:border-slate-750 text-slate-400" : "bg-white border-slate-200 hover:border-slate-300 text-slate-600")
-                            }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={expertiseDomains.some(d => d.toLowerCase() === "common")}
-                            disabled={!isEditingSpecialization}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setExpertiseDomains(prev => [...prev, "Common"]);
-                              } else {
-                                setExpertiseDomains(prev => prev.filter(d => d.toLowerCase() !== "common"));
-                              }
-                            }}
-                            className="mt-1 rounded text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
-                          />
-                          <div>
-                            <span className="text-xs font-bold block">Generalist (Common)</span>
-                            <span className="text-[10px] opacity-60 block mt-0.5">Receives matches for all case domains</span>
-                          </div>
-                        </label>
-
-                        {LEGAL_DOMAINS.map((domain) => {
-                          const isChecked = expertiseDomains.some(d => d.toLowerCase() === domain.key.toLowerCase());
-                          return (
+                        {isEditingSpecialization ? (
+                          <>
+                            {/* Common (Generalist) Checkbox */}
                             <label
-                              key={domain.key}
-                              className={`p-4 rounded-xl border flex items-start gap-3 select-none transition-all ${!isEditingSpecialization ? "cursor-not-allowed opacity-60" : "cursor-pointer"
-                                } ${isChecked
+                              key="common"
+                              className={`p-4 rounded-xl border flex items-start gap-3 select-none transition-all cursor-pointer ${
+                                expertiseDomains.some(d => d.toLowerCase() === "common")
                                   ? (isDark ? "bg-indigo-500/10 border-indigo-500/40 text-white" : "bg-indigo-50 border-indigo-200 text-indigo-900")
                                   : (isDark ? "bg-slate-950/40 border-slate-800/50 hover:border-slate-750 text-slate-400" : "bg-white border-slate-200 hover:border-slate-300 text-slate-600")
-                                }`}
+                              }`}
                             >
                               <input
                                 type="checkbox"
-                                checked={isChecked}
-                                disabled={!isEditingSpecialization}
+                                checked={expertiseDomains.some(d => d.toLowerCase() === "common")}
                                 onChange={(e) => {
                                   if (e.target.checked) {
-                                    setExpertiseDomains(prev => [...prev, domain.key]);
+                                    setExpertiseDomains(prev => [...prev, "Common"]);
                                   } else {
-                                    setExpertiseDomains(prev => prev.filter(d => d.toLowerCase() !== domain.key.toLowerCase()));
+                                    setExpertiseDomains(prev => prev.filter(d => d.toLowerCase() !== "common"));
                                   }
                                 }}
-                                className="mt-1 rounded text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+                                className="mt-1 rounded text-indigo-600 focus:ring-indigo-500"
                               />
                               <div>
-                                <span className="text-xs font-bold block">{domain.en}</span>
-                                <span className="text-[10px] opacity-60 block mt-0.5">{domain.no}</span>
+                                <span className="text-xs font-bold block">Generalist (Common)</span>
+                                <span className="text-[10px] opacity-60 block mt-0.5">Receives matches for all case domains</span>
                               </div>
                             </label>
-                          );
-                        })}
+
+                            {LEGAL_DOMAINS.map((domain) => {
+                              const isChecked = expertiseDomains.some(d => d.toLowerCase() === domain.key.toLowerCase());
+                              return (
+                                <label
+                                  key={domain.key}
+                                  className={`p-4 rounded-xl border flex items-start gap-3 select-none transition-all cursor-pointer ${
+                                    isChecked
+                                      ? (isDark ? "bg-indigo-500/10 border-indigo-500/40 text-white" : "bg-indigo-50 border-indigo-200 text-indigo-900")
+                                      : (isDark ? "bg-slate-950/40 border-slate-800/50 hover:border-slate-750 text-slate-400" : "bg-white border-slate-200 hover:border-slate-300 text-slate-600")
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setExpertiseDomains(prev => [...prev, domain.key]);
+                                      } else {
+                                        setExpertiseDomains(prev => prev.filter(d => d.toLowerCase() !== domain.key.toLowerCase()));
+                                      }
+                                    }}
+                                    className="mt-1 rounded text-indigo-600 focus:ring-indigo-500"
+                                  />
+                                  <div>
+                                    <span className="text-xs font-bold block">{domain.en}</span>
+                                    <span className="text-[10px] opacity-60 block mt-0.5">{domain.no}</span>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </>
+                        ) : (
+                          // Read-only chosen domains view
+                          (() => {
+                            const selectedDomains = LEGAL_DOMAINS.filter(domain => 
+                              expertiseDomains.some(d => d.toLowerCase() === domain.key.toLowerCase())
+                            );
+                            const hasCommon = expertiseDomains.some(d => d.toLowerCase() === "common");
+
+                            if (!hasCommon && selectedDomains.length === 0) {
+                              return (
+                                <div className={`col-span-2 p-8 text-center rounded-2xl border border-dashed ${
+                                  isDark ? "border-slate-800 text-slate-500" : "border-slate-200 text-slate-450"
+                                }`}>
+                                  <p className="text-xs font-bold uppercase tracking-wider">No specializations chosen yet</p>
+                                  <p className="text-[11px] mt-1 font-medium text-slate-400 dark:text-slate-500">Click the edit button below to configure your profile.</p>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <>
+                                {hasCommon && (
+                                  <div
+                                    className={`p-4 rounded-xl border flex items-start gap-3 select-none ${
+                                      isDark ? "bg-indigo-500/10 border-indigo-500/30 text-white" : "bg-indigo-50 border-indigo-150 text-indigo-900"
+                                    }`}
+                                  >
+                                    <div>
+                                      <span className="text-xs font-bold block">Generalist (Common)</span>
+                                      <span className="text-[10px] opacity-60 block mt-0.5">Receives matches for all case domains</span>
+                                    </div>
+                                  </div>
+                                )}
+                                {selectedDomains.map((domain) => (
+                                  <div
+                                    key={domain.key}
+                                    className={`p-4 rounded-xl border flex items-start gap-3 select-none ${
+                                      isDark ? "bg-indigo-500/10 border-indigo-500/30 text-white" : "bg-indigo-50 border-indigo-150 text-indigo-900"
+                                    }`}
+                                  >
+                                    <div>
+                                      <span className="text-xs font-bold block">{domain.en}</span>
+                                      <span className="text-[10px] opacity-60 block mt-0.5">{domain.no}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </>
+                            );
+                          })()
+                        )}
                       </div>
                     </div>
 

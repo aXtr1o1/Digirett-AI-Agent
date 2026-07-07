@@ -81,6 +81,14 @@ const ChatContainer = ({
     }
   }, [conversationId]);
 
+  React.useEffect(() => {
+    const handleNewChatTriggered = () => {
+      setComposerKey("new-chat-" + Date.now());
+    };
+    window.addEventListener("new_chat_triggered", handleNewChatTriggered);
+    return () => window.removeEventListener("new_chat_triggered", handleNewChatTriggered);
+  }, []);
+
   return (
     <div className="flex flex-col h-full w-full bg-transparent">
       {(error || uploadError) && (
@@ -113,7 +121,7 @@ const ChatContainer = ({
       </div>
 
       <div className="flex-shrink-0 bg-transparent">
-        <div className="max-w-2xl mx-auto w-full px-4 py-4">
+        <div id="chat-composer-container" className="max-w-2xl mx-auto w-full px-4 py-4">
           <MessageComposer
             key={composerKey}
             onSend={sendMessage}
