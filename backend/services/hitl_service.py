@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 from db.supabase_client import SupabaseClient
@@ -639,7 +639,8 @@ class HitlService:
                     "users!hitl_tickets_user_id_fkey("
                     "  email, "
                     "  user_profiles(display_name)"
-                    ")"
+                    "),"
+                    "conversations!hitl_tickets_conversation_id_fkey(conversation_summary)"
                 ) \
                 .eq("assigned_lawyer_id", lawyer_id) \
                 .in_("status", ["resolved", "closed"]) \
@@ -653,6 +654,9 @@ class HitlService:
                 raw_profile = raw_user.get("user_profiles", {}) or {}
                 ticket["user_display_name"] = raw_profile.get("display_name")
                 ticket["user_email"] = raw_user.get("email")
+                
+                conv_data = ticket.pop("conversations", {}) or {}
+                ticket["conversation_summary"] = conv_data.get("conversation_summary")
                 
             return data
         except Exception as exc:
@@ -1169,3 +1173,124 @@ class HitlService:
         except Exception as exc:
             logger.error(f"❌ Error during auto-closing stale tickets | {exc}")
             return 0
+
+    def get_lawyer_personal_analytics(self, lawyer_id: str) -> Dict[str, Any]:
+        """
+        Calculates personal analytics for the lawyer:
+        1. Total Cases Handled
+        2. Cases This Week
+        3. Avg Response Time (All-Time) in seconds
+        4. Avg Resolution Time (All-Time) in seconds
+        5. Customer Rating (Average out of 5.0)
+        6. Acceptance Rate (Percentage)
+        """
+        try:
+            # 1. Fetch all resolved/closed tickets once
+            all_resolved_resp = self._supabase.table("hitl_tickets") \
+                .select("ticket_id, created_at, assigned_at, resolved_at") \
+                .eq("assigned_lawyer_id", lawyer_id) \
+                .in_("status", ["resolved", "closed"]) \
+                .execute()
+            resolved_list = all_resolved_resp.data or []
+            total_count = len(resolved_list)
+
+            # 2. Cases This Week (filtered from resolved_list)
+            now = datetime.now(timezone.utc)
+            monday = now - timedelta(days=now.weekday())
+            monday_start_dt = datetime(monday.year, monday.month, monday.day, tzinfo=timezone.utc)
+            
+            weekly_count = 0
+            for r in resolved_list:
+                res_str = r.get("resolved_at")
+                if res_str:
+                    try:
+                        res_dt = datetime.fromisoformat(res_str.replace("Z", "+00:00"))
+                        if res_dt >= monday_start_dt:
+                            weekly_count += 1
+                    except Exception as exc:
+                        logger.warning(f"Failed to parse resolved_at date for ticket {r.get('ticket_id')} | {exc}")
+
+            # 3. Avg Resolution Time (All-Time)
+            resolution_seconds = []
+            for r in resolved_list:
+                a_str = r.get("assigned_at")
+                res_str = r.get("resolved_at")
+                if a_str and res_str:
+                    try:
+                        a_dt = datetime.fromisoformat(a_str.replace("Z", "+00:00"))
+                        res_dt = datetime.fromisoformat(res_str.replace("Z", "+00:00"))
+                        resolution_seconds.append((res_dt - a_dt).total_seconds())
+                    except Exception as exc:
+                        logger.warning(f"Failed to calculate resolution time for ticket {r.get('ticket_id')} | {exc}")
+            avg_resolution = sum(resolution_seconds) / len(resolution_seconds) if resolution_seconds else 0.0
+
+            # 4. Avg Response Time (All-Time) - calculated as time to claim (assigned_at - created_at)
+            response_seconds = []
+            for t in resolved_list:
+                c_str = t.get("created_at")
+                a_str = t.get("assigned_at")
+                if c_str and a_str:
+                    try:
+                        c_dt = datetime.fromisoformat(c_str.replace("Z", "+00:00"))
+                        a_dt = datetime.fromisoformat(a_str.replace("Z", "+00:00"))
+                        response_seconds.append((a_dt - c_dt).total_seconds())
+                    except Exception as exc:
+                        logger.warning(f"Failed to calculate response time for ticket {t.get('ticket_id')} | {exc}")
+            avg_response = sum(response_seconds) / len(response_seconds) if response_seconds else 0.0
+
+            # 5. Customer Rating
+            ratings_resp = self._supabase.table("consultation_ratings") \
+                .select("rating") \
+                .eq("lawyer_id", lawyer_id) \
+                .execute()
+            ratings_list = ratings_resp.data or []
+            avg_rating = sum(r["rating"] for r in ratings_list) / len(ratings_list) if ratings_list else 0.0
+
+            # 6. Acceptance Rate (My Claimed Cases / Total Escalated Cases) using exact count queries
+            total_tickets_resp = self._supabase.table("hitl_tickets").select("ticket_id", count="exact").execute()
+            total_tickets_count = total_tickets_resp.count or 0
+
+            my_claimed_resp = self._supabase.table("hitl_tickets").select("ticket_id", count="exact").eq("assigned_lawyer_id", lawyer_id).execute()
+            my_claimed_count = my_claimed_resp.count or 0
+
+            acceptance_rate = (my_claimed_count / total_tickets_count) * 100.0 if total_tickets_count > 0 else 0.0
+
+            # 7. AI Bot vs Human Escalation Stats
+            total_convs_resp = self._supabase.table("conversations").select("conversation_id", count="exact").execute()
+            total_convs = total_convs_resp.count or 0
+
+            total_tickets_resp = self._supabase.table("hitl_tickets").select("ticket_id", count="exact").execute()
+            total_tickets = total_tickets_resp.count or 0
+
+            user_msgs_resp = self._supabase.table("messages").select("message_id", count="exact").eq("role", "user").execute()
+            user_msgs = user_msgs_resp.count or 0
+
+            bot_msgs_resp = self._supabase.table("messages").select("message_id", count="exact").eq("role", "assistant").execute()
+            bot_msgs = bot_msgs_resp.count or 0
+
+            return {
+                "total_cases_handled": total_count,
+                "cases_this_week": weekly_count,
+                "avg_response_time_seconds": int(avg_response),
+                "avg_resolution_time_seconds": int(avg_resolution),
+                "acceptance_rate_percentage": round(acceptance_rate, 1),
+                "average_rating": round(avg_rating, 2),
+                "total_conversations": total_convs,
+                "total_escalations": total_tickets,
+                "total_user_messages": user_msgs,
+                "total_bot_messages": bot_msgs
+            }
+        except Exception as exc:
+            logger.error(f"❌ get_lawyer_personal_analytics failed for {lawyer_id} | {exc}")
+            return {
+                "total_cases_handled": 0,
+                "cases_this_week": 0,
+                "avg_response_time_seconds": 0,
+                "avg_resolution_time_seconds": 0,
+                "acceptance_rate_percentage": 100.0,
+                "average_rating": 0.0,
+                "total_conversations": 0,
+                "total_escalations": 0,
+                "total_user_messages": 0,
+                "total_bot_messages": 0
+            }

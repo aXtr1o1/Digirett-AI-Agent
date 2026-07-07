@@ -1,9 +1,9 @@
 import logging
+import hashlib
 import re
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
-
 import fitz  # PyMuPDF
 from langdetect import detect, LangDetectException
 
@@ -285,11 +285,58 @@ class DocumentService:
                 f"You can upload a maximum of {settings.DOC_MAX_PER_SESSION} documents per session "
                 f"(4-hour session). Your session will reset after 4 hours."
             )
-
-        # ── Parse ────────────────────────────────────────────────────────
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
         ext = filename.rsplit(".", 1)[-1].lower()
-        extracted_text = self.parse_document(file_bytes, filename)
-        char_count = len(extracted_text)
+
+        # ── Check if physical file exists in uploaded_files ──────────────
+        existing_file = None
+        is_duplicate = False
+        try:
+            res = self._supabase.table("uploaded_files") \
+                .select("file_hash, extracted_text, char_count, storage_path, summary") \
+                .eq("file_hash", file_hash) \
+                .execute()
+            if res.data:
+                existing_file = res.data[0]
+                is_duplicate = True
+                logger.info(f"✨ Duplicate file detected by SHA-256 hash: {file_hash}")
+        except Exception as exc:
+            logger.warning(f"⚠️ Failed to query uploaded_files (possibly missing table): {exc}")
+
+        if existing_file:
+            extracted_text = existing_file["extracted_text"]
+            char_count = existing_file["char_count"]
+            storage_path = existing_file["storage_path"]
+        else:
+            # ── Parse ────────────────────────────────────────────────────────
+            extracted_text = self.parse_document(file_bytes, filename)
+            char_count = len(extracted_text)
+            storage_path = f"uploads/{file_hash}.{ext}"
+
+            # ── Store binary content in Supabase Storage ──────────────────────
+            try:
+                self._supabase._get().storage.from_("lovdata-documents").upload(
+                    path=storage_path,
+                    file=file_bytes,
+                    file_options={"content-type": f"application/{ext}" if ext != 'pdf' else 'application/pdf'}
+                )
+                logger.info(f"💾 Binary file uploaded to storage | path={storage_path}")
+            except Exception as storage_exc:
+                logger.error(f"❌ Supabase Storage upload failed | {storage_exc}")
+                # Don't fail completely if storage fails, RAG text is primary
+
+            # ── Store in uploaded_files table ───────────────────────────────
+            try:
+                self._supabase.table("uploaded_files").insert({
+                    "file_hash": file_hash,
+                    "extracted_text": extracted_text,
+                    "char_count": char_count,
+                    "storage_path": storage_path,
+                }).execute()
+                logger.info(f"💾 File text and metadata stored in uploaded_files table | hash={file_hash}")
+            except Exception as exc:
+                # Handle race conditions / concurrent identical uploads gracefully
+                logger.warning(f"⚠️ uploaded_files insert failed (may already exist from concurrent upload) | {exc}")
 
         # ── Detect language ──────────────────────────────────────────────
         document_language = self.detect_document_language(extracted_text)
@@ -333,30 +380,16 @@ class DocumentService:
                 "session_id":     session["session_id"],
                 "file_name":      filename,
                 "file_type":      ext,
-                "extracted_text": extracted_text,
+                "extracted_text": None,  # Save space by not duplicating extracted_text
                 "char_count":     char_count,
                 "language":       document_language,
                 "upload_order":   upload_order,
                 "is_active":      True,
                 "created_at":     now.isoformat(),
                 "expires_at":     expires_at.isoformat(),
+                "file_hash":      file_hash,
             }).execute()
             logger.info(f"💾 Doc metadata saved in Supabase | document_id={document_id}")
-            
-            # ── Store binary content in Supabase Storage ──────────────────────
-            # Bucket: 'lovdata-documents' | Path: 'uploads/{document_id}.{ext}'
-            try:
-                storage_path = f"uploads/{document_id}.{ext}"
-                self._supabase._get().storage.from_("lovdata-documents").upload(
-                    path=storage_path,
-                    file=file_bytes,
-                    file_options={"content-type": f"application/{ext}" if ext != 'pdf' else 'application/pdf'}
-                )
-                logger.info(f"💾 Binary file uploaded to storage | path={storage_path}")
-            except Exception as storage_exc:
-                logger.error(f"❌ Supabase Storage upload failed | {storage_exc}")
-                # We don't fail the whole request since RAG can still work with the text
-                
         except Exception as exc:
             logger.error(f"❌ Supabase doc store failed | {exc}")
             # Don't raise — Redis has the text, pipeline can still work
@@ -390,12 +423,27 @@ class DocumentService:
             "language":     document_language,
             "upload_order": upload_order,
             "docs_remaining": settings.DOC_MAX_PER_SESSION - upload_order,
+            "duplicate":    is_duplicate,
+            "file_hash":    file_hash,
+            "summary":      existing_file.get("summary") if existing_file else None,
         }
         logger.info(
             f"✅ Document stored | id={document_id} | order={upload_order} | "
-            f"chars={char_count:,} | conv={conversation_id}"
+            f"chars={char_count:,} | conv={conversation_id} | duplicate={is_duplicate}"
         )
         return doc_meta
+
+    def update_file_summary(self, file_hash: str, summary: str) -> None:
+        """
+        Updates the summary cache for a physical file in the database.
+        """
+        try:
+            self._supabase.table("uploaded_files").update({
+                "summary": summary
+            }).eq("file_hash", file_hash).execute()
+            logger.info(f"💾 Updated summary cache in database for file_hash: {file_hash}")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to update summary in uploaded_files: {e}")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # RETRIEVE DOCUMENT TEXT
@@ -410,7 +458,7 @@ class DocumentService:
             # 1. Get metadata to know the extension/type
             doc_data = (
                 self._supabase.table("documents")
-                .select("file_name, file_type")
+                .select("file_name, file_type, file_hash")
                 .eq("document_id", document_id)
                 .single()
                 .execute()
@@ -421,9 +469,14 @@ class DocumentService:
             
             filename = doc_data.data["file_name"]
             ext = doc_data.data["file_type"]
+            file_hash = doc_data.data.get("file_hash")
             
             # 2. Fetch from Storage
-            storage_path = f"uploads/{document_id}.{ext}"
+            if file_hash:
+                storage_path = f"uploads/{file_hash}.{ext}"
+            else:
+                storage_path = f"uploads/{document_id}.{ext}"
+                
             file_bytes = self._supabase._get().storage.from_("lovdata-documents").download(storage_path)
             
             content_type = "application/pdf" if ext == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -453,23 +506,38 @@ class DocumentService:
         try:
             response = (
                 self._supabase.table("documents")
-                .select("extracted_text")
+                .select("extracted_text, file_hash")
                 .eq("document_id", document_id)
                 .eq("is_active", True)
                 .single()
                 .execute()
             )
             if response.data:
-                text = response.data.get("extracted_text", "")
-                # Re-warm Redis cache
-                try:
-                    self._redis._get().setex(
-                        f"doc:text:{document_id}",
-                        SESSION_TTL_SECONDS,
-                        text,
+                text = response.data.get("extracted_text")
+                file_hash = response.data.get("file_hash")
+                
+                # Fetch from uploaded_files if extracted_text is not stored directly
+                if not text and file_hash:
+                    file_resp = (
+                        self._supabase.table("uploaded_files")
+                        .select("extracted_text")
+                        .eq("file_hash", file_hash)
+                        .single()
+                        .execute()
                     )
-                except Exception:
-                    pass
+                    if file_resp.data:
+                        text = file_resp.data.get("extracted_text", "")
+                
+                # Re-warm Redis cache
+                if text:
+                    try:
+                        self._redis._get().setex(
+                            f"doc:text:{document_id}",
+                            SESSION_TTL_SECONDS,
+                            text,
+                        )
+                    except Exception as exc:
+                        logger.warning(f"Failed to update Redis cache for doc {document_id} | {exc}")
                 return text
         except Exception as exc:
             logger.error(f"❌ Supabase doc text get failed | {exc}")

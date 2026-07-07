@@ -22,6 +22,7 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
   const [miniDate, setMiniDate] = useState(new Date());
   const [viewType, setViewType] = useState("week"); // "month" or "week"
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [showSidebar, setShowSidebar] = useState(false);
   
   // Real-time state for time marker line
   const [now, setNow] = useState(new Date());
@@ -225,25 +226,28 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
     }`}>
       
       {/* ── TOP BAR ── */}
-      <header className={`h-16 flex items-center justify-between px-6 border-b transition-colors duration-200 z-10 ${
+      <header className={`h-16 flex items-center justify-between px-3 sm:px-6 border-b transition-colors duration-200 z-10 ${
         isDark ? "border-slate-800 bg-[#0f172a]/60" : "border-slate-200 bg-slate-50/80"
       }`}>
-        <div className="flex items-center gap-6">
-          <button className={`lg:hidden hover:text-indigo-500 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+        <div className="flex items-center gap-2 sm:gap-6 min-w-0">
+          <button 
+            onClick={() => setShowSidebar(true)}
+            className={`lg:hidden p-1.5 hover:text-indigo-500 transition-colors ${isDark ? "text-slate-400" : "text-slate-600"}`}
+          >
             <MenuIcon size={20} />
           </button>
           
-          <div className="flex items-center gap-2.5">
-            <div className="h-10 w-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/25">
-              <CalIcon size={20} />
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/25">
+              <CalIcon size={18} />
             </div>
-            <span className="font-bold text-lg tracking-tight hidden sm:inline">Calendar</span>
+            <span className="font-bold text-base sm:text-lg tracking-tight hidden md:inline">Calendar</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button 
               onClick={goToday}
-              className={`px-4 py-2 border rounded-lg text-xs font-black uppercase tracking-wider transition-all hover:bg-indigo-600/10 ${
+              className={`px-3 py-1.5 border rounded-lg text-[10px] font-black uppercase tracking-wider transition-all hover:bg-indigo-600/10 ${
                 isDark 
                   ? "border-slate-700 hover:border-slate-500 text-slate-200" 
                   : "border-slate-200 hover:border-slate-400 text-slate-700"
@@ -256,24 +260,24 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
             }`}>
               <button 
                 onClick={prevRange}
-                className={`p-1.5 rounded-md transition-colors ${
+                className={`p-1 rounded-md transition-colors ${
                   isDark ? "hover:bg-slate-800 text-slate-400 hover:text-white" : "hover:bg-slate-200 text-slate-600 hover:text-black"
                 }`}
               >
-                <ChevronLeft size={14} />
+                <ChevronLeft size={13} />
               </button>
               <button 
                 onClick={nextRange}
-                className={`p-1.5 rounded-md transition-colors ${
+                className={`p-1 rounded-md transition-colors ${
                   isDark ? "hover:bg-slate-800 text-slate-400 hover:text-white" : "hover:bg-slate-200 text-slate-600 hover:text-black"
                 }`}
               >
-                <ChevronRight size={14} />
+                <ChevronRight size={13} />
               </button>
             </div>
           </div>
 
-          <h2 className={`text-sm font-bold truncate max-w-[200px] md:max-w-none ${
+          <h2 className={`text-xs sm:text-sm font-bold truncate max-w-[100px] xs:max-w-[160px] sm:max-w-none ${
             isDark ? "text-slate-200" : "text-slate-850"
           }`}>
             {getDateRangeHeader()}
@@ -314,11 +318,32 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
       {/* ── MAIN WORKSPACE ── */}
       <div className="flex-1 flex overflow-hidden">
         
-        {/* LEFT SIDEBAR (Desktop only) */}
-        <aside className={`w-64 border-r flex flex-col p-6 gap-8 overflow-y-auto select-none transition-colors duration-200 ${
-          isDark ? "border-slate-800 bg-[#0c1222]/40" : "border-slate-200 bg-slate-50/50"
+        {/* LEFT SIDEBAR (Collapsible drawer overlay on mobile, static sidebar on desktop) */}
+        {showSidebar && (
+          <div 
+            onClick={() => setShowSidebar(false)}
+            className="lg:hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
+          />
+        )}
+
+        <aside className={`w-64 border-r flex flex-col p-6 gap-8 overflow-y-auto select-none transition-all duration-300 z-50 lg:z-0 lg:static ${
+          showSidebar 
+            ? "flex fixed inset-y-0 left-0" 
+            : "hidden lg:flex"
+        } ${
+          isDark ? "border-slate-800 bg-[#0c1222] lg:bg-[#0c1222]/40 text-slate-100" : "border-slate-200 bg-white lg:bg-slate-50/50 text-slate-900"
         }`}>
           
+          <div className="flex items-center justify-between lg:hidden">
+            <span className="text-xs font-black uppercase tracking-widest text-slate-450 dark:text-slate-500">Calendar Menu</span>
+            <button 
+              onClick={() => setShowSidebar(false)} 
+              className={`p-1.5 rounded-lg transition-colors ${isDark ? "hover:bg-slate-800 text-slate-400 hover:text-white" : "hover:bg-slate-100 text-slate-500 hover:text-black"}`}
+            >
+              <X size={16} />
+            </button>
+          </div>
+
           {/* Mini Calendar Widget */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -368,6 +393,7 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
                       if (cell.isPadding) {
                         setMiniDate(cell.dateObj);
                       }
+                      setShowSidebar(false); // Close sidebar on mobile select
                     }}
                     className={`h-7 w-7 text-[10px] font-semibold rounded-full flex items-center justify-center mx-auto transition-all cursor-pointer ${
                       isSelected 
@@ -408,7 +434,7 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
         </aside>
 
         {/* MAIN GRID WINDOW */}
-        <main className="flex-1 flex flex-col overflow-y-auto">
+        <main className="flex-1 flex flex-col overflow-y-auto overflow-x-auto">
           
           {/* MONTH VIEW */}
           {viewType === "month" && (

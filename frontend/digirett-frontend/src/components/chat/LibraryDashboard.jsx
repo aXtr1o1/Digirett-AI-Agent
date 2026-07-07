@@ -22,6 +22,15 @@ import { API_BASE_URL } from "../../utils/constants";
 const LibraryDashboard = ({ theme = "dark" }) => {
   const isDark = theme === "dark";
   const [documents, setDocuments] = useState([]);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all"); // "all", "pdf", "docx"
   
@@ -187,22 +196,24 @@ const LibraryDashboard = ({ theme = "dark" }) => {
       <div
         style={{
           display: "flex",
+          flexDirection: isMobile ? "column" : "row",
+          alignItems: isMobile ? "stretch" : "center",
           justifyContent: "space-between",
-          alignItems: "center",
-          padding: "40px 40px 24px",
+          gap: isMobile ? "16px" : "12px",
+          padding: isMobile ? "24px 16px 16px 72px" : "40px 40px 24px",
           maxWidth: "1000px",
           width: "100%",
           margin: "0 auto",
           boxSizing: "border-box",
         }}
       >
-        <h1 style={{ margin: 0, fontSize: "32px", fontWeight: "600", tracking: "-0.02em" }}>
+        <h1 style={{ margin: 0, fontSize: isMobile ? "26px" : "32px", fontWeight: "600", letterSpacing: "-0.02em" }}>
           Library
         </h1>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", width: isMobile ? "100%" : "auto" }}>
           {/* Search Input */}
-          <div style={{ position: "relative" }}>
+          <div style={{ position: "relative", flex: isMobile ? 1 : "initial" }}>
             <Search
               size={16}
               style={{
@@ -219,7 +230,7 @@ const LibraryDashboard = ({ theme = "dark" }) => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
-                width: "240px",
+                width: isMobile ? "100%" : "240px",
                 padding: "8px 14px 8px 38px",
                 borderRadius: "9999px",
                 fontSize: "14px",
@@ -228,6 +239,7 @@ const LibraryDashboard = ({ theme = "dark" }) => {
                 border: "none",
                 outline: "none",
                 transition: "width 0.2s",
+                boxSizing: "border-box",
               }}
             />
           </div>
@@ -256,6 +268,7 @@ const LibraryDashboard = ({ theme = "dark" }) => {
               alignItems: "center",
               gap: "6px",
               transition: "all 0.15s",
+              flexShrink: 0,
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.backgroundColor = isDark ? "rgba(59, 130, 246, 0.1)" : "#f0f7ff";
@@ -280,7 +293,7 @@ const LibraryDashboard = ({ theme = "dark" }) => {
           display: "flex",
           alignItems: "center",
           gap: "8px",
-          padding: "0 40px 24px",
+          padding: isMobile ? "0 16px 16px" : "0 40px 24px",
           maxWidth: "1000px",
           width: "100%",
           margin: "0 auto",
@@ -368,7 +381,7 @@ const LibraryDashboard = ({ theme = "dark" }) => {
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "0 40px 40px",
+          padding: isMobile ? "0 16px 24px" : "0 40px 40px",
           maxWidth: "1000px",
           width: "100%",
           margin: "0 auto",
@@ -377,22 +390,24 @@ const LibraryDashboard = ({ theme = "dark" }) => {
         className="sidebar-scrollbar-hidden"
       >
         {/* Table Headers */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 120px 100px 140px",
-            padding: "8px 12px",
-            fontSize: "12px",
-            fontWeight: "500",
-            color: textSecondaryColor,
-            borderBottom: `1px solid ${borderColor}`,
-          }}
-        >
-          <div>Name</div>
-          <div>Modified ↓</div>
-          <div style={{ textAlign: "right", paddingRight: "16px" }}>Size</div>
-          <div style={{ textAlign: "right", paddingRight: "12px" }}>Actions</div>
-        </div>
+        {!isMobile && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 120px 100px 140px",
+              padding: "8px 12px",
+              fontSize: "12px",
+              fontWeight: "500",
+              color: textSecondaryColor,
+              borderBottom: `1px solid ${borderColor}`,
+            }}
+          >
+            <div>Name</div>
+            <div>Modified ↓</div>
+            <div style={{ textAlign: "right", paddingRight: "16px" }}>Size</div>
+            <div style={{ textAlign: "right", paddingRight: "12px" }}>Actions</div>
+          </div>
+        )}
 
         {/* Empty State */}
         {filteredDocuments.length === 0 && (
@@ -421,10 +436,12 @@ const LibraryDashboard = ({ theme = "dark" }) => {
               <div
                 className="library-row"
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 120px 100px 140px",
+                  display: isMobile ? "flex" : "grid",
+                  gridTemplateColumns: isMobile ? "none" : "1fr 120px 100px 140px",
                   alignItems: "center",
-                  padding: "14px 12px",
+                  justifyContent: isMobile ? "space-between" : "initial",
+                  gap: isMobile ? "12px" : "initial",
+                  padding: isMobile ? "12px 8px" : "14px 12px",
                   fontSize: "14px",
                   cursor: "default",
                   borderRadius: "8px",
@@ -469,6 +486,7 @@ const LibraryDashboard = ({ theme = "dark" }) => {
                         whiteSpace: "nowrap",
                         cursor: "pointer",
                         alignSelf: "flex-start",
+                        maxWidth: isMobile ? "160px" : "none",
                       }}
                       title="Download / View file"
                       onMouseEnter={(e) => e.currentTarget.style.textDecoration = "underline"}
@@ -476,6 +494,12 @@ const LibraryDashboard = ({ theme = "dark" }) => {
                     >
                       {doc.file_name}
                     </span>
+                    
+                    {isMobile && (
+                      <span style={{ fontSize: "11px", color: textSecondaryColor }}>
+                        {formatDate(doc.created_at)} • {formatSize(doc.char_count)}
+                      </span>
+                    )}
                     
                     {/* Render Edit form inline under filename */}
                     {isEditing ? (
@@ -597,14 +621,18 @@ const LibraryDashboard = ({ theme = "dark" }) => {
                 </div>
 
                 {/* Modified date column */}
-                <div style={{ color: textSecondaryColor, fontSize: "13px" }}>
-                  {formatDate(doc.created_at)}
-                </div>
+                {!isMobile && (
+                  <div style={{ color: textSecondaryColor, fontSize: "13px" }}>
+                    {formatDate(doc.created_at)}
+                  </div>
+                )}
 
                 {/* Size column */}
-                <div style={{ color: textSecondaryColor, fontSize: "13px", textAlign: "right", paddingRight: "16px" }}>
-                  {formatSize(doc.char_count)}
-                </div>
+                {!isMobile && (
+                  <div style={{ color: textSecondaryColor, fontSize: "13px", textAlign: "right", paddingRight: "16px" }}>
+                    {formatSize(doc.char_count)}
+                  </div>
+                )}
 
                 {/* Actions column */}
                 <div

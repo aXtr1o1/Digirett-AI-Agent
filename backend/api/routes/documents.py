@@ -39,6 +39,7 @@ class DocumentUploadResponse(BaseModel):
     upload_order:   int
     docs_remaining: int
     message:        str
+    duplicate:      bool = False
 
 
 class SessionStatusResponse(BaseModel):
@@ -144,16 +145,37 @@ async def upload_document(
     # KEY CHANGE: we now add file_name as a response header so the frontend
     # can read it even from a StreamingResponse
     if _llm_service is not None:
-        doc_text = _document_service.get_document_text(doc_meta["document_id"])
+        cached_summary = doc_meta.get("summary")
+        
+        if cached_summary:
+            import asyncio
+            async def stream_summary():
+                words = cached_summary.split(" ")
+                for i in range(0, len(words), 5):
+                    chunk = " ".join(words[i:i+5]) + " "
+                    yield chunk
+                    await asyncio.sleep(0.01) # fast simulation of LLM stream
 
-        async def stream_summary():
-            async for token in _llm_service.summarize_document_stream(doc_text):
-                yield token
+            logger.info(f"⚡ Streaming cached auto-summary | doc_id={doc_meta['document_id']}")
+        else:
+            doc_text = _document_service.get_document_text(doc_meta["document_id"])
+            
+            accumulated = []
+            async def stream_summary():
+                async for token in _llm_service.summarize_document_stream(doc_text):
+                    accumulated.append(token)
+                    yield token
+                
+                # Save once complete
+                summary_str = "".join(accumulated).strip()
+                if summary_str and doc_meta.get("file_hash"):
+                    _document_service.update_file_summary(doc_meta["file_hash"], summary_str)
 
-        logger.info(f"📝 Streaming auto-summary | doc_id={doc_meta['document_id']}")
+            logger.info(f"📝 Streaming new auto-summary | doc_id={doc_meta['document_id']}")
         
         import urllib.parse
         filename_encoded = urllib.parse.quote(filename)
+        is_duplicate_str = "true" if doc_meta.get("duplicate", False) else "false"
         
         return StreamingResponse(
             stream_summary(),
@@ -164,17 +186,21 @@ async def upload_document(
                 "X-File-Name":     filename_encoded,
                 "X-File-Type":     doc_meta["file_type"],
                 "X-Docs-Remaining": str(doc_meta["docs_remaining"]),
+                "X-Duplicate":      is_duplicate_str,
                 # Allow frontend JS to read these custom headers
                 "Access-Control-Expose-Headers": (
-                    "X-Document-Id, X-File-Name, X-File-Type, X-Docs-Remaining"
+                    "X-Document-Id, X-File-Name, X-File-Type, X-Docs-Remaining, X-Duplicate"
                 ),
             },
         )
 
     # ── Fallback JSON if no LLM ───────────────────────────────────────────
     remaining = doc_meta["docs_remaining"]
+    is_dup = doc_meta.get("duplicate", False)
     message = (
         f"Document '{filename}' uploaded successfully."
+        if not is_dup else
+        f"Document '{filename}' already exists. Reusing original document."
     )
     return DocumentUploadResponse(
         document_id=doc_meta["document_id"],
@@ -184,6 +210,7 @@ async def upload_document(
         upload_order=doc_meta["upload_order"],
         docs_remaining=remaining,
         message=message,
+        duplicate=is_dup,
     )
 
 

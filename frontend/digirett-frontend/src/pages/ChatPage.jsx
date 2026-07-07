@@ -25,6 +25,7 @@ const ChatPage = () => {
   const { user } = useUser();
   const [isEscalated, setIsEscalated] = useState(false);
   const [isLegalPanelOpen, setIsLegalPanelOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [dismissedEvents, setDismissedEvents] = useState(() => {
     const seen = localStorage.getItem("dismissed_system_events");
@@ -243,6 +244,7 @@ const ChatPage = () => {
           setCurrentConversationId(null);
           setIsEscalated(false);
           setIsLegalPanelOpen(false);
+          window.dispatchEvent(new CustomEvent("new_chat_triggered"));
         }}
         onSelectConversation={(id) => {
           navigate(`/chat/${id}`);
@@ -337,8 +339,16 @@ const ChatPage = () => {
           // 2. Redirect to the conversation URL (Clean switch)
           navigate(`/chat/${id}`);
           setIsEscalated(false);
+          setIsNotificationsOpen(false);
         }}
         isDark={isDark}
+        isOpen={isNotificationsOpen}
+        onToggleOpen={(open) => {
+          setIsNotificationsOpen(open);
+          if (open) {
+            setIsLegalPanelOpen(false);
+          }
+        }}
       />
     </>
   );
