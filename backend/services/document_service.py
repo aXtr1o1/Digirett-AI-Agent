@@ -1,9 +1,9 @@
 import logging
+import hashlib
 import re
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
-
 import fitz  # PyMuPDF
 from langdetect import detect, LangDetectException
 
@@ -285,9 +285,6 @@ class DocumentService:
                 f"You can upload a maximum of {settings.DOC_MAX_PER_SESSION} documents per session "
                 f"(4-hour session). Your session will reset after 4 hours."
             )
-
-        # ── Generate file hash ───────────────────────────────────────────
-        import hashlib
         file_hash = hashlib.sha256(file_bytes).hexdigest()
         ext = filename.rsplit(".", 1)[-1].lower()
 
@@ -539,8 +536,8 @@ class DocumentService:
                             SESSION_TTL_SECONDS,
                             text,
                         )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning(f"Failed to update Redis cache for doc {document_id} | {exc}")
                 return text
         except Exception as exc:
             logger.error(f"❌ Supabase doc text get failed | {exc}")

@@ -6,7 +6,7 @@ This pipeline acts as the "brain power" of the DigiRett ecosystem, taking comple
 
 ---
 
-## 🌟 What is the Ingestion Pipeline?
+##  What is the Ingestion Pipeline?
 
 To answer Norwegian law questions accurately, the AI assistant needs access to up-to-date legal databases. 
 
@@ -18,22 +18,23 @@ The Ingestion Pipeline is an automated program that:
 
 ---
 
-## 🔄 Entire Data Workflow & Journey
+##  Entire Data Workflow & Journey
 
 Here is how data flows through the pipeline from raw law sources to search-ready databases:
 
-```mermaid
-graph TD
-    A[1. Gather Lovdata API / Excel] --> B[2. Text Cleaning & Normalization]
-    B --> C[3. Hierarchical Chunking]
-    C --> D[4. Validation Gate check]
-    D --> E[5. Generate Embeddings Azure OpenAI]
-    E --> F[6. Store vectors in Milvus & metadata in Supabase]
-```
-
 ### Step 1: Data Gathering (Loaders & Collectors)
-*   **API Collector**: Connects to the official **Lovdata API** to fetch Norwegian legal acts in raw XML format.
+*   **XAPI Collector**: Connects to the **xapi.no** API proxy for Lovdata to fetch Norwegian laws and regulations in structured JSON format (covering metadata, document detail, and paragraph content).
 *   **Offline Loader**: If API access is not active, the system reads client-provided custom Excel spreadsheets containing offline datasets.
+
+### Detailed xAPI Ingestion Flow
+The xAPI collector fetches Norwegian legal data from `xapi.no` and processes it through a multi-step sequence to handle API queries, storage, validation, and vector database indexing:
+
+1. **Discovery & Pagination**: The pipeline queries the list endpoint (`/v1/lovdata/lover`) to discover law and regulation metadata matching relevant legal domains.
+2. **Detail & Paragraph Fetching**: For each document, it fetches the full document detail (`/v1/lovdata/lover/{id}`) and all active sections/paragraphs (`/v1/lovdata/lover/{id}/paragrafer?inkluder_opphevet=false`).
+3. **Structured JSON Assembly**: Metadata, details, and mapped paragraphs (mapping `innhold_text`) are compiled into a unified document JSON structure.
+4. **Supabase Cloud Storage (Step 1+2 Fused)**: To prevent redundant API calls, the raw JSON is uploaded directly to a Supabase Storage Bucket (`raw_json_files`), and a reference metadata row is upserted to the database table.
+5. **Normalization & Verification**: The system downloads the raw JSON, extracts plaintext paragraphs, performs duplicate checks, and runs validations to ensure correct content parsing.
+6. **Chunking & Vector Store (Milvus)**: Mapped paragraphs are chunked, embedded via Azure OpenAI (`text-embedding-3-small`), and indexed in Milvus for semantic retrieval.
 
 ### Step 2: Cleaning & Normalization
 *   Strips out unneeded formatting tags, extra whitespace, and system annotations from raw files.
@@ -55,18 +56,7 @@ graph TD
 
 ---
 
-## ⚙️ Ingestion Modes
-
-The pipeline operates in two modes:
-
-| Ingestion Mode | Input Source | Primary Use Case |
-| :--- | :--- | :--- |
-| **Lovdata API Ingestion (Mode 1)** | Lovdata XML endpoint | Automated daily syncs to fetch official Norwegian law updates. |
-| **Client Excel Ingestion (Mode 2)** | Folder containing `.xlsx` datasets | Custom dataset loading, testing, and offline network configurations. |
-
----
-
-## 📂 Folder Structure
+## Folder Structure
 
 Here is how the pipeline code is organized:
 
@@ -90,7 +80,7 @@ ingestion/
 
 ---
 
-## 🛠️ Main Technologies Used
+##  Main Technologies Used
 
 *   **Language**: Python 3.11+
 *   **API Sources**: Lovdata REST API
@@ -101,7 +91,7 @@ ingestion/
 
 ---
 
-## 💻 Developer Setup Guide
+## Developer Setup Guide
 
 Follow these steps to run the pipeline on your computer:
 
