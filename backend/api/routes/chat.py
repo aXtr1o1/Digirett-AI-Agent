@@ -313,13 +313,13 @@ async def chat_websocket(websocket: WebSocket):
     except WebSocketDisconnect:
         pass  # clean disconnect
     except Exception as exc:
-        logger.error(f"❌ WS fatal | ip={client_ip} | {exc}", exc_info=True)
+        logger.error(f"[ERROR] WS fatal | ip={client_ip} | {exc}", exc_info=True)
         try:
             await websocket.send_json({"type": "error", "message": str(exc)})
         except Exception:
             pass
     finally:
-        logger.info(f"🔌 WS session ended | ip={client_ip}")
+        logger.info(f"[INFO] WS session ended | ip={client_ip}")
 
 
 
@@ -337,7 +337,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
     assistant_msg_id  = None
 
     try:
-        logger.info(f"💬 WS query: '{chat_request.query[:80]}'")
+        logger.info(f"[INFO] WS query: '{chat_request.query[:80]}'")
 
         # ── Step 1: Enforce Quotas FIRST (Before creating a conversation) ─────
         if _document_service:
@@ -345,7 +345,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
             # 1. Check Turn Limit
             allowed_turn, turns_rem = _document_service.check_turn_limit(user_id, user_role=role)
             if not allowed_turn:
-                logger.warning(f"🚫 Quota exceeded (Turns) | user={user_id}")
+                logger.warning(f"[WARN] Quota exceeded (Turns) | user={user_id}")
                 await websocket.send_json({
                     "type": "error", 
                     "error_type": "quota_exceeded",
@@ -356,7 +356,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
             # 2. Check Token Limit
             allowed_token, tokens_rem = _document_service.check_token_limit(user_id, user_role=role)
             if not allowed_token:
-                logger.warning(f"🚫 Quota exceeded (Tokens) | user={user_id}")
+                logger.warning(f"[WARN] Quota exceeded (Tokens) | user={user_id}")
                 await websocket.send_json({
                     "type": "error", 
                     "error_type": "quota_exceeded",
@@ -373,7 +373,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
             )
             conversation_id   = conversation["conversation_id"]
             is_first_exchange = True
-            logger.info(f"✅ Auto-created conversation: {conversation_id}")
+            logger.info(f"[INFO] Auto-created conversation: {conversation_id}")
         else:
             # Add authorization check for existing conversation
             existing_conv = _conversation_service.get_conversation(conversation_id)
@@ -401,7 +401,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
             if event_type == "intent":
                 intent   = event["data"]["intent"]
                 language = event["data"]["language"]
-                logger.info(f"🎯 Intent={intent}, Language={language}")
+                logger.info(f"[INFO] Intent={intent}, Language={language}")
                 await websocket.send_json(event)
 
             elif event_type == "token":
@@ -420,7 +420,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
                             try:
                                 _title_map_live = await fetcher.resolve_titles(_src_urls)
                             except Exception as e:
-                                logger.warning(f"Sources title resolve failed: {e}")
+                                logger.warning(f"[WARN] Sources title resolve failed: {e}")
 
                         _norwegian_titles = [
                             _title_map_live.get(s["url"]) or s["url"] if isinstance(s, dict) and s.get("url") else ""
@@ -446,7 +446,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
                                 ts.append(s)
                         return ts
                     except Exception as e:
-                        logger.error(f"Translation task failed: {e}")
+                        logger.error(f"[ERROR] Translation task failed: {e}")
                         return vs_list
 
                 # Launch translation in background without blocking the token stream
@@ -502,7 +502,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
                         skip_save_user=chat_request.skip_save_user,
                     )
                     logger.info(
-                        f"✅ Saved | user={user_msg_id} | assistant={assistant_msg_id}"
+                        f"[INFO] Saved | user={user_msg_id} | assistant={assistant_msg_id}"
                     )
                     # After save_exchange succeeds, check if summary needs updating
                     await _rag_service._memory_agent.maybe_update_summary(
@@ -522,7 +522,7 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
                         )
                 except Exception as save_exc:
                     logger.error(
-                        f"❌ Save failed | conv={conversation_id} | {save_exc}",
+                        f"[ERROR] Save failed | conv={conversation_id} | {save_exc}",
                         exc_info=True,
                     )
 
@@ -581,10 +581,10 @@ async def _handle_query(websocket: WebSocket, chat_request: ChatRequest, user_id
                         )
 
                         metadata["conversation_title"] = title
-                        logger.info(f"✅ Auto-title (2+2): '{title}'")
+                        logger.info(f"[INFO] Auto-title (2+2): '{title}'")
 
                 except Exception as title_exc:
-                    logger.warning(f"⚠️ Title generation failed | {title_exc}")
+                    logger.warning(f"[WARN] Title generation failed | {title_exc}")
 
 
                 # Step 5: Sources for the WebSocket 'complete' event.

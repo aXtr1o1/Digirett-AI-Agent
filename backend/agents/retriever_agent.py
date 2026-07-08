@@ -67,7 +67,7 @@ class _BM25Reranker:
 
             return reranked
         except Exception as exc:
-            logger.warning(f"⚠️  BM25 rerank failed: {exc} — using dense-only")
+            logger.warning(f"[WARN] BM25 rerank failed: {exc} — using dense-only")
             return results[:top_k]
 
 
@@ -76,7 +76,7 @@ class RetrieverAgent:
         self._embedding = embedding_service
         self._milvus = milvus_client
         logger.info(
-            "✅ RetrieverAgent initialized "
+            "[OK] RetrieverAgent initialized "
             "(v5 — registry-aware statute blocking + BM25)"
         )
 
@@ -119,25 +119,25 @@ class RetrieverAgent:
             domain, subdomain, chunk_id, document_id,
             fallback_level
         """
-        sep = "=" * 60
-        logger.info(f"\n{sep}\n🔍 RetrieverAgent.run | query='{query[:60]}'\n{sep}")
-        logger.info(f"  Enriched query      : {enriched_query[:100]}")
-        logger.info(f"  statute_filter      : {statute_filter}")
-        logger.info(f"  statute_from_registry: {statute_from_registry}")
-        logger.info(f"  domain              : {domain}")
-        logger.info(f"  jurisdiction        : {jurisdiction}")
-        logger.info(f"  subdomain_cands     : {subdomain_candidates}")
-        logger.info(f"  b2b_b2c             : {b2b_b2c}")
-
+        # logger.debug(f"\n{sep}\n[DEBUG] RetrieverAgent.run | query='{query[:60]}'\n{sep}")
+        # logger.debug(f"  Enriched query      : {enriched_query[:100]}")
+        # logger.debug(f"  statute_filter      : {statute_filter}")
+        # logger.debug(f"  statute_from_registry: {statute_from_registry}")
+        # logger.debug(f"  domain              : {domain}")
+        # logger.debug(f"  jurisdiction        : {jurisdiction}")
+        # logger.debug(f"  subdomain_cands     : {subdomain_candidates}")
+        # logger.debug(f"  b2b_b2c             : {b2b_b2c}")
+        #
+        # query_embedding = await self._embedding.embed_query(enriched_query)
+        # logger.debug(f"  Embedding dim       : {len(query_embedding)}")
         query_embedding = await self._embedding.embed_query(enriched_query)
-        logger.debug(f"  Embedding dim       : {len(query_embedding)}")
 
         fetch_k = top_k * _OVERFETCH_FACTOR
         candidates: List[Dict[str, Any]] = []
         fallback_level = 0
 
         # ── L0: statute + domain + subdomain + jurisdiction + b2b ──────────
-        logger.info("[Fallback] Starting L0…")
+        # logger.debug("[Fallback] Starting L0…")
         candidates = self._milvus_search(
             query_embedding=query_embedding,
             top_k=fetch_k,
@@ -148,11 +148,11 @@ class RetrieverAgent:
             b2b_b2c=b2b_b2c,
             fallback_level=0,
         )
-        logger.info(f"  L0 → {len(candidates)} candidates")
+        # logger.debug(f"  L0 → {len(candidates)} candidates")
 
         if not candidates:
             fallback_level = 1
-            logger.info("[Fallback] L0 empty → trying L1 (statute + domain)…")
+            # logger.debug("[Fallback] L0 empty → trying L1 (statute + domain)…")
             candidates = self._milvus_search(
                 query_embedding=query_embedding,
                 top_k=fetch_k,
@@ -163,11 +163,11 @@ class RetrieverAgent:
                 b2b_b2c=None,
                 fallback_level=1,
             )
-            logger.info(f"  L1 → {len(candidates)} candidates")
+            # logger.debug(f"  L1 → {len(candidates)} candidates")
 
         if not candidates:
             fallback_level = 2
-            logger.info("[Fallback] L1 empty → trying L2 (statute only)…")
+            # logger.debug("[Fallback] L1 empty → trying L2 (statute only)…")
             candidates = self._milvus_search(
                 query_embedding=query_embedding,
                 top_k=fetch_k,
@@ -178,7 +178,7 @@ class RetrieverAgent:
                 b2b_b2c=None,
                 fallback_level=2,
             )
-            logger.info(f"  L2 → {len(candidates)} candidates")
+            # logger.debug(f"  L2 → {len(candidates)} candidates")
 
         # ── CRITICAL GATE: only hard-block when statute ID is CERTAIN ──────
         # If the statute came from the deterministic registry, we KNOW the ID
@@ -191,20 +191,21 @@ class RetrieverAgent:
         if not candidates and statute_filter:
             if statute_from_registry:
                 logger.warning(
-                    "⚠️  Registry statute exhausted L0-L2. "
+                    "[WARN] Registry statute exhausted L0-L2. "
                     "Statute is confirmed correct but NOT in VDB. "
-                    "Stopping retrieval — wrong-statute drift would harm accuracy."
+                    "Stopping retrieval."
                 )
                 return []
             else:
-                logger.info(
-                    "ℹ️  LLM-inferred statute exhausted L0-L2. "
-                    "Statute ID may be wrong — continuing to domain-level fallback."
-                )
+                # logger.debug(
+                #     "LLM-inferred statute exhausted L0-L2. "
+                #     "Statute ID may be wrong — continuing to domain-level fallback."
+                # )
+                pass
 
         if not candidates:
             fallback_level = 3
-            logger.info("[Fallback] → trying L3 (domain + subdomain, NO statute)…")
+            # logger.debug("[Fallback] → trying L3 (domain + subdomain, NO statute)…")
             candidates = self._milvus_search(
                 query_embedding=query_embedding,
                 top_k=fetch_k,
@@ -215,11 +216,11 @@ class RetrieverAgent:
                 b2b_b2c=b2b_b2c,
                 fallback_level=3,
             )
-            logger.info(f"  L3 → {len(candidates)} candidates")
+            # logger.debug(f"  L3 → {len(candidates)} candidates")
 
         if not candidates:
             fallback_level = 4
-            logger.info("[Fallback] L3 empty → trying L4 (pure vector, no filters)…")
+            # logger.debug("[Fallback] L3 empty → trying L4 (pure vector, no filters)…")
             candidates = self._milvus_search(
                 query_embedding=query_embedding,
                 top_k=fetch_k,
@@ -230,19 +231,18 @@ class RetrieverAgent:
                 b2b_b2c=None,
                 fallback_level=4,
             )
-            logger.info(f"  L4 → {len(candidates)} candidates")
+            # logger.debug(f"  L4 → {len(candidates)} candidates")
 
         if not candidates:
             logger.warning(
-                "⚠️  All 5 fallback levels returned 0 results. "
-                "Collection may be empty or query is fully out of domain."
+                "[WARN] All 5 fallback levels returned 0 results."
             )
             return []
 
-        logger.info(
-            f"[BM25] Re-ranking {len(candidates)} candidates → top {top_k} "
-            f"(BM25: {'on' if _BM25_AVAILABLE else 'off'})…"
-        )
+        # logger.debug(
+        #     f"[BM25] Re-ranking {len(candidates)} candidates → top {top_k} "
+        #     f"(BM25: {'on' if _BM25_AVAILABLE else 'off'})…"
+        # )
         reranked = _BM25Reranker.rerank(results=candidates, raw_query=query, top_k=top_k)
 
         for r in reranked:

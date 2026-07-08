@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class UserMemoryAgent:
     def __init__(self, supabase_client: Any):
         self._supabase = supabase_client
-        logger.info("✅ UserMemoryAgent initialized")
+        logger.info("[OK] UserMemoryAgent initialized")
 
     def get_user_context(self, user_id: str) -> str:
         """Fetch stored facts for a user and format them as a string."""
@@ -32,7 +32,7 @@ class UserMemoryAgent:
                 context += f"- {fact}\n"
             return context
         except Exception as exc:
-            logger.warning(f"⚠️ UserMemoryAgent get_user_context failed | {exc}")
+            logger.warning(f"[WARN] UserMemoryAgent get_user_context failed | {exc}")
             return ""
 
     async def extract_and_save_facts(self, user_id: str, message: str, llm_service: Any) -> None:
@@ -74,20 +74,43 @@ class UserMemoryAgent:
             try:
                 new_facts = json.loads(raw_output)
             except json.JSONDecodeError:
-                logger.warning(f"⚠️ Failed to parse JSON from memory extraction: {raw_output}")
+                logger.warning(f"[WARN] Failed to parse JSON from memory extraction: {raw_output}")
                 return
                 
             if not isinstance(new_facts, list) or not new_facts:
                 return
-                
+
+            # Fetch existing facts for this user to avoid duplicate entries
+            existing_facts = set()
+            try:
+                response = (
+                    self._supabase.table("user_memories")
+                    .select("fact")
+                    .eq("user_id", user_id)
+                    .execute()
+                )
+                if response.data:
+                    existing_facts = {row["fact"].strip() for row in response.data if row.get("fact")}
+            except Exception as db_exc:
+                logger.warning(f"[WARN] UserMemoryAgent could not fetch existing facts | {db_exc}")
+
+            facts_to_insert = []
+            seen_in_batch = set()
             for fact in new_facts:
-                if isinstance(fact, str) and fact.strip():
-                    self._supabase.table("user_memories").insert({
-                        "user_id": user_id,
-                        "fact": fact.strip()
-                    }).execute()
-                    
-            logger.info(f"🧠✅ UserMemoryAgent: Extracted and saved {len(new_facts)} new facts for user={user_id}")
+                if isinstance(fact, str):
+                    cleaned = fact.strip()
+                    if cleaned and cleaned not in existing_facts and cleaned not in seen_in_batch:
+                        facts_to_insert.append({
+                            "user_id": user_id,
+                            "fact": cleaned
+                        })
+                        seen_in_batch.add(cleaned)
+
+            if facts_to_insert:
+                self._supabase.table("user_memories").insert(facts_to_insert).execute()
+                logger.info(f"[OK] UserMemoryAgent: Extracted and batch-inserted {len(facts_to_insert)} new facts for user={user_id}")
+            else:
+                logger.info(f"[INFO] UserMemoryAgent: No new unique facts to insert for user={user_id}")
             
         except Exception as exc:
-            logger.error(f"❌ UserMemoryAgent extract_and_save_facts failed | {exc}", exc_info=True)
+            logger.error(f"[ERROR] UserMemoryAgent extract_and_save_facts failed | {exc}", exc_info=True)

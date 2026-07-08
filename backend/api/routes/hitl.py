@@ -248,7 +248,7 @@ def assign_ticket(
     _brief_service = BriefService(_hitl_service._supabase)
     background_tasks.add_task(_brief_service.generate_case_brief, ticket_id)
 
-    logger.info(f"✅ Ticket claimed | ticket={ticket_id} | lawyer={lawyer_id}")
+    logger.info(f"[OK] Ticket claimed | ticket={ticket_id} | lawyer={lawyer_id}")
     return {"message": "Ticket assigned successfully.", "ticket_id": ticket_id}
 
 
@@ -552,7 +552,7 @@ def respond_to_ticket(
             detail="Failed to save response.",
         )
 
-    logger.info(f"✅ Ticket resolved | ticket={ticket_id} | lawyer={lawyer_id}")
+    logger.info(f"[OK] Ticket resolved | ticket={ticket_id} | lawyer={lawyer_id}")
 
     # ── Notify user of resolution in the background ──────────────────
     if _email_service:

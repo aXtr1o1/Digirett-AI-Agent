@@ -17,7 +17,7 @@ class HitlService:
 
     def __init__(self, supabase_client: SupabaseClient) -> None:
         self._supabase = supabase_client
-        logger.info("✅ HitlService initialized")
+        logger.info("[OK] HitlService initialized")
 
     def _log_audit(self, action: str, performer_id: Optional[str], payload: Dict[str, Any]) -> None:
         """Saves an entry to the audit_logs table for administrative oversight."""
@@ -29,7 +29,7 @@ class HitlService:
                 "created_at": datetime.utcnow().isoformat()
             }).execute()
         except Exception as exc:
-            logger.warning(f"⚠️ Audit logging failed | {action} | {exc}")
+            logger.warning(f"[WARN] Audit logging failed | {action} | {exc}")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # USER ACTIONS
@@ -1121,9 +1121,9 @@ class HitlService:
             self._supabase.table("hitl_tickets").update(
                 {"alert_sent_at": now}
             ).in_("ticket_id", ticket_ids).execute()
-            logger.info(f"✅ Alert marked sent for {len(ticket_ids)} tickets")
+            logger.info(f"[OK] Alert marked sent for {len(ticket_ids)} tickets")
         except Exception as exc:
-            logger.warning(f"⚠️ mark_alert_sent failed | {exc}")
+            logger.warning(f"[WARN] mark_alert_sent failed | {exc}")
 
     def auto_close_stale_resolved_tickets(self) -> int:
         """

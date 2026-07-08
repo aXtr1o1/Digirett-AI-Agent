@@ -362,7 +362,7 @@ class QueryReasoningAgent:
             temperature=0.1,
             streaming=False,
         )
-        logger.info("✅ QueryReasoningAgent initialised (v4 — deterministic statute routing)")
+        logger.info("[OK] QueryReasoningAgent initialised (v4 — deterministic statute routing)")
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -374,7 +374,7 @@ class QueryReasoningAgent:
         previous_enriched_query: Optional[str] = None,
     ) -> Dict:
         
-        logger.info(f"🧠 QueryReasoningAgent: reasoning on '{query[:70]}'")
+        logger.debug(f"QueryReasoningAgent: reasoning on '{query[:70]}'")
 
         # ── STEP 0: Deterministic registry lookup (before LLM) ────────────
         registry_result = _registry.lookup(query)
@@ -387,10 +387,10 @@ class QueryReasoningAgent:
             registry_domain = registry_result.get("domain")
             statute_from_registry = True
             logger.info(
-                f"📖 Registry hit: id={registry_statute_id} | domain={registry_domain}"
+                f"Registry hit: id={registry_statute_id} | domain={registry_domain}"
             )
         else:
-            logger.info("📖 Registry: no match — LLM will infer statute")
+            logger.info("Registry: no match — LLM will infer statute")
 
         try:
             domain_list = "\n".join(
@@ -433,7 +433,7 @@ class QueryReasoningAgent:
             response = await self._llm.agenerate([messages])
             raw_output = response.generations[0][0].text.strip()
 
-            logger.debug(f"🧠 Raw output:\n{raw_output}")
+            # logger.debug(f"Raw output:\n{raw_output}")
 
             enriched_query = self._extract_enriched_query(raw_output, fallback=query)
             llm_statute_id = self._extract_statute_id(raw_output)
@@ -465,8 +465,8 @@ class QueryReasoningAgent:
                     f"({secondary_statute_id}): {enriched_query}"
                 )
 
-            logger.info(
-                f"🧠 enriched='{enriched_query[:80]}' | statute={final_statute_id} "
+            logger.debug(
+                f"enriched='{enriched_query[:80]}' | statute={final_statute_id} "
                 f"({'registry' if statute_from_registry else 'LLM'}) | "
                 f"domain={final_domain} | jurisdiction={jurisdiction}"
             )
@@ -484,7 +484,7 @@ class QueryReasoningAgent:
 
         except Exception as exc:
             logger.warning(
-                f"⚠️  QueryReasoningAgent LLM failed — using registry result if available: {exc}"
+                f"[WARN] QueryReasoningAgent LLM failed — using registry result if available: {exc}"
             )
             # Even if LLM fails, return registry result if we have one
             return {

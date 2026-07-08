@@ -27,9 +27,9 @@ class DocumentService:
     ) -> None:
         self._redis    = redis_client
         self._supabase = supabase_client
-        logger.info("✅ DocumentService initialized")
+        logger.info("[OK] DocumentService initialized")
         if settings.DOC_TESTING_MODE:
-            logger.info("🧪 TESTING MODE ACTIVE - Document limits disabled for testing")
+            logger.info("[TEST] TESTING MODE ACTIVE - Document limits disabled for testing")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # LANGUAGE DETECTION
@@ -39,7 +39,7 @@ class DocumentService:
         
         try:
             if not text or len(text.strip()) < 50:
-                logger.warning("📄 Document too short for reliable language detection")
+                logger.warning("Document too short for reliable language detection")
                 return "english"
             
             # Detect language from first 1000 characters
@@ -413,7 +413,7 @@ class DocumentService:
                 "session_id":     session["session_id"],
             }).eq("conversation_id", conversation_id).execute()
         except Exception as exc:
-            logger.warning(f"⚠️ Could not update document_count in Supabase | {exc}")
+            logger.warning(f"[WARN] Could not update document_count in Supabase | {exc}")
 
         doc_meta = {
             "document_id":  document_id,
@@ -428,7 +428,7 @@ class DocumentService:
             "summary":      existing_file.get("summary") if existing_file else None,
         }
         logger.info(
-            f"✅ Document stored | id={document_id} | order={upload_order} | "
+            f"[OK] Document stored | id={document_id} | order={upload_order} | "
             f"chars={char_count:,} | conv={conversation_id} | duplicate={is_duplicate}"
         )
         return doc_meta
@@ -441,9 +441,9 @@ class DocumentService:
             self._supabase.table("uploaded_files").update({
                 "summary": summary
             }).eq("file_hash", file_hash).execute()
-            logger.info(f"💾 Updated summary cache in database for file_hash: {file_hash}")
+            logger.info(f"Updated summary cache in database for file_hash: {file_hash}")
         except Exception as e:
-            logger.warning(f"⚠️ Failed to update summary in uploaded_files: {e}")
+            logger.warning(f"[WARN] Failed to update summary in uploaded_files: {e}")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # RETRIEVE DOCUMENT TEXT
@@ -484,7 +484,7 @@ class DocumentService:
             return file_bytes, filename, content_type
             
         except Exception as exc:
-            logger.error(f"❌ get_document_binary failed | id={document_id} | {exc}")
+            logger.error(f"[ERROR] get_document_binary failed | id={document_id} | {exc}")
             return None
 
     def get_document_text(self, document_id: str) -> Optional[str]:
@@ -497,10 +497,10 @@ class DocumentService:
             redis_text_key = f"doc:text:{document_id}"
             text = self._redis._get().get(redis_text_key)
             if text:
-                logger.debug(f"✅ Doc text cache hit | key={redis_text_key}")
+                logger.debug(f"[OK] Doc text cache hit | key={redis_text_key}")
                 return text
         except Exception as exc:
-            logger.warning(f"⚠️ Redis doc text get failed | {exc}")
+            logger.warning(f"[WARN] Redis doc text get failed | {exc}")
 
         # ── Supabase fallback ─────────────────────────────────────────────
         try:

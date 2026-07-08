@@ -90,9 +90,9 @@ JSON response:"""
                 .eq("ticket_id", ticket_id)\
                 .execute()
 
-            logger.info(f"✅ Successfully generated and stored brief for ticket {ticket_id}")
+            logger.info(f"[OK] Successfully generated and stored brief for ticket {ticket_id}")
             return brief_data
 
         except Exception as exc:
-            logger.error(f"❌ Failed to generate case brief for ticket {ticket_id} | {exc}", exc_info=True)
+            logger.error(f"[ERROR] Failed to generate case brief for ticket {ticket_id} | {exc}", exc_info=True)
             return {}

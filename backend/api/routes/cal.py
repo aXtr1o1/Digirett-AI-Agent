@@ -99,13 +99,13 @@ def _get_lawyer_cal_credentials(ticket: Dict[str, Any]):
     event_type_id = profile.get("cal_event_type_id")
 
     if not api_key or not event_type_id:
-        logger.error(f"❌ Cal.com credentials lookup failed: Profile found for {lawyer_id} but api_key or event_type_id is missing")
+        logger.error(f"[ERROR] Cal.com credentials lookup failed: Profile found for {lawyer_id} but api_key or event_type_id is missing")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Lawyer has not fully configured their Cal.com credentials.",
         )
 
-    logger.info(f"✅ Cal.com credentials found for lawyer {lawyer_id}")
+    logger.info(f"[OK] Cal.com credentials found for lawyer {lawyer_id}")
     return api_key, int(event_type_id)
 
 
@@ -174,7 +174,7 @@ async def get_lawyer_slots(
             timezone=timezone,
         )
     except ValueError as exc:
-        logger.warning(f"⚠️ CalService error: {exc}")
+        logger.warning(f"[WARN] CalService error: {exc}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
@@ -273,7 +273,7 @@ async def create_booking(
         timezone=req.timezone,
     )
 
-    # ✅ Update ticket status IMMEDIATELY so UI updates without waiting for webhook
+    # Update ticket status IMMEDIATELY so UI updates without waiting for webhook
     meet_link = _cal_service.extract_meet_link(booking_result)
     _hitl_service.update_booking(
         ticket_id=ticket_id,
@@ -283,7 +283,7 @@ async def create_booking(
     )
 
     logger.info(
-        f"✅ Booking created | ticket={ticket_id} | cal_id={booking_result.get('id')} | "
+        f"[OK] Booking created | ticket={ticket_id} | cal_id={booking_result.get('id')} | "
         f"start={req.start_time}"
     )
 

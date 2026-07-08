@@ -261,7 +261,7 @@ class RouterAgent:
             temperature=0.0,
             streaming=False,
         )
-        logger.info("✅ RouterAgent initialized (v2 — full subdomain list)")
+        logger.info("[OK] RouterAgent initialized (v2 — full subdomain list)")
 
     async def run(
         self,
@@ -269,8 +269,8 @@ class RouterAgent:
         enriched_query: str,
         domain_hint: Optional[str] = None,
     ) -> Dict[str, Any]:
-        logger.info(
-            f"🔀 RouterAgent: classifying | domain_hint={domain_hint!r} | "
+        logger.debug(
+            f"[DEBUG] RouterAgent: classifying | domain_hint={domain_hint!r} | "
             f"enriched='{enriched_query[:60]}'"
         )
 
@@ -289,12 +289,12 @@ class RouterAgent:
             response = await self._llm.agenerate([messages])
             raw_output = response.generations[0][0].text.strip()
 
-            logger.debug(f"🔀 RouterAgent raw output: {raw_output}")
+            # logger.debug(f"RouterAgent raw output: {raw_output}")
 
             result = self._parse_and_validate(raw_output, domain_hint)
 
-            logger.info(
-                f"🔀 RouterAgent: domain={result['domain']} | "
+            logger.debug(
+                f"RouterAgent: domain={result['domain']} | "
                 f"subdomains={result['subdomain_candidates']} | "
                 f"b2b_b2c={result['b2b_b2c']} | "
                 f"jurisdiction={result['jurisdiction']} | "
@@ -303,7 +303,7 @@ class RouterAgent:
             return result
 
         except Exception as exc:
-            logger.warning(f"⚠️  RouterAgent failed | {exc}")
+            logger.warning(f"[WARN] RouterAgent failed | {exc}")
             return self._fallback(domain_hint)
 
     def _parse_and_validate(
@@ -317,13 +317,13 @@ class RouterAgent:
 
         match = re.search(r"\{.*\}", cleaned, re.DOTALL)
         if not match:
-            logger.warning("🔀 RouterAgent: no JSON found")
+            logger.warning("[WARN] RouterAgent: no JSON found")
             return self._fallback(domain_hint)
 
         try:
             data = json.loads(match.group(0))
         except json.JSONDecodeError as exc:
-            logger.warning(f"🔀 RouterAgent: JSON parse error | {exc}")
+            logger.warning(f"[WARN] RouterAgent: JSON parse error | {exc}")
             return self._fallback(domain_hint)
 
         # ── Domain: normalize to canonical lowercase ───────────────────────

@@ -58,7 +58,7 @@ class MilvusClient:
         Introspects the live schema so output_fields are always safe.
         """
         try:
-            logger.info(f"🔌 Connecting to Milvus at {host}:{port}...")
+            logger.info(f"Connecting to Milvus at {host}:{port}...")
 
             self.host = host
             self.port = port
@@ -81,13 +81,13 @@ class MilvusClient:
 
             self._ready = True
             logger.info(
-                f"✅ Milvus connected | collection='{collection_name}' | "
+                f"[OK] Milvus connected | collection='{collection_name}' | "
                 f"entities={self._collection.num_entities:,}"
             )
             logger.info(f"  Schema fields: {sorted(self._schema_fields)}")
 
         except Exception as exc:
-            logger.error(f"❌ Milvus connection failed | {exc}", exc_info=True)
+            logger.error(f"[ERROR] Milvus connection failed | {exc}", exc_info=True)
             raise ConnectionError(f"Milvus connection failed: {exc}") from exc
 
     def check_connection(self) -> bool:
