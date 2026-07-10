@@ -27,7 +27,7 @@ class SupabaseClient:
     def connect(self, url: str, key: str) -> None:
         
         try:
-            logger.info(f"🔌 Connecting to Supabase at {url[:40]}...")
+            logger.info(f"Connecting to Supabase at {url[:40]}...")
             
             # Configure custom httpx.Client with http2=False to prevent connection drops/Server disconnected errors
             http_client = httpx.Client(
@@ -49,10 +49,10 @@ class SupabaseClient:
             self.execute_query(smoke_query)
 
             self._ready = True
-            logger.info(" Supabase connected")
+            logger.info("Supabase connected")
 
         except Exception as exc:
-            logger.error(f" Supabase connection failed | {exc}", exc_info=True)
+            logger.error(f"[ERROR] Supabase connection failed | {exc}", exc_info=True)
             raise ConnectionError(f"Supabase connection failed: {exc}") from exc
 
     # ── Internal helpers ─────────────────────────────────────────────────
@@ -72,7 +72,7 @@ class SupabaseClient:
             self._get().table("users").select("user_id").limit(1).execute()
             return True
         except Exception as exc:
-            logger.error(f" Supabase health check failed | {exc}")
+            logger.error(f"[ERROR] Supabase health check failed | {exc}")
             return False
 
     def execute_query(self, query, max_retries: int = 3):
@@ -85,7 +85,7 @@ class SupabaseClient:
                 return query.execute()
             except (httpx.HTTPError, httpcore.HTTPCoreError) as exc:
                 last_exc = exc
-                logger.warning(f"⚠️ Supabase connection dropped/timed out (attempt {attempt+1}/{max_retries}) | {exc}")
+                logger.warning(f"[WARN] Supabase connection dropped/timed out (attempt {attempt+1}/{max_retries}) | {exc}")
                 time.sleep(0.5)
         raise last_exc
 
@@ -150,7 +150,7 @@ class SupabaseClient:
                 "updated_at": datetime.utcnow().isoformat(),
             }).eq("conversation_id", conversation_id).execute()
 
-            logger.info(f"✅ Updated summary for conversation {conversation_id}")
+            logger.info(f"[OK] Updated summary for conversation {conversation_id}")
             return True
 
         except Exception as exc:
@@ -292,7 +292,7 @@ class SupabaseClient:
 
             query = self._get().table("rag_retrievals").insert(rows)
             self.execute_query(query)
-            logger.debug(f"✅ Saved {len(rows)} RAG retrievals for message {message_id}")
+            logger.debug(f"[OK] Saved {len(rows)} RAG retrievals for message {message_id}")
             return True
         except Exception as exc:
             logger.error(f" save_rag_retrievals failed | {exc}")

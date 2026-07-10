@@ -38,7 +38,7 @@ def set_services(
     _hitl_service = hitl_svc
     _user_service = user_svc
     _email_service = email_svc
-    logger.info("✅ ticket_messages router services set")
+    logger.info("[OK] ticket_messages router services set")
 
 
 # ── Schemas ───────────────────────────────────────────────────────────

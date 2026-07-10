@@ -55,7 +55,7 @@ IMPORTANT:
             deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
             temperature=0.0,
         )
-        logger.info("✅ DocumentClassifierAgent initialized")
+        logger.info("[OK] DocumentClassifierAgent initialized")
 
     async def classify(
         self,
@@ -63,7 +63,7 @@ IMPORTANT:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         doc_summary: Optional[str] = None,
     ) -> Dict[str, str]:
-        logger.info(f"📄 DocumentClassifierAgent: classifying '{query[:80]}'")
+        logger.debug(f"DocumentClassifierAgent: classifying '{query[:80]}'")
 
         # Build user content — include doc preview and recent history as context
         parts = []
@@ -106,19 +106,19 @@ IMPORTANT:
                 # Validate intent value
                 if intent not in ("DOCQA", "LEGAL", "HYBRID", "FOLLOWUP"):
                     logger.warning(
-                        f"⚠️ DocumentClassifierAgent: unknown intent '{intent}' — "
+                        f"[DEV:WARN] DocumentClassifierAgent: unknown intent '{intent}' — "
                         "defaulting to HYBRID"
                     )
                     intent = "HYBRID"
 
-                logger.info(
-                    f"📄 DocumentClassifierAgent: intent={intent} | reason='{reason}'"
+                logger.debug(
+                    f"DocumentClassifierAgent: intent={intent} | reason='{reason}'"
                 )
                 return {"intent": intent, "reason": reason}
 
         except Exception as exc:
             logger.warning(
-                f"⚠️ DocumentClassifierAgent failed, defaulting to HYBRID | {exc}"
+                f"[WARN] DocumentClassifierAgent failed, defaulting to HYBRID | {exc}"
             )
 
         return {"intent": "HYBRID", "reason": "Classification fallback"}

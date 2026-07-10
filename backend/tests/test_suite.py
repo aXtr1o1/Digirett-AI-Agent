@@ -60,7 +60,7 @@ sys.modules["langchain_core.messages"] = _lcm
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 class TestChatRequestSchema(unittest.TestCase):
@@ -203,6 +203,57 @@ class TestMemoryAgent(unittest.TestCase):
         result = agent.run("conv-both-fail-001", limit=10)
 
         self.assertEqual(result, [])
+
+
+class TestUserMemoryAgent(unittest.TestCase):
+
+    def test_extract_and_save_facts_deduplicates_and_batches(self):
+        from agents.user_memory_agent import UserMemoryAgent
+
+        # Mock Supabase
+        execute_select_result = MagicMock()
+        execute_select_result.data = [
+            {"fact": "User lives in Oslo"},
+            {"fact": "User is a lawyer"}
+        ]
+        
+        execute_insert_result = MagicMock()
+        execute_insert_result.data = []
+
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.execute.side_effect = [execute_select_result, execute_insert_result]
+
+        mock_supabase = MagicMock()
+        mock_supabase.table.return_value = chain
+
+        # Mock LLM service
+        mock_generation = MagicMock()
+        mock_generation.text = '["User lives in Oslo", "User is a lawyer", "User loves skiing", "User loves skiing", "User has a cat"]'
+        
+        mock_llm_response = MagicMock()
+        mock_llm_response.generations = [[mock_generation]]
+
+        mock_llm_service = MagicMock()
+        mock_llm_service._llm = AsyncMock()
+        mock_llm_service._llm.agenerate.return_value = mock_llm_response
+
+        agent = UserMemoryAgent(supabase_client=mock_supabase)
+        
+        # Run the async method
+        _run(agent.extract_and_save_facts("user-123", "some message", mock_llm_service))
+
+        # Verify that select was called to fetch existing facts
+        mock_supabase.table.assert_any_call("user_memories")
+        chain.select.assert_called_with("fact")
+        chain.eq.assert_called_with("user_id", "user-123")
+
+        # Verify insert was called with batched and deduplicated facts
+        chain.insert.assert_called_once_with([
+            {"user_id": "user-123", "fact": "User loves skiing"},
+            {"user_id": "user-123", "fact": "User has a cat"}
+        ])
 
 
 if __name__ == "__main__":

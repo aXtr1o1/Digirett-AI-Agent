@@ -27,7 +27,7 @@ class UserService:
 
     def __init__(self, supabase_client: SupabaseClient) -> None:
         self._supabase = supabase_client
-        logger.info("✅ UserService initialized")
+        logger.info("[OK] UserService initialized")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # CREATE (called by Clerk webhook handler)
@@ -128,14 +128,14 @@ class UserService:
                 self._sync_clerk_role(clerk_user_id, assigned_role)
 
             logger.info(
-                f"✅ Created user | user_id={user_id} | "
+                f"[OK] Created user | user_id={user_id} | "
                 f"clerk_id={clerk_user_id} | email={email} | role={assigned_role}"
             )
             return user_row
 
         except Exception as exc:
             logger.error(
-                f"❌ create_user_from_webhook failed | clerk_id={clerk_user_id} | {exc}",
+                f"[ERROR] create_user_from_webhook failed | clerk_id={clerk_user_id} | {exc}",
                 exc_info=True,
             )
             raise ValueError(f"Failed to create user: {exc}") from exc
@@ -158,7 +158,7 @@ class UserService:
                 return response.data[0]
             return None
         except Exception as exc:
-            logger.error(f"❌ get_user_by_clerk_id failed | {exc}")
+            logger.error(f"[ERROR] get_user_by_clerk_id failed | {exc}")
             return None
 
     def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -175,7 +175,7 @@ class UserService:
                 return response.data[0]
             return None
         except Exception as exc:
-            logger.error(f"❌ get_user_by_id failed | {exc}")
+            logger.error(f"[ERROR] get_user_by_id failed | {exc}")
             return None
 
     @lru_cache(maxsize=1000)
@@ -187,10 +187,10 @@ class UserService:
         logger.info(f"🔍 DEBUG: get_user_id_from_clerk_id | clerk_id={clerk_user_id} | provided_email={email}")
         user = self.get_user_by_clerk_id(clerk_user_id)
         if user:
-            logger.info(f"✅ Found existing user: {user['user_id']}")
+            logger.info(f"[OK] Found existing user: {user['user_id']}")
             return user["user_id"]
 
-        logger.info(f"⚡ User {clerk_user_id} not found in Supabase. Attempting auto-creation...")
+        logger.info(f"[INFO] User {clerk_user_id} not found in Supabase. Attempting auto-creation...")
         # If user not found, auto-create them (fallback for missing webhook)
         try:
             real_email = email
@@ -198,7 +198,7 @@ class UserService:
             
             # If no email provided, try to fetch from Clerk API
             if not real_email and settings.CLERK_SECRET_KEY:
-                logger.info(f"🌐 Fetching email from Clerk API for {clerk_user_id}...")
+                logger.info(f"[INFO] Fetching email from Clerk API for {clerk_user_id}...")
                 clerk_url = f"https://api.clerk.com/v1/users/{clerk_user_id}"
                 try:
                     with httpx.Client() as client:
@@ -209,29 +209,29 @@ class UserService:
                             email_addresses = data.get("email_addresses", [])
                             if email_addresses:
                                 real_email = email_addresses[0].get("email_address")
-                                logger.info(f"📧 Fetched email: {real_email}")
+                                logger.info(f"[INFO] Fetched email: {real_email}")
                             
                             username = data.get("username")
                             display_name = username
                         else:
-                            logger.error(f"❌ Clerk API returned {resp.status_code}: {resp.text}")
+                            logger.error(f"[ERROR] Clerk API returned {resp.status_code}: {resp.text}")
                 except Exception as e:
-                    logger.error(f"❌ Clerk API request failed: {e}")
+                    logger.error(f"[ERROR] Clerk API request failed: {e}")
 
             fallback_email = real_email or f"{clerk_user_id}@placeholder.com"
-            logger.info(f"🚀 Calling create_user_from_webhook with email: {fallback_email}")
+            logger.info(f"[INFO] Calling create_user_from_webhook with email: {fallback_email}")
             
             # Final check: Does this email already exist?
             try:
                 existing_email_resp = self._supabase.table("users").select("user_id, clerk_user_id").eq("email", fallback_email).execute()
                 if existing_email_resp.data:
                     existing = existing_email_resp.data[0]
-                    logger.error(f"🚨 EMAIL CONFLICT: Email {fallback_email} is already used by Supabase user {existing['user_id']} (Clerk ID: {existing['clerk_user_id']})")
+                    logger.error(f"[ERROR] EMAIL CONFLICT: Email {fallback_email} is already used by Supabase user {existing['user_id']} (Clerk ID: {existing['clerk_user_id']})")
                     # Optionally: Update the clerk_user_id if it's the same person but different Clerk instance? 
                     # For now, just return the existing ID to unblock them, or fail clearly.
                     return existing["user_id"]
             except Exception as e:
-                logger.warning(f"⚠️ Email uniqueness check failed (non-fatal): {e}")
+                logger.warning(f"[WARN] Email uniqueness check failed (non-fatal): {e}")
 
             new_user = self.create_user_from_webhook(
                 clerk_user_id=clerk_user_id,
@@ -240,10 +240,10 @@ class UserService:
                 display_name=display_name,
                 username=display_name # we set username to display_name in fallback
             )
-            logger.info(f"🎉 Successfully auto-created user: {new_user.get('user_id')}")
+            logger.info(f"[OK] Successfully auto-created user: {new_user.get('user_id')}")
             return new_user.get("user_id")
         except Exception as exc:
-            logger.error(f"❌ FATAL: Auto-creation failed for {clerk_user_id} | {exc}", exc_info=True)
+            logger.error(f"[ERROR] FATAL: Auto-creation failed for {clerk_user_id} | {exc}", exc_info=True)
 
         return None
 
@@ -267,10 +267,10 @@ class UserService:
                 "updated_at": datetime.utcnow().isoformat(),
             }).eq("user_id", user_id).execute()
 
-            logger.info(f"✅ Updated role | user_id={user_id} → {new_role}")
+            logger.info(f"[OK] Updated role | user_id={user_id} → {new_role}")
             return True
         except Exception as exc:
-            logger.error(f"❌ update_role failed | user_id={user_id} | {exc}")
+            logger.error(f"[ERROR] update_role failed | user_id={user_id} | {exc}")
             return False
 
     def suspend_user(self, user_id: str) -> bool:
@@ -287,10 +287,10 @@ class UserService:
             if user:
                 self._sync_clerk_role(user["clerk_user_id"], "suspended")
 
-            logger.info(f"✅ Suspended user | user_id={user_id}")
+            logger.info(f"[OK] Suspended user | user_id={user_id}")
             return True
         except Exception as exc:
-            logger.error(f"❌ suspend_user failed | {exc}")
+            logger.error(f"[ERROR] suspend_user failed | {exc}")
             return False
 
     def reactivate_user(self, user_id: str) -> bool:
@@ -307,10 +307,10 @@ class UserService:
             if user:
                 self._sync_clerk_role(user["clerk_user_id"], user["role"])
 
-            logger.info(f"✅ Reactivated user | user_id={user_id}")
+            logger.info(f"[OK] Reactivated user | user_id={user_id}")
             return True
         except Exception as exc:
-            logger.error(f"❌ reactivate_user failed | {exc}")
+            logger.error(f"[ERROR] reactivate_user failed | {exc}")
             return False
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -326,7 +326,7 @@ class UserService:
             # 1. Look up the invite
             resp = self._supabase.table("role_invites").select("*").eq("token", token).eq("status", "pending").execute()
             if not resp.data:
-                logger.warning(f"⚠️ Invalid or expired invite token: {token}")
+                logger.warning(f"[WARN] Invalid or expired invite token: {token}")
                 return False
                 
             invite = resp.data[0]
@@ -334,12 +334,12 @@ class UserService:
             # 3. Get user_id from clerk_id
             user_id = self.get_user_id_from_clerk_id(clerk_user_id)
             if not user_id:
-                logger.error(f"❌ Could not find internal user_id for clerk_id: {clerk_user_id}")
+                logger.error(f"[ERROR] Could not find internal user_id for clerk_id: {clerk_user_id}")
                 return False
                 
             user_info = self.get_user_by_id(user_id)
             if not user_info:
-                logger.error(f"❌ Could not find user info for user_id: {user_id}")
+                logger.error(f"[ERROR] Could not find user info for user_id: {user_id}")
                 return False
                 
             db_email = user_info.get("email")
@@ -348,11 +348,11 @@ class UserService:
             invite_email = invite.get("email")
             
             if not invite_email or not db_email:
-                logger.warning(f"⚠️ Missing email for verification. Token email: {invite_email}, DB email: {db_email}")
+                logger.warning(f"[WARN] Missing email for verification. Token email: {invite_email}, DB email: {db_email}")
                 return False
                 
             if invite_email.lower() != db_email.lower():
-                logger.warning(f"⚠️ Invite email mismatch. Token email: {invite_email}, DB email: {db_email}")
+                logger.warning(f"[WARN] Invite email mismatch. Token email: {invite_email}, DB email: {db_email}")
                 return False
                 
             role = invite["role"]
@@ -361,7 +361,7 @@ class UserService:
             if role == "lawyer":
                 if current_role == "admin":
                     # DUAL ROLE SCENARIO: Keep as Admin, just add Lawyer profile
-                    logger.info(f"🛡️ Dual-role detected for Admin {user_id}. Creating lawyer profile...")
+                    logger.info(f"[INFO] Dual-role detected for Admin {user_id}. Creating lawyer profile...")
                     success = self.enable_lawyer_dashboard_for_admin(user_id=user_id, admin_id=user_id)
                 else:
                     success = self.promote_to_lawyer(user_id=user_id, admin_id=None, bar_license="PENDING", bar_council="PENDING")
@@ -380,11 +380,11 @@ class UserService:
             # 6. Audit log
             self._log_audit("user.invite_accepted", user_id, {"role": role, "invite_id": invite["invite_id"]})
             
-            logger.info(f"✅ Invite accepted for {email} -> {role}")
+            logger.info(f"[OK] Invite accepted for {email} -> {role}")
             return True
             
         except Exception as exc:
-            logger.error(f"❌ accept_invite failed | {exc}")
+            logger.error(f"[ERROR] accept_invite failed | {exc}")
             return False
 
     async def invite_user(self, email: str, role: str, admin_id: str, email_service: Any, admin_email: Optional[str] = None) -> bool:
@@ -398,7 +398,7 @@ class UserService:
                 existing_role = existing_user_resp.data[0].get("role", "user")
                 # Allow Admin to invite themselves as a Lawyer
                 if existing_role == "lawyer" or (existing_role == "admin" and role == "admin") or (existing_role == "system_admin" and role == "system_admin"):
-                    logger.warning(f"⚠️ User {email} already has role {existing_role}. Invitation blocked.")
+                    logger.warning(f"[WARN] User {email} already has role {existing_role}. Invitation blocked.")
                     raise ValueError(f"An account with this email is already registered as a {existing_role.capitalize()}. Duplicate invitations are restricted.")
 
             token = str(uuid4())
@@ -608,10 +608,10 @@ class UserService:
                 "updated_at": datetime.utcnow().isoformat()
             }).eq("lawyer_id", lawyer_id)
             self._supabase.execute_query(query)
-            logger.info(f"✅ Updated Cal.com config for lawyer | {lawyer_id}")
+            logger.info(f"[OK] Updated Cal.com config for lawyer | {lawyer_id}")
             return True
         except Exception as exc:
-            logger.error(f"❌ update_lawyer_cal_config failed | {lawyer_id} | {exc}")
+            logger.error(f"[ERROR] update_lawyer_cal_config failed | {lawyer_id} | {exc}")
             return False
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -22,7 +22,7 @@ def _extract_score(full_text: str):
         score = min(max(float(match.group(1)), 0.0), 1.0)
         answer = pattern.sub("", full_text).rstrip("\n").strip()
     else:
-        logger.warning("  No [SCORE:x.x] found in legal response, defaulting to 0.5")
+        logger.warning("[WARN] No [SCORE:x.x] found in legal response, defaulting to 0.5")
         score = 0.5
         answer = full_text.strip()
 
@@ -55,10 +55,10 @@ class LLMService:
             self._generator_agent = GeneratorAgent(temperature=temperature)
 
             logger.info(
-                f" LLMService initialized | deployment={settings.AZURE_OPENAI_DEPLOYMENT}"
+                f"[OK] LLMService initialized | deployment={settings.AZURE_OPENAI_DEPLOYMENT}"
             )
         except Exception as exc:
-            logger.error(f" LLMService init failed | {exc}", exc_info=True)
+            logger.error(f"[ERROR] LLMService init failed | {exc}", exc_info=True)
             raise
 
     # ── Factory methods (used by RAGService to wire OrchestratorAgent) ──
@@ -77,6 +77,7 @@ class LLMService:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
         language: Optional[str] = None,
+        user_memory: str = "",
     ) -> AsyncIterator[str]:
         """Stream casual response tokens. No RAG context involved."""
         async with llm_span("casual_generation"):
@@ -85,6 +86,7 @@ class LLMService:
                 conversation_history=conversation_history,
                 temperature=temperature,
                 language=language,
+                user_memory=user_memory,
             ):
                 yield token
 
@@ -126,7 +128,7 @@ class LLMService:
         answer, score = _extract_score(full_text)
         confidence = _score_to_confidence(score)
 
-        logger.info(f" Legal answer scored | score={score} | confidence={confidence}")
+        logger.debug(f"Legal answer scored | score={score} | confidence={confidence}")
         return {
             "answer": answer,
             "score": score,
@@ -142,6 +144,7 @@ class LLMService:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
         response_style: str = "",
+        user_memory: str = "",
     ) -> AsyncIterator[str]:
         
         if not rag_context or not rag_context.strip():
@@ -167,6 +170,7 @@ class LLMService:
                 conversation_history=conversation_history,
                 temperature=temperature,
                 response_style=response_style,
+                user_memory=user_memory,
             ):
                 if not score_emitted:
                     buffer += token
@@ -195,7 +199,7 @@ class LLMService:
                 if buffer:
                     yield buffer
 
-        logger.info(" Legal stream complete")
+        logger.debug("Legal stream complete")
 
     async def generate_conversation_title(
         self,
@@ -229,10 +233,10 @@ class LLMService:
                 messages = [HumanMessage(content=prompt)]
                 response = await self._llm.agenerate([messages])
                 title = response.generations[0][0].text.strip().strip('"').strip("'")
-                logger.info(f" Generated conversation title: '{title}'")
+                logger.debug(f"Generated conversation title: '{title}'")
                 return title[:100]  # hard cap at 100 chars
         except Exception as exc:
-            logger.warning(f"  Title generation failed, using fallback | {exc}")
+            logger.warning(f"[WARN] Title generation failed, using fallback | {exc}")
             return first_user_message[:60]
 
     async def generate_conversation_summary(

@@ -44,7 +44,7 @@ class RedisClient:
     ) -> None:
 
         try:
-            logger.info(f"🔌 Connecting to Redis at {host}:{port} (DB: {db})...")
+            logger.info(f"Connecting to Redis at {host}:{port} (DB: {db})...")
 
             is_upstash = "upstash.io" in host.lower()
             self._client = redis.Redis(
@@ -65,11 +65,11 @@ class RedisClient:
             self._client.ping()
 
             self._ready = True
-            logger.info(f"✅ Redis connected | {host}:{port} | DB: {db}")
+            logger.info(f"[OK] Redis connected | {host}:{port} | DB: {db}")
 
         except Exception as exc:
             logger.error(
-                f"❌ Redis connection failed | {host}:{port} | {exc}",
+                f"[ERROR] Redis connection failed | {host}:{port} | {exc}",
                 exc_info=True,
             )
             raise ConnectionError(f"Redis connection failed: {exc}") from exc

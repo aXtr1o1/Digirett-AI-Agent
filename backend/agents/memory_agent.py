@@ -12,20 +12,20 @@ class MemoryAgent:
     def __init__(self, redis_client: Any, supabase_client: Any) -> None:
         self._redis = redis_client
         self._supabase = supabase_client
-        logger.info("✅ MemoryAgent initialized")
+        logger.info("[OK] MemoryAgent initialized")
 
     def run(self, conversation_id: str, limit: int = 10) -> List[Dict[str, str]]:
-        logger.info(f"🧠 MemoryAgent: loading history | conversation_id={conversation_id}")
+        logger.debug(f"MemoryAgent: loading history | conversation_id={conversation_id}")
 
         # ── Redis fast path ───────────────────────────────────────────────
         try:
             cached = self._redis.get_context(conversation_id)
             if cached:
                 messages = self._normalize(cached[-limit:])
-                logger.info(f"✅ MemoryAgent (Redis): {len(messages)} messages")
+                logger.debug(f"MemoryAgent (Redis): {len(messages)} messages")
                 return messages
         except Exception as exc:
-            logger.warning(f"⚠️ MemoryAgent Redis error: {exc}")
+            logger.warning(f"[WARN] MemoryAgent Redis error: {exc}")
 
         # ── Supabase fallback ─────────────────────────────────────────────
         try:
@@ -39,10 +39,10 @@ class MemoryAgent:
                 .execute()
             )
             messages = self._normalize(response.data or [])
-            logger.info(f"✅ MemoryAgent (Supabase): {len(messages)} messages")
+            logger.debug(f"MemoryAgent (Supabase): {len(messages)} messages")
             return messages
         except Exception as exc:
-            logger.error(f"❌ MemoryAgent Supabase error: {exc}", exc_info=True)
+            logger.error(f"[ERROR] MemoryAgent Supabase error: {exc}", exc_info=True)
             return []
 
     def get_conversation_summary(self, conversation_id: str) -> Optional[str]:
@@ -62,7 +62,7 @@ class MemoryAgent:
                 return response.data.get("conversation_summary")
             return None
         except Exception as exc:
-            logger.warning(f"⚠️ MemoryAgent get_conversation_summary failed | {exc}")
+            logger.warning(f"[WARN] MemoryAgent get_conversation_summary failed | {exc}")
             return None
 
     async def maybe_update_summary(
@@ -92,7 +92,7 @@ class MemoryAgent:
                 return  # not time yet
 
             logger.info(
-                f"📝 MemoryAgent: {total} messages — generating summary for {conversation_id}"
+                f"MemoryAgent: {total} messages — generating summary for {conversation_id}"
             )
 
             # Fetch the last 10 messages to summarise
@@ -112,10 +112,10 @@ class MemoryAgent:
 
             summary = await llm_service.generate_conversation_summary(recent)
             conversation_service.update_summary(conversation_id, summary)
-            logger.info(f"✅ MemoryAgent: summary saved for {conversation_id}")
+            logger.info(f"[OK] MemoryAgent: summary saved for {conversation_id}")
 
         except Exception as exc:
-            logger.warning(f"⚠️ MemoryAgent maybe_update_summary failed | {exc}")
+            logger.warning(f"[WARN] MemoryAgent maybe_update_summary failed | {exc}")
 
     def build_intent_context(
         self,

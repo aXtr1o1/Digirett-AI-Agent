@@ -3,6 +3,7 @@ import re
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from agents.memory_agent import MemoryAgent
+from agents.user_memory_agent import UserMemoryAgent
 from agents.orchestrator_agent import OrchestratorAgent
 from agents.retriever_agent import RetrieverAgent
 from agents.query_reasoning_agent import QueryReasoningAgent
@@ -158,6 +159,9 @@ class RAGService:
             redis_client=redis_client,
             supabase_client=supabase_client,
         )
+        self._user_memory_agent = UserMemoryAgent(
+            supabase_client=supabase_client
+        )
         self._retriever_agent = RetrieverAgent(
             embedding_service=embedding_service,
             milvus_client=milvus_client,
@@ -174,7 +178,7 @@ class RAGService:
         # self._validation_agent = SourceValidationAgent()  # TEMPORARILY DISABLED
 
         logger.info(
-            "✅ RAGService initialized | "
+            "[OK] RAGService initialized | "
             "retrieval=v3 (4-level fallback + BM25) | document agent active"
         )
 
@@ -182,30 +186,35 @@ class RAGService:
         self,
         query: str,
         conversation_id: str,
+        user_id: Optional[str] = None,
         top_k: int = 50,
         min_score: float = 0.0,
     ) -> AsyncIterator[Dict[str, Any]]:
 
         try:
-            logger.info(f"🤖 RAGService: processing query '{query[:60]}'")
+            logger.info(f"RAGService: processing query '{query[:60]}'")
 
             # Quotas are now handled at the route level (chat.py)
 
-            # ── Load history ───────────────────────────────────────────────
+            # ── Load history and user memory ───────────────────────────────────────────────
             history = self._orchestrator.load_history(
                 conversation_id=conversation_id,
                 limit=10,
             )
+            user_memory = self._user_memory_agent.get_user_context(user_id) if user_id else ""
+            
+            if user_memory:
+                logger.info("Loaded user specific cross-conversation memory")
 
             # ── Classify intent ────────────────────────────────────────────
-            logger.info("🎯 Classifying query intent...")
+            logger.info("Classifying query intent...")
             intent_result = await self._orchestrator.classify(
                 query=query,
                 conversation_id=conversation_id,
             )
             intent = intent_result["intent"]
             language = intent_result["language"]
-            logger.info(f"🎯 Intent: {intent} | Language: {language}")
+            logger.info(f"Intent: {intent} | Language: {language}")
 
             # ── [Removed] Language override with document language ────────────
             # We no longer override query language with document language. 
@@ -222,7 +231,7 @@ class RAGService:
                     and self._document_service.has_documents(conversation_id)
                 ):
                     logger.info(
-                        "📄 Document detected in session - routing decision needed"
+                        "Document detected in session - routing decision needed"
                     )
                     doc_summary = self._document_service.get_doc_summary(
                         conversation_id
@@ -234,12 +243,12 @@ class RAGService:
                     )
                     doc_intent = doc_class_result["intent"]
                     logger.info(
-                        f"📄 Document intent: {doc_intent} | "
+                        f"Document intent: {doc_intent} | "
                         f"reason='{doc_class_result.get('reason', '')}'"
                     )
 
                     if doc_intent == "DOCQA":
-                        logger.info("↳ Route: DOCQA (Document Only)")
+                        logger.info("Route: DOCQA (Document Only)")
                         async for event in self._handle_docqa(
                             query=query,
                             language=language,
@@ -249,7 +258,7 @@ class RAGService:
                             yield event
 
                     elif doc_intent == "HYBRID":
-                        logger.info("↳ Route: HYBRID (Document + VDB)")
+                        logger.info("Route: HYBRID (Document + VDB)")
                         async for event in self._handle_hybrid(
                             query=query,
                             language=language,
@@ -261,7 +270,7 @@ class RAGService:
                             yield event
 
                     elif doc_intent == "FOLLOWUP":
-                        logger.info("↳ Route: FOLLOWUP")
+                        logger.info("Route: FOLLOWUP")
                         async for event in self._handle_followup_with_doc(
                             query=query,
                             language=language,
@@ -271,7 +280,7 @@ class RAGService:
                             yield event
 
                     else:
-                        logger.info("↳ Route: LEGAL (No Document)")
+                        logger.info("Route: LEGAL (No Document)")
                         async for event in self._handle_legal(
                             query=query,
                             language=language,
@@ -279,10 +288,11 @@ class RAGService:
                             min_score=min_score,
                             history=history,
                             conversation_id=conversation_id,
+                            user_memory=user_memory,
                         ):
                             yield event
                 else:
-                    logger.info("📋 No document in session - standard VDB search")
+                    logger.info("No document in session - standard VDB search")
                     async for event in self._handle_legal(
                         query=query,
                         language=language,
@@ -290,6 +300,7 @@ class RAGService:
                         min_score=min_score,
                         history=history,
                         conversation_id=conversation_id,
+                        user_memory=user_memory,
                     ):
                         yield event
             else:
@@ -298,7 +309,7 @@ class RAGService:
                     and self._document_service.has_documents(conversation_id)
                 ):
                     logger.info(
-                        "📄 CASUAL query but document in session — "
+                        "CASUAL query but document in session — "
                         "routing through doc classifier"
                     )
                     doc_summary = self._document_service.get_doc_summary(
@@ -311,7 +322,7 @@ class RAGService:
                     )
                     doc_intent = doc_class_result["intent"]
                     logger.info(
-                        f"📄 Doc classifier (from CASUAL): {doc_intent} | "
+                        f"Doc classifier (from CASUAL): {doc_intent} | "
                         f"reason='{doc_class_result.get('reason', '')}'"
                     )
 
@@ -343,17 +354,17 @@ class RAGService:
                             yield event
                     else:
                         # doc_intent == "LEGAL" or truly unrelated — casual is fine
-                        logger.info("💬 CASUAL query (doc present but unrelated)")
-                        async for event in self._handle_casual(query, history, language):
+                        logger.info("CASUAL query (doc present but unrelated)")
+                        async for event in self._handle_casual(query, history, language, user_memory):
                             yield event
                 else:
-                    logger.info("💬 CASUAL query")
-                    async for event in self._handle_casual(query, history, language):
+                    logger.info("CASUAL query")
+                    async for event in self._handle_casual(query, history, language, user_memory):
                         yield event
 
         except Exception as exc:
             logger.error(
-                f"❌ RAGService.process_query failed | query='{query[:50]}' | {exc}",
+                f"[ERROR] RAGService.process_query failed | query='{query[:50]}' | {exc}",
                 exc_info=True,
             )
             yield {"type": "error", "message": str(exc)}
@@ -363,8 +374,9 @@ class RAGService:
         query: str,
         history: List[Dict[str, str]],
         language: str,
+        user_memory: str = "",
     ) -> AsyncIterator[Dict[str, Any]]:
-        logger.info("💬 CASUAL pipeline")
+        logger.info("CASUAL pipeline")
 
         yield {"type": "sources", "data": []}
 
@@ -375,6 +387,7 @@ class RAGService:
             query=query,
             conversation_history=history,
             language=language,
+            user_memory=user_memory,
         ):
             token_count += 1
             full_answer += token
@@ -392,7 +405,7 @@ class RAGService:
                 "rag_chunks": [],
             },
         }
-        logger.info(f"✅ CASUAL pipeline complete | tokens={token_count}")
+        logger.info(f"[OK] CASUAL pipeline complete | tokens={token_count}")
 
     async def _handle_legal(
         self,
@@ -402,8 +415,9 @@ class RAGService:
         min_score: float,
         history: List[Dict[str, str]],
         conversation_id: str,
+        user_memory: str = "",
     ) -> AsyncIterator[Dict[str, Any]]:
-        logger.info("⚖️  LEGAL pipeline (v6 — registry-aware + section_ref sources)")
+        logger.info("LEGAL pipeline (v6 — registry-aware + section_ref sources)")
  
         context_window = history[-9:] if history else []
  
@@ -417,12 +431,12 @@ class RAGService:
                 previous_statute_id = reasoning_meta.get("statute_id")
                 previous_enriched_query = reasoning_meta.get("enriched_query")
                 logger.info(
-                    f"📖 Loaded reasoning context | "
+                    f"Loaded reasoning context | "
                     f"statute_id={previous_statute_id} | "
                     f"prev_query=\'{str(previous_enriched_query)[:60]}\'"
                 )
         except Exception as exc:
-            logger.warning(f"⚠️  Could not read reasoning meta from Redis | {exc}")
+            logger.warning(f"[WARN] Could not read reasoning meta from Redis | {exc}")
  
         # ── [1] QueryReasoningAgent ────────────────────────────────────────
         reasoning_result = await self._reasoning_agent.run(
@@ -441,7 +455,7 @@ class RAGService:
         if domain:
             domain = normalize_domain(domain) or domain
  
-        logger.info(f"🧠 Enriched query : \'{enriched_query[:80]}\'")
+        logger.info(f"Enriched query : \'{enriched_query[:80]}\'")
         logger.info(
             f"   statute={primary_statute_id} | "
             f"registry={statute_from_registry} | "
@@ -468,10 +482,10 @@ class RAGService:
                 resolved_subdomain = keyword_candidates[0][0]
                 routing_confidence = keyword_candidates[0][1]
                 routing_method = "KEYWORD_OVERLAP"
-                logger.info(f"🎯 Keyword Scorer selected primary subdomain: {resolved_subdomain} (confidence={routing_confidence})")
+                logger.info(f"Keyword Scorer selected primary subdomain: {resolved_subdomain} (confidence={routing_confidence})")
             else:
                 # 3. Fallback LLM Router when keyword scoring confidence is low
-                logger.info("ℹ️ Low keyword confidence — calling LLM RouterAgent fallback...")
+                logger.info("Low keyword confidence — calling LLM RouterAgent fallback...")
                 router_result = await self._router_agent.run(
                     raw_query=query,
                     enriched_query=enriched_query,
@@ -522,7 +536,7 @@ class RAGService:
             final_domain = normalize_domain(final_domain) or final_domain
 
         logger.info(
-            f"🔀 Integrated Router Output: method={routing_method} | "
+            f"Integrated Router Output: method={routing_method} | "
             f"primary={resolved_subdomain} | targets={target_subdomains} | "
             f"domain={final_domain} | jurisdiction={final_jurisdiction} | b2b_b2c={b2b_b2c}"
         )
@@ -536,11 +550,11 @@ class RAGService:
                 ttl=1800,
             )
         except Exception as exc:
-            logger.warning(f"⚠️  Could not save reasoning meta to Redis | {exc}")
+            logger.warning(f"[WARN] Could not save reasoning meta to Redis | {exc}")
 
         # ── [3] Resolve statute → Lovdata URL ─────────────────────────────
         statute_filter = _resolve_statute_url(primary_statute_id)
-        logger.info(f"🗂  statute_filter: \'{primary_statute_id}\' → \'{statute_filter}\'")
+        logger.info(f"statute_filter: \'{primary_statute_id}\' → \'{statute_filter}\'")
 
         # ── [4] Multi-Pass Retrieval & Deduplication ──────────────────────
         raw_retrieved_chunks = []
@@ -578,7 +592,7 @@ class RAGService:
         # ── [5] Handle empty retrieval ─────────────────────────────────────
         if not search_results:
             logger.warning(
-                f"⚠️  No results after 5-level fallback | "
+                f"[WARN] No results after 5-level fallback | "
                 f"statute={primary_statute_id} | domain={final_domain}"
             )
             yield {"type": "sources", "data": []}
@@ -611,7 +625,7 @@ class RAGService:
         rag_context = self._build_context(search_results[:10])
         if len(rag_context) > settings.CONTEXT_MAX_LENGTH:
             rag_context = rag_context[:settings.CONTEXT_MAX_LENGTH]
-            logger.warning(f"⚠️  RAG context truncated to {settings.CONTEXT_MAX_LENGTH} chars")
+            logger.warning(f"[WARN] RAG context truncated to {settings.CONTEXT_MAX_LENGTH} chars")
  
         # ── [7] Score gate & Stream answer ────────────────────────────────
         score = 0.5
@@ -626,6 +640,7 @@ class RAGService:
             language=language,
             conversation_history=history,
             response_style=response_style,
+            user_memory=user_memory,
         ):
             if first_token and token.startswith("__SCORE__"):
                 first_token = False
@@ -635,10 +650,10 @@ class RAGService:
                 except Exception:
                     pass
 
-                logger.info(f"📊 Score={score} | Confidence={confidence} | chunks={len(search_results)}")
+                logger.info(f"Score={score} | Confidence={confidence} | chunks={len(search_results)}")
 
                 if score < 0.5:
-                    logger.warning(f"⚠️ Score={score} < 0.5 — blocking answer | statute={primary_statute_id}")
+                    logger.warning(f"[WARN] Score={score} < 0.5 — blocking answer | statute={primary_statute_id}")
                     yield {"type": "sources", "data": []}
                     no_support = (
                         "Jeg finner ingen relevante juridiske utdrag fra min kunnskap."
@@ -679,7 +694,7 @@ class RAGService:
                             visible_sources.append({"url": base_url, "doc_title": doc_title})
 
                     yield {"type": "sources", "data": visible_sources}
-                    logger.info(f"✅ Emitted {len(visible_sources)} source URLs (section_ref included)")
+                    logger.info(f"[OK] Emitted {len(visible_sources)} source URLs (section_ref included)")
                 continue
 
             first_token = False
@@ -702,7 +717,7 @@ class RAGService:
             },
         }
         logger.info(
-            f"✅ LEGAL pipeline complete | "
+            f"[OK] LEGAL pipeline complete | "
             f"chunks={len(search_results)} | tokens={token_count} | score={score} | "
             f"fallback=L{search_results[0].get('fallback_level', 0) if search_results else 'n/a'}"
         )
@@ -714,7 +729,7 @@ class RAGService:
         history: List[Dict[str, str]],
         conversation_id: str,
     ) -> AsyncIterator[Dict[str, Any]]:
-        logger.info("📄 DOCQA pipeline")
+        logger.info("DOCQA pipeline")
 
         doc_text = self._document_service.get_all_session_document_texts(
             conversation_id
@@ -791,7 +806,7 @@ class RAGService:
             },
         }
         logger.info(
-            f"✅ DOCQA pipeline complete | tokens={token_count} | score={score}"
+            f"[OK] DOCQA pipeline complete | tokens={token_count} | score={score}"
         )
 
     async def _handle_hybrid(
@@ -803,13 +818,13 @@ class RAGService:
         history: List[Dict[str, str]],
         conversation_id: str,
     ) -> AsyncIterator[Dict[str, Any]]:
-        logger.info("🔀 HYBRID pipeline (Document + VDB)")
+        logger.info("HYBRID pipeline (Document + VDB)")
 
         doc_text = self._document_service.get_all_session_document_texts(
             conversation_id
         )
         if not doc_text:
-            logger.warning("⚠️  HYBRID: No document text — falling back to LEGAL")
+            logger.warning("[WARN] HYBRID: No document text — falling back to LEGAL")
             async for event in self._handle_legal(
                 query=query,
                 language=language,
@@ -908,7 +923,7 @@ class RAGService:
             },
         }
         logger.info(
-            f"✅ HYBRID pipeline complete | tokens={token_count} | score={score}"
+            f"[OK] HYBRID pipeline complete | tokens={token_count} | score={score}"
         )
 
     async def _handle_followup_with_doc(
@@ -918,7 +933,7 @@ class RAGService:
         history: List[Dict[str, str]],
         conversation_id: str,
     ) -> AsyncIterator[Dict[str, Any]]:
-        logger.info("🔁 FOLLOWUP pipeline (context-aware, doc session)")
+        logger.info("FOLLOWUP pipeline (context-aware, doc session)")
 
         # Re-use the last assistant answer as context via DOCQA
         async for event in self._handle_docqa(
@@ -1001,5 +1016,5 @@ class RAGService:
                 summary += token
             return summary.strip()[:settings.ENRICHMENT_SUMMARY_MAX_CHARS]
         except Exception as exc:
-            logger.warning(f"⚠️  Summary extraction failed | {exc}")
+            logger.warning(f"[WARN] Summary extraction failed | {exc}")
             return doc_text[:500]

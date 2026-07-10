@@ -75,7 +75,7 @@ LANGUAGE RULE:
 
     def __init__(self, temperature: float = 0.7) -> None:
         self._default_temperature = temperature
-        logger.info(" GeneratorAgent initialized")
+        logger.info("GeneratorAgent initialized")
 
     def _make_llm(self, temperature: float, streaming: bool = True) -> AzureChatOpenAI:
         return AzureChatOpenAI(
@@ -87,14 +87,27 @@ LANGUAGE RULE:
             streaming=streaming,
         )
 
+    def _convert_history_to_messages(
+        self, conversation_history: Optional[List[Dict[str, str]]] = None
+    ) -> List:
+        messages = []
+        if conversation_history:
+            for msg in conversation_history:
+                if msg["role"] == "user":
+                    messages.append(HumanMessage(content=msg["content"]))
+                elif msg["role"] == "assistant":
+                    messages.append(AIMessage(content=msg["content"]))
+        return messages
+
     async def stream_casual(
         self,
         query: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
         language: Optional[str] = None,
+        user_memory: str = "",
     ) -> AsyncIterator[str]:
-        logger.info(" GeneratorAgent: casual stream starting")
+        logger.debug("GeneratorAgent: casual stream starting")
 
         # Build system prompt with language instruction
         system_prompt = self.CASUAL_SYSTEM_PROMPT
@@ -106,15 +119,11 @@ LANGUAGE RULE:
                 f"Even though the legal sources (KILDER) are in Norwegian, you must write your entire explanation, analysis, and response in {lang_name}."
             )
 
+        if user_memory:
+            system_prompt += f"\n\n{user_memory}"
+
         messages = [SystemMessage(content=system_prompt)]
-
-        if conversation_history:
-            for msg in conversation_history:
-                if msg["role"] == "user":
-                    messages.append(HumanMessage(content=msg["content"]))
-                elif msg["role"] == "assistant":
-                    messages.append(AIMessage(content=msg["content"]))
-
+        messages.extend(self._convert_history_to_messages(conversation_history))
         messages.append(HumanMessage(content=query))
 
         llm = self._make_llm(temperature=temperature or self._default_temperature)
@@ -123,7 +132,7 @@ LANGUAGE RULE:
             if hasattr(chunk, "content") and chunk.content:
                 yield chunk.content
 
-        logger.info(" GeneratorAgent: casual stream complete")
+        logger.debug("GeneratorAgent: casual stream complete")
 
     async def stream_legal(
         self,
@@ -133,9 +142,9 @@ LANGUAGE RULE:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
         response_style: str = "",
+        user_memory: str = "",
     ) -> AsyncIterator[str]:
-        import json
-        logger.info(" GeneratorAgent: legal stream starting")
+        logger.debug("GeneratorAgent: legal stream starting")
 
         buffer = ""  
 
@@ -150,17 +159,17 @@ LANGUAGE RULE:
             yield "\n[SCORE:0.1]"
             return
 
-        messages = [SystemMessage(content=self.LEGAL_SYSTEM_PROMPT)]
+        system_prompt = self.LEGAL_SYSTEM_PROMPT
+        if user_memory:
+            system_prompt += f"\n\n{user_memory}"
+            
+        messages = [SystemMessage(content=system_prompt)]
 
         if conversation_history:
-            logger.info(
-                f" GeneratorAgent: injecting {len(conversation_history)} history messages"
+            logger.debug(
+                f"GeneratorAgent: injecting {len(conversation_history)} history messages"
             )
-            for msg in conversation_history:
-                if msg["role"] == "user":
-                    messages.append(HumanMessage(content=msg["content"]))
-                elif msg["role"] == "assistant":
-                    messages.append(AIMessage(content=msg["content"]))
+            messages.extend(self._convert_history_to_messages(conversation_history))
 
         # Prepend style instruction when the reasoning agent detected a user preference
         # e.g. "Brief overview requested. Keep under 150 words."
@@ -187,4 +196,4 @@ LANGUAGE RULE:
                 yield chunk.content     # <-- send chunk directly to frontend
 
         # No json parsing needed since frontend expects normal text
-        logger.info(" GeneratorAgent: legal stream complete")
+        logger.debug("GeneratorAgent: legal stream complete")
