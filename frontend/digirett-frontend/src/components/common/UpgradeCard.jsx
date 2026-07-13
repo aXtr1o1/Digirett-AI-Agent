@@ -1,8 +1,10 @@
 import React from "react";
 import { Crown } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const UpgradeCard = ({ theme = "dark" }) => {
   const isDark = theme === "dark";
+  const navigate = useNavigate();
 
   return (
     <div
@@ -50,8 +52,7 @@ const UpgradeCard = ({ theme = "dark" }) => {
       </p>
       <button
         onClick={() => {
-          // Handle upgrade click
-          console.log("Upgrade clicked");
+          navigate("/billing");
         }}
         style={{
           width: "100%",

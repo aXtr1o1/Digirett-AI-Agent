@@ -20,7 +20,8 @@ import {
   AlertTriangle,
   MoreHorizontal,
   Bookmark,
-  X
+  X,
+  Sparkles
 } from "lucide-react";
 import { useUser, useClerk } from "@clerk/clerk-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -31,6 +32,7 @@ import { getSupabaseClient } from "../../lib/supabase";
 import UpgradeCard from "../common/UpgradeCard";
 import QuotaPanel from "../chat/QuotaPanel";
 import LibraryPanel from "../chat/LibraryPanel";
+import subscriptionService from "../../services/subscriptionService";
 
 const Sidebar = ({
   conversations,
@@ -73,6 +75,8 @@ const Sidebar = ({
   const [searchParams] = useSearchParams();
   const activeView = searchParams.get("view"); // "library" or null
   const { getToken } = useAuth();
+  
+  const [activePlan, setActivePlan] = useState("free");
 
   // Sync activeFeature with URL view param
   useEffect(() => {
@@ -104,6 +108,19 @@ const Sidebar = ({
   const { user } = useUser();
   const { signOut } = useClerk();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user) {
+      setActivePlan(subscriptionService.getSubscription(user.id));
+    }
+    const handleSubChange = () => {
+      if (user) {
+        setActivePlan(subscriptionService.getSubscription(user.id));
+      }
+    };
+    window.addEventListener("subscription_change", handleSubChange);
+    return () => window.removeEventListener("subscription_change", handleSubChange);
+  }, [user]);
 
   const handleLogout = async () => {
     await signOut();
@@ -138,12 +155,17 @@ const Sidebar = ({
   };
 
   const role = user?.publicMetadata?.role || "user";
+  const isProfessional = role === "lawyer" || role === "admin" || role === "system_admin";
 
   const features = [
     { id: "chat", label: "Chat", icon: MessageSquare, path: "/chat" },
     { id: "archived", label: "Archived", icon: Archive },
     { id: "library", label: "Library", icon: Bookmark },
   ];
+
+  if (!isProfessional) {
+    features.push({ id: "billing", label: "Upgrade Plan", icon: Sparkles, path: "/billing" });
+  }
 
   if (role === "admin" || role === "system_admin") {
     features.push({
@@ -1155,7 +1177,7 @@ const Sidebar = ({
       {/* BOTTOM SECTION */}
       <div style={{ flexShrink: 0, marginTop: "auto", display: "flex", flexDirection: "column", gap: "8px" }}>
         {/* SESSION USAGE */}
-        {(activeFeature === "chat" || activeFeature === "archived") && (
+        {(activeFeature === "chat" || activeFeature === "archived") && !isProfessional && (
           <div style={{ padding: "0 16px" }}>
             <QuotaPanel
               conversationId={currentConversationId}
@@ -1188,10 +1210,6 @@ const Sidebar = ({
         </div>
       </div>
 
-      {/* UPGRADE TO PREMIUM CARD */}
-      {/* <div style={{ flexShrink: 0 }}>
-        <UpgradeCard theme={theme} />
-      </div> */}
     </aside>
   );
 };
