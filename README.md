@@ -66,9 +66,9 @@ sequenceDiagram
     FE->>BE: Establishes WebSocket connection (with Clerk JWT)
     BE->>BE: Validates token and checks Rate Limits
     BE->>DB: Loads cross-conversation memory (UserMemoryAgent)
-    BE->>BE: Classifies intent & language (LEGAL/CASUAL; NO/EN)
+    BE->>BE: Classifies intent & language (LEGAL/CASUAL, NO/EN)
     
-    rect rgb(240, 240, 240)
+    rect rgba(128, 128, 128, 0.13)
         Note over BE, VDB: If Intent is LEGAL
         BE->>BE: Aligns query vocabulary (QueryReasoningAgent)
         BE->>BE: Routes to legal subdomain (Deterministic Rules / Keyword Scorer / LLM Fallback)
