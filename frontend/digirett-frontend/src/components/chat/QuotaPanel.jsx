@@ -182,6 +182,7 @@ export default function QuotaPanel({ conversationId, isDark }) {
           padding: "10px 14px",
           background: "transparent",
           border: "none",
+          outline: "none",
           cursor: "pointer",
           gap: "8px",
         }}
@@ -207,8 +208,8 @@ export default function QuotaPanel({ conversationId, isDark }) {
           </span>
         </div>
         {collapsed
-          ? <ChevronDown size={12} style={{ color: title, opacity: 0.6 }} />
-          : <ChevronUp   size={12} style={{ color: title, opacity: 0.6 }} />
+          ? <ChevronUp size={12} style={{ color: title, opacity: 0.6 }} />
+          : <ChevronDown size={12} style={{ color: title, opacity: 0.6 }} />
         }
       </button>
 

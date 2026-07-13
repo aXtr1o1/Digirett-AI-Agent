@@ -9,7 +9,8 @@ import { useUser } from "@clerk/clerk-react";
 import hitlService from "../services/hitlService";
 import SystemNotification from "../components/chat/ResolutionNotification";
 import { useTheme } from "../providers/ThemeProvider";
-import { Gavel } from "lucide-react";
+import { Gavel, Crown, PartyPopper, Check } from "lucide-react";
+import subscriptionService from "../services/subscriptionService";
 
 const isUuid = (str) => {
   if (!str) return false;
@@ -31,6 +32,8 @@ const ChatPage = () => {
     const seen = localStorage.getItem("dismissed_system_events");
     return seen ? JSON.parse(seen) : [];
   });
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [purchasedPlan, setPurchasedPlan] = useState("");
 
   const {
     conversations,
@@ -47,7 +50,30 @@ const ChatPage = () => {
     restoreConversation
   } = useConversations();
 
+  // Handle Stripe sandbox redirect success
+  useEffect(() => {
+    const sessionId = searchParams.get("session_id");
+    if (sessionId && user) {
+      let plan = "vekst"; // Default demo plan
+      if (sessionId.includes("startup")) plan = "startup";
+      else if (sessionId.includes("vekst")) plan = "vekst";
+      else if (sessionId.includes("smb")) plan = "smb";
+      else if (sessionId.includes("enterprise")) plan = "enterprise";
+      
+      subscriptionService.setSubscription(user.id, plan, sessionId);
+      setPurchasedPlan(plan);
+      setShowSuccessModal(true);
 
+      // Clean URL parameters by updating navigate
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete("session_id");
+      const path = window.location.pathname;
+      navigate({
+        pathname: path,
+        search: newParams.toString() ? `?${newParams.toString()}` : "",
+      }, { replace: true });
+    }
+  }, [searchParams, user, navigate]);
 
   // Sync currentConversationId with URL parameter
   // Note: archived conversations should still be loadable/viewable — archivedIds only controls the sidebar filter
@@ -350,6 +376,98 @@ const ChatPage = () => {
           }
         }}
       />
+
+      {/* Stripe Payment Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          {/* Confetti particles container */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            {[...Array(24)].map((_, i) => {
+              const left = Math.random() * 100;
+              const delay = Math.random() * 2;
+              const duration = 2 + Math.random() * 2;
+              const color = ["#818cf8", "#a78bfa", "#f472b6", "#38bdf8", "#34d399"][i % 5];
+              return (
+                <div
+                  key={i}
+                  className="absolute top-0 w-2 h-2 rounded-full animate-fall"
+                  style={{
+                    left: `${left}%`,
+                    backgroundColor: color,
+                    animationDelay: `${delay}s`,
+                    animationDuration: `${duration}s`,
+                    opacity: 0.8,
+                  }}
+                />
+              );
+            })}
+          </div>
+
+          <div
+            className={`relative max-w-md w-full p-8 rounded-2xl border text-center shadow-2xl backdrop-blur-xl transition-all scale-up ${
+              isDark
+                ? "bg-[#12121e]/90 border-indigo-500/30 text-white shadow-indigo-500/10"
+                : "bg-white border-gray-200 text-gray-900 shadow-xl"
+            }`}
+          >
+            {/* Pulsing visual glow */}
+            <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-24 h-24 bg-gradient-to-tr from-indigo-500 to-purple-600 rounded-full blur-xl opacity-50 animate-pulse" />
+
+            <div className="relative z-10 flex flex-col items-center">
+              <div className="h-16 w-16 bg-gradient-to-tr from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white mb-6 shadow-lg shadow-indigo-500/20 scale-pulse">
+                <Crown className="h-8 w-8 text-white" />
+              </div>
+
+              <span className="text-[10px] uppercase font-black tracking-widest text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full mb-3">
+                Sandbox Payment Success
+              </span>
+              
+              <h3 className="text-2xl font-black mb-2">
+                Subscription Active!
+              </h3>
+              
+              <p className={`text-sm mb-6 ${isDark ? "text-gray-400" : "text-gray-600"}`}>
+                Congratulations! You are now subscribed to the <span className="font-extrabold text-indigo-400 uppercase">{purchasedPlan}</span> plan. Your premium legal assistance privileges have been activated.
+              </p>
+
+              <div className="w-full flex flex-col gap-2.5">
+                <button
+                  onClick={() => setShowSuccessModal(false)}
+                  className="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-bold rounded-xl text-sm transition-all hover:scale-[1.02] shadow-lg shadow-indigo-500/25"
+                >
+                  Start Consulting
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <style>{`
+            @keyframes fall {
+              0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+              100% { transform: translateY(105vh) rotate(360deg); opacity: 0; }
+            }
+            .animate-fall {
+              animation-name: fall;
+              animation-iteration-count: infinite;
+              animation-timing-function: linear;
+            }
+            .scale-up {
+              animation: scaleUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+            }
+            @keyframes scaleUp {
+              from { transform: scale(0.9); opacity: 0; }
+              to { transform: scale(1); opacity: 1; }
+            }
+            .scale-pulse {
+              animation: pulseIcon 2s infinite ease-in-out;
+            }
+            @keyframes pulseIcon {
+              0%, 100% { transform: scale(1); }
+              50% { transform: scale(1.08); }
+            }
+          `}</style>
+        </div>
+      )}
     </>
   );
 };
