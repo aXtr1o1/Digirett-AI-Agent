@@ -54,70 +54,99 @@ The portal automatically shifts layout depending on who signs in:
 
 ---
 
-##  Folder Structure
+## Codebase Directory Structure
 
-To keep the application organized, files are grouped logically by their function:
+Detailed directory mapping of the frontend repository:
 
-```text
-digirett-frontend/
-├── public/                 # Static files (like icons and the main index.html file)
-├── src/                    # The main source code folder
-│   ├── components/         # Reusable blocks of user interface
-│   │   ├── auth/           # Login/Signup forms and route-protection guards
-│   │   ├── chat/           # Chat composer, message bubbles, library panels, and booking panel
-│   │   ├── common/         # Standard buttons, text inputs, error modals, and visual glow layers
-│   │   └── layout/         # Header bars, sidebars, and structural templates
-│   ├── hooks/              # Custom scripts that manage state and active connections (like chats)
-│   ├── lib/                # Configuration files for third-party libraries (like Supabase)
-│   ├── pages/              # Individual main screens (Chat page, Lawyer/Admin dashboards, etc.)
-│   ├── providers/          # Settings wrapper files (handling theme changes and routing)
-│   ├── services/           # Connection wrappers that make requests to our backend APIs
-│   ├── styles/             # Stylesheets and visual customization settings
-│   ├── utils/              # Standard values, shared rules, and api endpoint URLs
-│   ├── App.js              # The central routing file mapping URLs to pages
-│   ├── index.js            # The main entry file mounting the application
-│   └── index.css           # Global stylesheet containing core design rules
-```
+### 1. Main Pages (`src/pages/`)
+* **[AdminDashboard.jsx](src/pages/AdminDashboard.jsx)**: Admin management panel to review user lists, update roles, suspended states, invite new staff, and audit SLA analytics.
+* **[BillingPage.jsx](src/pages/BillingPage.jsx)**: Customer billing portal displaying monthly/yearly subscription options, pricing grids, and checkout buttons.
+* **[ChatPage.jsx](src/pages/ChatPage.jsx)**: Core client workspace containing AI legal Q&A chats, document attachments review, and payment success celebration modals.
+* **[LawyerDashboard.jsx](src/pages/LawyerDashboard.jsx)**: Lawyer workspace displaying matter queues, claimed consultation cases, and case resolution logs.
+* **[InvitePage.jsx](src/pages/InvitePage.jsx)**: Public landing portal for newly invited lawyers and administrators to accept organization invites.
+* **[ProvisioningPage.jsx](src/pages/ProvisioningPage.jsx)**: Intermediary gate that polls and synchronizes newly accepted roles in Clerk metadata post-registration.
+* **[SignInPage.jsx](src/pages/SignInPage.jsx)** / **[SignUpPage.jsx](src/pages/SignUpPage.jsx)**: Login and registration interface wraps built on Clerk.
+* **[SuspendedPage.jsx](src/pages/SuspendedPage.jsx)**: Locked landing safety screen displayed if a user account is suspended or deactivated by an administrator.
+
+### 2. Services (`src/services/`)
+* **[adminService.js](src/services/adminService.js)**: APIs to query user registers, toggle user roles, deactivations, and generate invite tokens.
+* **[api.js](src/services/api.js)**: Configures Axios with base URLs, headers, and request interceptors to communicate with the backend.
+* **[calService.js](src/services/calService.js)**: Fetches and configures lawyer calendar slots.
+* **[chatService.js](src/services/chatService.js)**: Core WebSockets manager driving real-time message streaming, attachments, and citation mapping.
+* **[conversationService.js](src/services/conversationService.js)**: Saves, lists, deletes, and restores chat session history lists.
+* **[documentService.js](src/services/documentService.js)**: Manages uploading, parsing, and quota checks for document context attachments.
+* **[hitlService.js](src/services/hitlService.js)**: Manages client escalation cases, matter queues, case claims, and resolutions.
+* **[inviteService.js](src/services/inviteService.js)**: Verifies valid registration invite tokens.
+* **[libraryService.js](src/services/libraryService.js)**: Coordinates user-bookmarked statute libraries and citation folders.
+* **[notesService.js](src/services/notesService.js)**: CRUD actions managing private scratchpad notes in the library sidebar.
+* **[sourceService.js](src/services/sourceService.js)**: Resolves Lovdata law URLs to human-readable Norwegian legal act titles.
+* **[subscriptionService.js](src/services/subscriptionService.js)**: Manages customer billing states in localStorage (isolated by Clerk ID) and dispatches update triggers on status updates.
+
+### 3. Core Components (`src/components/`)
+* **[admin/](src/components/admin/)**: UI fragments auditing user ratings, system SLAs, organization invitation records, and audit logs.
+* **[auth/](src/components/auth/)**: Safety wrappers (e.g. `RoleGuard.jsx`) protecting routes based on authorized user permission roles.
+* **[chat/](src/components/chat/)**: The message log parser, typing bubble, input composer, library attachment drawer, and Cal.com meeting schedulers.
+* **[common/](src/components/common/)**: Standard form elements, loading spinners, calendar views, and error dialog overlays.
+* **[conversation/](src/components/conversation/)**: Lists, select rules, context dropmenus, and search bars for past chat session logs.
+* **[layout/](src/components/layout/)**: Structuring layouts including global headers, responsive sidebars (`Sidebar.jsx`), and app shells (`MainLayout.jsx`).
+
+### 4. Custom React Hooks (`src/hooks/`)
+* **[useConversations.js](src/hooks/useConversations.js)**: Centralizes all states for loading, archiving, restoring, deleting, and selecting chat sessions.
+* **[useResponsive.js](src/hooks/useResponsive.js)**: Reads responsive screen thresholds (mobile vs tablet vs desktop).
+
+### 5. Providers (`src/providers/`)
+* **[ClerkWithRouter.jsx](src/providers/ClerkWithRouter.jsx)**: Integrates Clerk user management context with React Router.
+* **[ThemeProvider.jsx](src/providers/ThemeProvider.jsx)**: Holds global dark/light theme choices and updates document classes natively.
+
+### 6. Utilities & Setup (`src/`)
+* **[App.js](src/App.js)**: Declares application routes and navigation links.
+* **[index.js](src/index.js)**: Mounts the main React DOM node.
+* **[index.css](src/index.css)**: Global CSS rules, typography, and styling variables.
+* **[utils/constants.js](src/utils/constants.js)**: Standardizes API endpoints, fallback error texts, and default system tags.
 
 ---
 
 ##  Entire Frontend Workflow
 
-Here is how a user progresses through the system from start to finish:
+Here is a comprehensive overview of the application workflow lifecycle, demonstrating how AI Chat, Role-Based Subscription Control (RBSC / Billing), and Human-in-the-Loop (HITL) Lawyer Collaboration interact from start to finish:
 
 ```mermaid
 graph TD
-    A[1. Sign In & Security check] --> B[2. AI Chat & Document Upload]
-    B --> C[3. Escalation to Lawyer Queue]
-    C --> D[4. Lawyer Claims & Reviews Ticket]
-    D --> E[5. Calendar slot booking via Cal.com]
-    E --> F[6. Case Resolved & Logged]
+    A[1. User Sign In & Role Check] --> B[2. AI Chat & Document Upload]
+    B -->|Check Quota Limits| C{Is Quota Exceeded?}
+    C -->|Yes: Normal User| D[3. RBSC: Billing Upgrade Page]
+    D -->|Checkout Success| B
+    C -->|No / Professional Role| E[4. AI Legal Q&A Streaming]
+    E -->|Click Talk to Lawyer| F[5. HITL: Case Escalation Note]
+    F -->|Ticket created in queue| G[6. Lawyer Claims Ticket]
+    G -->|Direct consultation chat| H[7. Cal.com Consultation Booking]
+    H -->|Consultation notes logged| I[8. Ticket Resolved & Closed]
 ```
 
-### Step 1: Sign In & Security Verification
-*   **Authentication**: The user signs in using Clerk. The system verifies their credentials and pulls their registered role (Client, Lawyer, Admin, or System Admin).
-*   **Redirection**: Based on the role, the app dynamically forwards them to their respective workspace. Suspended users are restricted to a locked notification landing page.
+### Step 1: Signing In
+* **Login**: The user logs in. The system automatically identifies if they are a **Client**, **Lawyer**, or **Admin** and opens the correct workspace for them.
 
-### Step 2: AI Chat & Document Upload
-*   **Starting a Conversation**: The client enters a legal query or uploads an attachment.
-*   **WebSocket Stream**: The application connects to the backend streaming socket. The client sees the AI's response stream in typewriter-style in real time.
-*   **Citations**: The UI highlights source reference links. Users can view underlying source documents directly in their library workspace.
+### Step 2: Chatting with AI
+* **Interactive Chat**: Clients can ask legal questions and upload document attachments. 
+* **Instant Answers**: The AI responds instantly and shows the specific law sources used for its answers.
 
-### Step 3: Escalation
-*   **Request Assistance**: If the user needs more tailored professional feedback, they fill in an escalation note and click **Escalate**.
-*   **Visual Status**: The chat layout locks document uploads, showing an interactive progress status card.
+### Step 3: Upgrading your Plan (Subscription & Billing)
+* **Limits**: Normal users have a limit of 10 free messages and 2 documents.
+* **Upgrades**: To get unlimited access, they click **Upgrade Plan** in the sidebar, choose a monthly or yearly plan, and complete checkout.
+* **Unlock**: Once paid, their limits are removed.
+* **Exemptions**: Lawyers and Admins have unlimited access and will not see any upgrade buttons or limit notices.
 
-### Step 4: Lawyer Review
-*   **Claiming Tickets**: A lawyer signs in to their portal, views the claimable queue, and claims the pending request.
-*   **Audit Context**: The lawyer opens the ticket details page to read the full conversation logs and examine files the client uploaded.
+### Step 4: Connecting to a Lawyer
+* **Request Help**: If a client needs official legal help, they click **Talk to Lawyer**, write a short summary of their case, and submit.
+* **Case Queue**: The case is sent to the lawyer's queue, and the client's chat is paused while they wait.
 
-### Step 5: Consultations & Bookings
-*   **Schedule Meetings**: The client is notified that a lawyer has claimed their case.
-*   **Interactive Booking**: The booking block fetches the lawyer's availability and displays a calendar grid. The user chooses a convenient slot to schedule a video conference.
+### Step 5: Live Lawyer Consultation
+* **Review & Chat**: A lawyer reviews the request, claims the case, and opens a direct chat with the client.
+* **Scheduling**: The lawyer can send a link to schedule a video call using an embedded calendar.
 
-### Step 6: Closeout & Reports
-*   **Resolution Logs**: After meeting, the lawyer logs a resolution summary. The ticket is closed.
-*   **Admin Audit**: Administrators and System Admins audit performance metrics, SLA response times, and customer ratings on the administrative panel.
+### Step 6: Resolving the Case
+* **Close Ticket**: After the consultation, the lawyer writes the resolution details, resolves the case, and closes the ticket.
+* **Admin Auditing**: Admins can review case statistics and performance metrics in their admin panel.
 
 ---
 
