@@ -63,6 +63,9 @@ const ChatPage = () => {
       subscriptionService.setSubscription(user.id, plan, sessionId);
       setPurchasedPlan(plan);
       setShowSuccessModal(true);
+      
+      // Force Clerk to reload metadata instantly
+      user.reload().catch(err => console.error("Error reloading Clerk user:", err));
 
       // Clean URL parameters by updating navigate
       const newParams = new URLSearchParams(searchParams);

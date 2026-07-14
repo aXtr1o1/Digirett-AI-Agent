@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     # Svix webhook signing secret — from Clerk Dashboard → Webhooks
     # Required to validate incoming webhook payloads (prevents spoofing)
     CLERK_WEBHOOK_SECRET: str = ""
+    
+    # ── Stripe Sandbox Billing ───────────────────────────────────────────
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    
     # Default tenant UUID — the single tenant row in the tenants table.
     # Every new user is assigned this tenant on signup (webhook handler).
     DEFAULT_TENANT_ID: str = ""
