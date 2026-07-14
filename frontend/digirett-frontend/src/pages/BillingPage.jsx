@@ -100,7 +100,7 @@ useEffect(() => {
       {/* Main Content Area */}
       <div className="flex-1 max-w-[1400px] w-full mx-auto px-6 py-6 md:py-10 flex flex-col items-center z-10">
         {/* Top Header */}
-        <div className="text-center mb-6 md:mb-8">
+        <div className="font-serif text-center mb-6 md:mb-8">
           <h1 className={`text-2xl md:text-3.5xl font-bold tracking-tight mb-2 ${isDark ? "text-white" : "text-gray-950"}`}>
             Upgrade your plan
           </h1>
