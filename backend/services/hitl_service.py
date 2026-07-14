@@ -1,23 +1,18 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 from db.supabase_client import SupabaseClient
 
 logger = logging.getLogger(__name__)
 
-# Ticket statuses in lifecycle order
-# open → assigned → booked → resolved → closed
 TICKET_STATUSES = ("open", "assigned", "booked", "resolved", "closed")
 
 class HitlService:
-    """
-    HitlService — handles Human-In-The-Loop (HITL) escalation tickets.
-    """
 
     def __init__(self, supabase_client: SupabaseClient) -> None:
         self._supabase = supabase_client
-        logger.info("✅ HitlService initialized")
+        logger.info("[OK] HitlService initialized")
 
     def _log_audit(self, action: str, performer_id: Optional[str], payload: Dict[str, Any]) -> None:
         """Saves an entry to the audit_logs table for administrative oversight."""
@@ -29,11 +24,7 @@ class HitlService:
                 "created_at": datetime.utcnow().isoformat()
             }).execute()
         except Exception as exc:
-            logger.warning(f"⚠️ Audit logging failed | {action} | {exc}")
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # USER ACTIONS
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            logger.warning(f"[WARN] Audit logging failed | {action} | {exc}")
 
     def create_ticket(
         self,
@@ -45,9 +36,6 @@ class HitlService:
         priority: str = "normal",
         urgent_reason: Optional[str] = None
     ) -> Dict[str, Any]:
-        """
-        Creates a new escalation ticket. Called when a user is unsatisfied.
-        """
         try:
             # Enforce limits on urgent tickets (Disabled - Priority system on hold)
             # if priority.lower() == "urgent":
@@ -107,9 +95,6 @@ class HitlService:
             raise ValueError(f"Failed to create ticket: {exc}")
 
     def is_conversation_escalated(self, conversation_id: str) -> bool:
-        """
-        Checks if a conversation already has an active (open or assigned) ticket.
-        """
         try:
             response = self._supabase.table("hitl_tickets").select("ticket_id") \
                 .eq("conversation_id", conversation_id) \
@@ -121,10 +106,7 @@ class HitlService:
             return False
 
     def _auto_handle_no_show(self, ticket: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Internal logic to detect and apply automatic no-show if meeting time + 15 mins has passed.
-        Only applies to 'booked' tickets.
-        """
+        
         if ticket.get("status") != "booked":
             return ticket
             
@@ -167,9 +149,6 @@ class HitlService:
         return ticket
 
     def get_ticket_by_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Returns the most recent active ticket for a conversation with full user and lawyer details.
-        """
         try:
             response = (
                 self._supabase.table("hitl_tickets")
@@ -230,9 +209,7 @@ class HitlService:
             return None
 
     def get_escalated_conversation_ids(self, conversation_ids: List[str]) -> set:
-        """
-        Given a list of conversation IDs, returns a set of those that are currently escalated.
-        """
+        
         if not conversation_ids:
             return set()
         try:
@@ -245,16 +222,8 @@ class HitlService:
             logger.error(f"❌ Failed to fetch escalated IDs | {exc}")
             return set()
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # LAWYER ACTIONS
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
     def get_open_tickets(self, tenant_id: Optional[str] = None, lawyer_id: Optional[str] = None) -> List[Dict[str, Any]]:
-        """
-        Returns all tickets in 'open' status visible on the lawyer dashboard queue.
-        Includes the DB summary from the conversations table and user profile info.
-        Prioritizes matched-domain lawyers first if lawyer_id is provided.
-        """
+        
         try:
             lawyer_domains = []
             if lawyer_id:
@@ -318,13 +287,7 @@ class HitlService:
             return []
 
     def assign_ticket(self, ticket_id: str, lawyer_id: str) -> bool:
-        """
-        Self-assigns an open ticket to a specific lawyer.
-
-        Race-condition guard: uses .eq("status", "open") so that if two lawyers
-        click "Claim" simultaneously, only the first one succeeds.
-        Returns False (rather than raising) if the ticket was already claimed.
-        """
+        
         try:
             now = datetime.utcnow().isoformat()
             resp = self._supabase.table("hitl_tickets").update({
@@ -348,7 +311,6 @@ class HitlService:
             return False
 
     def update_ticket_priority(self, ticket_id: str, priority: str) -> bool:
-        """Updates the priority level of a ticket (e.g. downgrading/upgrading)."""
         try:
             if priority.lower() not in ("normal", "high", "urgent"):
                 raise ValueError("Invalid priority level")
@@ -383,7 +345,6 @@ class HitlService:
             return False
 
     def close_ticket(self, ticket_id: str, user_id: str) -> bool:
-        """Transitions ticket status from 'resolved' to 'closed' for the ticket owner."""
         try:
             t_resp = self._supabase.table("hitl_tickets") \
                 .select("ticket_id, user_id, status") \
@@ -412,7 +373,6 @@ class HitlService:
             raise exc
 
     def re_escalate_ticket(self, ticket_id: str, user_id: str, option: str) -> Dict[str, Any]:
-        """Closes old resolved ticket and creates a new ticket assigned to the same lawyer or sent back to queue."""
         try:
             if option.lower() not in ("same", "different"):
                 raise ValueError("Invalid option. Must be 'same' or 'different'.")
@@ -477,18 +437,13 @@ class HitlService:
             raise exc
 
     def admin_assign_ticket(self, ticket_id: str, lawyer_id: str) -> bool:
-        """
-        Admin force-assigns a ticket to a lawyer regardless of current status.
-        Works on any status: open, assigned, booked.
-        Used by admin for overrides and reassignments at any time.
-        """
+        
         try:
             now = datetime.utcnow().isoformat()
             resp = self._supabase.table("hitl_tickets").update({
                 "assigned_lawyer_id": lawyer_id,
                 "status": "assigned",
                 "assigned_at": now,
-                # Reset booking fields if admin is reassigning
                 "booking_cal_booking_id": None,
                 "booking_url": None,
                 "booking_confirmed_at": None,
@@ -506,9 +461,6 @@ class HitlService:
             return False
 
     def admin_unassign_ticket(self, ticket_id: str) -> bool:
-        """
-        Admin removes the lawyer assignment from a ticket, resetting it to 'open'.
-        """
         try:
             resp = self._supabase.table("hitl_tickets").update({
                 "assigned_lawyer_id": None,
@@ -557,17 +509,8 @@ class HitlService:
             return False
 
     def get_ticket_with_user_details(self, ticket_id: str, lawyer_id: str, user_role: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """
-        Fetches full ticket details including the user's profile info.
-        Enforces that ONLY the assigned lawyer or admins can see this.
-
-        Returns the ticket with a 'user_info' key containing:
-          - email, user_name (from users table)
-          - display_name, phone_number (from user_profiles)
-        """
+        
         try:
-            # hitl_tickets has two FKs to users (user_id and assigned_lawyer_id)
-            # We must use the explicit FK hint for the user join to avoid ambiguity
             response = (
                 self._supabase.table("hitl_tickets")
                 .select(
@@ -629,9 +572,6 @@ class HitlService:
             return None
 
     def get_lawyer_resolved_history(self, lawyer_id: str) -> List[Dict[str, Any]]:
-        """
-        Returns all tickets resolved by a specific lawyer.
-        """
         try:
             response = self._supabase.table("hitl_tickets") \
                 .select(
@@ -639,7 +579,8 @@ class HitlService:
                     "users!hitl_tickets_user_id_fkey("
                     "  email, "
                     "  user_profiles(display_name)"
-                    ")"
+                    "),"
+                    "conversations!hitl_tickets_conversation_id_fkey(conversation_summary)"
                 ) \
                 .eq("assigned_lawyer_id", lawyer_id) \
                 .in_("status", ["resolved", "closed"]) \
@@ -654,16 +595,16 @@ class HitlService:
                 ticket["user_display_name"] = raw_profile.get("display_name")
                 ticket["user_email"] = raw_user.get("email")
                 
+                conv_data = ticket.pop("conversations", {}) or {}
+                ticket["conversation_summary"] = conv_data.get("conversation_summary")
+                
             return data
         except Exception as exc:
             logger.error(f"❌ Failed to fetch lawyer history | {exc}")
             return []
 
     def get_lawyer_active_tickets(self, lawyer_id: str) -> List[Dict[str, Any]]:
-        """
-        Returns tickets assigned to a specific lawyer that are NOT resolved or closed.
-        Includes user and conversation details.
-        """
+        
         try:
             query = self._supabase.table("hitl_tickets") \
                 .select(
@@ -721,10 +662,7 @@ class HitlService:
             return []
 
     def get_user_tickets(self, user_id: str) -> List[Dict[str, Any]]:
-        """
-        Returns all tickets created by a specific user.
-        Includes the assigned lawyer's name if the ticket is claimed.
-        """
+        
         try:
             query = self._supabase.table("hitl_tickets") \
                 .select(
@@ -777,16 +715,10 @@ class HitlService:
             logger.error(f"❌ Failed to fetch user tickets | {exc}")
             return []
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # SINGLE TICKET LOOKUP (used by Cal routes + webhook)
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 
     def get_ticket_by_id(self, ticket_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Fetches a single ticket by ID with flattened user info and assigned lawyer info.
-        Used internally by cal.py routes and cal_webhooks.py.
-        Returns None if not found.
-        """
+        
         try:
             resp = (
                 self._supabase.table("hitl_tickets")
@@ -822,10 +754,6 @@ class HitlService:
             logger.error(f"❌ get_ticket_by_id failed | {ticket_id} | {exc}")
             return None
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # BOOKING UPDATE (called by Cal.com webhook)
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
     def update_booking(
         self,
         ticket_id: str,
@@ -833,10 +761,7 @@ class HitlService:
         booking_url: Optional[str],
         meeting_time: Optional[str] = None
     ) -> bool:
-        """
-        Called by cal_webhooks.py when Cal.com confirms or reschedules a booking.
-        Updates the ticket status to 'booked' and saves meeting details.
-        """
+       
         try:
             now = datetime.utcnow().isoformat()
             update_data: Dict[str, Any] = {
@@ -871,10 +796,6 @@ class HitlService:
             return False
 
     def handle_cancellation(self, ticket_id: str) -> bool:
-        """
-        Resets a ticket from 'booked' back to 'assigned' when a booking is cancelled.
-        Clears booking details.
-        """
         try:
             resp = self._supabase.table("hitl_tickets").update({
                 "status": "assigned",
@@ -889,11 +810,6 @@ class HitlService:
             return False
 
     def mark_no_show(self, ticket_id: str, notes: Optional[str] = None, no_show_type: str = "user") -> bool:
-        """
-        Marks a ticket as having a no-show.
-        Transitions status back to 'assigned' to allow rescheduling, 
-        but adds a [NO-SHOW] prefix to outcome_notes to inform the UI.
-        """
         try:
             # First, check if it's currently booked
             ticket = self._supabase.table("hitl_tickets").select("status, booking_confirmed_at").eq("ticket_id", ticket_id).execute()
@@ -927,17 +843,8 @@ class HitlService:
             logger.error(f"❌ mark_no_show failed | {ticket_id} | {exc}")
             return False
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # ADMIN FULL QUEUE
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
     def get_all_tickets_for_admin(self) -> List[Dict[str, Any]]:
-        """
-        Returns ALL tickets across all statuses for the admin case queue.
-        Includes user info, assigned lawyer info, booking URL, and outcome notes.
-
-        Statuses returned: open, assigned, booked, resolved, closed
-        """
+        
         try:
             resp = (
                 self._supabase.table("hitl_tickets")
@@ -984,9 +891,6 @@ class HitlService:
             logger.error(f"❌ get_all_tickets_for_admin failed | {exc}")
             return []
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # OUTCOME NOTES + CLOSE
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     def resolve_ticket_with_notes(
         self,
@@ -995,10 +899,7 @@ class HitlService:
         content: str,
         outcome_notes: Optional[str] = None,
     ) -> bool:
-        """
-        Lawyer resolves a ticket with a response + optional outcome notes.
-        Saves the response in hitl_responses and updates the ticket.
-        """
+       
         try:
             # 1. Save lawyer response to hitl_responses
             response_data = {
@@ -1035,10 +936,7 @@ class HitlService:
         ticket_id: str,
         outcome_notes: Optional[str] = None,
     ) -> bool:
-        """
-        Admin closes a ticket with optional billing/outcome notes.
-        Can close from any status.
-        """
+       
         try:
             now = datetime.utcnow().isoformat()
             update_payload: Dict[str, Any] = {
@@ -1062,20 +960,11 @@ class HitlService:
             logger.error(f"❌ close_ticket_admin failed | {ticket_id} | {exc}")
             return False
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # 30-MINUTE ALERT SUPPORT
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
     def get_unassigned_tickets_older_than_minutes(
         self,
         minutes: int = 30,
     ) -> List[Dict[str, Any]]:
-        """
-        Returns open tickets that have been unassigned for more than `minutes`
-        AND for which no alert has been sent yet (alert_sent_at IS NULL).
-
-        Called by the asyncio background task in main.py every 30 minutes.
-        """
+        
         from datetime import timedelta
         try:
             cutoff = (datetime.utcnow() - timedelta(minutes=minutes)).isoformat()
@@ -1088,8 +977,8 @@ class HitlService:
                     ")"
                 )
                 .eq("status", "open")
-                .lt("created_at", cutoff)         # older than cutoff
-                .is_("alert_sent_at", "null")     # alert not yet sent
+                .lt("created_at", cutoff)     
+                .is_("alert_sent_at", "null")
                 .execute()
             )
 
@@ -1106,10 +995,7 @@ class HitlService:
             return []
 
     def mark_alert_sent(self, ticket_ids: List[str]) -> None:
-        """
-        Marks alert_sent_at = NOW() for a list of ticket IDs so the background
-        task doesn't fire duplicate alerts for the same ticket.
-        """
+       
         if not ticket_ids:
             return
         try:
@@ -1117,15 +1003,12 @@ class HitlService:
             self._supabase.table("hitl_tickets").update(
                 {"alert_sent_at": now}
             ).in_("ticket_id", ticket_ids).execute()
-            logger.info(f"✅ Alert marked sent for {len(ticket_ids)} tickets")
+            logger.info(f"[OK] Alert marked sent for {len(ticket_ids)} tickets")
         except Exception as exc:
-            logger.warning(f"⚠️ mark_alert_sent failed | {exc}")
+            logger.warning(f"[WARN] mark_alert_sent failed | {exc}")
 
     def auto_close_stale_resolved_tickets(self) -> int:
-        """
-        Finds all resolved tickets older than 24 hours, updates status to 'closed',
-        and inserts a system message to inform the user in the conversation chat.
-        """
+        
         try:
             cutoff = (datetime.utcnow() - timedelta(hours=24)).isoformat()
             resp = self._supabase.table("hitl_tickets") \
@@ -1169,3 +1052,116 @@ class HitlService:
         except Exception as exc:
             logger.error(f"❌ Error during auto-closing stale tickets | {exc}")
             return 0
+
+    def get_lawyer_personal_analytics(self, lawyer_id: str) -> Dict[str, Any]:
+       
+        try:
+            # 1. Fetch all resolved/closed tickets once
+            all_resolved_resp = self._supabase.table("hitl_tickets") \
+                .select("ticket_id, created_at, assigned_at, resolved_at") \
+                .eq("assigned_lawyer_id", lawyer_id) \
+                .in_("status", ["resolved", "closed"]) \
+                .execute()
+            resolved_list = all_resolved_resp.data or []
+            total_count = len(resolved_list)
+
+            # 2. Cases This Week (filtered from resolved_list)
+            now = datetime.now(timezone.utc)
+            monday = now - timedelta(days=now.weekday())
+            monday_start_dt = datetime(monday.year, monday.month, monday.day, tzinfo=timezone.utc)
+            
+            weekly_count = 0
+            for r in resolved_list:
+                res_str = r.get("resolved_at")
+                if res_str:
+                    try:
+                        res_dt = datetime.fromisoformat(res_str.replace("Z", "+00:00"))
+                        if res_dt >= monday_start_dt:
+                            weekly_count += 1
+                    except Exception as exc:
+                        logger.warning(f"Failed to parse resolved_at date for ticket {r.get('ticket_id')} | {exc}")
+
+            # 3. Avg Resolution Time (All-Time)
+            resolution_seconds = []
+            for r in resolved_list:
+                a_str = r.get("assigned_at")
+                res_str = r.get("resolved_at")
+                if a_str and res_str:
+                    try:
+                        a_dt = datetime.fromisoformat(a_str.replace("Z", "+00:00"))
+                        res_dt = datetime.fromisoformat(res_str.replace("Z", "+00:00"))
+                        resolution_seconds.append((res_dt - a_dt).total_seconds())
+                    except Exception as exc:
+                        logger.warning(f"Failed to calculate resolution time for ticket {r.get('ticket_id')} | {exc}")
+            avg_resolution = sum(resolution_seconds) / len(resolution_seconds) if resolution_seconds else 0.0
+
+            # 4. Avg Response Time (All-Time) - calculated as time to claim (assigned_at - created_at)
+            response_seconds = []
+            for t in resolved_list:
+                c_str = t.get("created_at")
+                a_str = t.get("assigned_at")
+                if c_str and a_str:
+                    try:
+                        c_dt = datetime.fromisoformat(c_str.replace("Z", "+00:00"))
+                        a_dt = datetime.fromisoformat(a_str.replace("Z", "+00:00"))
+                        response_seconds.append((a_dt - c_dt).total_seconds())
+                    except Exception as exc:
+                        logger.warning(f"Failed to calculate response time for ticket {t.get('ticket_id')} | {exc}")
+            avg_response = sum(response_seconds) / len(response_seconds) if response_seconds else 0.0
+
+            # 5. Customer Rating
+            ratings_resp = self._supabase.table("consultation_ratings") \
+                .select("rating") \
+                .eq("lawyer_id", lawyer_id) \
+                .execute()
+            ratings_list = ratings_resp.data or []
+            avg_rating = sum(r["rating"] for r in ratings_list) / len(ratings_list) if ratings_list else 0.0
+
+            # 6. Acceptance Rate (My Claimed Cases / Total Escalated Cases) using exact count queries
+            total_tickets_resp = self._supabase.table("hitl_tickets").select("ticket_id", count="exact").execute()
+            total_tickets_count = total_tickets_resp.count or 0
+
+            my_claimed_resp = self._supabase.table("hitl_tickets").select("ticket_id", count="exact").eq("assigned_lawyer_id", lawyer_id).execute()
+            my_claimed_count = my_claimed_resp.count or 0
+
+            acceptance_rate = (my_claimed_count / total_tickets_count) * 100.0 if total_tickets_count > 0 else 0.0
+
+            # 7. AI Bot vs Human Escalation Stats
+            total_convs_resp = self._supabase.table("conversations").select("conversation_id", count="exact").execute()
+            total_convs = total_convs_resp.count or 0
+
+            total_tickets_resp = self._supabase.table("hitl_tickets").select("ticket_id", count="exact").execute()
+            total_tickets = total_tickets_resp.count or 0
+
+            user_msgs_resp = self._supabase.table("messages").select("message_id", count="exact").eq("role", "user").execute()
+            user_msgs = user_msgs_resp.count or 0
+
+            bot_msgs_resp = self._supabase.table("messages").select("message_id", count="exact").eq("role", "assistant").execute()
+            bot_msgs = bot_msgs_resp.count or 0
+
+            return {
+                "total_cases_handled": total_count,
+                "cases_this_week": weekly_count,
+                "avg_response_time_seconds": int(avg_response),
+                "avg_resolution_time_seconds": int(avg_resolution),
+                "acceptance_rate_percentage": round(acceptance_rate, 1),
+                "average_rating": round(avg_rating, 2),
+                "total_conversations": total_convs,
+                "total_escalations": total_tickets,
+                "total_user_messages": user_msgs,
+                "total_bot_messages": bot_msgs
+            }
+        except Exception as exc:
+            logger.error(f"❌ get_lawyer_personal_analytics failed for {lawyer_id} | {exc}")
+            return {
+                "total_cases_handled": 0,
+                "cases_this_week": 0,
+                "avg_response_time_seconds": 0,
+                "avg_resolution_time_seconds": 0,
+                "acceptance_rate_percentage": 100.0,
+                "average_rating": 0.0,
+                "total_conversations": 0,
+                "total_escalations": 0,
+                "total_user_messages": 0,
+                "total_bot_messages": 0
+            }

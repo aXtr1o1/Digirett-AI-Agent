@@ -36,7 +36,7 @@ class OrchestratorAgent:
         )
         result = await self._intent.run(intent_input)
         logger.info(
-            f"🎯 OrchestratorAgent: intent={result['intent']}, language={result['language']}"
+            f" OrchestratorAgent: intent={result['intent']}, language={result['language']}"
         )
         return result
 

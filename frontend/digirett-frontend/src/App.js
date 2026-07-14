@@ -19,6 +19,8 @@ import ProvisioningPage from "./pages/ProvisioningPage";
 import SuspendedPage from "./pages/SuspendedPage";
 import { useUser, useAuth } from "@clerk/clerk-react";
 import { ThemeProvider } from "./providers/ThemeProvider";
+import useMobileViewport from "./hooks/useMobileViewport";
+import BillingPage from "./pages/BillingPage";
 
 const HomeRedirect = () => {
   const { user, isLoaded: userLoaded } = useUser();
@@ -69,6 +71,7 @@ const HomeRedirect = () => {
 };
 
 function App() {
+  useMobileViewport();
   return (
     <ThemeProvider>
       <BrowserRouter>
@@ -147,6 +150,15 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ChatPage />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/billing"
+              element={
+                <ProtectedRoute>
+                  <BillingPage />
                 </ProtectedRoute>
               }
             />

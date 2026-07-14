@@ -248,7 +248,7 @@ def assign_ticket(
     _brief_service = BriefService(_hitl_service._supabase)
     background_tasks.add_task(_brief_service.generate_case_brief, ticket_id)
 
-    logger.info(f"✅ Ticket claimed | ticket={ticket_id} | lawyer={lawyer_id}")
+    logger.info(f"[OK] Ticket claimed | ticket={ticket_id} | lawyer={lawyer_id}")
     return {"message": "Ticket assigned successfully.", "ticket_id": ticket_id}
 
 
@@ -552,7 +552,7 @@ def respond_to_ticket(
             detail="Failed to save response.",
         )
 
-    logger.info(f"✅ Ticket resolved | ticket={ticket_id} | lawyer={lawyer_id}")
+    logger.info(f"[OK] Ticket resolved | ticket={ticket_id} | lawyer={lawyer_id}")
 
     # ── Notify user of resolution in the background ──────────────────
     if _email_service:
@@ -711,3 +711,18 @@ async def _send_resolution_notification(ticket_id: str, content: str):
                 )
     except Exception as exc:
         logger.warning(f"⚠️ Resolution email notification failed (non-fatal) | {exc}")
+
+@router.get("/lawyer/analytics/personal")
+async def get_lawyer_personal_analytics(
+    current_user: ClerkUser = Depends(require_db_role("lawyer", "admin"))
+):
+    """
+    Get personal performance analytics and metrics for the logged-in lawyer
+    """
+    lawyer_id = _user_service.get_user_id_from_clerk_id(current_user.clerk_user_id)
+    if not lawyer_id:
+        raise HTTPException(status_code=404, detail="Lawyer database profile not found")
+        
+    stats = _hitl_service.get_lawyer_personal_analytics(lawyer_id)
+    return stats
+

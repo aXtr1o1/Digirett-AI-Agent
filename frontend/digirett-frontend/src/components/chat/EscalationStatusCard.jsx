@@ -208,34 +208,40 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
   if (status === "open") {
     const domainName = getDomainEnglishName(ticket?.detected_domain);
     return (
-      <div className={`${containerClass} animate-pulse-subtle ${!isSidebar ? (isDark ? "bg-indigo-500/5 border-indigo-500/20" : "bg-indigo-50 border-indigo-100") : ""
+      <div className={containerClass}>
+        <div className={`p-5 rounded-2xl border animate-pulse-subtle ${
+          isDark ? "bg-indigo-500/5 border-indigo-500/20" : "bg-indigo-50 border-indigo-100"
         }`}>
-        <div className="flex items-start gap-4">
-          <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20 flex-shrink-0">
-            <Scale className="text-white w-5 h-5" />
-          </div>
-          <div className="flex-1">
-            <div className="flex justify-between items-start gap-2">
-              <h4 className={`text-sm font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
-                {domainName ? `Finding an expert in ${domainName}...` : "Searching for a Lawyer..."}
-              </h4>
-              {renderPriorityBadge()}
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20 flex-shrink-0">
+              <Scale className="text-white w-5 h-5" />
             </div>
-            <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
-              {domainName ? (
-                <>
-                  Your matter has been escalated. A lawyer specializing in <strong>{domainName}</strong> is currently reviewing your details and will accept shortly.
-                </>
-              ) : (
-                "Your matter has been escalated. A specialized lawyer is currently reviewing your matter and will accept shortly."
-              )}
-            </p>
-            <div className="mt-4 flex items-center gap-2">
-              <Loader2 className="w-3 h-3 text-indigo-500 animate-spin" />
-              <span className="text-[9px] font-black uppercase tracking-widest text-indigo-500">Awaiting Assignment</span>
+            <div className="flex-1">
+              <div className="flex justify-between items-start gap-2">
+                <h4 className={`text-xs font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
+                  {domainName ? `Finding an expert in ${domainName}...` : "Searching for a Lawyer..."}
+                </h4>
+                {renderPriorityBadge()}
+              </div>
+              <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
+                {domainName ? (
+                  <>
+                    Your matter has been escalated. A lawyer specializing in <strong>{domainName}</strong> is currently reviewing your details and will accept shortly.
+                  </>
+                ) : (
+                  "Your matter has been escalated. A specialized lawyer is currently reviewing your matter and will accept shortly."
+                )}
+              </p>
+              <div className="mt-4 flex items-center gap-2">
+                <Loader2 className="w-3 h-3 text-indigo-500 animate-spin" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-indigo-500">Awaiting Assignment</span>
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Pre-Consultation Messages */}
+        <PreConsultationChat ticketId={ticket.ticket_id} isDark={isDark} userRole="user" conversationId={conversationId} />
       </div>
     );
   }
@@ -295,6 +301,25 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
           </div>
         </div>
 
+        {/* Pre-Consultation Messages */}
+        <PreConsultationChat ticketId={ticket.ticket_id} isDark={isDark} userRole="user" conversationId={conversationId} />
+
+        {/* Translucent 'or' Divider */}
+        <div className="relative my-2 flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center" aria-hidden="true">
+            <div className={`w-full border-t ${isDark ? "border-white/5" : "border-slate-200"}`}></div>
+          </div>
+          <div className="relative flex justify-center text-[10px] font-black uppercase tracking-widest">
+            <span className={`px-3 py-1 rounded-full border shadow-sm backdrop-blur-md ${
+              isDark 
+                ? "bg-slate-900/60 border-white/5 text-slate-400" 
+                : "bg-white/80 border-slate-200 text-slate-500"
+            }`}>
+              or
+            </span>
+          </div>
+        </div>
+
         {/* CAL.COM BOOKING SYSTEM */}
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
           <BookingSystem
@@ -304,9 +329,6 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
             isSidebar={isSidebar}
           />
         </div>
-
-        {/* Pre-Consultation Messages */}
-        <PreConsultationChat ticketId={ticket.ticket_id} isDark={isDark} userRole="user" conversationId={conversationId} />
       </div>
     );
   }
@@ -375,7 +397,7 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
           <p className="text-[11px] text-slate-500 font-medium">
             {isClosedOrResolvedClosed
               ? (ticket.outcome_notes && ticket.outcome_notes.toLowerCase().includes("automatically closed")
-                  ? "Denne saken har blitt automatisk lukket fordi det ikke ble foretatt noen handling innen 24 timer etter løsning. Vennligst vurder opplevelsen din. / This case has been automatically closed as no action was taken within 24 hours of lawyer resolution. Please rate your experience."
+                  ? "This case has been automatically closed as no action was taken within 24 hours of lawyer resolution. Please rate your experience."
                   : "This case has been closed. Please rate your experience.")
               : "Your legal consultation has been completed."}
           </p>
@@ -595,6 +617,13 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
         {!ratingSubmitted ? (
           <form onSubmit={handleRatingSubmit} className="space-y-4">
             <div className="text-center">
+              {ticket.outcome_notes && ticket.outcome_notes.toLowerCase().includes("automatically closed") && (
+                <div className={`mb-3 p-3 rounded-xl text-[10px] leading-relaxed font-semibold text-center border border-dashed ${
+                  isDark ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400" : "bg-indigo-50 border-indigo-100 text-indigo-700"
+                }`}>
+                  This case has been automatically closed as no action was taken within 24 hours of lawyer resolution. Please rate your experience.
+                </div>
+              )}
               <h5 className={`text-xs font-black uppercase tracking-widest ${isDark ? "text-indigo-450" : "text-indigo-600"} mb-1`}>
                 Rate Your Consultation
               </h5>
@@ -937,6 +966,7 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", conversation
           onChange={(e) => setNewMessage(e.target.value)}
           placeholder="Type a message to your lawyer..."
           disabled={sending || isUploading}
+          style={{ flex: "1 1 0%", minWidth: "0" }}
           className={`flex-1 min-w-0 px-3 py-2 rounded-xl text-[11px] font-medium outline-none transition-all ${
             isDark
               ? "bg-slate-950 border border-white/5 text-slate-300 focus:border-indigo-500/30"

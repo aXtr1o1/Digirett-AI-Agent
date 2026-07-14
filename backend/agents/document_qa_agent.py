@@ -60,7 +60,7 @@ SCORING:
 
     def __init__(self, temperature: float = 0.2) -> None:
         self._temperature = temperature
-        logger.info("✅ DocumentQAAgent initialized")
+        logger.info("[OK] DocumentQAAgent initialized")
 
     def _make_llm(self, streaming: bool = True) -> AzureChatOpenAI:
         return AzureChatOpenAI(
@@ -80,7 +80,7 @@ SCORING:
         conversation_history: Optional[List[Dict[str, str]]] = None,
     ) -> AsyncIterator[str]:
         
-        logger.info("📄 DocumentQAAgent: DOCQA stream starting (document only)")
+        logger.debug("DocumentQAAgent: DOCQA stream starting (document only)")
         logger.debug(f"   Query: '{query[:80]}'")
         logger.debug(f"   Language: {language}")
         logger.debug(f"   Document size: {len(doc_text)} characters")
@@ -90,7 +90,7 @@ SCORING:
 
         # Inject conversation history for follow-up awareness
         if conversation_history:
-            logger.debug(f"   📚 Injecting {min(len(conversation_history), 6)} history messages")
+            logger.debug(f"   Injecting {min(len(conversation_history), 6)} history messages")
             for msg in conversation_history[-6:]:  # last 3 turns
                 if msg["role"] == "user":
                     messages.append(HumanMessage(content=msg["content"]))
@@ -104,7 +104,7 @@ SCORING:
             truncated_flag = " (truncated)"
             truncated_doc += "\n\n[... document truncated for length ...]"
         
-        logger.debug(f"   📄 Document prepared: {len(truncated_doc)} chars{truncated_flag}")
+        logger.debug(f"   Document prepared: {len(truncated_doc)} chars{truncated_flag}")
 
         user_prompt = (
             f"DOCUMENT TEXT:\n{truncated_doc}\n\n"
@@ -116,8 +116,8 @@ SCORING:
         messages.append(HumanMessage(content=user_prompt))
 
         llm = self._make_llm(streaming=True)
-        logger.debug(f"   🤖 LLM initialized for streaming")
-        logger.debug(f"   ▶️  Starting token stream...")
+        logger.debug(f"   LLM initialized for streaming")
+        logger.debug(f"   Starting token stream...")
         
         token_count = 0
         async for chunk in llm.astream(messages):
@@ -125,7 +125,7 @@ SCORING:
                 token_count += 1
                 yield chunk.content
 
-        logger.info(f"✅ DOCQA stream complete | {token_count} tokens generated")
+        logger.debug(f"DOCQA stream complete | {token_count} tokens generated")
 
     async def stream_hybrid(
         self,
@@ -135,7 +135,7 @@ SCORING:
         language: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
     ) -> AsyncIterator[str]:
-        logger.info("� DocumentQAAgent: HYBRID stream starting (document + VDB)")
+        logger.debug("DocumentQAAgent: HYBRID stream starting (document + VDB)")
         logger.debug(f"   Query: '{query[:80]}'")
         logger.debug(f"   Language: {language}")
         logger.debug(f"   Document size: {len(doc_text)} characters")
@@ -173,4 +173,4 @@ SCORING:
             if hasattr(chunk, "content") and chunk.content:
                 yield chunk.content
 
-        logger.info("✅ DocumentQAAgent: stream_hybrid complete")
+        logger.debug("DocumentQAAgent: stream_hybrid complete")

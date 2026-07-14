@@ -40,7 +40,7 @@ OR
             temperature=0.0,   # Fully deterministic — validation must be consistent
             streaming=False,
         )
-        logger.info("✅ SourceValidationAgent initialized")
+        logger.info("[OK] SourceValidationAgent initialized")
 
     # ── Public interface ──────────────────────────────────────────────────
 
@@ -50,13 +50,13 @@ OR
         chunks: List[Dict[str, Any]],
         attempt: int = 1,
     ) -> Dict[str, Any]:
-        logger.info(
-            f"🔍 SourceValidationAgent: validating {len(chunks)} chunks "
+        logger.debug(
+            f"[DEBUG] SourceValidationAgent: validating {len(chunks)} chunks "
             f"(attempt {attempt})"
         )
 
         if not chunks:
-            logger.warning("⚠️  SourceValidationAgent: no chunks to validate")
+            logger.warning("[WARN] SourceValidationAgent: no chunks to validate")
             return {
                 "correlated": False,
                 "explanation": "No chunks were retrieved from Milvus.",
@@ -79,14 +79,14 @@ OR
             response = await self._llm.agenerate([messages])
             raw = response.generations[0][0].text.strip()
 
-            logger.debug(f"🔍 SourceValidationAgent raw output: {raw}")
+            # logger.debug(f"SourceValidationAgent raw output: {raw}")
 
             result = self._parse_response(raw)
             correlated = result.get("correlated", False)
             explanation = result.get("explanation", "No explanation provided.")
 
-            logger.info(
-                f"🔍 SourceValidationAgent: correlated={correlated} | "
+            logger.debug(
+                f"SourceValidationAgent: correlated={correlated} | "
                 f"attempt={attempt} | reason='{explanation[:100]}'"
             )
 
@@ -101,7 +101,7 @@ OR
             # On validation error, allow pipeline to continue rather than
             # blocking a potentially valid response.
             logger.warning(
-                f"⚠️  SourceValidationAgent failed, allowing pipeline to continue | {exc}"
+                f"[WARN] SourceValidationAgent failed, allowing pipeline to continue | {exc}"
             )
             return {
                 "correlated": True,

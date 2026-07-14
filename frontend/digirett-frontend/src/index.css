@@ -46,6 +46,7 @@
 
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
   }
 
   .scrollbar-thin::-webkit-scrollbar-track {
@@ -220,6 +221,7 @@
 /* Scrollbar — visible in both light and dark mode */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -238,6 +240,11 @@
 * {
   scrollbar-width: thin;
   scrollbar-color: #888 transparent;
+}
+
+.h-dynamic-screen {
+  height: 100vh;
+  height: calc(var(--vh, 1vh) * 100);
 }
 
 .auth-container {

@@ -33,6 +33,7 @@ const documentService = {
       fileName: rawFileName ? decodeURIComponent(rawFileName) : file.name,
       fileType: response.headers.get("X-File-Type"),
       docsRemaining: response.headers.get("X-Docs-Remaining"),
+      duplicate: response.headers.get("X-Duplicate") === "true",
     };
 
     // Consume the stream

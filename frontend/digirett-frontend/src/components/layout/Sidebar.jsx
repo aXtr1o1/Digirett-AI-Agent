@@ -5,6 +5,7 @@ import {
   Archive,
   Menu,
   PanelLeftClose,
+  PanelLeftOpen,
   FolderPlus,
   Image as ImageIcon,
   FileText,
@@ -19,7 +20,8 @@ import {
   AlertTriangle,
   MoreHorizontal,
   Bookmark,
-  X
+  X,
+  Sparkles
 } from "lucide-react";
 import { useUser, useClerk } from "@clerk/clerk-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -30,6 +32,7 @@ import { getSupabaseClient } from "../../lib/supabase";
 import UpgradeCard from "../common/UpgradeCard";
 import QuotaPanel from "../chat/QuotaPanel";
 import LibraryPanel from "../chat/LibraryPanel";
+import subscriptionService from "../../services/subscriptionService";
 
 const Sidebar = ({
   conversations,
@@ -43,8 +46,25 @@ const Sidebar = ({
   theme = "dark",
   onToggleTheme,
   onCollapseSidebar,
+  isMobile = false,
+  isCollapsed = false,
 }) => {
   const isDark = theme === "dark";
+  const [shouldFocusSearch, setShouldFocusSearch] = useState(false);
+  const searchInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!isCollapsed && shouldFocusSearch) {
+      const timer = setTimeout(() => {
+        if (searchInputRef.current) {
+          searchInputRef.current.focus();
+        }
+      }, 150);
+      setShouldFocusSearch(false);
+      return () => clearTimeout(timer);
+    }
+  }, [isCollapsed, shouldFocusSearch]);
+
   const [activeFeature, setActiveFeature] = useState("chat");
   const [activeWorkspace, setActiveWorkspace] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -55,6 +75,8 @@ const Sidebar = ({
   const [searchParams] = useSearchParams();
   const activeView = searchParams.get("view"); // "library" or null
   const { getToken } = useAuth();
+  
+  const [activePlan, setActivePlan] = useState("free");
 
   // Sync activeFeature with URL view param
   useEffect(() => {
@@ -86,6 +108,19 @@ const Sidebar = ({
   const { user } = useUser();
   const { signOut } = useClerk();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user) {
+      setActivePlan(subscriptionService.getSubscription(user.id));
+    }
+    const handleSubChange = () => {
+      if (user) {
+        setActivePlan(subscriptionService.getSubscription(user.id));
+      }
+    };
+    window.addEventListener("subscription_change", handleSubChange);
+    return () => window.removeEventListener("subscription_change", handleSubChange);
+  }, [user]);
 
   const handleLogout = async () => {
     await signOut();
@@ -120,12 +155,17 @@ const Sidebar = ({
   };
 
   const role = user?.publicMetadata?.role || "user";
+  const isProfessional = role === "lawyer" || role === "admin" || role === "system_admin";
 
   const features = [
     { id: "chat", label: "Chat", icon: MessageSquare, path: "/chat" },
     { id: "archived", label: "Archived", icon: Archive },
     { id: "library", label: "Library", icon: Bookmark },
   ];
+
+  if (!isProfessional) {
+    features.push({ id: "billing", label: "Upgrade Plan", icon: Sparkles, path: "/billing" });
+  }
 
   if (role === "admin" || role === "system_admin") {
     features.push({
@@ -194,31 +234,170 @@ const Sidebar = ({
     activeFeature === "archived" ? archivedConversations : activeConversations
   );
 
+  if (isCollapsed) {
+    return (
+      <aside
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          backgroundColor: isDark
+            ? "rgba(17, 17, 17, 0.5)"
+            : "rgba(250, 250, 250, 0.6)",
+          borderRight: isDark
+            ? "1px solid rgba(42, 42, 42, 0.4)"
+            : "1px solid rgba(229, 231, 235, 0.4)",
+          borderTopLeftRadius: "16px",
+          borderTopRightRadius: "16px",
+          borderBottomLeftRadius: "16px",
+          borderBottomRightRadius: "16px",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          overflow: "hidden",
+          height: "calc(100% - 16px)",
+          marginTop: "8px",
+          marginBottom: "8px",
+          padding: "16px 0",
+          gap: "12px",
+          transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+        }}
+      >
+        {/* Toggle Expand Button */}
+        <button
+          onClick={onCollapseSidebar}
+          style={{
+            width: "40px",
+            height: "40px",
+            borderRadius: "12px",
+            backgroundColor: "transparent",
+            border: "none",
+            padding: "0",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: isDark ? "#ffffff" : "#111827",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = isDark
+              ? "rgba(42, 42, 42, 0.5)"
+              : "rgba(243, 244, 246, 0.8)";
+            e.currentTarget.style.transform = "scale(1.05)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "transparent";
+            e.currentTarget.style.transform = "scale(1)";
+          }}
+          title="Expand Sidebar"
+        >
+          <PanelLeftOpen size={20} />
+        </button>
+
+        {/* Divider */}
+        <div style={{
+          width: "32px",
+          height: "1px",
+          backgroundColor: isDark
+            ? "rgba(42, 42, 42, 0.4)"
+            : "rgba(229, 231, 235, 0.4)",
+        }} />
+
+        {/* New Chat Button */}
+        <button
+          onClick={onNewChat}
+          style={{
+            width: "40px",
+            height: "40px",
+            borderRadius: "12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "0",
+            backgroundColor: "transparent",
+            color: isDark ? "#d1d5db" : "#374151",
+            border: "none",
+            cursor: "pointer",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = isDark
+              ? "rgba(42, 42, 42, 0.5)"
+              : "rgba(243, 244, 246, 0.8)";
+            e.currentTarget.style.transform = "scale(1.05)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "transparent";
+            e.currentTarget.style.transform = "scale(1)";
+          }}
+          title="New Chat"
+        >
+          <Plus size={18} />
+        </button>
+
+        {/* Search Button */}
+        <button
+          onClick={() => {
+            setShouldFocusSearch(true);
+            onCollapseSidebar();
+          }}
+          style={{
+            width: "40px",
+            height: "40px",
+            borderRadius: "12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "0",
+            backgroundColor: "transparent",
+            color: isDark ? "#d1d5db" : "#374151",
+            border: "none",
+            cursor: "pointer",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = isDark
+              ? "rgba(42, 42, 42, 0.5)"
+              : "rgba(243, 244, 246, 0.8)";
+            e.currentTarget.style.transform = "scale(1.05)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "transparent";
+            e.currentTarget.style.transform = "scale(1)";
+          }}
+          title="Search History"
+        >
+          <Search size={18} />
+        </button>
+      </aside>
+    );
+  }
+
   return (
     <aside
       style={{
-        width: "260px",
-        minWidth: "260px",
-        maxWidth: "260px",
+        width: "100%",
+        boxSizing: "border-box",
         display: "flex",
         flexDirection: "column",
-        height: "100%",
         backgroundColor: isDark
           ? "rgba(17, 17, 17, 0.5)"
           : "rgba(250, 250, 250, 0.6)",
         borderRight: isDark
           ? "1px solid rgba(42, 42, 42, 0.4)"
           : "1px solid rgba(229, 231, 235, 0.4)",
-        borderTopLeftRadius: "16px",
-        borderTopRightRadius: "16px",
-        borderBottomLeftRadius: "16px",
-        borderBottomRightRadius: "16px",
+        borderTopLeftRadius: isMobile ? "0px" : "16px",
+        borderTopRightRadius: isMobile ? "0px" : "16px",
+        borderBottomLeftRadius: isMobile ? "0px" : "16px",
+        borderBottomRightRadius: isMobile ? "0px" : "16px",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
         overflow: "hidden",
-        height: "calc(100% - 16px)",
-        marginTop: "8px",
-        marginBottom: "8px",
+        height: isMobile ? "100%" : "calc(100% - 16px)",
+        marginTop: isMobile ? "0px" : "8px",
+        marginBottom: isMobile ? "0px" : "8px",
       }}
     >
       {/* APP BRANDING with Hamburger Menu & User Profile */}
@@ -566,14 +745,6 @@ const Sidebar = ({
         }}
       >
 
-        {/* QUOTA PANEL — top of scrollable area */}
-        {activeFeature === "chat" && (
-          <QuotaPanel
-            conversationId={currentConversationId}
-            isDark={isDark}
-          />
-        )}
-
         {/* SEARCH HISTORY INPUT */}
         {(activeFeature === "chat" || activeFeature === "archived" || activeFeature === "library") && (
           <div style={{ padding: "4px 8px", flexShrink: 0 }}>
@@ -590,6 +761,7 @@ const Sidebar = ({
                 }}
               />
               <input
+                ref={searchInputRef}
                 type="text"
                 placeholder="Search history..."
                 value={sidebarSearchQuery}
@@ -704,6 +876,8 @@ const Sidebar = ({
             })}
           </div>
         </div>
+
+
 
         {/* CHAT HISTORY (always visible; shows chat list for chat+library, archived list for archived) */}
         {(activeFeature === "chat" || activeFeature === "archived" || activeFeature === "library") && (
@@ -1000,33 +1174,42 @@ const Sidebar = ({
       </div>
       </div> */}
 
-      {/* BETA DISCLAIMER */}
-      <div style={{ flexShrink: 0, marginTop: "auto", padding: "16px" }}>
-        <div style={{
-          padding: "12px",
-          borderRadius: "12px",
-          backgroundColor: isDark ? "rgba(249, 115, 22, 0.05)" : "rgba(249, 115, 22, 0.1)",
-          border: isDark ? "1px solid rgba(249, 115, 22, 0.2)" : "1px solid rgba(249, 115, 22, 0.3)",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
-            <AlertTriangle size={14} color="#f97316" />
-            <span style={{ fontSize: "11px", fontWeight: "700", color: "#f97316", letterSpacing: "0.05em" }}>BETA VERSION</span>
+      {/* BOTTOM SECTION */}
+      <div style={{ flexShrink: 0, marginTop: "auto", display: "flex", flexDirection: "column", gap: "8px" }}>
+        {/* SESSION USAGE */}
+        {(activeFeature === "chat" || activeFeature === "archived") && !isProfessional && (
+          <div style={{ padding: "0 16px" }}>
+            <QuotaPanel
+              conversationId={currentConversationId}
+              isDark={isDark}
+            />
           </div>
-          <p style={{
-            fontSize: "10px",
-            lineHeight: "1.5",
-            color: isDark ? "#9ca3af" : "#4b5563",
-            margin: 0
+        )}
+
+        {/* BETA DISCLAIMER */}
+        <div style={{ padding: "0 16px 16px" }}>
+          <div style={{
+            padding: "10px 12px",
+            borderRadius: "10px",
+            backgroundColor: isDark ? "rgba(249, 115, 22, 0.05)" : "rgba(249, 115, 22, 0.1)",
+            border: isDark ? "1px solid rgba(249, 115, 22, 0.15)" : "1px solid rgba(249, 115, 22, 0.25)",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
           }}>
-            DigiRett is currently in beta. Responses may be incomplete or inaccurate and should not be treated as formal legal advice.
-          </p>
+            <AlertTriangle size={14} color="#f97316" style={{ flexShrink: 0 }} />
+            <span style={{
+              fontSize: "10px",
+              fontWeight: "600",
+              color: isDark ? "#f97316" : "#c2410c",
+              lineHeight: "1.3",
+            }}>
+              Beta: Responses may be inaccurate as DigiRett is not fully implemented.
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* UPGRADE TO PREMIUM CARD */}
-      {/* <div style={{ flexShrink: 0 }}>
-        <UpgradeCard theme={theme} />
-      </div> */}
     </aside>
   );
 };

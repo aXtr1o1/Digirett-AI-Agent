@@ -119,9 +119,9 @@ export default function QuotaPanel({ conversationId, isDark }) {
 
   /* ── fetch ── */
   const fetchQuota = useCallback(async () => {
-    if (!conversationId) return;
+    const queryId = conversationId || "new-chat";
     try {
-      const data = await documentService.getSessionStatus(conversationId);
+      const data = await documentService.getSessionStatus(queryId);
       setQuota(data);
       setPulse(true);
       setTimeout(() => setPulse(false), 600);
@@ -146,8 +146,8 @@ export default function QuotaPanel({ conversationId, isDark }) {
     return () => clearInterval(countdownRef.current);
   }, [quota?.reset_at]);
 
-  /* hide when no conversation or no data */
-  if (!conversationId || !quota) return null;
+  /* hide when no data */
+  if (!quota) return null;
 
   const turns = quota.turn_count  ?? 0;
   const maxTurns = turns + (quota.turns_remaining ?? 10);
@@ -182,6 +182,7 @@ export default function QuotaPanel({ conversationId, isDark }) {
           padding: "10px 14px",
           background: "transparent",
           border: "none",
+          outline: "none",
           cursor: "pointer",
           gap: "8px",
         }}
@@ -207,8 +208,8 @@ export default function QuotaPanel({ conversationId, isDark }) {
           </span>
         </div>
         {collapsed
-          ? <ChevronDown size={12} style={{ color: title, opacity: 0.6 }} />
-          : <ChevronUp   size={12} style={{ color: title, opacity: 0.6 }} />
+          ? <ChevronUp size={12} style={{ color: title, opacity: 0.6 }} />
+          : <ChevronDown size={12} style={{ color: title, opacity: 0.6 }} />
         }
       </button>
 

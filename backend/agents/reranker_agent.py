@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class RerankerAgent:
 
     def __init__(self) -> None:
-        logger.info("🔃 RerankerAgent: using Azure OpenAI deployment for reranking")
+        logger.info("RerankerAgent: using Azure OpenAI deployment for reranking")
 
         self._client = AzureOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
@@ -22,7 +22,7 @@ class RerankerAgent:
 
         self._deployment = settings.AZURE_OPENAI_DEPLOYMENT
 
-        logger.info("✅ RerankerAgent initialized")
+        logger.info("[OK] RerankerAgent initialized")
 
     def rerank(
         self,

@@ -24,7 +24,7 @@ class EmailService:
         from_email: str,
     ) -> None:
         if not smtp_pass:
-            logger.warning("⚠️ SMTP_PASS is not set. Email notifications may fail.")
+            logger.warning("[WARN] SMTP_PASS is not set. Email notifications may fail.")
 
         self._smtp_host = smtp_host
         self._smtp_port = smtp_port
@@ -32,7 +32,7 @@ class EmailService:
         self._smtp_pass = smtp_pass
         self._from_email = from_email
         logger.info(
-            f"✅ EmailService initialized | host={smtp_host}:{smtp_port} | from={from_email}"
+            f"[OK] EmailService initialized | host={smtp_host}:{smtp_port} | from={from_email}"
         )
 
     async def send_invitation_email(
@@ -49,7 +49,7 @@ class EmailService:
         Returns True on success, False on failure.
         """
         if not self._smtp_pass:
-            logger.error("❌ Cannot send email: SMTP_PASS is not configured.")
+            logger.error("[ERROR] Cannot send email: SMTP_PASS is not configured.")
             return False
 
         # Build invitation link

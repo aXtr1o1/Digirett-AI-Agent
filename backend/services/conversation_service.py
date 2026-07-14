@@ -19,7 +19,7 @@ class ConversationService:
     ) -> None:
         self._supabase = supabase_client
         self._cache = redis_client
-        logger.info(" ConversationService initialized")
+        logger.info("ConversationService initialized")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # CREATE
@@ -194,10 +194,10 @@ class ConversationService:
                 if cached:
                     cached["conversation_summary"] = summary
                     self._cache.set_conversation_meta(conversation_id, cached)
-                logger.info(f"✅ Summary updated for {conversation_id}")
+                logger.info(f"[OK] Summary updated for {conversation_id}")
             return success
         except Exception as exc:
-            logger.error(f"❌ update_summary failed | {exc}")
+            logger.error(f"[ERROR] update_summary failed | {exc}")
             return False
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

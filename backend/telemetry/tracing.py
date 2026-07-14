@@ -42,7 +42,7 @@ def setup_tracing(service_name: str = "lovdata-rag-api") -> None:
     trace.set_tracer_provider(provider)
 
     _tracer = trace.get_tracer(service_name)
-    logger.info(f"✅ OpenTelemetry tracing initialized | service={service_name}")
+    logger.info(f"[OK] OpenTelemetry tracing initialized | service={service_name}")
 
 
 def get_tracer() -> trace.Tracer:

@@ -14,7 +14,7 @@ class CalService:
     BASE_URL = "https://api.cal.com/v2"
 
     def __init__(self) -> None:
-        logger.info("📅 CalService initialized (API v2)")
+        logger.info("[OK] CalService initialized (API v2)")
 
     async def get_available_slots(
         self,
@@ -116,16 +116,16 @@ class CalService:
                 
                 if resp.status_code not in (200, 201):
                     error_detail = resp.text
-                    logger.error(f"❌ Cal.com booking failed | status={resp.status_code} | {error_detail}")
+                    logger.error(f"[ERROR] Cal.com booking failed | status={resp.status_code} | {error_detail}")
                     raise ValueError(f"Cal.com Booking error {resp.status_code}: {error_detail}")
 
                 result = resp.json()
                 data = result.get("data", result)
-                logger.info(f"✅ Cal.com booking created | id={data.get('id')} | ticket={ticket_id}")
+                logger.info(f"[OK] Cal.com booking created | id={data.get('id')} | ticket={ticket_id}")
                 return data
 
             except httpx.RequestError as exc:
-                logger.error(f"❌ Network error creating Cal.com booking | {exc}")
+                logger.error(f"[ERROR] Network error creating Cal.com booking | {exc}")
                 raise ValueError(f"Failed to connect to Cal.com: {exc}")
 
     @staticmethod
