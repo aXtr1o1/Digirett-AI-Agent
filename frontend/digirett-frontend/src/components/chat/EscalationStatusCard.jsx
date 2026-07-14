@@ -38,7 +38,7 @@ const getDomainEnglishName = (domain) => {
   if (normalized === "pengekravsrett_fordringer") return "Monetary Claims & Debt";
   if (normalized === "personvern_gdpr_business_compliance") return "Privacy & GDPR Compliance";
   if (normalized === "tvistelosning_smb") return "Dispute Resolution for SMBs";
-  
+
   // Format custom domains nicely (e.g. criminal_law -> Criminal Law)
   return normalized
     .split(/[_-]/)
@@ -209,9 +209,8 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
     const domainName = getDomainEnglishName(ticket?.detected_domain);
     return (
       <div className={containerClass}>
-        <div className={`p-5 rounded-2xl border animate-pulse-subtle ${
-          isDark ? "bg-indigo-500/5 border-indigo-500/20" : "bg-indigo-50 border-indigo-100"
-        }`}>
+        <div className={`p-5 rounded-2xl border animate-pulse-subtle ${isDark ? "bg-indigo-500/5 border-indigo-500/20" : "bg-indigo-50 border-indigo-100"
+          }`}>
           <div className="flex items-start gap-4">
             <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20 flex-shrink-0">
               <Scale className="text-white w-5 h-5" />
@@ -239,9 +238,6 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
             </div>
           </div>
         </div>
-
-        {/* Pre-Consultation Messages */}
-        <PreConsultationChat ticketId={ticket.ticket_id} isDark={isDark} userRole="user" conversationId={conversationId} />
       </div>
     );
   }
@@ -310,11 +306,10 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
             <div className={`w-full border-t ${isDark ? "border-white/5" : "border-slate-200"}`}></div>
           </div>
           <div className="relative flex justify-center text-[10px] font-black uppercase tracking-widest">
-            <span className={`px-3 py-1 rounded-full border shadow-sm backdrop-blur-md ${
-              isDark 
-                ? "bg-slate-900/60 border-white/5 text-slate-400" 
+            <span className={`px-3 py-1 rounded-full border shadow-sm backdrop-blur-md ${isDark
+                ? "bg-slate-900/60 border-white/5 text-slate-400"
                 : "bg-white/80 border-slate-200 text-slate-500"
-            }`}>
+              }`}>
               or
             </span>
           </div>
@@ -397,8 +392,8 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
           <p className="text-[11px] text-slate-500 font-medium">
             {isClosedOrResolvedClosed
               ? (ticket.outcome_notes && ticket.outcome_notes.toLowerCase().includes("automatically closed")
-                  ? "This case has been automatically closed as no action was taken within 24 hours of lawyer resolution. Please rate your experience."
-                  : "This case has been closed. Please rate your experience.")
+                ? "This case has been automatically closed as no action was taken within 24 hours of lawyer resolution. Please rate your experience."
+                : "This case has been closed. Please rate your experience.")
               : "Your legal consultation has been completed."}
           </p>
         </div>
@@ -409,29 +404,27 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
             <Scale size={12} className="text-indigo-500" />
             <span className="text-indigo-600 text-[10px] font-bold uppercase tracking-wider">Legal Resolution</span>
           </div>
-          <div className={`relative p-4 rounded-xl border-l-4 border-indigo-500 shadow-sm ${
-            isDark 
-              ? "bg-slate-900/60 border-slate-800 text-slate-200" 
+          <div className={`relative p-4 rounded-xl border-l-4 border-indigo-500 shadow-sm ${isDark
+              ? "bg-slate-900/60 border-slate-800 text-slate-200"
               : "bg-slate-50 border-slate-200 text-slate-750"
-          }`}>
+            }`}>
             <div className="prose prose-sm dark:prose-invert max-w-none relative z-10 text-[11px] leading-relaxed font-medium">
-              <ReactMarkdown 
+              <ReactMarkdown
                 components={{
-                  p: ({node, ...props}) => <p className="mb-2 last:mb-0" {...props} />,
-                  strong: ({node, ...props}) => <strong className="font-bold text-indigo-500" {...props} />,
-                  ul: ({node, ...props}) => <ul className="list-disc pl-4 mb-2" {...props} />,
+                  p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
+                  strong: ({ node, ...props }) => <strong className="font-bold text-indigo-500" {...props} />,
+                  ul: ({ node, ...props }) => <ul className="list-disc pl-4 mb-2" {...props} />,
                 }}
               >
                 {ticket.lawyer_response || ticket.outcome_notes || "No specific feedback notes were recorded for this resolution."}
               </ReactMarkdown>
             </div>
           </div>
- 
+
           {isClosedOrResolvedClosed ? (
             /* Rating Section */
-            <div className={`mt-6 p-6 rounded-3xl border ${
-              isDark ? "bg-[#0b1329]/60 border-white/5" : "bg-white border-slate-100"
-            } shadow-sm transition-all duration-300`}>
+            <div className={`mt-6 p-6 rounded-3xl border ${isDark ? "bg-[#0b1329]/60 border-white/5" : "bg-white border-slate-100"
+              } shadow-sm transition-all duration-300`}>
               {ratingSubmitted ? (
                 <div className="flex flex-col items-center text-center">
                   <h5 className={`text-xs font-black tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-900"}`}>
@@ -466,7 +459,7 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
                       How was your discussion with {ticket.assigned_lawyer_name || "your lawyer"}?
                     </p>
                   </div>
- 
+
                   {/* Stars Selector */}
                   <div className="flex justify-center gap-2 py-2">
                     {[1, 2, 3, 4, 5].map((star) => {
@@ -490,7 +483,7 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
                       );
                     })}
                   </div>
- 
+
                   {/* Comment field */}
                   <div className="space-y-1">
                     <textarea
@@ -498,29 +491,27 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
                       onChange={(e) => setRatingComment(e.target.value)}
                       placeholder="Describe your experience (optional)..."
                       rows={2}
-                      className={`w-full p-3 rounded-xl border text-xs font-medium resize-none transition-all outline-none ${
-                        isDark
+                      className={`w-full p-3 rounded-xl border text-xs font-medium resize-none transition-all outline-none ${isDark
                           ? "bg-slate-955 border-white/5 focus:border-indigo-500/30 text-slate-300"
                           : "bg-slate-50 border-slate-200 focus:border-indigo-600/30 text-slate-900 focus:bg-white"
-                      }`}
+                        }`}
                     />
                   </div>
- 
+
                   {ratingError && (
                     <p className="text-[10px] text-red-500 text-center font-semibold">
                       {ratingError}
                     </p>
                   )}
- 
+
                   <div className="flex justify-center">
                     <button
                       type="submit"
                       disabled={rating === 0 || submittingRating}
-                      className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all shadow-md ${
-                        rating === 0
+                      className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all shadow-md ${rating === 0
                           ? "bg-slate-800 text-slate-500 cursor-not-allowed opacity-50"
                           : "bg-indigo-600 hover:bg-indigo-500 active:scale-95"
-                      }`}
+                        }`}
                     >
                       {submittingRating ? "Submitting..." : "Submit Feedback"}
                     </button>
@@ -547,11 +538,10 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
                 <button
                   onClick={() => handleReescalateCase("different")}
                   disabled={reescalateOption !== null}
-                  className={`w-full py-2 rounded-xl text-xs font-semibold border transition-all ${
-                    isDark 
-                      ? "bg-slate-800 hover:bg-slate-700 text-white border-slate-700" 
+                  className={`w-full py-2 rounded-xl text-xs font-semibold border transition-all ${isDark
+                      ? "bg-slate-800 hover:bg-slate-700 text-white border-slate-700"
                       : "bg-white hover:bg-slate-100 text-slate-700 border-slate-300"
-                  }`}
+                    }`}
                 >
                   {reescalateOption === "different" ? "Re-escalating..." : "Different Lawyer"}
                 </button>
@@ -574,11 +564,10 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
               </button>
               <button
                 onClick={() => setShowReescalateOptions(true)}
-                className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all ${
-                  isDark 
-                    ? "bg-slate-800 hover:bg-slate-700 text-white border-slate-700" 
+                className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all ${isDark
+                    ? "bg-slate-800 hover:bg-slate-700 text-white border-slate-700"
                     : "bg-white hover:bg-slate-100 text-slate-700 border-slate-300"
-                }`}
+                  }`}
               >
                 Re-escalate
               </button>
@@ -618,9 +607,8 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
           <form onSubmit={handleRatingSubmit} className="space-y-4">
             <div className="text-center">
               {ticket.outcome_notes && ticket.outcome_notes.toLowerCase().includes("automatically closed") && (
-                <div className={`mb-3 p-3 rounded-xl text-[10px] leading-relaxed font-semibold text-center border border-dashed ${
-                  isDark ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400" : "bg-indigo-50 border-indigo-100 text-indigo-700"
-                }`}>
+                <div className={`mb-3 p-3 rounded-xl text-[10px] leading-relaxed font-semibold text-center border border-dashed ${isDark ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400" : "bg-indigo-50 border-indigo-100 text-indigo-700"
+                  }`}>
                   This case has been automatically closed as no action was taken within 24 hours of lawyer resolution. Please rate your experience.
                 </div>
               )}
@@ -663,11 +651,10 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
                 onChange={(e) => setRatingComment(e.target.value)}
                 placeholder="Describe your experience (optional)..."
                 rows={2}
-                className={`w-full p-3 rounded-xl border text-xs font-medium resize-none transition-all outline-none ${
-                  isDark
+                className={`w-full p-3 rounded-xl border text-xs font-medium resize-none transition-all outline-none ${isDark
                     ? "bg-slate-955 border-white/5 focus:border-indigo-500/30 text-slate-300"
                     : "bg-slate-50 border-slate-200 focus:border-indigo-600/30 text-slate-900 focus:bg-white"
-                }`}
+                  }`}
               />
             </div>
 
@@ -681,11 +668,10 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
               <button
                 type="submit"
                 disabled={rating === 0 || submittingRating}
-                className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all shadow-md ${
-                  rating === 0
+                className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all shadow-md ${rating === 0
                     ? "bg-slate-800 text-slate-500 cursor-not-allowed opacity-50"
                     : "bg-indigo-600 hover:bg-indigo-500 active:scale-95"
-                }`}
+                  }`}
               >
                 {submittingRating ? "Submitting..." : "Submit Feedback"}
               </button>
@@ -728,7 +714,7 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", conversation
       const data = await hitlService.getTicketMessages(ticketId);
       setMessages(data);
       setLoading(false);
-      
+
       // Check if there are any unread messages from the other side
       const hasUnread = data.some(m => !m.is_read && m.sender_role !== userRole);
       if (hasUnread || shouldMarkRead) {
@@ -741,7 +727,7 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", conversation
 
   useEffect(() => {
     fetchMessages(true);
-    
+
     const interval = setInterval(() => {
       fetchMessages();
     }, 15000); // 15 seconds polling
@@ -766,7 +752,7 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", conversation
   const handleSend = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || sending) return;
-    
+
     setSending(true);
     try {
       await hitlService.sendTicketMessage(ticketId, newMessage.trim());
@@ -824,18 +810,15 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", conversation
   }
 
   return (
-    <div className={`mt-6 rounded-2xl border flex flex-col overflow-hidden ${
-      isDark ? "bg-slate-900/40 border-white/5" : "bg-slate-50 border-slate-200"
-    }`}>
-      {/* Header */}
-      <div className={`px-4 py-3 border-b flex items-center justify-between ${
-        isDark ? "bg-slate-900/60 border-white/5" : "bg-slate-100 border-slate-200"
+    <div className={`mt-6 rounded-2xl border flex flex-col overflow-hidden ${isDark ? "bg-slate-900/40 border-white/5" : "bg-slate-50 border-slate-200"
       }`}>
+      {/* Header */}
+      <div className={`px-4 py-3 border-b flex items-center justify-between ${isDark ? "bg-slate-900/60 border-white/5" : "bg-slate-100 border-slate-200"
+        }`}>
         <div className="flex items-center gap-2">
           <Scale size={14} className={isDark ? "text-indigo-400" : "text-indigo-600"} />
-          <span className={`text-[10px] font-black uppercase tracking-widest ${
-            isDark ? "text-slate-300" : "text-slate-700"
-          }`}>
+          <span className={`text-[10px] font-black uppercase tracking-widest ${isDark ? "text-slate-300" : "text-slate-700"
+            }`}>
             Pre-Consultation Messages
           </span>
         </div>
@@ -869,38 +852,33 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", conversation
                     {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
-                <div className={`max-w-[85%] px-3.5 py-2 rounded-2xl text-[11px] font-medium leading-relaxed shadow-sm flex flex-col gap-2 ${
-                  isMe
+                <div className={`max-w-[85%] px-3.5 py-2 rounded-2xl text-[11px] font-medium leading-relaxed shadow-sm flex flex-col gap-2 ${isMe
                     ? "bg-indigo-600 text-white rounded-tr-none"
-                    : (isDark 
-                        ? "bg-slate-800 text-slate-200 border border-white/5 rounded-tl-none" 
-                        : "bg-white text-slate-800 border border-slate-200 rounded-tl-none")
-                }`}>
+                    : (isDark
+                      ? "bg-slate-800 text-slate-200 border border-white/5 rounded-tl-none"
+                      : "bg-white text-slate-800 border border-slate-200 rounded-tl-none")
+                  }`}>
                   {hasAttachment ? (
-                    <div 
+                    <div
                       onClick={() => handleDownload(msg.document_id, msg.file_name)}
-                      className={`flex items-center gap-2.5 p-2 rounded-xl border transition-all cursor-pointer select-none ${
-                        isMe
+                      className={`flex items-center gap-2.5 p-2 rounded-xl border transition-all cursor-pointer select-none ${isMe
                           ? "bg-indigo-700/50 border-indigo-500/30 hover:bg-indigo-700/70"
                           : (isDark
-                              ? "bg-slate-900/60 border-white/5 hover:bg-slate-900/80"
-                              : "bg-slate-50 border-slate-100 hover:bg-slate-100/70")
-                      }`}
+                            ? "bg-slate-900/60 border-white/5 hover:bg-slate-900/80"
+                            : "bg-slate-50 border-slate-100 hover:bg-slate-100/70")
+                        }`}
                     >
-                      <div className={`p-1.5 rounded-lg ${
-                        isMe ? "bg-indigo-500/30" : "bg-indigo-500/10 text-indigo-500"
-                      }`}>
+                      <div className={`p-1.5 rounded-lg ${isMe ? "bg-indigo-500/30" : "bg-indigo-500/10 text-indigo-500"
+                        }`}>
                         <FileText size={14} className={isMe ? "text-indigo-200" : "text-indigo-500"} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className={`text-[10px] font-bold truncate max-w-[140px] ${
-                          isMe ? "text-white" : (isDark ? "text-slate-200" : "text-slate-800")
-                        }`}>
+                        <p className={`text-[10px] font-bold truncate max-w-[140px] ${isMe ? "text-white" : (isDark ? "text-slate-200" : "text-slate-800")
+                          }`}>
                           {msg.file_name || "Document"}
                         </p>
-                        <p className={`text-[8px] ${
-                          isMe ? "text-indigo-200" : "text-slate-400"
-                        }`}>
+                        <p className={`text-[8px] ${isMe ? "text-indigo-200" : "text-slate-400"
+                          }`}>
                           Click to download
                         </p>
                       </div>
@@ -923,34 +901,31 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", conversation
       </div>
 
       {uploadError && (
-        <div className={`px-4 py-2 text-[10px] font-bold text-center border-t transition-all animate-in fade-in duration-300 ${
-          isDark ? "bg-red-500/10 text-red-400 border-red-500/20" : "bg-red-50 text-red-600 border-red-100"
-        }`}>
+        <div className={`px-4 py-2 text-[10px] font-bold text-center border-t transition-all animate-in fade-in duration-300 ${isDark ? "bg-red-500/10 text-red-400 border-red-500/20" : "bg-red-50 text-red-600 border-red-100"
+          }`}>
           {uploadError}
         </div>
       )}
 
       {/* Input Form */}
-      <form onSubmit={handleSend} className={`p-3 border-t flex gap-2 items-center ${
-        isDark ? "bg-slate-900/30 border-white/5" : "bg-white border-slate-200"
-      }`}>
-        <input 
-          type="file" 
-          ref={fileInputRef} 
-          onChange={handleFileUpload} 
-          accept=".pdf,.docx,.doc" 
-          style={{ display: "none" }} 
+      <form onSubmit={handleSend} className={`p-3 border-t flex gap-2 items-center ${isDark ? "bg-slate-900/30 border-white/5" : "bg-white border-slate-200"
+        }`}>
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileUpload}
+          accept=".pdf,.docx,.doc"
+          style={{ display: "none" }}
         />
-        
+
         <button
           type="button"
           onClick={handleAttachClick}
           disabled={isUploading || sending}
-          className={`p-2 rounded-xl transition-all flex items-center justify-center flex-shrink-0 ${
-            isDark
+          className={`p-2 rounded-xl transition-all flex items-center justify-center flex-shrink-0 ${isDark
               ? "bg-slate-950 border border-white/5 text-slate-400 hover:text-white hover:bg-slate-800/50"
               : "bg-slate-50 border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100"
-          }`}
+            }`}
           title="Attach a document (.pdf, .docx)"
         >
           {isUploading ? (
@@ -967,20 +942,18 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", conversation
           placeholder="Type a message to your lawyer..."
           disabled={sending || isUploading}
           style={{ flex: "1 1 0%", minWidth: "0" }}
-          className={`flex-1 min-w-0 px-3 py-2 rounded-xl text-[11px] font-medium outline-none transition-all ${
-            isDark
+          className={`flex-1 min-w-0 px-3 py-2 rounded-xl text-[11px] font-medium outline-none transition-all ${isDark
               ? "bg-slate-950 border border-white/5 text-slate-300 focus:border-indigo-500/30"
               : "bg-slate-50 border border-slate-200 text-slate-900 focus:border-indigo-600/30 focus:bg-white"
-          }`}
+            }`}
         />
         <button
           type="submit"
           disabled={!newMessage.trim() || sending || isUploading}
-          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-white flex-shrink-0 transition-all ${
-            !newMessage.trim() || sending || isUploading
+          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-white flex-shrink-0 transition-all ${!newMessage.trim() || sending || isUploading
               ? (isDark ? "bg-slate-800 text-slate-600" : "bg-slate-200 text-slate-400")
               : "bg-indigo-600 hover:bg-indigo-500 active:scale-95 shadow-md"
-          }`}
+            }`}
         >
           {sending ? "..." : "Send"}
         </button>

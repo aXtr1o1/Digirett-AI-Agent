@@ -13,7 +13,6 @@ import {
   Trash2,
   Sun,
   Moon,
-  LogOut,
   User,
   Shield,
   Gavel,
@@ -33,6 +32,7 @@ import UpgradeCard from "../common/UpgradeCard";
 import QuotaPanel from "../chat/QuotaPanel";
 import LibraryPanel from "../chat/LibraryPanel";
 import subscriptionService from "../../services/subscriptionService";
+import LogoutIcon from "@mui/icons-material/Logout";
 
 const Sidebar = ({
   conversations,
@@ -384,6 +384,44 @@ const Sidebar = ({
         >
           <Search size={18} />
         </button>
+
+        {/* Logout Button */}
+        <button
+          onClick={handleLogout}
+          style={{
+            marginTop: "auto",
+            width: "40px",
+            height: "40px",
+            borderRadius: "12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "0",
+            backgroundColor: "transparent",
+            color: isDark ? "#d1d5db" : "#374151",
+            border: "none",
+            cursor: "pointer",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = isDark
+              ? "rgba(239, 68, 68, 0.1)"
+              : "rgba(239, 68, 68, 0.05)";
+            e.currentTarget.style.transform = "scale(1.05)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "transparent";
+            e.currentTarget.style.transform = "scale(1)";
+          }}
+          title="Logout"
+        >
+          <LogoutIcon
+            sx={{
+              fontSize: 20,
+              color: isDark ? "#d1d5db" : "#374151",
+            }}
+          />
+        </button>
       </aside>
     );
   }
@@ -396,8 +434,8 @@ const Sidebar = ({
         display: "flex",
         flexDirection: "column",
         backgroundColor: isDark
-          ? "rgba(17, 17, 17, 0.5)"
-          : "rgba(250, 250, 250, 0.6)",
+          ? "rgba(255,255,255,0.08)"
+          : "rgba(0,0,0,0.05)",
         borderRight: isDark
           ? "1px solid rgba(42, 42, 42, 0.4)"
           : "1px solid rgba(229, 231, 235, 0.4)",
@@ -664,7 +702,7 @@ const Sidebar = ({
                     e.currentTarget.style.backgroundColor = "transparent";
                   }}
                 >
-                  <LogOut size={18} />
+                  <LogoutIcon sx={{ fontSize: 20}} />
                   <span>Logout</span>
                 </button>
               </div>
@@ -1121,7 +1159,6 @@ const Sidebar = ({
                             textAlign: "left",
                             background: "none",
                             border: "none",
-                            color: "#ef4444",
                             cursor: "pointer",
                             display: "flex",
                             alignItems: "center",

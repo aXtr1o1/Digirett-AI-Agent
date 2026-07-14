@@ -114,7 +114,17 @@ export default function LawyerDashboard() {
   const [hasInitializedConfig, setHasInitializedConfig] = useState(false);
   const [personalAnalytics, setPersonalAnalytics] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
-  const [isWorkspaceExpanded, setIsWorkspaceExpanded] = useState(true);
+  const [isWorkspaceExpanded, setIsWorkspaceExpanded] = useState(() => {
+    const saved = localStorage.getItem("lawyer_workspace_expanded");
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
+  useEffect(() => {
+    if (activeView === "notes" || activeView === "calendar") {
+      setIsWorkspaceExpanded(true);
+      localStorage.setItem("lawyer_workspace_expanded", JSON.stringify(true));
+    }
+  }, [activeView]);
 
   const notesRef = useRef(null);
 
@@ -793,7 +803,11 @@ export default function LawyerDashboard() {
               {/* Workspace Collapsible Section */}
               <div className="pt-1">
                 <button
-                  onClick={() => setIsWorkspaceExpanded(!isWorkspaceExpanded)}
+                  onClick={() => {
+                    const nextVal = !isWorkspaceExpanded;
+                    setIsWorkspaceExpanded(nextVal);
+                    localStorage.setItem("lawyer_workspace_expanded", JSON.stringify(nextVal));
+                  }}
                   className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-all text-left"
                 >
                   <div className="flex items-center gap-3">

@@ -134,7 +134,6 @@ class HitlService:
                     "status": "assigned",
                     "booking_cal_booking_id": None,
                     "booking_url": None,
-                    "booking_confirmed_at": None,
                     "outcome_notes": "Automated: Meeting missed by both parties."
                 }
                 
@@ -829,7 +828,6 @@ class HitlService:
                 "status": "assigned",
                 "booking_cal_booking_id": None,
                 "booking_url": None,
-                "booking_confirmed_at": None,
                 "outcome_notes": no_show_notes
             }
                 

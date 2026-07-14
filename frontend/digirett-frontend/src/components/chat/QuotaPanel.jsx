@@ -111,11 +111,30 @@ function UsageBar({ label, used, max, isDark, countdown }) {
 /* ─── MAIN COMPONENT ───────────────────────────────────── */
 export default function QuotaPanel({ conversationId, isDark }) {
   const [quota, setQuota]       = useState(null);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem("quota-panel-collapsed");
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch (e) {
+      return true;
+    }
+  });
   const [countdown, setCountdown] = useState(null);
   const [pulse, setPulse]       = useState(false);          // subtle dot pulse on refresh
   const intervalRef             = useRef(null);
   const countdownRef            = useRef(null);
+
+  const toggleCollapse = () => {
+    setCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem("quota-panel-collapsed", JSON.stringify(next));
+      } catch (e) {
+        // ignore exceptions
+      }
+      return next;
+    });
+  };
 
   /* ── fetch ── */
   const fetchQuota = useCallback(async () => {
@@ -173,7 +192,7 @@ export default function QuotaPanel({ conversationId, isDark }) {
     }}>
       {/* ── Header ── */}
       <button
-        onClick={() => setCollapsed(c => !c)}
+        onClick={toggleCollapse}
         style={{
           width: "100%",
           display: "flex",
@@ -208,8 +227,8 @@ export default function QuotaPanel({ conversationId, isDark }) {
           </span>
         </div>
         {collapsed
-          ? <ChevronUp size={12} style={{ color: title, opacity: 0.6 }} />
-          : <ChevronDown size={12} style={{ color: title, opacity: 0.6 }} />
+          ? <ChevronDown size={12} style={{ color: title, opacity: 0.6 }} />
+          : <ChevronUp size={12} style={{ color: title, opacity: 0.6 }} />
         }
       </button>
 

@@ -6,7 +6,15 @@ const ErrorMessage = ({ message, onRetry, className = "" }) => {
 
   if (!message) return null;
 
-  let messageText = typeof message === 'string' ? message : message.message || String(message);
+  const title =
+  typeof message === "object"
+    ? message.title || "System Notification"
+    : "System Notification";
+
+let messageText =
+  typeof message === "string"
+    ? message
+    : message.message || "Something went wrong.";
   if (messageText.includes("Connection lost") || messageText.includes("Connection error") || messageText.includes("Stream error")) {
     messageText = "Message limit reached. Your session resets every 4 hours.";
   }
@@ -58,7 +66,7 @@ const ErrorMessage = ({ message, onRetry, className = "" }) => {
         {/* Text Section */}
         <div className="space-y-2">
           <h3 className="text-white font-extrabold text-lg sm:text-xl tracking-tight">
-            System Notification
+            {title}
           </h3>
           <p className="text-gray-400 text-sm leading-relaxed font-medium px-2 max-h-[200px] overflow-y-auto">
             {messageText}
