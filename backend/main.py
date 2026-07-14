@@ -13,7 +13,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from api.routes import admin, auth, chat, conversations, documents, health, hitl, invite, messages, webhooks, ratings, library, ticket_messages
+from api.routes import admin, auth, chat, conversations, documents, health, hitl, invite, messages, webhooks, ratings, library, ticket_messages, billing
 from api.routes import cal as cal_routes
 from api.routes import cal_webhooks, notes
 from config import settings
@@ -234,6 +234,9 @@ async def lifespan(app: FastAPI):
         auth.set_services(
             user_service=user_service,
         )
+        billing.set_services(
+            user_service=user_service,
+        )
         notes.set_services(
             notes_svc=notes_service,
             user_svc=user_service,
@@ -420,6 +423,7 @@ app.include_router(admin.router,           prefix="/api/v1", dependencies=protec
 app.include_router(hitl.router,            prefix="/api/v1", dependencies=protected_deps)
 app.include_router(cal_routes.router,      prefix="/api/v1", dependencies=protected_deps)
 app.include_router(auth.router,            prefix="/api/v1", dependencies=protected_deps)
+app.include_router(billing.router,         prefix="/api/v1", dependencies=protected_deps)
 app.include_router(notes.router,           prefix="/api/v1", dependencies=protected_deps)
 app.include_router(ratings.router,         prefix="/api/v1", dependencies=protected_deps)
 app.include_router(library.router,         prefix="/api/v1", dependencies=protected_deps)
