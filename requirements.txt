@@ -78,5 +78,6 @@ svix>=1.0.0
 clerk-backend-api>=2.0.0
 # Async HTTP client — JWKS fetching, Resend email API
 httpx>=0.28.0
-# Async SMTP client (invitation emails)
 aiosmtplib==5.1.0
+stripe==9.8.0
+

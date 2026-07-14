@@ -75,7 +75,7 @@ const Sidebar = ({
   const [searchParams] = useSearchParams();
   const activeView = searchParams.get("view"); // "library" or null
   const { getToken } = useAuth();
-  
+
   const [activePlan, setActivePlan] = useState("free");
 
   // Sync activeFeature with URL view param
@@ -156,6 +156,14 @@ const Sidebar = ({
 
   const role = user?.publicMetadata?.role || "user";
   const isProfessional = role === "lawyer" || role === "admin" || role === "system_admin";
+  const isSubscribed = ["start_up", "vekst", "smb", "enterprise"].includes(role);
+
+  const planLabels = {
+    "start_up": "Start-up Plan",
+    "vekst": "Vekst Plan",
+    "smb": "SMB Plan",
+    "enterprise": "Enterprise Plan"
+  };
 
   const features = [
     { id: "chat", label: "Chat", icon: MessageSquare, path: "/chat" },
@@ -164,7 +172,12 @@ const Sidebar = ({
   ];
 
   if (!isProfessional) {
-    features.push({ id: "billing", label: "Upgrade Plan", icon: Sparkles, path: "/billing" });
+    features.push({
+      id: "billing",
+      label: "Upgrade Plan",
+      icon: Sparkles,
+      path: "/billing"
+    });
   }
 
   if (role === "admin" || role === "system_admin") {
@@ -221,7 +234,7 @@ const Sidebar = ({
 
   const activeConversations = (conversations || []).filter(c => !archivedIds.includes(c.conversation_id));
   const archivedConversations = (conversations || []).filter(c => archivedIds.includes(c.conversation_id));
-  
+
   // Filter conversations by search query if provided
   const filterConversations = (list) => {
     if (!sidebarSearchQuery.trim()) return list;
@@ -590,6 +603,16 @@ const Sidebar = ({
                     }} title={displayName}>
                       {displayName}
                     </div>
+                    <div style={{
+                      fontSize: "11px",
+                      fontWeight: "500",
+                      color: isSubscribed ? "#4f46e5" : "#6b7280",
+                      marginTop: "2px",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em"
+                    }}>
+                      {role === "user" ? "Free Trial" : role.replace("_", "-")}
+                    </div>
                   </div>
                 </div>
 
@@ -909,6 +932,22 @@ const Sidebar = ({
                     }}
                   />
                   <span>{feature.label}</span>
+                  {feature.id === "billing" && isSubscribed && (
+                    <span style={{
+                      marginLeft: "auto",
+                      fontSize: "9px",
+                      fontWeight: "700",
+                      backgroundColor: isDark ? "rgba(79, 70, 229, 0.25)" : "rgba(79, 70, 229, 0.1)",
+                      color: isDark ? "#818cf8" : "#4f46e5",
+                      border: isDark ? "1px solid rgba(129, 140, 248, 0.3)" : "1px solid rgba(79, 70, 229, 0.2)",
+                      padding: "2px 6px",
+                      borderRadius: "6px",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}>
+                      {role.replace("_", "-")}
+                    </span>
+                  )}
                 </button>
               );
             })}
