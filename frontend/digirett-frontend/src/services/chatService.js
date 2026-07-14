@@ -125,12 +125,26 @@ const chatService = {
               ws.close(1000, "query complete");
               break;
 
+            // case "error":
+            //   console.error("[chatService] backend error:", event.message);
+            //   if (ws) ws.errorFired = true;
+            //   if (onError) onError(new Error(event.message || "Stream error"));
+            //   ws.close();
+            //   break;
             case "error":
-              console.error("[chatService] backend error:", event.message);
-              if (ws) ws.errorFired = true;
-              if (onError) onError(new Error(event.message || "Stream error"));
-              ws.close();
-              break;
+  console.log("===== BACKEND ERROR EVENT =====");
+  console.log(event);
+  console.log("event.message:", event.message);
+  console.log("typeof event.message:", typeof event.message);
+
+  if (ws) ws.errorFired = true;
+
+  if (onError) {
+    onError(event); // Temporary for debugging
+  }
+
+  ws.close();
+  break;
 
             default:
               console.log("[chatService] unknown event type:", event.type);

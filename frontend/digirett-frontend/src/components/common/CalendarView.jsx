@@ -84,9 +84,9 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
   const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
   const getFirstDayIndex = (y, m) => new Date(y, m, 1).getDay();
 
-  // Group booked & resolved consultations
+  // Group booked, resolved, closed, and assigned consultations (if booking_confirmed_at exists)
   const bookedTickets = tickets.filter(
-    (t) => (t.status === "booked" || t.status === "resolved") && t.booking_confirmed_at
+    (t) => (t.status === "booked" || t.status === "resolved" || t.status === "closed" || t.status === "assigned") && t.booking_confirmed_at
   );
 
   const getLocalDateKey = (isoString) => {
@@ -511,19 +511,34 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
 
                       {/* Event pills stack */}
                       <div className="flex-1 mt-2 space-y-1 overflow-y-auto max-h-[85px] sidebar-scrollbar-hidden py-1">
-                        {!cell.isPadding && dayBookings.map((ticket, tIdx) => (
-                          <button
-                            key={tIdx}
-                            onClick={() => setSelectedEvent(ticket)}
-                            className={`w-full text-left px-2 py-1 rounded text-[9px] font-semibold truncate block cursor-pointer transition-all ${
-                              isDark 
-                                ? "bg-indigo-600/15 hover:bg-indigo-600/30 border border-indigo-500/15 text-indigo-300" 
-                                : "bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-750"
-                            }`}
-                          >
-                            {formatEventTime(ticket.booking_confirmed_at)} {ticket.user_display_name}
-                          </button>
-                        ))}
+                        {!cell.isPadding && dayBookings.map((ticket, tIdx) => {
+                          const isResolvedOrClosed = ticket.status === "resolved" || ticket.status === "closed";
+                          const isNoShow = ticket.status === "assigned";
+                          let bgClass = "";
+                          if (isResolvedOrClosed) {
+                            bgClass = isDark
+                              ? "bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/15 text-emerald-400"
+                              : "bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800";
+                          } else if (isNoShow) {
+                            bgClass = isDark
+                              ? "bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/15 text-rose-450"
+                              : "bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800";
+                          } else {
+                            bgClass = isDark
+                              ? "bg-indigo-600/15 hover:bg-indigo-600/30 border border-indigo-500/15 text-indigo-300"
+                              : "bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-750";
+                          }
+
+                          return (
+                            <button
+                              key={tIdx}
+                              onClick={() => setSelectedEvent(ticket)}
+                              className={`w-full text-left px-2 py-1 rounded text-[9px] font-semibold truncate block cursor-pointer transition-all ${bgClass}`}
+                            >
+                              {formatEventTime(ticket.booking_confirmed_at)} {ticket.user_display_name} {isNoShow && "(No-Show)"}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   );
@@ -649,6 +664,20 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
                             const topOffset = (startHour - 8) * 64 + (startMins / 60) * 64;
                             const heightOffset = 32; // Default 30-min booking is 32px high
 
+                            const isResolvedOrClosed = ticket.status === "resolved" || ticket.status === "closed";
+                            const isNoShow = ticket.status === "assigned";
+                            
+                            let pillClass = "bg-indigo-600 border-indigo-500/50 hover:bg-indigo-500";
+                            let subtextClass = "text-indigo-200/90";
+                            
+                            if (isResolvedOrClosed) {
+                              pillClass = "bg-emerald-600 border-emerald-500/50 hover:bg-emerald-500";
+                              subtextClass = "text-emerald-100/90";
+                            } else if (isNoShow) {
+                              pillClass = "bg-rose-600 border-rose-500/50 hover:bg-rose-500";
+                              subtextClass = "text-rose-100/90";
+                            }
+
                             return (
                               <button
                                 key={tIdx}
@@ -657,12 +686,12 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
                                   top: `${topOffset}px`, 
                                   height: `${heightOffset}px` 
                                 }}
-                                className="absolute left-1.5 right-1.5 rounded-lg bg-indigo-600 border border-indigo-500/50 p-1.5 text-left text-white shadow-lg shadow-indigo-600/10 cursor-pointer overflow-hidden group hover:scale-[1.01] hover:bg-indigo-500 z-10 transition-all"
+                                className={`absolute left-1.5 right-1.5 rounded-lg border p-1.5 text-left text-white shadow-lg shadow-indigo-600/10 cursor-pointer overflow-hidden group hover:scale-[1.01] z-10 transition-all ${pillClass}`}
                               >
                                 <div className="text-[9px] font-bold truncate leading-none mb-0.5">
-                                  {ticket.user_display_name || "Client Booking"}
+                                  {ticket.user_display_name || "Client Booking"} {isNoShow && "(No-Show)"}
                                 </div>
-                                <div className="text-[7.5px] font-medium text-indigo-200/90 truncate leading-none">
+                                <div className={`text-[7.5px] font-medium truncate leading-none ${subtextClass}`}>
                                   {formatEventTime(ticket.booking_confirmed_at)} - {role === "admin" ? (ticket.lawyer_name || "Admin") : "Claimed"}
                                 </div>
                               </button>
@@ -766,20 +795,33 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
                 isDark ? "bg-slate-950/20 border-slate-800/60 text-slate-400" : "bg-slate-50 border-slate-200 text-slate-500"
               }`}>
                 <span className="font-semibold text-[10px]">Status:</span>
-                <span className={`font-bold capitalize ${selectedEvent.status === 'resolved' ? 'text-emerald-500' : 'text-indigo-500'}`}>
-                  {selectedEvent.status}
+                <span className={`font-bold capitalize ${
+                  selectedEvent.status === 'resolved' || selectedEvent.status === 'closed'
+                    ? 'text-emerald-500'
+                    : selectedEvent.status === 'assigned'
+                      ? 'text-rose-500'
+                      : 'text-indigo-500'
+                }`}>
+                  {selectedEvent.status === 'assigned' ? 'No-Show' : selectedEvent.status}
                 </span>
               </div>
             </div>
 
             {/* Modal Actions */}
             <div className={`mt-8 flex flex-col sm:flex-row gap-3 pt-4 border-t ${isDark ? "border-slate-800" : "border-slate-200"}`}>
-              {selectedEvent.status === "resolved" ? (
+              {selectedEvent.status === "resolved" || selectedEvent.status === "closed" ? (
                 <div className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm text-center border flex items-center justify-center gap-2 ${
                   isDark ? "bg-slate-800 text-slate-400 border-slate-700/80" : "bg-slate-100 text-slate-400 border-slate-200"
                 }`}>
                   <Video size={16} className="opacity-50" />
                   Meeting Finished
+                </div>
+              ) : selectedEvent.status === "assigned" ? (
+                <div className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm text-center border flex items-center justify-center gap-2 ${
+                  isDark ? "bg-slate-800 text-rose-450 border-slate-700/80" : "bg-rose-50/50 text-rose-600 border-rose-200"
+                }`}>
+                  <Video size={16} className="opacity-50" />
+                  No-Show / Missed
                 </div>
               ) : selectedEvent.booking_url ? (
                 <a
@@ -796,6 +838,7 @@ export default function CalendarView({ tickets = [], role = "lawyer" }) {
                 <div className={`flex-1 px-4 py-2.5 rounded-xl font-semibold text-xs text-center border flex items-center justify-center ${
                   isDark ? "bg-slate-800 text-slate-400 border-slate-700/80" : "bg-slate-100 text-slate-500 border-slate-200"
                 }`}>
+                  <Video size={16} className="opacity-50" />
                   Waiting for Cal.com meeting url...
                 </div>
               )}

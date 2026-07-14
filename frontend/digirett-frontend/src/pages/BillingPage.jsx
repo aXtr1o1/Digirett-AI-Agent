@@ -125,11 +125,7 @@ useEffect(() => {
           )}
         </div>
       </div>
-
-      {/* Footer Area */}
-      <div className={`w-full text-center py-6 text-[10px] font-medium tracking-wide ${isDark ? "text-gray-600" : "text-gray-400"}`}>
-        DigiRett © 2026. Billed securely via Stripe.
-      </div>
+      
     </div>
   );
 }
