@@ -1,41 +1,43 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useUser } from "@clerk/clerk-react";
 import { useNavigate } from "react-router-dom";
 import { Loader2, X } from "lucide-react";
 import BackgroundLayer from "../components/common/BackgroundLayer";
 import { useTheme } from "../providers/ThemeProvider";
+import subscriptionService from "../services/subscriptionService";
 
 export default function BillingPage() {
   const { user, isLoaded: userLoaded } = useUser();
   const navigate = useNavigate();
   const { theme, isDark } = useTheme();
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Read environment keys for real Stripe Embedding
   const stripePublishableKey = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY;
   const stripePricingTableId = process.env.REACT_APP_STRIPE_PRICING_TABLE_ID;
   const hasStripeConfig = !!(stripePublishableKey && stripePricingTableId);
   // Log warning if Stripe configuration is missing
-useEffect(() => {
-  if (process.env.NODE_ENV !== "production") {
-    if (!stripePublishableKey) {
-      console.warn(
-        "Missing environment variable: REACT_APP_STRIPE_PUBLISHABLE_KEY"
-      );
-    }
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production") {
+      if (!stripePublishableKey) {
+        console.warn(
+          "Missing environment variable: REACT_APP_STRIPE_PUBLISHABLE_KEY"
+        );
+      }
 
-    if (!stripePricingTableId) {
-      console.warn(
-        "Missing environment variable: REACT_APP_STRIPE_PRICING_TABLE_ID"
-      );
-    }
+      if (!stripePricingTableId) {
+        console.warn(
+          "Missing environment variable: REACT_APP_STRIPE_PRICING_TABLE_ID"
+        );
+      }
 
-    if (!hasStripeConfig) {
-      console.warn(
-        "Stripe Pricing Table is disabled because the required environment variables are missing."
-      );
+      if (!hasStripeConfig) {
+        console.warn(
+          "Stripe Pricing Table is disabled because the required environment variables are missing."
+        );
+      }
     }
-  }
-}, [stripePublishableKey, stripePricingTableId, hasStripeConfig]);
+  }, [stripePublishableKey, stripePricingTableId, hasStripeConfig]);
 
   useEffect(() => {
     if (userLoaded && user) {
@@ -46,6 +48,20 @@ useEffect(() => {
       }
     }
   }, [user, userLoaded, navigate]);
+
+  const role = user?.publicMetadata?.role || "user";
+  const isSubscribed = ["start_up", "vekst", "smb", "enterprise"].includes(role);
+
+  const handleManageSubscription = async () => {
+    setIsCancelling(true);
+    try {
+      await subscriptionService.cancelSubscription(user.id);
+    } catch (err) {
+      console.error("Redirecting to billing portal failed:", err);
+      alert(err.message || "Failed to load billing portal. Please try again.");
+      setIsCancelling(false);
+    }
+  };
 
   // Load Stripe Pricing Table script
   useEffect(() => {
@@ -100,7 +116,7 @@ useEffect(() => {
       {/* Main Content Area */}
       <div className="flex-1 max-w-[1400px] w-full mx-auto px-6 py-6 md:py-10 flex flex-col items-center z-10">
         {/* Top Header */}
-        <div className="text-center mb-6 md:mb-8">
+        <div className="font-serif text-center mb-6 md:mb-8">
           <h1 className={`text-2xl md:text-3.5xl font-bold tracking-tight mb-2 ${isDark ? "text-white" : "text-gray-950"}`}>
             Upgrade your plan
           </h1>
@@ -108,6 +124,35 @@ useEffect(() => {
             Choose the billing tier that fits your legal consulting workload. All payments run securely via Stripe.
           </p>
         </div>
+
+        {/* Cancel Subscription Banner */}
+        {isSubscribed && (
+          <div className={`mb-8 p-6 rounded-2xl border flex flex-col md:flex-row items-center justify-between gap-4 max-w-2xl w-full ${isDark
+            ? "bg-[#161622]/60 border-white/5 text-white"
+            : "bg-indigo-50/30 border-indigo-100 text-gray-900"
+            }`} style={{ backdropFilter: "blur(12px)" }}>
+            <div className="flex-1 text-center md:text-left">
+              <h3 className="text-base font-bold">Billing & Subscription</h3>
+              <p className={`text-xs mt-1 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                Your active plan: <strong className="capitalize text-indigo-500">{role.replace("_", " ")}</strong>. Manage payment methods, download invoices, or cancel your plan securely.
+              </p>
+            </div>
+            <button
+              onClick={handleManageSubscription}
+              disabled={isCancelling}
+              className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all flex items-center gap-2"
+            >
+              {isCancelling ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Loading Portal...
+                </>
+              ) : (
+                "Manage Subscription"
+              )}
+            </button>
+          </div>
+        )}
 
         {/* Pricing Cards Grid */}
         <div className="w-full">
@@ -124,11 +169,6 @@ useEffect(() => {
             </div>
           )}
         </div>
-      </div>
-
-      {/* Footer Area */}
-      <div className={`w-full text-center py-6 text-[10px] font-medium tracking-wide ${isDark ? "text-gray-600" : "text-gray-400"}`}>
-        DigiRett © 2026. Billed securely via Stripe.
       </div>
     </div>
   );

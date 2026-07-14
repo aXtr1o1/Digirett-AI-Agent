@@ -1,3 +1,5 @@
+import api from "./api";
+
 // Service to manage client-side mockup subscriptions in Stripe Sandbox
 const subscriptionService = {
   /**
@@ -22,10 +24,14 @@ const subscriptionService = {
   /**
    * Reverts the user's plan to "free" and dispatches the update event.
    */
-  cancelSubscription(userId) {
-    if (!userId) return;
-    localStorage.setItem(`digirett_sub_${userId}`, "free");
-    window.dispatchEvent(new CustomEvent("subscription_change", { detail: { planId: "free" } }));
+  async cancelSubscription(userId) {
+    // Fetch customer billing portal session URL from backend
+    const response = await api.post("/billing/portal-session");
+    if (response.data?.url) {
+      window.location.href = response.data.url;
+    } else {
+      throw new Error("Failed to retrieve billing portal link.");
+    }
   }
 };
 

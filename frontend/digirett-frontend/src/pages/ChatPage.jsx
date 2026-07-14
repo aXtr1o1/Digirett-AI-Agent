@@ -63,10 +63,36 @@ const ChatPage = () => {
       subscriptionService.setSubscription(user.id, plan, sessionId);
       setPurchasedPlan(plan);
       setShowSuccessModal(true);
+      
+      // Force Clerk to reload metadata instantly
+      user.reload().catch(err => console.error("Error reloading Clerk user:", err));
 
       // Clean URL parameters by updating navigate
       const newParams = new URLSearchParams(searchParams);
       newParams.delete("session_id");
+      const path = window.location.pathname;
+      navigate({
+        pathname: path,
+        search: newParams.toString() ? `?${newParams.toString()}` : "",
+      }, { replace: true });
+    }
+  }, [searchParams, user, navigate]);
+
+  // Handle Stripe billing portal redirect return
+  useEffect(() => {
+    const hasBillingUpdate = searchParams.get("billing_update");
+    if (hasBillingUpdate && user) {
+      // Force Clerk to reload metadata instantly
+      user.reload()
+        .then(() => {
+          const role = user.publicMetadata?.role || "user";
+          subscriptionService.setSubscription(user.id, role);
+        })
+        .catch(err => console.error("Error reloading Clerk user:", err));
+
+      // Clean URL parameters by updating navigate
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete("billing_update");
       const path = window.location.pathname;
       navigate({
         pathname: path,

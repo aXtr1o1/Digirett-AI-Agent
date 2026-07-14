@@ -1,4 +1,6 @@
 import logging
+import stripe
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
@@ -34,14 +36,14 @@ async def clerk_webhook(
     Requires Svix signature verification to prevent spoofing.
     """
     if not settings.CLERK_WEBHOOK_SECRET:
-        logger.error("❌ CLERK_WEBHOOK_SECRET is not set")
+        logger.error(" CLERK_WEBHOOK_SECRET is not set")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Webhook secret not configured",
         )
 
     if not svix_id or not svix_timestamp or not svix_signature:
-        logger.warning("⚠️ Missing Svix headers")
+        logger.warning(" Missing Svix headers")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Missing Svix headers",
@@ -58,13 +60,13 @@ async def clerk_webhook(
         wh = Webhook(settings.CLERK_WEBHOOK_SECRET)
         evt = wh.verify(payload, headers)
     except WebhookVerificationError as exc:
-        logger.warning(f"⚠️ Invalid webhook signature: {exc}")
+        logger.warning(f" Invalid webhook signature: {exc}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid signature",
         )
     except Exception as exc:
-        logger.error(f"❌ Webhook verification error: {exc}", exc_info=True)
+        logger.error(f" Webhook verification error: {exc}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error",
@@ -72,7 +74,7 @@ async def clerk_webhook(
 
     event_type = evt.get("type")
     data = evt.get("data", {})
-    logger.info(f"📩 Received Clerk webhook: {event_type}")
+    logger.info(f" Received Clerk webhook: {event_type}")
 
     if event_type == "email.created":
         # Handle custom email delivery from Clerk
@@ -86,7 +88,7 @@ async def clerk_webhook(
             body_plain = data.get("body_plain", "")
             
             if to_email and _email_service:
-                logger.info(f"📧 Sending custom Clerk email | to={to_email} | subject={subject}")
+                logger.info(f" Sending custom Clerk email | to={to_email} | subject={subject}")
                 success = await _email_service.send_clerk_email(
                     to_email=to_email,
                     subject=subject,
@@ -94,7 +96,7 @@ async def clerk_webhook(
                     plain_content=body_plain,
                 )
                 if not success:
-                    logger.error("❌ Failed to send custom Clerk email via SMTP")
+                    logger.error(" Failed to send custom Clerk email via SMTP")
                     # Even if it fails, return 200 so Clerk doesn't keep retrying indefinitely,
                     # or return 500 if we want Clerk to retry. Returning 500 is safer for delivery guarantees.
                     raise HTTPException(
@@ -103,7 +105,7 @@ async def clerk_webhook(
                     )
                 return {"status": "success", "message": "Custom email sent"}
             else:
-                logger.warning("⚠️ Email payload missing recipient or email_service not initialized")
+                logger.warning(" Email payload missing recipient or email_service not initialized")
                 return {"status": "error", "reason": "Missing data or service"}
         else:
             return {"status": "ignored", "reason": "delivered_by_clerk is true"}
@@ -133,7 +135,7 @@ async def clerk_webhook(
 
         # Check if user already exists
         if _user_service.user_exists(clerk_user_id):
-            logger.info(f"ℹ️ User already exists (duplicate webhook?): {clerk_user_id}")
+            logger.info(f" User already exists (duplicate webhook?): {clerk_user_id}")
             return {"status": "ignored", "reason": "User already exists"}
 
         try:
@@ -153,7 +155,7 @@ async def clerk_webhook(
             )
             return {"status": "success", "message": "User created"}
         except Exception as exc:
-            logger.error(f"❌ Failed to process user.created: {exc}", exc_info=True)
+            logger.error(f" Failed to process user.created: {exc}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create user",
@@ -161,4 +163,168 @@ async def clerk_webhook(
 
     # Ignore other events
     return {"status": "ignored", "reason": f"Unhandled event type: {event_type}"}
+
+
+@router.post(
+    "/stripe",
+    tags=["Webhooks"],
+    summary="Handle Stripe webhook events",
+)
+async def stripe_webhook(
+    request: Request,
+    stripe_signature: str = Header(None, alias="stripe-signature"),
+):
+    """
+    Webhook handler for Stripe checkout session completions.
+    Updates the database schema and Clerk metadata when a user completes their subscription.
+    """
+    if not settings.STRIPE_WEBHOOK_SECRET:
+        logger.error(" STRIPE_WEBHOOK_SECRET is not set")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Stripe webhook secret not configured",
+        )
+
+    if not stripe_signature:
+        logger.warning(" Missing Stripe signature")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing Stripe signature",
+        )
+
+    payload = await request.body()
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, stripe_signature, settings.STRIPE_WEBHOOK_SECRET
+        )
+    except stripe.error.SignatureVerificationError as e:
+        logger.warning(f" Invalid Stripe signature: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid signature",
+        )
+    except Exception as exc:
+        logger.error(f" Stripe verification error: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bad Request",
+        )
+
+    event_type = event.get("type")
+    data_object = event.get("data", {}).get("object", {})
+
+    logger.info(f" Received Stripe webhook: {event_type}")
+
+    if event_type == "customer.subscription.deleted":
+        customer_id = data_object.get("customer")
+        if not customer_id:
+            logger.warning(" No customer ID found in subscription deleted event")
+            return {"status": "ignored", "reason": "No customer ID"}
+        
+        try:
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            customer = stripe.Customer.retrieve(customer_id)
+            email = customer.get("email")
+            
+            if not email:
+                logger.warning(f" No email found for Stripe customer {customer_id}")
+                return {"status": "ignored", "reason": "No customer email"}
+            
+            if _user_service:
+                # Find user by email in Supabase
+                user_res = _user_service._supabase.table("users").select("clerk_user_id").eq("email", email).execute()
+                if user_res.data:
+                    clerk_user_id = user_res.data[0].get("clerk_user_id")
+                    
+                    # 1. Update Supabase
+                    try:
+                        update_query = _user_service._supabase.table("users").update({
+                            "plan_tier": "free_trial",
+                            "role": "user",
+                            "updated_at": datetime.utcnow().isoformat()
+                        }).eq("clerk_user_id", clerk_user_id)
+                        _user_service._supabase.execute_query(update_query)
+                        logger.info(f" DB subscription cancelled for email: {email}")
+                    except Exception as db_exc:
+                        logger.error(f" Supabase update failed for user {clerk_user_id}: {db_exc}")
+
+                    # 2. Update Clerk Metadata
+                    try:
+                        _user_service._sync_clerk_metadata(clerk_user_id, {
+                            "role": "user",
+                            "plan_tier": "free_trial"
+                        })
+                        logger.info(f" Clerk metadata reset for user {clerk_user_id}")
+                    except Exception as clerk_exc:
+                        logger.error(f" Clerk metadata reset failed for user {clerk_user_id}: {clerk_exc}")
+                else:
+                    logger.warning(f" No user profile found in database matching email {email}")
+
+        except Exception as exc:
+            logger.error(f" Subscription cancellation webhook process error: {exc}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Webhook process failed",
+            )
+
+    if event_type == "checkout.session.completed":
+        clerk_user_id = data_object.get("client_reference_id")
+        session_id = data_object.get("id")
+
+        if not clerk_user_id:
+            logger.warning(" No client_reference_id found in Stripe Checkout Session")
+            return {"status": "ignored", "reason": "No client_reference_id"}
+
+        try:
+            # Query checkout session detail from Stripe to find line items
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            session = stripe.checkout.Session.retrieve(session_id, expand=["line_items"])
+            line_items = session.get("line_items", {}).get("data", [])
+            
+            plan_tier = "free_trial"
+            if line_items:
+                item_name = line_items[0].get("description", "").lower()
+                if "start-up" in item_name or "startup" in item_name:
+                    plan_tier = "start_up"
+                elif "vekst" in item_name:
+                    plan_tier = "vekst"
+                elif "smb" in item_name:
+                    plan_tier = "smb"
+                elif "enterprise" in item_name:
+                    plan_tier = "enterprise"
+
+            logger.info(f" Stripe payment verified for user {clerk_user_id} | Plan determined: {plan_tier}")
+
+            if _user_service:
+                # Update Supabase database
+                try:
+                    update_query = _user_service._supabase.table("users").update({
+                        "plan_tier": plan_tier,
+                        "role": plan_tier,
+                        "updated_at": datetime.utcnow().isoformat()
+                    }).eq("clerk_user_id", clerk_user_id)
+                    _user_service._supabase.execute_query(update_query)
+                    logger.info(f" DB updated plan_tier to '{plan_tier}' for Clerk ID: {clerk_user_id}")
+                except Exception as db_exc:
+                    logger.error(f" Supabase database update failed for user {clerk_user_id} | {db_exc}")
+
+                # Update Clerk auth metadata so the frontend updates instantly
+                try:
+                    _user_service._sync_clerk_metadata(clerk_user_id, {
+                        "role": plan_tier,
+                        "plan_tier": plan_tier
+                    })
+                    logger.info(f" Clerk metadata successfully updated for Clerk ID: {clerk_user_id}")
+                except Exception as clerk_exc:
+                    logger.error(f" Clerk metadata update failed for user {clerk_user_id} | {clerk_exc}")
+
+        except Exception as exc:
+            logger.error(f" Stripe session retrieval error: {exc}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Transaction verification failed",
+            )
+
+    return {"status": "success"}
+
 

@@ -8,6 +8,7 @@ module.exports = {
     extend: {
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
+        serif: ['"Noto Serif"', 'Georgia', 'Cambria', 'serif'],
       },
       colors: {
         // Blue palette

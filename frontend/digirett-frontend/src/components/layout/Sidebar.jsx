@@ -13,7 +13,6 @@ import {
   Trash2,
   Sun,
   Moon,
-  LogOut,
   User,
   Shield,
   Gavel,
@@ -33,6 +32,7 @@ import UpgradeCard from "../common/UpgradeCard";
 import QuotaPanel from "../chat/QuotaPanel";
 import LibraryPanel from "../chat/LibraryPanel";
 import subscriptionService from "../../services/subscriptionService";
+import LogoutIcon from "@mui/icons-material/Logout";
 
 const Sidebar = ({
   conversations,
@@ -75,7 +75,7 @@ const Sidebar = ({
   const [searchParams] = useSearchParams();
   const activeView = searchParams.get("view"); // "library" or null
   const { getToken } = useAuth();
-  
+
   const [activePlan, setActivePlan] = useState("free");
 
   // Sync activeFeature with URL view param
@@ -156,6 +156,14 @@ const Sidebar = ({
 
   const role = user?.publicMetadata?.role || "user";
   const isProfessional = role === "lawyer" || role === "admin" || role === "system_admin";
+  const isSubscribed = ["start_up", "vekst", "smb", "enterprise"].includes(role);
+
+  const planLabels = {
+    "start_up": "Start-up Plan",
+    "vekst": "Vekst Plan",
+    "smb": "SMB Plan",
+    "enterprise": "Enterprise Plan"
+  };
 
   const features = [
     { id: "chat", label: "Chat", icon: MessageSquare, path: "/chat" },
@@ -164,7 +172,12 @@ const Sidebar = ({
   ];
 
   if (!isProfessional) {
-    features.push({ id: "billing", label: "Upgrade Plan", icon: Sparkles, path: "/billing" });
+    features.push({
+      id: "billing",
+      label: "Upgrade Plan",
+      icon: Sparkles,
+      path: "/billing"
+    });
   }
 
   if (role === "admin" || role === "system_admin") {
@@ -221,7 +234,7 @@ const Sidebar = ({
 
   const activeConversations = (conversations || []).filter(c => !archivedIds.includes(c.conversation_id));
   const archivedConversations = (conversations || []).filter(c => archivedIds.includes(c.conversation_id));
-  
+
   // Filter conversations by search query if provided
   const filterConversations = (list) => {
     if (!sidebarSearchQuery.trim()) return list;
@@ -371,6 +384,44 @@ const Sidebar = ({
         >
           <Search size={18} />
         </button>
+
+        {/* Logout Button */}
+        <button
+          onClick={handleLogout}
+          style={{
+            marginTop: "auto",
+            width: "40px",
+            height: "40px",
+            borderRadius: "12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "0",
+            backgroundColor: "transparent",
+            color: isDark ? "#d1d5db" : "#374151",
+            border: "none",
+            cursor: "pointer",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = isDark
+              ? "rgba(239, 68, 68, 0.1)"
+              : "rgba(239, 68, 68, 0.05)";
+            e.currentTarget.style.transform = "scale(1.05)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "transparent";
+            e.currentTarget.style.transform = "scale(1)";
+          }}
+          title="Logout"
+        >
+          <LogoutIcon
+            sx={{
+              fontSize: 20,
+              color: isDark ? "#d1d5db" : "#374151",
+            }}
+          />
+        </button>
       </aside>
     );
   }
@@ -383,8 +434,8 @@ const Sidebar = ({
         display: "flex",
         flexDirection: "column",
         backgroundColor: isDark
-          ? "rgba(17, 17, 17, 0.5)"
-          : "rgba(250, 250, 250, 0.6)",
+          ? "rgba(255,255,255,0.08)"
+          : "rgba(0,0,0,0.05)",
         borderRight: isDark
           ? "1px solid rgba(42, 42, 42, 0.4)"
           : "1px solid rgba(229, 231, 235, 0.4)",
@@ -552,6 +603,16 @@ const Sidebar = ({
                     }} title={displayName}>
                       {displayName}
                     </div>
+                    <div style={{
+                      fontSize: "11px",
+                      fontWeight: "500",
+                      color: isSubscribed ? "#4f46e5" : "#6b7280",
+                      marginTop: "2px",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em"
+                    }}>
+                      {role === "user" ? "Free Trial" : role.replace("_", "-")}
+                    </div>
                   </div>
                 </div>
 
@@ -641,7 +702,7 @@ const Sidebar = ({
                     e.currentTarget.style.backgroundColor = "transparent";
                   }}
                 >
-                  <LogOut size={18} />
+                  <LogoutIcon sx={{ fontSize: 20}} />
                   <span>Logout</span>
                 </button>
               </div>
@@ -871,6 +932,22 @@ const Sidebar = ({
                     }}
                   />
                   <span>{feature.label}</span>
+                  {feature.id === "billing" && isSubscribed && (
+                    <span style={{
+                      marginLeft: "auto",
+                      fontSize: "9px",
+                      fontWeight: "700",
+                      backgroundColor: isDark ? "rgba(79, 70, 229, 0.25)" : "rgba(79, 70, 229, 0.1)",
+                      color: isDark ? "#818cf8" : "#4f46e5",
+                      border: isDark ? "1px solid rgba(129, 140, 248, 0.3)" : "1px solid rgba(79, 70, 229, 0.2)",
+                      padding: "2px 6px",
+                      borderRadius: "6px",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}>
+                      {role.replace("_", "-")}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -1082,7 +1159,6 @@ const Sidebar = ({
                             textAlign: "left",
                             background: "none",
                             border: "none",
-                            color: "#ef4444",
                             cursor: "pointer",
                             display: "flex",
                             alignItems: "center",
