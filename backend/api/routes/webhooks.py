@@ -213,7 +213,87 @@ async def stripe_webhook(
     event_type = event.get("type")
     data_object = event.get("data", {}).get("object", {})
 
+    try:
+        import os
+        debug_dir = r"C:\Users\sabar\.gemini\antigravity-ide\brain\62cf3c07-b770-42a0-9f44-f66f4ce33cd4\scratch"
+        os.makedirs(debug_dir, exist_ok=True)
+        with open(os.path.join(debug_dir, "webhook_debug.log"), "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.utcnow().isoformat()}] EVENT: {event_type} | Customer: {data_object.get('customer')} | Session: {data_object.get('id')}\n")
+    except Exception:
+        pass
+
     logger.info(f" Received Stripe webhook: {event_type}")
+
+    if event_type == "customer.subscription.updated":
+        customer_id = data_object.get("customer")
+        if not customer_id:
+            logger.warning(" No customer ID found in subscription updated event")
+            return {"status": "ignored", "reason": "No customer ID"}
+        
+        try:
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            customer = stripe.Customer.retrieve(customer_id)
+            email = customer.get("email")
+            
+            if not email:
+                logger.warning(f" No email found for Stripe customer {customer_id}")
+                return {"status": "ignored", "reason": "No customer email"}
+            
+            # Determine plan tier from product name
+            plan_tier = "free_trial"
+            items = data_object.get("items", {}).get("data", [])
+            if items:
+                product_id = items[0].get("plan", {}).get("product")
+                if product_id:
+                    product = stripe.Product.retrieve(product_id)
+                    item_name = product.get("name", "").lower()
+                    if "start-up" in item_name or "startup" in item_name:
+                        plan_tier = "start_up"
+                    elif "vekst" in item_name:
+                        plan_tier = "vekst"
+                    elif "smb" in item_name:
+                        plan_tier = "smb"
+                    elif "enterprise" in item_name:
+                        plan_tier = "enterprise"
+
+            logger.info(f"💳 Stripe subscription updated to '{plan_tier}' for customer email: {email}")
+
+            if _user_service:
+                # Find user by email in Supabase
+                user_res = _user_service._supabase.table("users").select("clerk_user_id").eq("email", email).execute()
+                if user_res.data:
+                    clerk_user_id = user_res.data[0].get("clerk_user_id")
+                    
+                    # 1. Update Supabase
+                    try:
+                        update_query = _user_service._supabase.table("users").update({
+                            "plan_tier": plan_tier,
+                            "role": plan_tier,
+                            "updated_at": datetime.utcnow().isoformat()
+                        }).eq("clerk_user_id", clerk_user_id)
+                        _user_service._supabase.execute_query(update_query)
+                        logger.info(f" DB plan_tier updated to '{plan_tier}' for email: {email}")
+                    except Exception as db_exc:
+                        logger.error(f" Supabase update failed for user {clerk_user_id}: {db_exc}")
+
+                    # 2. Update Clerk Metadata
+                    try:
+                        _user_service._sync_clerk_metadata(clerk_user_id, {
+                            "role": plan_tier,
+                            "plan_tier": plan_tier
+                        })
+                        logger.info(f" Clerk metadata updated to '{plan_tier}' for user {clerk_user_id}")
+                    except Exception as clerk_exc:
+                        logger.error(f" Clerk metadata update failed for user {clerk_user_id}: {clerk_exc}")
+                else:
+                    logger.warning(f" No user profile found in database matching email {email}")
+
+        except Exception as exc:
+            logger.error(f" Subscription update webhook process error: {exc}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Webhook process failed",
+            )
 
     if event_type == "customer.subscription.deleted":
         customer_id = data_object.get("customer")
