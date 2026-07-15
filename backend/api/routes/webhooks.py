@@ -213,15 +213,6 @@ async def stripe_webhook(
     event_type = event.get("type")
     data_object = event.get("data", {}).get("object", {})
 
-    try:
-        import os
-        debug_dir = r"C:\Users\sabar\.gemini\antigravity-ide\brain\62cf3c07-b770-42a0-9f44-f66f4ce33cd4\scratch"
-        os.makedirs(debug_dir, exist_ok=True)
-        with open(os.path.join(debug_dir, "webhook_debug.log"), "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.utcnow().isoformat()}] EVENT: {event_type} | Customer: {data_object.get('customer')} | Session: {data_object.get('id')}\n")
-    except Exception:
-        pass
-
     logger.info(f" Received Stripe webhook: {event_type}")
 
     if event_type == "customer.subscription.updated":
