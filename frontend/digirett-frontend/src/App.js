@@ -73,9 +73,9 @@ const HomeRedirect = () => {
 function App() {
   useMobileViewport();
   return (
-    <ThemeProvider>
-      <BrowserRouter>
-        <ClerkWithRouter>
+    <BrowserRouter>
+      <ClerkWithRouter>
+        <ThemeProvider>
           <Routes>
 
             {/* ================= PUBLIC PAGES ================= */}
@@ -205,9 +205,9 @@ function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
 
           </Routes>
-        </ClerkWithRouter>
-      </BrowserRouter>
-    </ThemeProvider>
+        </ThemeProvider>
+      </ClerkWithRouter>
+    </BrowserRouter>
   );
 }
 

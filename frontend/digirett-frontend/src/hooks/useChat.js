@@ -161,6 +161,43 @@ const useChat = (
       return null;
     }
   }, [onConversationCreated, moveConversationToTop]);
+  const getFriendlyErrorMessage = (err) => {
+  const raw =
+    err?.message ||
+    err?.response?.data?.message ||
+    "";
+
+  // AI Safety / Content Filter
+  if (
+    raw.includes("ResponsibleAIPolicyViolation") ||
+    raw.includes("content_filter") ||
+    raw.includes("content_filter_result")
+  ) {
+    return {
+      title: "Request Blocked",
+      message:
+        "Your request could not be processed because it was blocked by the AI safety policy. Please modify your message and try again.",
+    };
+  }
+
+  // Network errors
+  if (
+    raw.includes("Connection lost") ||
+    raw.includes("Connection error") ||
+    raw.includes("Stream error")
+  ) {
+    return {
+      title: "Connection Error",
+      message:
+        "Unable to connect to the server. Please check your connection and try again.",
+    };
+  }
+
+  return {
+    title: "System Notification",
+    message: raw || "Something went wrong. Please try again.",
+  };
+};
 
   // ── Send message ──────────────────────────────────────────────────────────
   const sendMessage = useCallback(
@@ -323,11 +360,8 @@ const useChat = (
           },
           (err) => {
             console.error("[useChat] stream error:", err);
-            let errMsg = err?.message || "Failed to generate response";
-            if (errMsg.includes("Connection lost") || errMsg.includes("Connection error") || errMsg.includes("Stream error")) {
-              errMsg = "Message limit reached. Your session resets every 4 hours.";
-            }
-            setError(errMsg);
+            const friendlyError = getFriendlyErrorMessage(err);
+            setError(friendlyError);
             setIsStreaming(false);
             setStreamingMessage("");
             setIsProcessingDoc(false);
@@ -393,17 +427,17 @@ const useChat = (
           }
         },
         (err) => {
-          console.error("[useChat] stream error:", err);
-          let errMsg = err?.message || "Failed to generate response";
-          if (errMsg.includes("Connection lost") || errMsg.includes("Connection error") || errMsg.includes("Stream error")) {
-            errMsg = "Message limit reached. Your session resets every 4 hours.";
-          }
-          setError(errMsg);
-          setIsStreaming(false);
-          setStreamingMessage("");
-          // Remove the optimistic user message since it failed to send
-          setMessages((prev) => prev.filter(msg => msg.id !== userMessageId));
-        }
+        console.error("[useChat] stream error:", err);
+
+        const friendlyError = getFriendlyErrorMessage(err);
+
+        setError(friendlyError);
+
+        setIsStreaming(false);
+        setStreamingMessage("");
+
+        setMessages((prev) => prev.filter(msg => msg.id !== userMessageId));
+      }
       );
     },
     [
