@@ -18,7 +18,7 @@ const ChatContainer = ({
   const isDark = theme === "dark";
   const { user } = useUser();
   const role = user?.publicMetadata?.role || "user";
-  const isLawyerView = role === "lawyer" || role === "admin";
+  const isProfessional = role === "lawyer" || role === "admin" || role === "system_admin";
 
   const currentConversation = conversations.find(c => c.conversation_id === conversationId);
   const conversationTitle = currentConversation?.title || "New Chat";
@@ -138,7 +138,7 @@ const ChatContainer = ({
             onClearUploadError={clearUploadError}
             onEscalate={escalate}
             isEscalated={isEscalated}
-            showEscalate={role === "user" || !role}
+            showEscalate={!isProfessional}
             messageCount={messages.length}
           />
         </div>
