@@ -86,6 +86,7 @@ class Settings(BaseSettings):
     # ── Stripe Sandbox Billing ───────────────────────────────────────────
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
+    FRONTEND_URL: str = "http://localhost:3000"
     
     # Default tenant UUID — the single tenant row in the tenants table.
     # Every new user is assigned this tenant on signup (webhook handler).

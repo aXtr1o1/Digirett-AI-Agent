@@ -54,18 +54,18 @@ const ChatPage = () => {
   useEffect(() => {
     const sessionId = searchParams.get("session_id");
     if (sessionId && user) {
-      let plan = "vekst"; // Default demo plan
-      if (sessionId.includes("startup")) plan = "startup";
-      else if (sessionId.includes("vekst")) plan = "vekst";
-      else if (sessionId.includes("smb")) plan = "smb";
-      else if (sessionId.includes("enterprise")) plan = "enterprise";
-      
-      subscriptionService.setSubscription(user.id, plan, sessionId);
-      setPurchasedPlan(plan);
-      setShowSuccessModal(true);
-      
-      // Force Clerk to reload metadata instantly
-      user.reload().catch(err => console.error("Error reloading Clerk user:", err));
+      // Force Clerk to reload metadata instantly to get the new role
+      user.reload().then(() => {
+        const plan = user.publicMetadata?.role || "vekst";
+        subscriptionService.setSubscription(user.id, plan);
+        setPurchasedPlan(plan);
+        setShowSuccessModal(true);
+      }).catch(err => {
+        console.error("Error reloading Clerk user:", err);
+        subscriptionService.setSubscription(user.id, "vekst");
+        setPurchasedPlan("vekst");
+        setShowSuccessModal(true);
+      });
 
       // Clean URL parameters by updating navigate
       const newParams = new URLSearchParams(searchParams);
