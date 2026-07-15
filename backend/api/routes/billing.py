@@ -68,7 +68,7 @@ async def create_portal_session(
         # 3. Create billing portal session
         session = stripe.billing_portal.Session.create(
             customer=customer_id,
-            return_url="http://localhost:3000/chat?billing_update=true"
+            return_url=f"{settings.FRONTEND_URL}/chat?billing_update=true"
         )
 
         return {"status": "success", "url": session.url}
