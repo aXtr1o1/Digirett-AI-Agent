@@ -103,7 +103,7 @@ export default function BillingPage() {
       {/* Floating Close Button in Top Right */}
       <button
         onClick={() => navigate("/chat")}
-        className={`absolute top-6 right-6 p-2.5 rounded-full border transition-all duration-200 z-50 shadow-md ${isDark
+        className={`absolute top-3 right-4 p-2 rounded-full border transition-all duration-200 z-50 shadow-md ${isDark
           ? "bg-[#161622]/80 border-white/10 text-gray-400 hover:text-white hover:bg-slate-850/80"
           : "bg-white/90 border-gray-200 text-gray-500 hover:text-gray-900 hover:bg-gray-100/90"
           }`}
@@ -114,33 +114,33 @@ export default function BillingPage() {
       </button>
 
       {/* Main Content Area */}
-      <div className="flex-1 max-w-[1400px] w-full mx-auto px-6 py-6 md:py-10 flex flex-col items-center z-10">
+      <div className="flex-1 max-w-[1400px] w-full mx-auto px-6 py-2 md:py-3 flex flex-col items-center z-10">
         {/* Top Header */}
-        <div className="font-serif text-center mb-6 md:mb-8">
-          <h1 className={`text-2xl md:text-3.5xl font-bold tracking-tight mb-2 ${isDark ? "text-white" : "text-gray-950"}`}>
+        <div className="font-serif text-center mb-3 md:mb-4">
+          <h1 className={`text-2xl md:text-3xl font-bold tracking-tight mb-1 ${isDark ? "text-white" : "text-gray-950"}`}>
             Upgrade your plan
           </h1>
-          <p className={`text-xs md:text-sm max-w-lg mx-auto opacity-80 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+          <p className={`text-xs md:text-sm max-w-lg mx-auto opacity-80 mb-0 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
             Choose the billing tier that fits your legal consulting workload. All payments run securely via Stripe.
           </p>
         </div>
 
         {/* Cancel Subscription Banner */}
         {isSubscribed && (
-          <div className={`mb-8 p-6 rounded-2xl border flex flex-col md:flex-row items-center justify-between gap-4 max-w-2xl w-full ${isDark
+          <div className={`mb-1 p-3 rounded-xl border flex flex-col md:flex-row items-center justify-between gap-3 max-w-5xl w-full ${isDark
             ? "bg-[#161622]/60 border-white/5 text-white"
             : "bg-indigo-50/30 border-indigo-100 text-gray-900"
             }`} style={{ backdropFilter: "blur(12px)" }}>
-            <div className="flex-1 text-center md:text-left">
-              <h3 className="text-base font-bold">Billing & Subscription</h3>
-              <p className={`text-xs mt-1 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+            <div className="font-serif text-center md:text-left">
+              <h3 className="text-lg font-bold tracking-tight">Billing & Subscription</h3>
+              <p className={`font-serif text-sm mt-1 leading-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
                 Your active plan: <strong className="capitalize text-indigo-500">{role.replace("_", " ")}</strong>. Manage payment methods, download invoices, or cancel your plan securely.
               </p>
             </div>
             <button
               onClick={handleManageSubscription}
               disabled={isCancelling}
-              className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all flex items-center gap-2"
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-serif hover:bg-indigo-700 disabled:opacity-50 transition-all flex items-center gap-2"
             >
               {isCancelling ? (
                 <>

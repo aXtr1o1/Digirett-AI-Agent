@@ -193,6 +193,46 @@ class HitlService:
                 
             # Flatten response content if available
             responses = ticket.pop("hitl_responses", []) or []
+            try:
+                rating_resp = (
+                    self._supabase.table("consultation_ratings")
+                    .select("rating, comment")
+                    .eq("ticket_id", ticket["ticket_id"])
+                    .limit(1)
+                    .execute()
+                )
+                if rating_resp.data:
+                    rating_row = rating_resp.data[0]
+
+                    rating_value = rating_row.get("rating")
+                    comment_value = rating_row.get("comment")
+
+                    ticket["rating"] = rating_value
+                    ticket["comment"] = comment_value
+                    ticket["rating_submitted"] = True
+
+                    # Keep existing names for backward compatibility
+                    ticket["consultation_rating"] = rating_value
+                    ticket["consultation_feedback"] = comment_value
+                else:
+                    ticket["rating"] = None
+                    ticket["comment"] = None
+                    ticket["rating_submitted"] = False
+
+                    ticket["consultation_rating"] = None
+                    ticket["consultation_feedback"] = None
+
+            except Exception as exc:
+                logger.warning(
+                    f"Failed to fetch consultation rating "
+                    f"for ticket {ticket.get('ticket_id')} | {exc}"
+                )
+
+                ticket["rating"] = None
+                ticket["comment"] = None
+                ticket["rating_submitted"] = False
+                ticket["consultation_rating"] = None
+                ticket["consultation_feedback"] = None
             if responses:
                 # Get the most recent response if multiple exist (unlikely but safe)
                 ticket["lawyer_response"] = responses[0].get("content")
@@ -560,7 +600,47 @@ class HitlService:
                 ticket["lawyer_response"] = responses[0].get("content")
             else:
                 ticket["lawyer_response"] = None
+            # Fetch consultation rating (if available)
+            try:
+                rating_resp = (
+                    self._supabase.table("consultation_ratings")
+                    .select("rating, comment")
+                    .eq("ticket_id", ticket["ticket_id"])
+                    .limit(1)
+                    .execute()
+                )
 
+                if rating_resp.data:
+                    rating_row = rating_resp.data[0]
+
+                    rating_value = rating_row.get("rating")
+                    comment_value = rating_row.get("comment")
+
+                    ticket["rating"] = rating_value
+                    ticket["comment"] = comment_value
+                    ticket["rating_submitted"] = True
+
+                    ticket["consultation_rating"] = rating_value
+                    ticket["consultation_feedback"] = comment_value
+                else:
+                    ticket["rating"] = None
+                    ticket["comment"] = None
+                    ticket["rating_submitted"] = False
+
+                    ticket["consultation_rating"] = None
+                    ticket["consultation_feedback"] = None
+
+            except Exception as exc:
+                logger.warning(
+                    f"Failed to fetch consultation rating "
+                    f"for ticket {ticket.get('ticket_id')} | {exc}"
+                )
+
+                ticket["rating"] = None
+                ticket["comment"] = None
+                ticket["rating_submitted"] = False
+                ticket["consultation_rating"] = None
+                ticket["consultation_feedback"] = None
             # Apply auto no-show check
             self._auto_handle_no_show(ticket)
 
