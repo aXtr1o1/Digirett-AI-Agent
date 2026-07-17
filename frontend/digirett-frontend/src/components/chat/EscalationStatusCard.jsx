@@ -101,7 +101,7 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
   useEffect(() => {
     const t = statusData?.ticket;
     if (t?.ticket_id) {
-      if (t.rating) {
+      if (t.rating !== null && t.rating !== undefined) {
         setRating(t.rating);
         setRatingComment(t.comment || t.rating_comment || "");
         setRatingSubmitted(true);
