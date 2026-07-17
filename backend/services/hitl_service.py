@@ -25,7 +25,59 @@ class HitlService:
             }).execute()
         except Exception as exc:
             logger.warning(f"[WARN] Audit logging failed | {action} | {exc}")
+    def _attach_consultation_rating(self,ticket: Dict[str, Any],) -> Dict[str, Any]:
+        """Fetch and attach consultation rating details to a ticket."""
 
+        # Default values when no rating exists or the query fails
+        ticket.update({
+            "rating": None,
+            "comment": None,
+            "rating_submitted": False,
+            "consultation_rating": None,
+            "consultation_feedback": None,
+        })
+
+        ticket_id = ticket.get("ticket_id")
+
+        if not ticket_id:
+            logger.warning(
+                "Cannot fetch consultation rating because ticket_id is missing"
+            )
+            return ticket
+
+        try:
+            rating_resp = (
+                self._supabase.table("consultation_ratings")
+                .select("rating, comment")
+                .eq("ticket_id", ticket_id)
+                .limit(1)
+                .execute()
+            )
+
+            if not rating_resp.data:
+                return ticket
+
+            rating_row = rating_resp.data[0]
+            rating = rating_row.get("rating")
+            comment = rating_row.get("comment")
+
+            ticket.update({
+                "rating": rating,
+                "comment": comment,
+                "rating_submitted": True,
+
+                # Kept for backward compatibility with existing frontend code
+                "consultation_rating": rating,
+                "consultation_feedback": comment,
+            })
+
+        except Exception as exc:
+            logger.warning(
+                f"Failed to fetch consultation rating "
+                f"for ticket {ticket_id} | {exc}"
+            )
+
+        return ticket
     def create_ticket(
         self,
         conversation_id: str,
@@ -193,54 +245,17 @@ class HitlService:
                 
             # Flatten response content if available
             responses = ticket.pop("hitl_responses", []) or []
-            try:
-                rating_resp = (
-                    self._supabase.table("consultation_ratings")
-                    .select("rating, comment")
-                    .eq("ticket_id", ticket["ticket_id"])
-                    .limit(1)
-                    .execute()
-                )
-                if rating_resp.data:
-                    rating_row = rating_resp.data[0]
-
-                    rating_value = rating_row.get("rating")
-                    comment_value = rating_row.get("comment")
-
-                    ticket["rating"] = rating_value
-                    ticket["comment"] = comment_value
-                    ticket["rating_submitted"] = True
-
-                    # Keep existing names for backward compatibility
-                    ticket["consultation_rating"] = rating_value
-                    ticket["consultation_feedback"] = comment_value
-                else:
-                    ticket["rating"] = None
-                    ticket["comment"] = None
-                    ticket["rating_submitted"] = False
-
-                    ticket["consultation_rating"] = None
-                    ticket["consultation_feedback"] = None
-
-            except Exception as exc:
-                logger.warning(
-                    f"Failed to fetch consultation rating "
-                    f"for ticket {ticket.get('ticket_id')} | {exc}"
-                )
-
-                ticket["rating"] = None
-                ticket["comment"] = None
-                ticket["rating_submitted"] = False
-                ticket["consultation_rating"] = None
-                ticket["consultation_feedback"] = None
             if responses:
                 # Get the most recent response if multiple exist (unlikely but safe)
                 ticket["lawyer_response"] = responses[0].get("content")
             else:
                 ticket["lawyer_response"] = None
+                
+            ticket = self._attach_consultation_rating(ticket)
 
             # Apply auto no-show check
             ticket = self._auto_handle_no_show(ticket)
+            
 
             return ticket
         except Exception as exc:
@@ -600,47 +615,7 @@ class HitlService:
                 ticket["lawyer_response"] = responses[0].get("content")
             else:
                 ticket["lawyer_response"] = None
-            # Fetch consultation rating (if available)
-            try:
-                rating_resp = (
-                    self._supabase.table("consultation_ratings")
-                    .select("rating, comment")
-                    .eq("ticket_id", ticket["ticket_id"])
-                    .limit(1)
-                    .execute()
-                )
-
-                if rating_resp.data:
-                    rating_row = rating_resp.data[0]
-
-                    rating_value = rating_row.get("rating")
-                    comment_value = rating_row.get("comment")
-
-                    ticket["rating"] = rating_value
-                    ticket["comment"] = comment_value
-                    ticket["rating_submitted"] = True
-
-                    ticket["consultation_rating"] = rating_value
-                    ticket["consultation_feedback"] = comment_value
-                else:
-                    ticket["rating"] = None
-                    ticket["comment"] = None
-                    ticket["rating_submitted"] = False
-
-                    ticket["consultation_rating"] = None
-                    ticket["consultation_feedback"] = None
-
-            except Exception as exc:
-                logger.warning(
-                    f"Failed to fetch consultation rating "
-                    f"for ticket {ticket.get('ticket_id')} | {exc}"
-                )
-
-                ticket["rating"] = None
-                ticket["comment"] = None
-                ticket["rating_submitted"] = False
-                ticket["consultation_rating"] = None
-                ticket["consultation_feedback"] = None
+            ticket = self._attach_consultation_rating(ticket)
             # Apply auto no-show check
             self._auto_handle_no_show(ticket)
 
