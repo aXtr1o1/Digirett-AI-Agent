@@ -10,7 +10,8 @@ STOP_WORDS = {
     "og", "i", "jeg", "det", "at", "en", "et", "den", "til", "er", "som", "på", "de", "med", 
     "han", "av", "ikke", "der", "så", "var", "meg", "seg", "men", "ett", "har", "om", "vi", 
     "min", "mitt", "ha", "hadde", "hun", "nå", "over", "da", "ved", "fra", "for", "ut", "sin", 
-    "sine", "sitt", "mot", "å", "hva", "hvordan", "hvor", "hvem", "eller",
+    "sine", "sitt", "mot", "å", "hva", "hvordan", "hvor", "hvem", "eller", "må", "kan", "bør", 
+    "skal", "vil", "få", "får", "gi", "gir", "ta", "tar", "gjøre", "gjør", "hvis", "når",
     # English
     "i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your", "yours", 
     "yourself", "yourselves", "he", "him", "his", "himself", "she", "her", "hers", "herself", 
@@ -92,10 +93,19 @@ class KeywordScorer:
             return []
  
         max_score = sorted_scores[0][1]
+        second_score = sorted_scores[1][1] if len(sorted_scores) > 1 else 0.0
+        
+        if max_score < 1.0:
+            top_confidence = max_score * 0.4
+        else:
+            top_confidence = (max_score - second_score) / max_score if max_score > 0 else 0.0
+            
         normalized_sorted = []
-        for sub_id, raw_score in sorted_scores:
-            # Scale relative to the highest score, capped at 1.0
-            confidence = min(1.0, raw_score / max_score if max_score > 0 else 0.0)
+        normalized_sorted.append((sorted_scores[0][0], round(top_confidence, 2)))
+        
+        for sub_id, raw_score in sorted_scores[1:]:
+            rel_score = raw_score / max_score if max_score > 0 else 0.0
+            confidence = rel_score * top_confidence
             normalized_sorted.append((sub_id, round(confidence, 2)))
  
         return normalized_sorted

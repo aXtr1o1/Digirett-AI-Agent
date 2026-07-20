@@ -104,6 +104,7 @@ KEYWORDS: GDPR, personopplysninger, personvern, databehandler, behandlingsgrunnl
 DOMAIN: Selskapsrett
 SUBDOMAINS (use EXACTLY these labels):
   - Formation & Registration
+  - Governance
   - Shareholder Rights & Records
   - Share Capital & Equity Changes
   - Board Liability & Loss of Equity
@@ -235,6 +236,7 @@ class RouterAgent:
         ],
         "selskapsrett": [
             "Formation & Registration",
+            "Governance",
             "Shareholder Rights & Records",
             "Share Capital & Equity Changes",
             "Board Liability & Loss of Equity",

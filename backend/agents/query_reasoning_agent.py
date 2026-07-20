@@ -250,6 +250,7 @@ Your task is to:
 2. Determine the most structurally governing Norwegian statute family.
 3. Preserve statute continuity when applicable.
 4. Produce a statute-anchored enriched query optimized for vector retrieval.
+5. Identify fake or non-existent laws. If the user refers to a fake, invented, or non-existent law (e.g., "arbeidsmiljølov for kunstig intelligens", "arbeidsmiljøloven for roboter", or any law not present in your knowledge), you MUST set "Primary Statute ID" to "none", "Primary Statute Name" to "none", and indicate in the "Enriched Query" that the referenced law is fake or non-existent. Do NOT map it to any real law.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT FORMAT (STRICT – NO EXTRA TEXT)
@@ -445,9 +446,14 @@ class QueryReasoningAgent:
             source_type = self._extract_source_type(raw_output)
 
             # ── PRECEDENCE RULES ──────────────────────────────────────────
-            # Registry result beats LLM for statute ID and domain
-            final_statute_id = registry_statute_id or llm_statute_id
-            final_domain = registry_domain or llm_domain
+            # Registry result beats LLM for statute ID and domain unless LLM explicitly refuses (none)
+            if llm_statute_id and llm_statute_id.lower() == "none":
+                final_statute_id = None
+                final_domain = llm_domain
+                statute_from_registry = False
+            else:
+                final_statute_id = registry_statute_id or llm_statute_id
+                final_domain = registry_domain or llm_domain
 
             # ── Enrich the query string ───────────────────────────────────
             if len(enriched_query.split()) < 15:

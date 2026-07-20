@@ -1,3 +1,4 @@
+import urllib.parse
 import logging
 import re
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -447,6 +448,7 @@ class RAGService:
         )
         enriched_query        = reasoning_result["enriched_query"]
         primary_statute_id    = reasoning_result.get("primary_statute_id")
+        secondary_statute_id  = reasoning_result.get("secondary_statute_id")
         response_style        = reasoning_result.get("response_style", "")
         domain                = reasoning_result.get("domain")
         jurisdiction          = reasoning_result.get("jurisdiction")
@@ -491,9 +493,15 @@ class RAGService:
                     enriched_query=enriched_query,
                     domain_hint=domain,
                 )
-                resolved_subdomain = router_result.get("subdomain_candidates")[0] if router_result.get("subdomain_candidates") else None
                 routing_confidence = router_result.get("confidence", 0.5)
                 routing_method = "LLM_FALLBACK"
+
+        if resolved_subdomain:
+            if not re.match(r"^[A-Z]{2}-\d{2}$", resolved_subdomain):
+                for sub_id, sub_data in taxonomy_loader.get_all_subdomains().items():
+                    if sub_data.get("name_en") == resolved_subdomain or sub_data.get("name_nb") == resolved_subdomain:
+                        resolved_subdomain = sub_id
+                        break
 
         # Initialize defaults
         final_domain = domain
@@ -513,6 +521,34 @@ class RAGService:
             
             # 7. Co-Retrieval Checks
             target_subdomains = CoRetrievalResolver.get_targets(subdomain_list, query)
+            
+            # Dynamic Taxonomy-based Subdomain Expansion with Stemming (only run if no subdomains resolved to avoid dilution)
+            if not target_subdomains:
+                expanded_subs = list(target_subdomains)
+                q_words = set(re.findall(r"\b\w{4,}\b", query.lower()))
+                q_stems = {w[:5] for w in q_words}
+                
+                for sub_id, sub_data in taxonomy_loader.get_all_subdomains().items():
+                    if sub_id in expanded_subs:
+                        continue
+                    matched = False
+                    for kw in sub_data.get("routing_keywords", []):
+                        kw_words = set(re.findall(r"\b\w{4,}\b", kw.lower()))
+                        kw_stems = {w[:5] for w in kw_words}
+                        if q_stems.intersection(kw_stems):
+                            sub_domain_family = sub_id.split("-")[0]
+                            orig_families = {s.split("-")[0] for s in target_subdomains}
+                            is_related = (
+                                sub_domain_family in orig_families or
+                                (sub_domain_family in ("CY", "IN") and any(f in ("CY", "IN") for f in orig_families))
+                            )
+                            if is_related:
+                                expanded_subs.append(sub_id)
+                                matched = True
+                                break
+                    if matched:
+                        continue
+                target_subdomains = expanded_subs
             
             # Extract metadata dynamically from taxonomy for the resolved primary subdomain
             primary_sub_data = taxonomy_loader.get_subdomain(resolved_subdomain)
@@ -553,8 +589,11 @@ class RAGService:
             logger.warning(f"[WARN] Could not save reasoning meta to Redis | {exc}")
 
         # ── [3] Resolve statute → Lovdata URL ─────────────────────────────
-        statute_filter = _resolve_statute_url(primary_statute_id)
-        logger.info(f"statute_filter: \'{primary_statute_id}\' → \'{statute_filter}\'")
+        primary_url = _resolve_statute_url(primary_statute_id)
+        secondary_url = _resolve_statute_url(secondary_statute_id)
+        urls = [u for u in [primary_url, secondary_url] if u]
+        statute_filter = ",".join(urls) if urls else None
+        logger.info(f"statute_filter: primary={primary_statute_id}, secondary={secondary_statute_id} → '{statute_filter}'")
 
         # ── [4] Multi-Pass Retrieval & Deduplication ──────────────────────
         raw_retrieved_chunks = []
@@ -571,19 +610,49 @@ class RAGService:
                     sub_domain_id = sub_data.get("domain_id")
                     sub_domain = TAXONOMY_DOMAIN_TO_CANONICAL.get(sub_domain_id, final_domain)
             
-            sub_results = await self._retriever_agent.run(
-                query=query,
-                enriched_query=enriched_query,
-                top_k=top_k,
-                min_score=min_score,
-                history=history,
-                statute_filter=statute_filter,
-                domain=sub_domain,
-                jurisdiction=final_jurisdiction,
-                subdomain_candidates=sub_subdomain_candidates,
-                b2b_b2c=b2b_b2c,
-                statute_from_registry=statute_from_registry,
-            )
+            import time
+            try:
+                t0 = time.perf_counter()
+                sub_results = await self._retriever_agent.run(
+                    query=query,
+                    enriched_query=enriched_query,
+                    top_k=top_k,
+                    min_score=min_score,
+                    history=history,
+                    statute_filter=statute_filter,
+                    domain=sub_domain,
+                    jurisdiction=final_jurisdiction,
+                    subdomain_candidates=sub_subdomain_candidates,
+                    b2b_b2c=b2b_b2c,
+                    statute_from_registry=statute_from_registry,
+                )
+                elapsed = time.perf_counter() - t0
+                logger.info(f"Vector search retrieval completed in {elapsed:.4f}s for subdomain '{sub_candidate}'")
+            except Exception as milvus_exc:
+                logger.error(f"[ERROR] Milvus connection failure during retrieval: {milvus_exc}")
+                yield {"type": "sources", "data": []}
+                err_msg = (
+                    "Vår søkedatabase er midlertidig utilgjengelig. Vennligst prøv igjen om et øyeblikk."
+                    if language == "norwegian"
+                    else "Our search database is temporarily unavailable. Please try again in a few moments."
+                )
+                for char in err_msg:
+                    yield {"type": "token", "data": char}
+                yield {
+                    "type": "complete",
+                    "metadata": {
+                        "intent": "LEGAL",
+                        "language": language,
+                        "primary_statute_id": primary_statute_id,
+                        "chunks_retrieved": 0,
+                        "tokens_generated": len(err_msg),
+                        "score": 0.0,
+                        "confidence": "Error",
+                        "full_answer": err_msg,
+                        "rag_chunks": [],
+                    },
+                }
+                return
             raw_retrieved_chunks.extend(sub_results)
 
         # Merge and deduplicate results
@@ -633,6 +702,26 @@ class RAGService:
         full_answer = ""
         token_count = 0
         first_token = True
+
+        # Check if the query asks for a specific section number
+        is_specific_section_query = False
+        section_nums = re.findall(r"§\s*(\d+(?:-\d+)?)", query) or re.findall(r"paragraf\s*(\d+(?:-\d+)?)", query, re.IGNORECASE)
+        if section_nums:
+            is_specific_section_query = True
+            
+        # Idea 2: Context Isolation
+        # If a specific section is requested, keep ONLY the chunks matching that section
+        if is_specific_section_query and search_results:
+            isolated_chunks = []
+            for chunk in search_results:
+                chunk_section = chunk.get("section_ref") or ""
+                for sec in section_nums:
+                    if sec in chunk_section:
+                        isolated_chunks.append(chunk)
+                        break
+            if isolated_chunks:
+                logger.info(f"Context Isolation: filtering search results to keep only {len(isolated_chunks)} chunks for section(s) {section_nums}")
+                search_results = isolated_chunks
 
         async for token in self._llm.generate_legal_stream(
             query=query,
@@ -685,13 +774,18 @@ class RAGService:
                         base_url    = chunk.get("source_doc_url") or chunk.get("url") or ""
                         section_ref = (chunk.get("section_ref") or "").strip()
                         doc_title   = chunk.get("doc_title") or ""
-                        full_url = f"{base_url}/{section_ref}" if section_ref else base_url
+                        
+                        # URL encode the section reference to prevent broken space-containing URLs
+                        encoded_section = urllib.parse.quote(section_ref) if section_ref else ""
+                        full_url = f"{base_url}/{encoded_section}" if encoded_section else base_url
+                        
                         if full_url and full_url not in seen_urls:
                             seen_urls.add(full_url)
-                            visible_sources.append({"url": full_url, "doc_title": doc_title, "section_ref": section_ref})
-                        if base_url and base_url not in seen_urls:
-                            seen_urls.add(base_url)
-                            visible_sources.append({"url": base_url, "doc_title": doc_title})
+                            visible_sources.append({
+                                "url": full_url, 
+                                "doc_title": doc_title, 
+                                "section_ref": section_ref
+                            })
 
                     yield {"type": "sources", "data": visible_sources}
                     logger.info(f"[OK] Emitted {len(visible_sources)} source URLs (section_ref included)")
@@ -858,21 +952,17 @@ class RAGService:
             base_url    = chunk.get("source_doc_url") or chunk.get("url") or ""
             section_ref = (chunk.get("section_ref") or "").strip()
             doc_title   = chunk.get("doc_title") or ""
-            # Full URL with section anchor: "https://lovdata.no/.../lov/YYYY-MM-DD-N/§6-1"
-            full_url = f"{base_url}/{section_ref}" if section_ref else base_url
+            
+            # URL encode the section reference
+            encoded_section = urllib.parse.quote(section_ref) if section_ref else ""
+            full_url = f"{base_url}/{encoded_section}" if encoded_section else base_url
+            
             if full_url and full_url not in seen_urls:
                 seen_urls.add(full_url)
                 visible_sources.append({
                     "url": full_url, 
                     "doc_title": doc_title,
                     "section_ref": section_ref
-                })
-            # Also emit base URL so frontend shows the law itself
-            if base_url and base_url not in seen_urls:
-                seen_urls.add(base_url)
-                visible_sources.append({
-                    "url": base_url, 
-                    "doc_title": doc_title
                 })
 
         yield {"type": "sources", "data": visible_sources}

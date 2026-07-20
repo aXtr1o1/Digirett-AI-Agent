@@ -14,7 +14,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # How many candidates to fetch before re-ranking (top_k × OVERFETCH_FACTOR)
-_OVERFETCH_FACTOR = 4
+_OVERFETCH_FACTOR = 6
 
 
 class _BM25Reranker:
@@ -34,9 +34,14 @@ class _BM25Reranker:
             return results[:top_k]
 
         try:
+            import re
+            def tokenize_and_stem(text: str) -> List[str]:
+                words = re.findall(r"\b\w{3,}\b", text.lower())
+                return [w[:5] for w in words]
+
             corpus = [r.get("text", "") or "" for r in results]
-            tok_c = [t.lower().split() for t in corpus]
-            tok_q = raw_query.lower().split()
+            tok_c = [tokenize_and_stem(t) for t in corpus]
+            tok_q = tokenize_and_stem(raw_query)
 
             bm25 = BM25Okapi(tok_c)
             bm25_scores = bm25.get_scores(tok_q)
@@ -149,7 +154,35 @@ class RetrieverAgent:
             fallback_level=0,
         )
         # logger.debug(f"  L0 → {len(candidates)} candidates")
-
+        
+        # If a statute was targeted, but none of the retrieved chunks belong to it, force fallback
+        if candidates and statute_filter:
+            import re
+            match = re.search(r"(\d{4}-\d{2}-\d{2}-\d+)", statute_filter)
+            if match:
+                statute_id = match.group(1)
+                
+                # Also allow any subdomain required sources to prevent incorrect blocking
+                allowed_statutes = [statute_id]
+                from router.taxonomy_loader import taxonomy_loader
+                if subdomain_candidates:
+                    for sub_id in subdomain_candidates:
+                        sub_data = taxonomy_loader.get_subdomain(sub_id)
+                        if sub_data:
+                            for src in sub_data.get("required_sources", []):
+                                sid = src.get("source_id")
+                                if sid:
+                                    dp = re.sub(r"^(LOV|FOR|FORSKRIFT)-", "", sid, flags=re.IGNORECASE)
+                                    if dp and dp not in allowed_statutes:
+                                        allowed_statutes.append(dp)
+                
+                has_target = any(
+                    any(allowed_id in (c.get("source_doc_url") or "") for allowed_id in allowed_statutes)
+                    for c in candidates
+                )
+                if not has_target:
+                    candidates = []
+ 
         if not candidates:
             fallback_level = 1
             # logger.debug("[Fallback] L0 empty → trying L1 (statute + domain)…")
@@ -247,9 +280,20 @@ class RetrieverAgent:
 
         for r in reranked:
             r["fallback_level"] = fallback_level
+            penalty = 1.0
+            if fallback_level == 1:
+                penalty = 0.9
+            elif fallback_level == 2:
+                penalty = 0.8
+            elif fallback_level == 3:
+                penalty = 0.6
+            elif fallback_level >= 4:
+                penalty = 0.4
+            if "score" in r:
+                r["score"] = r["score"] * penalty
 
         logger.info(
-            f"✅ RetrieverAgent done | {len(reranked)} results | "
+            f" RetrieverAgent done | {len(reranked)} results | "
             f"fallback=L{fallback_level} | statute={statute_filter or 'none'}"
         )
         for i, r in enumerate(reranked[:3], 1):
@@ -285,5 +329,5 @@ class RetrieverAgent:
                 fallback_level=fallback_level,
             )
         except Exception as exc:
-            logger.error(f"❌ Milvus search (L{fallback_level}) failed: {exc}")
+            logger.error(f" Milvus search (L{fallback_level}) failed: {exc}")
             return []

@@ -430,11 +430,10 @@ const ChatPage = () => {
           </div>
 
           <div
-            className={`relative max-w-md w-full p-8 rounded-2xl border text-center shadow-2xl backdrop-blur-xl transition-all scale-up ${
-              isDark
+            className={`relative max-w-md w-full p-8 rounded-2xl border text-center shadow-2xl backdrop-blur-xl transition-all scale-up ${isDark
                 ? "bg-[#12121e]/90 border-indigo-500/30 text-white shadow-indigo-500/10"
                 : "bg-white border-gray-200 text-gray-900 shadow-xl"
-            }`}
+              }`}
           >
             {/* Pulsing visual glow */}
             <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-24 h-24 bg-gradient-to-tr from-indigo-500 to-purple-600 rounded-full blur-xl opacity-50 animate-pulse" />
