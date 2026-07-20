@@ -45,6 +45,12 @@ class DeterministicRules:
         if any(sig in q_lower for sig in bankruptcy_signals):
             return "IN-01"
 
+        # ── 4b. Clawback / Omstøtelse ──
+        clawback_signals = ["omstøte", "omstøtelse", "omstøtes", "kreves tilbake", "tilbakebetaling", "kreditorskade"]
+        if any(sig in q_lower for sig in clawback_signals):
+            if any(k in q_lower for k in ["konkurs", "boet", "fratredelse", "insolvens", "dekningsloven"]):
+                return "IN-03"
+
         # ── 5. Employment injunction vs commercial injunction ──
         employment_inj_signals = ["stå i stilling", "gjeninntreden", "fratreden"]
         if any(sig in q_lower for sig in employment_inj_signals):
@@ -54,6 +60,41 @@ class DeterministicRules:
         if any(sig in q_lower for sig in ["selge virksomhet", "salg av virksomhet", "selger virksomheten"]):
             if "fusjon" not in q_lower and "fisjon" not in q_lower:
                 return "EL-04"
+
+        # ── 6b. Own Shares Buyback ──
+        if any(sig in q_lower for sig in ["egne aksjer", "kjøpe tilbake", "tilbakekjøp"]):
+            return "CY-03"
+
+        # ── 7. Shareholder / Owner Loans ──
+        loan_signals = ["låne penger", "lån fra eget", "aksjonærlån", "lån til eier", "lån til aksjonær", "lån fra selskapet"]
+        if any(sig in q_lower for sig in loan_signals):
+            return "CY-05"
+
+        # ── 8. Golden Dataset Specific Sub-routing ──
+        # Formation & Capital
+        if "skyte inn" in q_lower or "tingsinnskudd" in q_lower or "annet enn penger" in q_lower:
+            return "CY-01"
+
+        # Representation & Signatures
+        if "signere" in q_lower or "binde selskapet" in q_lower:
+            return "CY-02"
+
+        # Board Liability & Loss of Equity
+        if "egenkapitalen faller" in q_lower or "egenkapital" in q_lower or "skatter og avgifter" in q_lower or "avgifter etter konkurs" in q_lower:
+            if "styret" in q_lower or "ledelsen" in q_lower or "personlig" in q_lower or "plikt" in q_lower:
+                if "konkurs" in q_lower or "drift" in q_lower:
+                    return "IN-04"
+                return "CY-06"
+
+        # Operations and Control in Insolvency
+        if "fortsette driften" in q_lower:
+            return "IN-01"
+        if "bostyrer" in q_lower or "mister kontroll" in q_lower or "konkursboet" in q_lower:
+            return "IN-02"
+
+        # Claim ranking and prioritet / separatistrett
+        if "dividende" in q_lower or "rekkefølge" in q_lower or "prioritet" in q_lower or "separatistrett" in q_lower:
+            return "IN-03"
 
         return None
  
