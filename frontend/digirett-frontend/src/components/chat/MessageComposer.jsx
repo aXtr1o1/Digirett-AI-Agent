@@ -69,21 +69,27 @@ const MessageComposer = ({
 
   const isDark = theme === "dark";
   // treat doc processing same as streaming — block all input
+// Auto resize textarea
+useEffect(() => {
+  const textarea = textareaRef.current;
+  if (!textarea) return;
 
-  // Auto resize textarea
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      const newHeight = Math.min(textareaRef.current.scrollHeight, 200);
-      textareaRef.current.style.height = newHeight + "px";
-      textareaRef.current.style.overflowY =
-        textareaRef.current.scrollHeight > 200 ? "scroll" : "hidden";
-    }
-  }, [message]);
+  const maxHeight = 160;
 
-  useEffect(() => {
-    textareaRef.current?.focus();
-  }, []);
+  textarea.style.height = "24px";
+
+  const nextHeight = Math.min(
+    textarea.scrollHeight,
+    maxHeight
+  );
+
+  textarea.style.height = `${nextHeight}px`;
+
+  textarea.style.overflowY =
+    textarea.scrollHeight > maxHeight
+      ? "auto"
+      : "hidden";
+}, [message]);
 
   // File select
   const handleFileSelect = (e) => {
@@ -318,232 +324,320 @@ const MessageComposer = ({
         </div>
       )}
 
-      {/* Input Box */}
-      <div
+{/* Input Box */}
+<div
+  style={{
+    display: "flex",
+    flexDirection: "column",
+    width: "100%",
+    gap: "8px",
+    borderRadius: "18px",
+    padding: "12px 14px 10px",
+    border: isDark
+      ? "1px solid rgba(59, 130, 246, 0.2)"
+      : "1px solid rgba(59, 130, 246, 0.15)",
+    backgroundColor: isDark
+      ? "rgba(30, 30, 30, 0.3)"
+      : "rgba(255, 255, 255, 0.5)",
+    backdropFilter: "blur(16px)",
+    opacity: isBusy ? 0.7 : 1,
+    transition: "opacity 0.2s",
+    position: "relative",
+    boxSizing: "border-box",
+  }}
+>
+  {/* Success Toast */}
+  {showSuccessToast && (
+    <div
+      style={{
+        position: "absolute",
+        top: "-60px",
+        left: "50%",
+        transform: "translateX(-50%)",
+        padding: "10px 24px",
+        borderRadius: "99px",
+        boxShadow: "0 10px 30px rgba(0, 0, 0, 0.3)",
+        backgroundColor: isDark ? "#1e293b" : "#ffffff",
+        border: isDark
+          ? "1px solid rgba(59, 130, 246, 0.2)"
+          : "1px solid rgba(59, 130, 246, 0.1)",
+        color: isDark ? "#60a5fa" : "#2563eb",
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+        whiteSpace: "nowrap",
+        zIndex: 100,
+        animation: "toastIn 0.3s ease-out forwards",
+      }}
+    >
+      <CheckCircle size={16} />
+
+      <span
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "12px",
-          borderRadius: "12px",
-          padding: "14px 16px",
-          border: isDark
-            ? "1px solid rgba(59, 130, 246, 0.2)"
-            : "1px solid rgba(59, 130, 246, 0.15)",
-          backgroundColor: isDark
-            ? "rgba(30, 30, 30, 0.3)"
-            : "rgba(255, 255, 255, 0.5)",
-          backdropFilter: "blur(16px)",
-          opacity: isBusy ? 0.7 : 1,
-          transition: "opacity 0.2s",
-          position: "relative",
+          fontSize: "14px",
+          fontWeight: "600",
         }}
       >
-        {/* Success Toast */}
-        {showSuccessToast && (
-          <div style={{
-            position: "absolute",
-            top: "-60px",
-            left: "50%",
-            transform: "translateX(-50%)",
-            padding: "10px 24px",
-            borderRadius: "99px",
-            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.3)",
-            backgroundColor: isDark ? "#1e293b" : "#ffffff",
-            border: isDark ? "1px solid rgba(59, 130, 246, 0.2)" : "1px solid rgba(59, 130, 246, 0.1)",
-            color: isDark ? "#60a5fa" : "#2563eb",
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            whiteSpace: "nowrap",
-            zIndex: 100,
-            animation: "toastIn 0.3s ease-out forwards",
-          }}>
-            <CheckCircle size={16} />
-            <span style={{ fontSize: "14px", fontWeight: "600" }}>
-              {isEscalated || localEscalated
-                ? "You have successfully scheduled a consultation"
-                : "Request submitted. Lawyer will contact you shortly."}
-            </span>
-            <style>{`
-              @keyframes toastIn {
-                from { opacity: 0; transform: translateX(-50%) translateY(10px); }
-                to { opacity: 1; transform: translateX(-50%) translateY(0); }
-              }
-            `}</style>
-          </div>
+        {isEscalated || localEscalated
+          ? "You have successfully scheduled a consultation"
+          : "Request submitted. Lawyer will contact you shortly."}
+      </span>
+
+      <style>{`
+        @keyframes toastIn {
+          from {
+            opacity: 0;
+            transform: translateX(-50%) translateY(10px);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+          }
+        }
+      `}</style>
+    </div>
+  )}
+
+  {/* Textarea */}
+  <textarea
+    ref={textareaRef}
+    className="chat-input-scrollbar"
+    value={message}
+    onChange={(e) => setMessage(e.target.value)}
+    onKeyDown={handleKeyDown}
+    disabled={isBusy}
+    rows={1}
+    placeholder={getPlaceholder()}
+    style={{
+      display: "block",
+      width: "100%",
+      height: "24px",
+      minHeight: "24px",
+      maxHeight: "160px",
+      padding: "4px 2px",
+      margin: 0,
+      resize: "none",
+      overflowY: "hidden",
+      background: "transparent",
+      border: "none",
+      outline: "none",
+      boxSizing: "border-box",
+      fontSize: "16px",
+      lineHeight: "24px",
+      color: isDark ? "#f3f4f6" : "#111827",
+      fontFamily: "inherit",
+      cursor: isBusy ? "not-allowed" : "text",
+    }}
+  />
+
+  {/* Bottom Toolbar */}
+  <div
+    style={{
+      display: "flex",
+      flexDirection: "row",
+      alignItems: "center",
+      width: "100%",
+      minHeight: "40px",
+      gap: "6px",
+    }}
+  >
+    {/* Lawyer Escalation Button */}
+    {showEscalate && (
+      <button
+        type="button"
+        onClick={() => {
+          if (!isBusy) {
+            setShowEscalateConfirm(
+              !showEscalateConfirm
+            );
+          }
+        }}
+        disabled={isBusy}
+        title={
+          isEscalated || localEscalated
+            ? ""
+            : "Talk to Lawyer"
+        }
+        style={{
+          width: "36px",
+          height: "36px",
+          borderRadius: "50%",
+          border: "none",
+          cursor: isBusy
+            ? "not-allowed"
+            : "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor:
+            isEscalated || localEscalated
+              ? "rgba(59, 130, 246, 0.1)"
+              : "transparent",
+          color:
+            isEscalated || localEscalated
+              ? "#3B82F6"
+              : isDark
+                ? "#9ca3af"
+                : "#6b7280",
+          flexShrink: 0,
+          opacity: isBusy ? 0.4 : 1,
+        }}
+      >
+        {isEscalated || localEscalated ? (
+          <CheckCircle
+            size={22}
+            style={{ color: "#2563eb" }}
+          />
+        ) : (
+          <Scale size={18} />
         )}
+      </button>
+    )}
 
-        {/* Lawyer Escalation Button (Only for Users) */}
-        {showEscalate && (
-          <div className="relative">
-            {/* Lawyer Escalation Confirm Modal (Old portal-based popup overlay) is now moved to the bottom of this file as a standard comment block */}
+    {/* Upload Button */}
+    <button
+      type="button"
+      onClick={() => {
+        if (!isBusy) {
+          fileInputRef.current?.click();
+        }
+      }}
+      disabled={isBusy}
+      style={{
+        width: "36px",
+        height: "36px",
+        borderRadius: "50%",
+        border: "none",
+        cursor: isBusy
+          ? "not-allowed"
+          : "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "transparent",
+        color: isDark
+          ? "#9ca3af"
+          : "#6b7280",
+        flexShrink: 0,
+        opacity: isBusy ? 0.4 : 1,
+      }}
+    >
+      <Paperclip size={18} />
+    </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setShowEscalateConfirm(!showEscalateConfirm);
-              }}
-              style={{
-                width: "36px",
-                height: "36px",
-                borderRadius: "50%",
-                border: "none",
-                cursor: isBusy ? "not-allowed" : "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: (isEscalated || localEscalated) ? "rgba(59, 130, 246, 0.1)" : "transparent",
-                color: (isEscalated || localEscalated) ? "#3B82F6" : (isDark ? "#9ca3af" : "#6b7280"),
-                flexShrink: 0,
-                opacity: isBusy ? 0.4 : 1,
-              }}
-              title={(isEscalated || localEscalated) ? "" : "Talk to Lawyer"}
-            >
-              {(isEscalated || localEscalated) ? (
-                <CheckCircle size={22} style={{ color: "#2563eb" }} />
-              ) : (
-                <Scale size={18} />
-              )}
-            </button>
-          </div>
-        )}
+    <input
+      type="file"
+      ref={fileInputRef}
+      onChange={handleFileSelect}
+      accept=".pdf,.docx,.doc"
+      style={{ display: "none" }}
+    />
 
-        {/* Upload Button */}
+    {/* Push send button to right */}
+    <div style={{ flex: 1 }} />
+
+    {/* Send / Stop Button */}
+    {isStreaming || isProcessingDoc ? (
+      isStreaming ? (
         <button
           type="button"
-          onClick={() => !isBusy && fileInputRef.current?.click()}
+          onClick={onStop}
           style={{
-            width: "36px",
-            height: "36px",
+            width: "40px",
+            height: "40px",
             borderRadius: "50%",
+            backgroundColor: "#ef4444",
             border: "none",
-            cursor: isBusy ? "not-allowed" : "pointer",
+            cursor: "pointer",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: "transparent",
-            color: isDark ? "#9ca3af" : "#6b7280",
+            color: "#ffffff",
             flexShrink: 0,
-            opacity: isBusy ? 0.4 : 1,
           }}
         >
-          <Paperclip size={18} />
+          <StopCircle size={18} />
         </button>
-
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileSelect}
-          accept=".pdf,.docx,.doc"
-          style={{ display: "none" }}
-        />
-
-        {/* Textarea */}
-        <textarea
-          ref={textareaRef}
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={isBusy}
-          rows={1}
-          placeholder={getPlaceholder()}
+      ) : (
+        <div
           style={{
-            flex: 1,
-            resize: "none",
-            background: "transparent",
-            border: "none",
-            outline: "none",
-            fontSize: "16px",
-            lineHeight: "24px",
-            color: isDark ? "#f3f4f6" : "#111827",
-            maxHeight: "200px",
-            overflowY: "hidden",
-            fontFamily: "inherit",
-            cursor: isBusy ? "not-allowed" : "text",
+            width: "40px",
+            height: "40px",
+            borderRadius: "50%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
           }}
-        />
-
-        {/* Send / Stop */}
-        {isStreaming || isProcessingDoc ? (
-          isStreaming ? (
-            <button
-              type="button"
-              onClick={onStop}
-              style={{
-                width: "40px",
-                height: "40px",
-                borderRadius: "50%",
-                backgroundColor: "#ef4444",
-                border: "none",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#ffffff",
-              }}
-            >
-              <StopCircle size={18} />
-            </button>
-          ) : (
-            /* Doc processing spinner */
-            <div
-              style={{
-                width: "40px",
-                height: "40px",
-                borderRadius: "50%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                style={{ animation: "spin 1s linear infinite" }}
-              >
-                <circle
-                  cx="12" cy="12" r="10"
-                  stroke={isDark ? "#4b5563" : "#d1d5db"}
-                  strokeWidth="3"
-                />
-                <path
-                  d="M12 2a10 10 0 0 1 10 10"
-                  stroke="#3B82F6"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                />
-                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-              </svg>
-            </div>
-          )
-        ) : (
-          <button
-            type="button"
-            onClick={sendMessage}
-            disabled={!canSend}
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
             style={{
-              width: "40px",
-              height: "40px",
-              borderRadius: "50%",
-              backgroundColor: canSend
-                ? "#3B82F6"
-                : "rgba(59, 130, 246, 0.4)",
-              border: "none",
-              cursor: canSend ? "pointer" : "not-allowed",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#ffffff",
+              animation: "spin 1s linear infinite",
             }}
           >
-            <ArrowUp size={18} />
-          </button>
-        )}
-      </div>
-    </div>
+            <circle
+              cx="12"
+              cy="12"
+              r="10"
+              stroke={
+                isDark
+                  ? "#4b5563"
+                  : "#d1d5db"
+              }
+              strokeWidth="3"
+            />
+
+            <path
+              d="M12 2a10 10 0 0 1 10 10"
+              stroke="#3B82F6"
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
+
+            <style>{`
+              @keyframes spin {
+                to {
+                  transform: rotate(360deg);
+                }
+              }
+            `}</style>
+          </svg>
+        </div>
+      )
+    ) : (
+      <button
+        type="button"
+        onClick={sendMessage}
+        disabled={!canSend}
+        style={{
+          width: "40px",
+          height: "40px",
+          borderRadius: "50%",
+          backgroundColor: canSend
+            ? "#3B82F6"
+            : "rgba(59, 130, 246, 0.4)",
+          border: "none",
+          cursor: canSend
+            ? "pointer"
+            : "not-allowed",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#ffffff",
+          flexShrink: 0,
+        }}
+      >
+        <ArrowUp size={18} />
+      </button>
+    )}
+  </div>
+</div>
+</div>
   );
 };
 

@@ -21,7 +21,7 @@ import { useUser, useAuth } from "@clerk/clerk-react";
 import { ThemeProvider } from "./providers/ThemeProvider";
 import useMobileViewport from "./hooks/useMobileViewport";
 import BillingPage from "./pages/BillingPage";
-
+import BackendHealthGuard from "./components/auth/BackendHealthGuard";
 const HomeRedirect = () => {
   const { user, isLoaded: userLoaded } = useUser();
   const { isSignedIn, isLoaded: authLoaded } = useAuth();
@@ -135,24 +135,27 @@ function App() {
             />
 
             {/* ================= PROTECTED ================= */}
+            <Route
+            path="/chat"
+            element={
+              <ProtectedRoute>
+                <BackendHealthGuard>
+                  <ChatPage />
+                </BackendHealthGuard>
+              </ProtectedRoute>
+            }
+          />
 
             <Route
-              path="/chat"
-              element={
-                <ProtectedRoute>
+            path="/chat/:id"
+            element={
+              <ProtectedRoute>
+                <BackendHealthGuard>
                   <ChatPage />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/chat/:id"
-              element={
-                <ProtectedRoute>
-                  <ChatPage />
-                </ProtectedRoute>
-              }
-            />
+                </BackendHealthGuard>
+              </ProtectedRoute>
+            }
+          />
 
             <Route
               path="/billing"

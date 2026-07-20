@@ -101,7 +101,7 @@ const ChatContainer = ({
       )}
 
       <div
-        className="flex-1 overflow-y-auto overflow-x-hidden"
+        className="flex-1 overflow-y-auto overflow-x-hidden page-scrollbar-hidden"
         style={{ overscrollBehavior: "none" }}
       >
         <div className="max-w-2xl mx-auto w-full px-4 pt-6 pb-4">
@@ -125,7 +125,7 @@ const ChatContainer = ({
           <MessageComposer
             key={composerKey}
             onSend={sendMessage}
-            disabled={isLoading || isChatDisabled}
+            disabled={isLoading}
             isStreaming={isStreaming}
             isProcessingDoc={isProcessingDoc}
             onStop={stopStreaming}
