@@ -39,6 +39,11 @@ class CoRetrievalResolver:
                 logger.info("🔗 Co-retrieval hit: IN-03 + 'krav/melde' -> adding IN-02")
                 final_targets.add("IN-02")
 
+            # 1c. Shareholder Rights & General Meeting Co-Retrieval for CY-03
+            if sub_id == "CY-03" and any(k in q_lower for k in ["fortrinnsrett", "emisjon", "fravike", "fravikes", "generalforsamling"]):
+                logger.info("🔗 Co-retrieval hit: CY-03 + 'fortrinnsrett/emisjon/fravike' -> adding CY-05")
+                final_targets.add("CY-05")
+
             # 2. PDF Rule 2: "varen var defekt" + time element -> OB-01 + OB-02
             if sub_id == "OB-01":
                 time_keywords = ["tid", "dager", "måneder", "år", "senere", "time", "days", "months", "years", "late", "sent"]

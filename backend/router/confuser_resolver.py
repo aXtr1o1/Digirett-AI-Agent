@@ -32,10 +32,17 @@ class ConfuserResolver:
             # Stem matching: split parenthetical context from the core term
             clean_term = re.sub(r"\(.*?\)", "", term).strip()
             term_words = re.findall(r"\b\w{3,}\b", clean_term)
-            term_stems = {w[:5] for w in term_words}
+            
+            # Smart stemming to prevent short root-word collisions (e.g. "konkurs" vs "konkursbegjæring")
+            def get_stem(word: str) -> str:
+                if len(word) <= 6:
+                    return word
+                return word[:10]
+                
+            term_stems = {get_stem(w) for w in term_words}
             
             query_words = re.findall(r"\b\w{3,}\b", q_lower)
-            query_stems = {w[:5] for w in query_words}
+            query_stems = {get_stem(w) for w in query_words}
 
             # Check if all core term stems exist in query
             if term_stems and term_stems.issubset(query_stems):
@@ -43,7 +50,7 @@ class ConfuserResolver:
                 paren_match = re.search(r"\((.*?)\)", term)
                 if paren_match:
                     paren_words = re.findall(r"\b\w{3,}\b", paren_match.group(1))
-                    paren_stems = {w[:5] for w in paren_words}
+                    paren_stems = {get_stem(w) for w in paren_words}
                     if paren_stems and not paren_stems.intersection(query_stems):
                         continue
 

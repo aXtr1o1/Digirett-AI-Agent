@@ -277,10 +277,15 @@ class RouterAgent:
         )
 
         try:
+            clean_enriched = enriched_query
+            statute_prefix_match = re.match(r"^.*?(?:LOV-\d{4}-\d{2}-\d{2}-\d+)[^:]*?:\s*(.*)$", enriched_query, re.DOTALL)
+            if statute_prefix_match:
+                clean_enriched = statute_prefix_match.group(1)
+
             user_content = (
                 f"DOMAIN HINT (from reasoning agent — HIGH PRIORITY): {domain_hint or 'none'}\n\n"
                 f"USER QUERY:\n{raw_query}\n\n"
-                f"ENRICHED QUERY:\n{enriched_query}"
+                f"ENRICHED QUERY:\n{clean_enriched}"
             )
 
             messages = [
