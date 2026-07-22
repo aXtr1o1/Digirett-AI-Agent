@@ -495,6 +495,10 @@ class RAGService:
                 )
                 routing_confidence = router_result.get("confidence", 0.5)
                 routing_method = "LLM_FALLBACK"
+                resolved_subdomain = router_result.get("subdomain_candidates")[0] if router_result.get("subdomain_candidates") else None
+                if not resolved_subdomain and keyword_candidates:
+                    resolved_subdomain = keyword_candidates[0][0]
+                    logger.info(f"LLM fallback returned None — falling back to keyword overlap candidate: {resolved_subdomain}")
 
         if resolved_subdomain:
             if not re.match(r"^[A-Z]{2}-\d{2}$", resolved_subdomain):
@@ -604,11 +608,22 @@ class RAGService:
             
             # Look up domain for this specific subdomain if it is co-retrieved from a different domain
             sub_domain = final_domain
+            sub_urls = list(urls)
             if sub_candidate:
                 sub_data = taxonomy_loader.get_subdomain(sub_candidate)
                 if sub_data:
                     sub_domain_id = sub_data.get("domain_id")
                     sub_domain = TAXONOMY_DOMAIN_TO_CANONICAL.get(sub_domain_id, final_domain)
+                    
+                    # Union required sources for this target subdomain into statute filter
+                    for req_src in sub_data.get("required_sources", []):
+                        src_id = req_src.get("source_id")
+                        if src_id:
+                            src_url = _resolve_statute_url(src_id)
+                            if src_url and src_url not in sub_urls:
+                                sub_urls.append(src_url)
+                                
+            sub_statute_filter = ",".join(sub_urls) if sub_urls else None
             
             import time
             try:
@@ -619,7 +634,7 @@ class RAGService:
                     top_k=top_k,
                     min_score=min_score,
                     history=history,
-                    statute_filter=statute_filter,
+                    statute_filter=sub_statute_filter,
                     domain=sub_domain,
                     jurisdiction=final_jurisdiction,
                     subdomain_candidates=sub_subdomain_candidates,

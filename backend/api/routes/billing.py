@@ -81,4 +81,3 @@ async def create_portal_session(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to generate Stripe billing portal session.",
         )
-
