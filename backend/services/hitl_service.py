@@ -25,7 +25,59 @@ class HitlService:
             }).execute()
         except Exception as exc:
             logger.warning(f"[WARN] Audit logging failed | {action} | {exc}")
+    def _attach_consultation_rating(self,ticket: Dict[str, Any],) -> Dict[str, Any]:
+        """Fetch and attach consultation rating details to a ticket."""
 
+        # Default values when no rating exists or the query fails
+        ticket.update({
+            "rating": None,
+            "comment": None,
+            "rating_submitted": False,
+            "consultation_rating": None,
+            "consultation_feedback": None,
+        })
+
+        ticket_id = ticket.get("ticket_id")
+
+        if not ticket_id:
+            logger.warning(
+                "Cannot fetch consultation rating because ticket_id is missing"
+            )
+            return ticket
+
+        try:
+            rating_resp = (
+                self._supabase.table("consultation_ratings")
+                .select("rating, comment")
+                .eq("ticket_id", ticket_id)
+                .limit(1)
+                .execute()
+            )
+
+            if not rating_resp.data:
+                return ticket
+
+            rating_row = rating_resp.data[0]
+            rating = rating_row.get("rating")
+            comment = rating_row.get("comment")
+
+            ticket.update({
+                "rating": rating,
+                "comment": comment,
+                "rating_submitted": True,
+
+                # Kept for backward compatibility with existing frontend code
+                "consultation_rating": rating,
+                "consultation_feedback": comment,
+            })
+
+        except Exception as exc:
+            logger.warning(
+                f"Failed to fetch consultation rating "
+                f"for ticket {ticket_id} | {exc}"
+            )
+
+        return ticket
     def create_ticket(
         self,
         conversation_id: str,
@@ -198,9 +250,12 @@ class HitlService:
                 ticket["lawyer_response"] = responses[0].get("content")
             else:
                 ticket["lawyer_response"] = None
+                
+            ticket = self._attach_consultation_rating(ticket)
 
             # Apply auto no-show check
             ticket = self._auto_handle_no_show(ticket)
+            
 
             return ticket
         except Exception as exc:
@@ -560,7 +615,7 @@ class HitlService:
                 ticket["lawyer_response"] = responses[0].get("content")
             else:
                 ticket["lawyer_response"] = None
-
+            ticket = self._attach_consultation_rating(ticket)
             # Apply auto no-show check
             self._auto_handle_no_show(ticket)
 

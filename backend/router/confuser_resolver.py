@@ -29,17 +29,38 @@ class ConfuserResolver:
             if not term:
                 continue
 
-            # Substring match on the confuser term
-            if term in q_lower:
+            # Stem matching: split parenthetical context from the core term
+            clean_term = re.sub(r"\(.*?\)", "", term).strip()
+            term_words = re.findall(r"\b\w{3,}\b", clean_term)
+            
+            # Smart stemming to prevent short root-word collisions (e.g. "konkurs" vs "konkursbegjæring")
+            def get_stem(word: str) -> str:
+                if len(word) <= 6:
+                    return word
+                return word[:10]
+                
+            term_stems = {get_stem(w) for w in term_words}
+            
+            query_words = re.findall(r"\b\w{3,}\b", q_lower)
+            query_stems = {get_stem(w) for w in query_words}
+
+            # Check if all core term stems exist in query
+            if term_stems and term_stems.issubset(query_stems):
+                # If parenthetical context exists, check if at least one context stem matches the query
+                paren_match = re.search(r"\((.*?)\)", term)
+                if paren_match:
+                    paren_words = re.findall(r"\b\w{3,}\b", paren_match.group(1))
+                    paren_stems = {get_stem(w) for w in paren_words}
+                    if paren_stems and not paren_stems.intersection(query_stems):
+                        continue
+
                 correct_route_str = confuser.get("correct_route", "")
                 logger.info(
-                    f"⚠️ Confuser hit: '{term}' in query. "
+                    f"⚠️ Confuser hit: '{term}' matched query stems. "
                     f"Redirecting route from {subdomain_id} to '{correct_route_str}' | "
                     f"Reason: {confuser.get('reason')}"
                 )
                 
-                # Parse the target subdomain ID from the correct_route string
-                # Example: "D02_MA / Merger Process" or "D07_INSOLVENCY / IN-04" or "CL-02"
                 resolved_id = ConfuserResolver._parse_subdomain_id(correct_route_str)
                 if resolved_id:
                     return resolved_id

@@ -837,10 +837,39 @@ class StatuteRegistry:
         # ── 4. Substring scan (longest match wins) ────────────────
         best_match = None
         best_len = 0
+        
+        fake_indicators = [
+            "kunstig intelligens",
+            "kunstig",
+            "intelligens",
+            "robot",
+            "roboter",
+            "maskin",
+            "maskiner",
+            "ki",
+            "ai",
+            "syntetisk",
+        ]
+        
         for key, info in _INDEX.items():
-            if len(key) > best_len and key in norm:
-                best_match = info
-                best_len = len(key)
+            pattern = rf"\b{re.escape(key)}\b"
+            match = re.search(pattern, norm)
+            if match:
+                matched_end = match.end()
+                following_text = norm[matched_end:].strip()
+                
+                # Check if followed by fake law modifier within the next 4 words
+                is_fake = False
+                for indicator in fake_indicators:
+                    if re.search(rf"\b{re.escape(indicator)}\b", following_text):
+                        words_after = following_text.split()[:4]
+                        if any(indicator in w for w in words_after):
+                            is_fake = True
+                            break
+                            
+                if not is_fake and len(key) > best_len:
+                    best_match = info
+                    best_len = len(key)
 
         if best_match and best_len > 12:   # min 12 chars to avoid false matches
             logger.debug(f"📖 StatuteRegistry: substring match (len={best_len}) → {best_match['id']}")

@@ -187,29 +187,92 @@ class MilvusClient:
         """
         parts = []
 
+        # Extract subdomain required sources if level < 3
+        required_date_parts = []
+        if level < 3 and subdomain_candidates:
+            from router.taxonomy_loader import taxonomy_loader
+            for sub_id in subdomain_candidates:
+                sub_data = taxonomy_loader.get_subdomain(sub_id)
+                if sub_data:
+                    for src in sub_data.get("required_sources", []):
+                        sid = src.get("source_id")
+                        if sid:
+                            dp = re.sub(r"^(LOV|FOR|FORSKRIFT)-", "", sid, flags=re.IGNORECASE)
+                            if dp and dp not in required_date_parts:
+                                required_date_parts.append(dp)
+
         # source_doc_url LIKE filter (levels 0, 1, 2)
         if level < 3 and self._has("source_doc_url"):
-            src_e = self._source_doc_url_expr(statute_filter)
-            if src_e:
-                parts.append(src_e)
+            all_dps = []
+            if statute_filter:
+                for item in statute_filter.split(","):
+                    s = item.strip()
+                    if not s:
+                        continue
+                    if s.startswith("http"):
+                        dp = s.rstrip("/").split("/")[-1]
+                    else:
+                        dp = re.sub(r"^(LOV|FOR|FORSKRIFT)-", "", s, flags=re.IGNORECASE)
+                    if dp and dp not in all_dps:
+                        all_dps.append(dp)
+
+            # Combine primary with subdomain required sources
+            for dp in required_date_parts:
+                if dp not in all_dps:
+                    all_dps.append(dp)
+
+            if all_dps:
+                if len(all_dps) == 1:
+                    parts.append(f'source_doc_url like "%{all_dps[0]}%"')
+                else:
+                    or_expr = " or ".join(f'source_doc_url like "%{dp}%"' for dp in all_dps)
+                    parts.append(f"({or_expr})")
 
         # domain (levels 0, 1)
         if level < 2 and domain and self._has("domain"):
-            safe_domain = domain.replace('"', '\\"')
-            parts.append(f'domain == "{safe_domain}"')
+            # Bypass strict domain filter at level 0 if we have specific subdomain candidates
+            # to allow cross-domain co-retrieval (e.g. CY-06 and IN-04)
+            if not (level == 0 and subdomain_candidates):
+                safe_domain = domain.replace('"', '\\"')
+                parts.append(f'domain == "{safe_domain}"')
 
         # subdomain candidates (level 0 only)
-        if level == 0 and subdomain_candidates and self._has("subdomain"):
+        if level == 0 and subdomain_candidates:
             subs = [s for s in subdomain_candidates if s]
-            if len(subs) == 1:
-                safe_sub = subs[0].replace('"', '\\"')
-                parts.append(f'subdomain == "{safe_sub}"')
-            elif len(subs) > 1:
-                sub_expr = " or ".join(
-                    f'subdomain == "{s.replace(chr(34), chr(92)+chr(34))}"'
-                    for s in subs
-                )
-                parts.append(f"({sub_expr})")
+            if self._has("subdomain_id"):
+                # Query subdomain_id field directly using the subdomain IDs
+                if len(subs) == 1:
+                    safe_sub = subs[0].replace('"', '\\"')
+                    parts.append(f'subdomain_id == "{safe_sub}"')
+                elif len(subs) > 1:
+                    sub_expr = " or ".join(
+                        f'subdomain_id == "{s.replace(chr(34), chr(92)+chr(34))}"'
+                        for s in subs
+                    )
+                    parts.append(f"({sub_expr})")
+            elif self._has("subdomain"):
+                # Fallback: Translate subdomain IDs to English and Norwegian names
+                all_sub_names = []
+                from router.taxonomy_loader import taxonomy_loader
+                for s in subs:
+                    all_sub_names.append(s)
+                    if re.match(r"^[A-Z]{2}-\d{2}$", s):
+                        sub_data = taxonomy_loader.get_subdomain(s)
+                        if sub_data:
+                            if sub_data.get("name_en"):
+                                all_sub_names.append(sub_data.get("name_en"))
+                            if sub_data.get("name_nb"):
+                                all_sub_names.append(sub_data.get("name_nb"))
+
+                if len(all_sub_names) == 1:
+                    safe_sub = all_sub_names[0].replace('"', '\\"')
+                    parts.append(f'subdomain == "{safe_sub}"')
+                elif len(all_sub_names) > 1:
+                    sub_expr = " or ".join(
+                        f'subdomain == "{s.replace(chr(34), chr(92)+chr(34))}"'
+                        for s in all_sub_names
+                    )
+                    parts.append(f"({sub_expr})")
 
         # jurisdiction (level 0 only)
         if level == 0 and jurisdiction and self._has("jurisdiction"):
@@ -244,6 +307,7 @@ class MilvusClient:
         "section_ref",
         "domain",
         "subdomain",
+        "subdomain_id",
         "b2b_b2c",
         "tier",
         "jurisdiction",
@@ -304,11 +368,32 @@ class MilvusClient:
             f"🔍 Milvus search | level=L{fallback_level} | expr={expr!r} | top_k={top_k}"
         )
 
+        # Detect index type dynamically from the collection indexes
+        from config import settings
+        metric_type = getattr(settings, "MILVUS_METRIC_TYPE", None) or "COSINE"
+        index_type = "HNSW"
+        try:
+            if self._collection and self._collection.indexes:
+                index_type = (self._collection.indexes[0].params.get("index_type") or "HNSW").upper()
+                logger.debug(f"Dynamically detected Milvus index type: {index_type}")
+        except Exception as e:
+            logger.warning(f"Failed to detect index type: {e}")
+            
+        search_p = {"metric_type": metric_type, "params": {}}
+        if "HNSW" in index_type:
+            search_p["params"]["ef"] = 256
+        elif "IVF" in index_type:
+            search_p["params"]["nprobe"] = 128
+        else:
+            # Safe fallback defaults
+            search_p["params"]["nprobe"] = 128
+            search_p["params"]["ef"] = 256
+
         try:
             results = self._collection.search(
                 data=[embedding],
                 anns_field="embedding",
-                param={"metric_type": "COSINE", "params": {"ef": 256}},
+                param=search_p,
                 limit=top_k,
                 output_fields=output_fields,
                 expr=expr,

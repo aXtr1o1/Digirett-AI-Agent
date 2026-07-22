@@ -50,6 +50,7 @@ class ResultMerger:
 
         merged = list(citation_map.values())
         
+        # Sort each subdomain's chunks by score descending
         # Sort by score descending
         merged.sort(key=lambda x: x.get("score", 0.0), reverse=True)
         

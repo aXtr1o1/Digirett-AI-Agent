@@ -9,8 +9,9 @@ import { useUser } from "@clerk/clerk-react";
 import hitlService from "../services/hitlService";
 import SystemNotification from "../components/chat/ResolutionNotification";
 import { useTheme } from "../providers/ThemeProvider";
-import { Gavel, Crown, PartyPopper, Check } from "lucide-react";
+import { Gavel, Crown, PartyPopper, Check, ServerCrash, RefreshCw } from "lucide-react";
 import subscriptionService from "../services/subscriptionService";
+import adminService from "../services/adminService";
 
 const isUuid = (str) => {
   if (!str) return false;
@@ -34,7 +35,6 @@ const ChatPage = () => {
   });
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [purchasedPlan, setPurchasedPlan] = useState("");
-
   const {
     conversations,
     isLoading: convLoading,
@@ -430,11 +430,10 @@ const ChatPage = () => {
           </div>
 
           <div
-            className={`relative max-w-md w-full p-8 rounded-2xl border text-center shadow-2xl backdrop-blur-xl transition-all scale-up ${
-              isDark
+            className={`relative max-w-md w-full p-8 rounded-2xl border text-center shadow-2xl backdrop-blur-xl transition-all scale-up ${isDark
                 ? "bg-[#12121e]/90 border-indigo-500/30 text-white shadow-indigo-500/10"
                 : "bg-white border-gray-200 text-gray-900 shadow-xl"
-            }`}
+              }`}
           >
             {/* Pulsing visual glow */}
             <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-24 h-24 bg-gradient-to-tr from-indigo-500 to-purple-600 rounded-full blur-xl opacity-50 animate-pulse" />
@@ -447,11 +446,11 @@ const ChatPage = () => {
               <span className="text-[10px] uppercase font-black tracking-widest text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full mb-3">
                 Sandbox Payment Success
               </span>
-              
+             
               <h3 className="text-2xl font-black mb-2">
                 Subscription Active!
               </h3>
-              
+             
               <p className={`text-sm mb-6 ${isDark ? "text-gray-400" : "text-gray-600"}`}>
                 Congratulations! You are now subscribed to the <span className="font-extrabold text-indigo-400 uppercase">{purchasedPlan}</span> plan. Your premium legal assistance privileges have been activated.
               </p>
@@ -466,7 +465,7 @@ const ChatPage = () => {
               </div>
             </div>
           </div>
-          
+         
           <style>{`
             @keyframes fall {
               0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
@@ -494,6 +493,7 @@ const ChatPage = () => {
           `}</style>
         </div>
       )}
+
     </>
   );
 };
