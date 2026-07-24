@@ -2,13 +2,15 @@
   "name": "digirett-frontend",
   "version": "0.1.0",
   "private": true,
-"scripts": {
-  "start": "vite --host 0.0.0.0 --port 3000",
-  "dev": "vite --host 0.0.0.0 --port 3000",
-  "build": "vite build",
-  "preview": "vite preview --host 0.0.0.0 --port 3000",
-  "lint": "eslint src"
-},
+  "scripts": {
+    "start": "vite --host 0.0.0.0 --port 3000",
+    "dev": "vite --host 0.0.0.0 --port 3000",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.6",
     "@emotion/react": "^11.14.0",
@@ -28,14 +30,16 @@
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.1",
+    "@testing-library/react": "^16.3.2",
     "@vitejs/plugin-react": "^6.0.4",
     "autoprefixer": "^10.4.24",
     "eslint": "8.57.1",
     "eslint-plugin-react-hooks": "^7.0.1",
+    "jsdom": "^29.1.1",
     "postcss": "^8.5.12",
     "tailwindcss": "^3.4.4",
-    "vite": "^8.1.5"
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
   },
   "overrides": {
     "@tootallnate/once": "2.0.1",
