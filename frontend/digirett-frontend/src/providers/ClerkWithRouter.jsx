@@ -1,7 +1,7 @@
 import { ClerkProvider } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 
-const clerkPubKey = process.env.REACT_APP_CLERK_PUBLISHABLE_KEY;
+const clerkPubKey =import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 if (!clerkPubKey) {
   throw new Error('Missing Clerk Publishable Key');

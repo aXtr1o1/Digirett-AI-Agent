@@ -12,32 +12,38 @@ export default function BillingPage() {
   const { theme, isDark } = useTheme();
   const [isCancelling, setIsCancelling] = useState(false);
 
-  // Read environment keys for real Stripe Embedding
-  const stripePublishableKey = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY;
-  const stripePricingTableId = process.env.REACT_APP_STRIPE_PRICING_TABLE_ID;
-  const hasStripeConfig = !!(stripePublishableKey && stripePricingTableId);
-  // Log warning if Stripe configuration is missing
-  useEffect(() => {
-    if (process.env.NODE_ENV !== "production") {
-      if (!stripePublishableKey) {
-        console.warn(
-          "Missing environment variable: REACT_APP_STRIPE_PUBLISHABLE_KEY"
-        );
-      }
+// Vite frontend environment variables
+const stripePublishableKey =
+  import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 
-      if (!stripePricingTableId) {
-        console.warn(
-          "Missing environment variable: REACT_APP_STRIPE_PRICING_TABLE_ID"
-        );
-      }
+const stripePricingTableId =
+  import.meta.env.VITE_STRIPE_PRICING_TABLE_ID;
 
-      if (!hasStripeConfig) {
-        console.warn(
-          "Stripe Pricing Table is disabled because the required environment variables are missing."
-        );
-      }
+const hasStripeConfig = Boolean(
+  stripePublishableKey && stripePricingTableId
+);
+
+useEffect(() => {
+  if (import.meta.env.DEV) {
+    if (!stripePublishableKey) {
+      console.warn(
+        "Missing environment variable: VITE_STRIPE_PUBLISHABLE_KEY"
+      );
     }
-  }, [stripePublishableKey, stripePricingTableId, hasStripeConfig]);
+
+    if (!stripePricingTableId) {
+      console.warn(
+        "Missing environment variable: VITE_STRIPE_PRICING_TABLE_ID"
+      );
+    }
+
+    if (!hasStripeConfig) {
+      console.warn(
+        "Stripe Pricing Table is disabled because the required environment variables are missing."
+      );
+    }
+  }
+}, [stripePublishableKey, stripePricingTableId, hasStripeConfig]);
 
   useEffect(() => {
     if (userLoaded && user) {

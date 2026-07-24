@@ -22,11 +22,13 @@ They auto-refresh every 6 hours or on verification failure (key rotation).
 import logging
 import time
 from typing import Any, Dict, List, Optional
-
+import json
 import httpx
 from fastapi import Depends, HTTPException, Request, status
-from jose import JWTError, jwt
 
+import jwt
+from jwt import PyJWTError
+from jwt.algorithms import RSAAlgorithm
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -160,19 +162,21 @@ async def verify_token(token: str) -> ClerkUser:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token signing key not found",
             )
+        # Convert Clerk's JWK dictionary into an RSA public key.
+        public_key = RSAAlgorithm.from_jwk(json.dumps(rsa_key))
 
-        # Verify and decode the JWT with leeway to prevent race conditions
+        # Verify and decode the Clerk JWT.
         payload = jwt.decode(
             token,
-            rsa_key,
+            public_key,
             algorithms=["RS256"],
             options={
-                "verify_aud": False,  # Clerk doesn't always set audience
-                "verify_iss": False,  # We validate via JWKS instead
-                "leeway": 60,         # Prevent 401 Signature Expired errors due to clock skew
+                "verify_aud": False,
+                "verify_iss": False,
+                "require": ["exp", "iat", "sub"],
             },
+            leeway=60,
         )
-
         clerk_user_id = payload.get("sub")
         if not clerk_user_id:
             raise HTTPException(
@@ -204,7 +208,7 @@ async def verify_token(token: str) -> ClerkUser:
 
     except HTTPException:
         raise
-    except JWTError as exc:
+    except PyJWTError as exc:
         logger.warning(f"⚠️ JWT verification failed | {exc}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

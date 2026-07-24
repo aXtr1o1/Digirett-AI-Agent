@@ -1,5 +1,5 @@
 // Base URL — backend runs with /api/v1 prefix (confirmed from server logs)
-export const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
+export const API_BASE_URL = import.meta.env.VITE_API_URL
 
 // User ID is resolved from Clerk JWTs now.
 

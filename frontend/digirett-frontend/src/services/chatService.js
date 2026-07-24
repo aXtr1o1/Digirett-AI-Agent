@@ -1,9 +1,9 @@
 import { API_BASE_URL, API_ENDPOINTS } from "../utils/constants";
 
 const SAFE_API_BASE_URL =
-  typeof API_BASE_URL === "string" && API_BASE_URL.length > 0
-    ? API_BASE_URL
-    : process.env.REACT_APP_API_BASE_URL || "";
+  typeof API_BASE_URL === "string" && API_BASE_URL.trim().length > 0
+    ? API_BASE_URL.trim()
+    : import.meta.env.VITE_API_BASE_URL?.trim() || "http://localhost:8000";
 
 const cleanBase = SAFE_API_BASE_URL.replace(/\/+$/, "");
 
