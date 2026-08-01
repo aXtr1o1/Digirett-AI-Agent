@@ -28,7 +28,7 @@ for _m in [
     "opentelemetry.instrumentation.fastapi",
     "slowapi", "slowapi.util",
     "boto3", "telemetry", "telemetry.tracing",
-    "stripe",
+    "stripe", "jinja2",
 ]:
     sys.modules.setdefault(_m, MagicMock())
 
