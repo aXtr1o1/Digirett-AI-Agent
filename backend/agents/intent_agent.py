@@ -1,15 +1,3 @@
-"""
-agents/intent_agent.py — Intent & Language Classifier Agent
-
-Refactored per TL Code Review Guidelines:
-1. Injected LLM dependency (__init__(self, llm=None)) following Dependency Inversion Principle (DIP).
-2. Centralized JSON response parser (utils/json_response_parser.py) with explicit regex removal.
-3. System prompt extracted to prompts/intent_prompt.txt.
-4. Output validation via IntentResult(BaseModel) schema model.
-5. Pre-execution retry strategy with exponential backoff for 429/500/503 errors.
-6. Explicit named constants (MAX_LOG_QUERY_LEN = 80, DEFAULT_INTENT = "CASUAL", DEFAULT_LANGUAGE = "english").
-"""
-
 import asyncio
 import logging
 from typing import Any, Dict, Literal, Optional
@@ -70,10 +58,10 @@ class IntentAgent:
                 break
             except Exception as exc:
                 if attempt < MAX_RETRIES:
-                    logger.warning(f"⚠️ IntentAgent: attempt {attempt + 1} failed: {exc}. Retrying...")
+                    logger.warning(f" IntentAgent: attempt {attempt + 1} failed: {exc}. Retrying...")
                     await asyncio.sleep(RETRY_DELAY * (2 ** attempt))
                 else:
-                    logger.error(f"❌ IntentAgent: LLM execution failed after retries: {exc}")
+                    logger.error(f" IntentAgent: LLM execution failed after retries: {exc}")
 
         if response and response.generations and response.generations[0]:
             raw_text = response.generations[0][0].text.strip()

@@ -1,16 +1,3 @@
-"""
-api/routes/conversations.py — Conversation history & session management
-
-Refactored according to TL code review guidelines:
-- Pure FastAPI Dependency Injection via Request.app.state
-- Zero direct Supabase / database queries in route functions
-- Single router initialization (removed duplicate APIRouter instance)
-- Native FastAPI UUID path parameter validation (conversation_id: UUID)
-- Reusable get_current_internal_user dependency
-- Reusable _authorize_conversation_access authorization helper
-- DeleteConversationResponse model for delete endpoint consistency
-"""
-
 import logging
 from typing import List, Optional, Tuple
 
@@ -37,9 +24,6 @@ from services.user_service import UserService
 logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
-
-
-# ── Dependency Resolvers ─────────────────────────────────────────────
 
 def get_conversation_service(request: Request) -> ConversationService:
     svc = getattr(request.app.state, "conversation_service", None)
@@ -98,9 +82,6 @@ def get_current_internal_user(
         )
     return user, internal_user_id
 
-
-# ── Helpers ──────────────────────────────────────────────────────────
-
 def _authorize_conversation_access(
     conversation: dict,
     internal_user_id: str,
@@ -116,11 +97,6 @@ def _authorize_conversation_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to access this conversation.",
         )
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ROUTES
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @router.post(
     "/conversations",

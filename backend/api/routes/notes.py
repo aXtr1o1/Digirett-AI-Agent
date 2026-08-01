@@ -1,14 +1,3 @@
-"""
-api/routes/notes.py — Personal Lawyer Notes Endpoints.
-
-Refactored according to TL code review guidelines:
-- Pure FastAPI Dependency Injection via Request.app.state
-- Reusable get_current_internal_user dependency
-- Native UUID parameter validation (note_id: UUID)
-- Typed response model NoteDeleteResponse
-- Standardized error logging without raw internal leakage
-"""
-
 import logging
 from typing import List, Tuple
 from uuid import UUID
@@ -23,9 +12,6 @@ from services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/notes", tags=["Lawyer Notes"])
-
-
-# ── Dependency Resolvers ─────────────────────────────────────────────
 
 def get_notes_service(request: Request) -> NotesService:
     svc = getattr(request.app.state, "notes_service", None)
@@ -58,11 +44,6 @@ def get_current_internal_user(
             detail="User profile not found in database.",
         )
     return current_lawyer, internal_user_id
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ROUTES
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @router.get("/", response_model=List[NoteResponse], summary="Get all notes for current lawyer")
 async def get_notes(

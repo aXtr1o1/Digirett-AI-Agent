@@ -1,7 +1,3 @@
-"""
-utils/language_detector.py — Standardized Language Detector Utility
-"""
-
 import logging
 try:
     from langdetect import detect, LangDetectException

@@ -1,14 +1,3 @@
-"""
-api/routes/webhooks.py — Clerk & Stripe webhook endpoints.
-
-Refactored according to TL code review guidelines:
-- Webhook -> WebhookService -> SubscriptionService.sync_plan() -> UserService architecture
-- In-memory / database Webhook Idempotency Layer (_is_event_processed)
-- Pure FastAPI Dependency Injection via Request.app.state
-- Centralized PLAN_MAPPING configuration
-- Typed WebhookResponse model
-"""
-
 import logging
 from typing import Optional
 
@@ -32,9 +21,6 @@ from services.webhook_service import WebhookService
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-
-# ── Dependency Resolver ─────────────────────────────────────────────
-
 def get_webhook_service(request: Request) -> WebhookService:
     svc = getattr(request.app.state, "webhook_service", None)
     if svc is None:
@@ -43,11 +29,6 @@ def get_webhook_service(request: Request) -> WebhookService:
             detail="WebhookService is not initialized on application state.",
         )
     return svc
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ROUTES
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @router.post(
     "/clerk",
@@ -62,19 +43,15 @@ async def clerk_webhook(
     svix_signature: str = Header(None, alias="svix-signature"),
     webhook_service: WebhookService = Depends(get_webhook_service),
 ):
-    """
-    Webhook handler for Clerk events (user.created, user.updated, email.created).
-    Requires Svix signature verification and idempotency check.
-    """
     if not settings.CLERK_WEBHOOK_SECRET:
-        logger.error("❌ CLERK_WEBHOOK_SECRET is not set")
+        logger.error(" CLERK_WEBHOOK_SECRET is not set")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Webhook secret not configured",
         )
 
     if not svix_id or not svix_timestamp or not svix_signature:
-        logger.warning("⚠️ Missing Svix headers")
+        logger.warning(" Missing Svix headers")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Missing Svix headers",
@@ -91,13 +68,13 @@ async def clerk_webhook(
         wh = Webhook(settings.CLERK_WEBHOOK_SECRET)
         evt = wh.verify(payload, headers)
     except WebhookVerificationError as exc:
-        logger.warning(f"⚠️ Invalid webhook signature: {exc}")
+        logger.warning(f" Invalid webhook signature: {exc}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid signature",
         )
     except Exception as exc:
-        logger.exception(f"❌ Webhook verification error: {exc}")
+        logger.exception(f" Webhook verification error: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error",
@@ -123,14 +100,14 @@ async def stripe_webhook(
     Enforces idempotency and delegates synchronization to SubscriptionService.
     """
     if not settings.STRIPE_WEBHOOK_SECRET:
-        logger.error("❌ STRIPE_WEBHOOK_SECRET is not set")
+        logger.error(" STRIPE_WEBHOOK_SECRET is not set")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Stripe webhook secret not configured",
         )
 
     if not stripe_signature:
-        logger.warning("⚠️ Missing Stripe signature")
+        logger.warning(" Missing Stripe signature")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Missing Stripe signature",
@@ -142,13 +119,13 @@ async def stripe_webhook(
             payload, stripe_signature, settings.STRIPE_WEBHOOK_SECRET
         )
     except stripe.error.SignatureVerificationError as exc:
-        logger.warning(f"⚠️ Invalid Stripe signature: {exc}")
+        logger.warning(f" Invalid Stripe signature: {exc}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid signature",
         )
     except Exception as exc:
-        logger.exception(f"❌ Stripe verification error: {exc}")
+        logger.exception(f" Stripe verification error: {exc}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Bad Request",
@@ -158,7 +135,7 @@ async def stripe_webhook(
     event_type = event.get("type")
     data_object = event.get("data", {}).get("object", {})
 
-    logger.info(f"💳 Received Stripe webhook: {event_type} | event_id={event_id}")
+    logger.info(f" Received Stripe webhook: {event_type} | event_id={event_id}")
 
     if event_type in ("customer.subscription.updated", "checkout.session.completed"):
         clerk_user_id = data_object.get("client_reference_id")

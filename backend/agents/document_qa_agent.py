@@ -1,16 +1,3 @@
-"""
-agents/document_qa_agent.py — Document Analysis & Legal Compliance Agent
-
-Refactored per TL Code Review Guidelines:
-1. Injected LLM dependency (__init__(self, llm=None, temperature=0.2)) & self._streaming_llm instance reuse.
-2. Prompts extracted to prompts/docqa_prompt.txt & prompts/hybrid_prompt.txt.
-3. DRY shared streaming method (_stream_response) reducing ~40% duplicate code.
-4. Reusable history builder (_build_history_messages) & unified PromptBuilder pattern.
-5. Response post-processing (_parse_response_score) for [SCORE:x.x] range validation.
-6. Pre-stream connection retry strategy (retries disabled once streaming begins).
-7. Explicit named constants for context window limits.
-"""
-
 import asyncio
 import logging
 import re
@@ -81,11 +68,11 @@ def _parse_response_score(text: str) -> float:
             score = float(match.group(1))
             if 0.0 <= score <= 1.0:
                 return score
-            logger.warning(f"⚠️ [SCORE:x.x] out of range [0.0, 1.0]: {score} — defaulting to 0.5")
+            logger.warning(f" [SCORE:x.x] out of range [0.0, 1.0]: {score} — defaulting to 0.5")
         except ValueError:
-            logger.warning(f"⚠️ Failed to parse score value from match: {match.group(1)}")
+            logger.warning(f" Failed to parse score value from match: {match.group(1)}")
     else:
-        logger.debug("ℹ️ Response omitted [SCORE:x.x] tag — defaulting to 0.5")
+        logger.debug(" Response omitted [SCORE:x.x] tag — defaulting to 0.5")
     return 0.5
 
 
@@ -154,10 +141,10 @@ class DocumentQAAgent:
                 break
             except Exception as exc:
                 if attempt < PRE_STREAM_MAX_RETRIES:
-                    logger.warning(f"⚠️ [{log_label}] Pre-stream connection attempt {attempt + 1} failed: {exc}. Retrying...")
+                    logger.warning(f" [{log_label}] Pre-stream connection attempt {attempt + 1} failed: {exc}. Retrying...")
                     await asyncio.sleep(PRE_STREAM_RETRY_DELAY * (2 ** attempt))
                 else:
-                    logger.error(f"❌ [{log_label}] Pre-stream connection failed after retries: {exc}")
+                    logger.error(f" [{log_label}] Pre-stream connection failed after retries: {exc}")
                     raise
 
         chunk_count = 0

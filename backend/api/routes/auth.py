@@ -1,15 +1,3 @@
-"""
-api/routes/auth.py — Authentication and invitation acceptance endpoints
-
-Refactored according to TL code review guidelines:
-- Pure FastAPI Dependency Injection via Request.app.state (no global mutable state / fallbacks)
-- Exact UUID token validation constraint (min_length=36, max_length=36)
-- Response Model for OpenAPI/Swagger contracts
-- Granular HTTP exception status codes (404, 403, 410, 500)
-- AcceptInviteResult Pydantic model usage for type-safe dot-notation access
-- Structured audit logging
-"""
-
 import logging
 from typing import Optional, Annotated
 
@@ -23,15 +11,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-
 def get_user_service(request: Request) -> UserService:
     svc = getattr(request.app.state, "user_service", None)
     if svc is None:
         raise RuntimeError("UserService is not initialized on application state.")
     return svc
-
-
-# ── Schemas ──────────────────────────────────────────────────────────
 
 class AcceptInviteRequest(BaseModel):
     token: Annotated[
@@ -43,14 +27,10 @@ class AcceptInviteRequest(BaseModel):
         ),
     ]
 
-
 class AcceptInviteResponse(BaseModel):
     status: str = "success"
     message: str
     role: Optional[str] = None
-
-
-# ── Endpoints ────────────────────────────────────────────────────────
 
 @router.post(
     "/accept-invite",

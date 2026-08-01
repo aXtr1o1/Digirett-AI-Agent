@@ -12,14 +12,9 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# JWKS cache — Clerk uses RS256 (asymmetric). We fetch public keys
-# from Clerk's .well-known/jwks.json and cache them in-memory.
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 _jwks_cache: Dict[str, Any] = {}
 _jwks_fetched_at: float = 0.0
-_JWKS_TTL_SECONDS = 6 * 3600  # Refresh every 6 hours
+_JWKS_TTL_SECONDS = 6 * 3600
 
 
 async def _fetch_jwks() -> Dict[str, Any]:
@@ -44,7 +39,7 @@ async def _fetch_jwks() -> Dict[str, Any]:
             )
             return _jwks_cache
     except Exception as exc:
-        logger.error(f"❌ Failed to fetch JWKS from {jwks_url} | {exc}")
+        logger.error(f" Failed to fetch JWKS from {jwks_url} | {exc}")
         raise RuntimeError(f"JWKS fetch failed: {exc}") from exc
 
 
@@ -56,11 +51,6 @@ async def _get_jwks() -> Dict[str, Any]:
     if not _jwks_cache or (now - _jwks_fetched_at) > _JWKS_TTL_SECONDS:
         return await _fetch_jwks()
     return _jwks_cache
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# JWT verification
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 class ClerkUser(dict):
     """
@@ -93,16 +83,6 @@ class ClerkUser(dict):
 
 
 async def verify_token(token: str) -> ClerkUser:
-    """
-    Verify a Clerk JWT and extract user info.
-
-    Returns ClerkUser with keys:
-        - clerk_user_id: str (Clerk's `sub` claim)
-        - email: str | None
-        - role: str (from publicMetadata in JWT, default 'user')
-
-    Raises HTTPException(401) on invalid/expired tokens.
-    """
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -174,8 +154,6 @@ async def verify_token(token: str) -> ClerkUser:
                 detail="Token missing subject claim",
             )
 
-        # Extract role from Clerk's publicMetadata (embedded in JWT)
-        # Clerk puts publicMetadata at the root level of the JWT payload
         metadata = payload.get("publicMetadata") or payload.get("public_metadata") or {}
         role = metadata.get("role", "user")
 
@@ -199,22 +177,17 @@ async def verify_token(token: str) -> ClerkUser:
     except HTTPException:
         raise
     except PyJWTError as exc:
-        logger.warning(f"⚠️ JWT verification failed | {exc}")
+        logger.warning(f" JWT verification failed | {exc}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid or expired token: {exc}",
         )
     except Exception as exc:
-        logger.error(f"❌ Token verification error | {exc}", exc_info=True)
+        logger.error(f" Token verification error | {exc}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication failed",
         )
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# FastAPI dependencies
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi import Request, WebSocket
@@ -233,13 +206,7 @@ class WebSocketFriendlyBearer(HTTPBearer):
 security_bearer = WebSocketFriendlyBearer(auto_error=False)
 
 async def get_current_user(request: Request = None, websocket: WebSocket = None, credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)) -> ClerkUser:
-    """
-    FastAPI dependency — extracts and verifies the Clerk JWT or Static API Key from the
-    Authorization header (or query param for WebSockets). Returns a ClerkUser dict.
-    
-    Now also verifies the user's status in the database to enforce 
-    suspensions and role authoritative state.
-    """
+
     req = request or websocket
     auth_header = req.headers.get("Authorization", "")
     if not auth_header and getattr(req, "query_params", None):
@@ -292,7 +259,7 @@ async def enrich_user_from_database(user: ClerkUser, supabase: Any) -> ClerkUser
         if resp and resp.data:
             db_user = resp.data[0] if isinstance(resp.data, list) else resp.data
             if db_user.get("status") == "suspended":
-                logger.warning(f"🚫 Suspended user attempt | user={user.clerk_user_id}")
+                logger.warning(f" Suspended user attempt | user={user.clerk_user_id}")
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Your account has been suspended. Please contact support."
@@ -304,7 +271,7 @@ async def enrich_user_from_database(user: ClerkUser, supabase: Any) -> ClerkUser
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error(f"⚠️ User status check failed | {exc}")
+        logger.error(f" User status check failed | {exc}")
 
     return user
 
@@ -323,7 +290,7 @@ def require_role(*allowed_roles: str):
 
         if user.role not in allowed:
             logger.warning(
-                f"⛔ Access denied | user={user.clerk_user_id} "
+                f" Access denied | user={user.clerk_user_id} "
                 f"role={user.role} | required={allowed}"
             )
             raise HTTPException(
@@ -336,10 +303,6 @@ def require_role(*allowed_roles: str):
 
 
 def require_db_role(*allowed_roles: str):
-    """
-    FastAPI dependency factory — checks that the authenticated user has one of the allowed
-    roles according to the authoritative role stored in the Supabase `users` table.
-    """
     async def _db_role_checker(user: ClerkUser = Depends(get_current_user)) -> ClerkUser:
         db_role = user.db_role
         if not db_role:
@@ -355,7 +318,7 @@ def require_db_role(*allowed_roles: str):
 
         if db_role not in allowed:
             logger.warning(
-                f"⛔ Access denied (DB role) | user={user.clerk_user_id} role={db_role} required={allowed}"
+                f" Access denied (DB role) | user={user.clerk_user_id} role={db_role} required={allowed}"
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -364,20 +327,7 @@ def require_db_role(*allowed_roles: str):
         return user
     return _db_role_checker
 
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# WebSocket token helper
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 async def verify_ws_token(token: Optional[str]) -> Optional[ClerkUser]:
-    """
-    Verify a JWT token for WebSocket connections.
-    Returns ClerkUser on success, None on failure (caller decides action).
-
-    The frontend sends the token as a query param or in the first WS message:
-        ws://host/api/v1/chat/ws?token=<jwt>
-    """
     if not token:
         return None
     try:

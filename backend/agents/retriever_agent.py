@@ -1,14 +1,3 @@
-"""
-agents/retriever_agent.py — Legal Vector & Statute Retriever Agent
-
-Refactored per TL Code Review Guidelines:
-1. Independent BM25 Reranker module (router.bm25_reranker.BM25Reranker).
-2. DRY strategy loop for fallbacks (L0 -> L1 -> L2 -> L3 -> L4).
-3. Config-driven penalty map (FALLBACK_PENALTIES).
-4. Centralized OVERFETCH_FACTOR = 6 and RRF_K_CONSTANT = 60 constants.
-5. Typed RetrievedChunk Pydantic model schema.
-"""
-
 import logging
 import re
 from typing import Any, Dict, List, Optional
@@ -197,5 +186,5 @@ class RetrieverAgent:
             )
         except Exception as exc:
 
-            logger.error(f"❌ Milvus search level L{fallback_level} failed: {exc}")
+            logger.error(f" Milvus search level L{fallback_level} failed: {exc}")
             return []

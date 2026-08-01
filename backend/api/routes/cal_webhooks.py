@@ -1,15 +1,3 @@
-"""
-api/routes/cal_webhooks.py — Cal.com booking confirmation webhook
-
-Refactored according to TL code review guidelines:
-- Pure FastAPI Dependency Injection via Request.app.state
-- Top-level module-scope import of CalService
-- Idempotency & Replay Protection against duplicate webhook deliveries
-- Delegated user & lawyer notification orchestration to HitlService
-- Consistent background task execution for confirmation and cancellation emails
-- Pydantic CalWebhookResponse schema for OpenAPI/Swagger contract definitions
-"""
-
 import hashlib
 import hmac
 import logging
@@ -43,8 +31,6 @@ def get_email_service(request: Request) -> Optional[EmailService]:
     return getattr(request.app.state, "email_service", None)
 
 
-# ── Schemas ──────────────────────────────────────────────────────────
-
 class CalWebhookResponse(BaseModel):
     status: str
     ticket_id: Optional[str] = None
@@ -52,11 +38,6 @@ class CalWebhookResponse(BaseModel):
     booking_url: Optional[str] = None
     action: Optional[str] = None
     reason: Optional[str] = None
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Signature verification
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def _verify_cal_signature(payload: bytes, signature_header: Optional[str]) -> bool:
     """
@@ -80,11 +61,6 @@ def _verify_cal_signature(payload: bytes, signature_header: Optional[str]) -> bo
 
     return hmac.compare_digest(computed, expected_sig)
 
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Webhook endpoint
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 @router.post(
     "/cal",
     tags=["Webhooks"],
@@ -104,7 +80,7 @@ async def cal_webhook(
     payload = await request.body()
 
     if not _verify_cal_signature(payload, x_cal_signature_256):
-        logger.warning("⚠️ Cal.com webhook signature mismatch — rejecting")
+        logger.warning(" Cal.com webhook signature mismatch — rejecting")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid webhook signature",
@@ -119,7 +95,7 @@ async def cal_webhook(
         )
 
     trigger_event = data.get("triggerEvent") or data.get("type", "")
-    logger.info(f"📩 Cal.com webhook received | event={trigger_event}")
+    logger.info(f" Cal.com webhook received | event={trigger_event}")
 
     is_booking_event = trigger_event in ("BOOKING_CREATED", "BOOKING_CONFIRMED", "booking.created", "booking.confirmed")
     is_reschedule_event = trigger_event in ("BOOKING_RESCHEDULED", "booking.rescheduled")
@@ -132,18 +108,18 @@ async def cal_webhook(
     booking = data.get("payload") or data
     cal_booking_id = str(booking.get("id") or booking.get("uid") or "")
     if not cal_booking_id:
-        logger.error("❌ Cal.com webhook: no booking ID found in payload")
+        logger.error(" Cal.com webhook: no booking ID found in payload")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No booking ID in payload")
 
     metadata = booking.get("metadata") or {}
     ticket_id = metadata.get("ticketId")
     if not ticket_id:
-        logger.warning(f"⚠️ Cal.com booking {cal_booking_id} has no ticketId metadata")
+        logger.warning(f" Cal.com booking {cal_booking_id} has no ticketId metadata")
         return CalWebhookResponse(status="ignored", reason="No ticketId in booking metadata")
 
     # Idempotency check: Skip duplicate updates/emails if already processed
     if hitl_service.is_cal_webhook_processed(ticket_id=ticket_id, cal_booking_id=cal_booking_id, is_cancelled=is_cancelled_event):
-        logger.info(f"🔁 Cal.com webhook duplicate event skipped | ticket={ticket_id} | cal_id={cal_booking_id}")
+        logger.info(f" Cal.com webhook duplicate event skipped | ticket={ticket_id} | cal_id={cal_booking_id}")
         return CalWebhookResponse(
             status="already_processed",
             ticket_id=ticket_id,
@@ -157,7 +133,7 @@ async def cal_webhook(
     # Handle Cancellation
     if is_cancelled_event:
         hitl_service.handle_cancellation(ticket_id)
-        logger.info(f"🗑️ Booking cancelled for ticket {ticket_id}. Status reset to 'assigned'.")
+        logger.info(f" Booking cancelled for ticket {ticket_id}. Status reset to 'assigned'.")
         if email_service:
             background_tasks.add_task(
                 hitl_service.send_booking_cancellation_notifications,
@@ -176,10 +152,10 @@ async def cal_webhook(
     )
 
     if not success:
-        logger.error(f"❌ Failed to update booking on ticket {ticket_id}")
+        logger.error(f" Failed to update booking on ticket {ticket_id}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update booking record")
 
-    logger.info(f"✅ Cal.com booking {trigger_event} | ticket={ticket_id} | cal_id={cal_booking_id} | meet={meet_link}")
+    logger.info(f" Cal.com booking {trigger_event} | ticket={ticket_id} | cal_id={cal_booking_id} | meet={meet_link}")
 
     # Offload booking confirmation notifications to BackgroundTasks (non-blocking)
     if email_service:

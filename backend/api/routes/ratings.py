@@ -1,14 +1,3 @@
-"""
-api/routes/ratings.py — Consultation feedback and rating endpoints.
-
-Refactored according to TL code review guidelines:
-- Encapsulated DB & notification logic inside RatingService
-- Pure FastAPI Dependency Injection via Request.app.state
-- Reusable get_current_internal_user dependency
-- Configurable settings.LOW_RATING_THRESHOLD
-- Typed Pydantic Response Models (RatingSubmitResponse, LawyerRatingResponse, AdminRatingResponse)
-"""
-
 import logging
 from typing import List, Optional, Tuple
 
@@ -22,9 +11,6 @@ from services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ratings", tags=["Ratings"])
-
-
-# ── Dependency Resolvers ─────────────────────────────────────────────
 
 def get_rating_service(request: Request) -> RatingService:
     svc = getattr(request.app.state, "rating_service", None)
@@ -64,11 +50,6 @@ class RatingSubmitRequest(BaseModel):
     rating: int = Field(..., ge=1, le=5)
     comment: Optional[str] = None
 
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ROUTES
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 @router.post(
     "",
     response_model=RatingSubmitResponse,
@@ -103,7 +84,7 @@ async def submit_rating(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except Exception as exc:
-        logger.exception(f"❌ Failed to submit rating: {exc}")
+        logger.exception(f" Failed to submit rating: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to store feedback.",
@@ -132,7 +113,7 @@ async def get_lawyer_ratings(
         ratings = rating_service.get_lawyer_ratings(internal_user_id)
         return [LawyerRatingResponse(**r) for r in ratings]
     except Exception as exc:
-        logger.exception(f"❌ Failed to fetch lawyer ratings: {exc}")
+        logger.exception(f" Failed to fetch lawyer ratings: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch lawyer ratings.",
@@ -160,7 +141,7 @@ async def get_admin_ratings(
         ratings = rating_service.get_admin_ratings()
         return [AdminRatingResponse(**r) for r in ratings]
     except Exception as exc:
-        logger.exception(f"❌ Failed to fetch admin ratings: {exc}")
+        logger.exception(f" Failed to fetch admin ratings: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch admin ratings.",

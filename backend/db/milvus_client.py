@@ -1,20 +1,3 @@
-"""
-db/milvus_client.py
-
-Milvus vector database client — singleton.
-
-Updated for new Milvus schema (DigiRett v3):
-  Fields: milvus_id, chunk_id, document_id, source_doc_url, section_ref,
-          domain, subdomain, b2b_b2c, tier, jurisdiction, text, embedding
-
-Key changes from Phase 1:
-  - output_fields updated to match new schema
-  - statute filter now uses source_doc_url LIKE expression (not statute_id ==)
-  - domain filter uses `domain` field (not `domain_name`)
-  - url alias → section_ref  (for citation display in chat.py)
-  - file_name alias kept for backward-compat with message_service.py
-"""
-
 import logging
 import re
 from typing import Any, Dict, List, Optional
@@ -121,12 +104,6 @@ class MilvusFilterBuilder:
 
 
 class MilvusClient:
-    """
-    Thread-safe singleton Milvus client.
-
-    Call connect() once at startup (done in main.py lifespan).
-    After that, all agents share the same collection reference.
-    """
 
     _instance: Optional["MilvusClient"] = None
 
@@ -145,14 +122,9 @@ class MilvusClient:
             self._schema_fields: set = set()   # populated at connect()
             self._ready = False
 
-    # ── Connection ───────────────────────────────────────────────────────
-
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=1, max=2))
     def connect(self, host: str, port: int, collection_name: str, alias: str = "default") -> None:
-        """
-        Connect to the Milvus server and load the target collection into memory.
-        Introspects the live schema so output_fields are always safe.
-        """
+        
         try:
             logger.info(f"Connecting to Milvus at {host}:{port} (alias={alias})...")
 
@@ -196,7 +168,7 @@ class MilvusClient:
             _ = self._collection.num_entities
             return True
         except Exception as exc:
-            logger.error(f"❌ Milvus health check failed | {exc}")
+            logger.error(f" Milvus health check failed | {exc}")
             return False
 
     def close(self) -> None:
@@ -205,7 +177,7 @@ class MilvusClient:
             if self._collection:
                 self._collection.release()
                 logger.info(
-                    f"📤 Released Milvus collection '{self.collection_name}'"
+                    f" Released Milvus collection '{self.collection_name}'"
                 )
             connections.disconnect("default")
             self._ready = False
@@ -221,11 +193,9 @@ class MilvusClient:
         load_state = utility.load_state(self.collection_name)
         if load_state.name != "Loaded":
             logger.warning(
-                f"⚠️ Collection '{self.collection_name}' not in memory. Reloading..."
+                f" Collection '{self.collection_name}' not in memory. Reloading..."
             )
             self._collection.load()
-
-    # ── Filter helpers ───────────────────────────────────────────────────
 
     def _has(self, field: str) -> bool:
         """Return True only if field exists in the live schema."""
@@ -258,9 +228,6 @@ class MilvusClient:
 
         return " and ".join(parts)
 
-    # ── Search ───────────────────────────────────────────────────────────
-
-    # New schema output fields — only fields that exist are queried (safe via _has)
     _DESIRED_OUTPUT_FIELDS = [
         "chunk_id",
         "document_id",
@@ -291,17 +258,6 @@ class MilvusClient:
         fallback_level: int = 0,                 # 0=tight, 1=domain, 2=statute, 3=none
         source_type: Optional[str] = None,       # not filtered — not stored consistently
     ) -> List[Dict[str, Any]]:
-        """
-        Search Milvus for nearest neighbours using the 4-level fallback ladder.
-
-        fallback_level controls filter tightness:
-          0 — source_doc_url + domain + subdomain + jurisdiction + b2b_b2c
-          1 — source_doc_url + domain
-          2 — source_doc_url only
-          3 — no filter (pure vector search)
-
-        min_score is intentionally NOT applied here — handled downstream by BM25Reranker.
-        """
         if not self._ready or self._collection is None:
             raise RuntimeError(
                 "Milvus collection not initialized. Call connect() first."
@@ -371,11 +327,6 @@ class MilvusClient:
                         if value is None and hasattr(hit.entity, "get"):
                             value = hit.entity.get(field)
                         row[field] = value
-
-                    # ── Aliases for downstream compatibility ─────────────
-                    # chat.py reads chunk.get("url") for citation display
-                    # section_ref is the human-readable citation anchor
-                    # source_doc_url is the full Lovdata URL
                     row["url"] = row.get("source_doc_url")        # citation link
                     row["file_name"] = row.get("source_doc_url")  # backward-compat
 
@@ -387,7 +338,7 @@ class MilvusClient:
             return hits
 
         except Exception as exc:
-            logger.error(f"❌ Milvus search failed | {exc}", exc_info=True)
+            logger.error(f" Milvus search failed | {exc}", exc_info=True)
             raise ValueError(f"Milvus search failed: {exc}") from exc
 
     def get_stats(self) -> Dict[str, Any]:

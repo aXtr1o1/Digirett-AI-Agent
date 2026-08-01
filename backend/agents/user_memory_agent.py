@@ -1,14 +1,3 @@
-"""
-agents/user_memory_agent.py — Cross-Conversation User Memory Agent
-
-Refactored per TL Code Review Guidelines:
-1. Public LLM interface coupling (no private `_llm` attribute access).
-2. Decoupled prompt asset (prompts/user_memory_prompt.txt).
-3. Project-wide JsonResponseParser & MemoryItem Pydantic schema validation.
-4. Full memory provenance schema: fact, confidence, source_message, verified, created_at.
-5. Semantic & SHA-256 hash deduplication.
-"""
-
 import hashlib
 import logging
 import re

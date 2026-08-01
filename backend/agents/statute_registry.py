@@ -1,12 +1,3 @@
-"""
-agents/statute_registry.py — Deterministic & Fuzzy Norwegian Statute Registry
-
-Refactored per TL Code Review Guidelines:
-1. Static data externalization — loads from registry/statutes.json at startup.
-2. Startup schema & duplicate normalized alias validation via StatuteEntry(BaseModel).
-3. Fuzzy fallback matching using RapidFuzz / difflib token distance on exact lookup miss.
-"""
-
 import json
 import logging
 import os
@@ -55,14 +46,14 @@ class StatuteRegistry:
 
     def _load_and_validate(self, json_path: str) -> None:
         if not os.path.exists(json_path):
-            logger.error(f"❌ Missing statute registry file: {json_path}")
+            logger.error(f" Missing statute registry file: {json_path}")
             return
 
         try:
             with open(json_path, "r", encoding="utf-8") as f:
                 raw_data = json.load(f)
         except Exception as exc:
-            logger.error(f"❌ Failed to parse {json_path}: {exc}")
+            logger.error(f" Failed to parse {json_path}: {exc}")
             return
 
         duplicates = 0
@@ -82,14 +73,14 @@ class StatuteRegistry:
                     prev_id = self._table[self._normalized_alias_map[norm_alias]].id
                     if prev_id != entry.id:
                         logger.warning(
-                            f"⚠️ Duplicate alias collision detected: '{alias}' -> '{entry.id}' conflicts with '{prev_id}'"
+                            f" Duplicate alias collision detected: '{alias}' -> '{entry.id}' conflicts with '{prev_id}'"
                         )
                         duplicates += 1
 
                 self._table[alias] = entry
                 self._normalized_alias_map[norm_alias] = alias
             except Exception as val_exc:
-                logger.warning(f"⚠️ Invalid statute entry for alias '{alias}': {val_exc}")
+                logger.warning(f" Invalid statute entry for alias '{alias}': {val_exc}")
 
         if duplicates > 0:
             logger.info(f"Registry startup validation completed | alias conflicts flagged: {duplicates}")

@@ -1,10 +1,3 @@
-"""
-services/billing_service.py — Billing service orchestration
-
-Handles billing portal session workflows, user customer ID resolution with email fallback,
-ownership verification, and structured audit logging.
-"""
-
 import logging
 from typing import Optional, Dict, Any
 
@@ -28,7 +21,7 @@ class BillingService:
             if hasattr(self._user_service, "_log_audit"):
                 self._user_service._log_audit(action, performer_id, payload)
         except Exception as exc:
-            logger.warning(f"⚠️ Billing audit log failed (non-fatal) | {action} | {exc}")
+            logger.warning(f" Billing audit log failed (non-fatal) | {action} | {exc}")
 
     async def get_or_resolve_customer(self, user_id: str, email: str) -> Optional[str]:
         """
@@ -55,7 +48,7 @@ class BillingService:
 
         # Step 3: Cache resolved customer_id back to users table
         self._user_service.set_stripe_customer_id(user_id, customer_id)
-        logger.info(f"🎁 Cached Stripe customer ID {customer_id} for user {user_id}")
+        logger.info(f" Cached Stripe customer ID {customer_id} for user {user_id}")
         return customer_id
 
     async def create_portal_session(self, clerk_user_id: str, email: Optional[str] = None) -> Dict[str, Any]:
@@ -101,7 +94,7 @@ class BillingService:
         stripe_email = customer_data.get("email")
         if stripe_email and stripe_email.lower() != user_email.lower():
             logger.warning(
-                f"⛔ Ownership verification failed! User email={user_email} mismatch with Stripe email={stripe_email}"
+                f" Ownership verification failed! User email={user_email} mismatch with Stripe email={stripe_email}"
             )
             return {
                 "success": False,

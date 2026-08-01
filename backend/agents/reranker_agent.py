@@ -1,15 +1,3 @@
-"""
-agents/reranker_agent.py — Legal Relevance Reranker Agent
-
-Refactored per TL Code Review Guidelines:
-1. Sensitive text log suppression — logs chunk metrics instead of full chunk text.
-2. Non-mutating return objects — returns fresh copy dicts without in-place caller mutation.
-3. Score boundary validation (0 <= score <= 100).
-4. Project-wide JsonResponseParser & MAX_RERANK_CHARS = 1500 constant.
-5. Injected AzureOpenAI client dependency (__init__(self, client=None)).
-6. Pre-execution exponential backoff retry strategy.
-"""
-
 import copy
 import logging
 import time
@@ -102,10 +90,10 @@ class RerankerAgent:
                 break
             except Exception as exc:
                 if attempt < MAX_RETRIES:
-                    logger.warning(f"⚠️ RerankerAgent: attempt {attempt + 1} failed: {exc}. Retrying...")
+                    logger.warning(f" RerankerAgent: attempt {attempt + 1} failed: {exc}. Retrying...")
                     time.sleep(RETRY_DELAY * (2 ** attempt))
                 else:
-                    logger.error(f"❌ RerankerAgent failed after retries: {exc}")
+                    logger.error(f" RerankerAgent failed after retries: {exc}")
 
         if response and response.choices and response.choices[0].message.content:
             raw_output = response.choices[0].message.content.strip()
@@ -132,7 +120,7 @@ class RerankerAgent:
                             if 0 <= idx < len(copied_chunks):
                                 copied_chunks[idx]["rerank_score"] = validated_item.score
                         except Exception as val_exc:
-                            logger.warning(f"⚠️ RerankerAgent: invalid score item '{item}': {val_exc}")
+                            logger.warning(f" RerankerAgent: invalid score item '{item}': {val_exc}")
 
                 sorted_chunks = sorted(
                     copied_chunks,

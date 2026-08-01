@@ -1,17 +1,3 @@
-"""
-api/routes/hitl.py — Human-in-the-Loop escalation endpoints
-
-Endpoints:
-  POST /hitl/escalate                        — User creates an escalation ticket
-  GET  /hitl/queue                           — Lawyer views open ticket queue (with summary)
-  PATCH /hitl/tickets/{id}/assign            — Lawyer self-assigns ticket (race-condition safe)
-  GET  /hitl/tickets/{id}/details            — Assigned lawyer views full ticket details
-  POST /hitl/tickets/{id}/respond            — Lawyer resolves ticket with response + outcome notes
-  GET  /hitl/my-tickets                      — User views their own tickets
-  GET  /hitl/my-resolved-tickets             — Lawyer views their resolved history
-  GET  /hitl/status/{conversation_id}        — Check if conversation is escalated
-"""
-
 import logging
 from typing import Any, Dict, List, Optional
 from datetime import datetime
@@ -43,9 +29,6 @@ def set_services(
     _hitl_service = hitl_svc
     _user_service = user_svc
     _email_service = email_svc
-
-
-# ── Schemas ───────────────────────────────────────────────────────────
 
 class EscalateRequest(BaseModel):
     conversation_id: str
@@ -118,7 +101,7 @@ def check_user_status(identifier: str):
         
         return {"status": "not_found", "is_suspended": False}
     except Exception as exc:
-        logger.error(f"❌ check_user_status failed | {exc}")
+        logger.error(f" check_user_status failed | {exc}")
         return {"status": "error", "is_suspended": False}
 
 
@@ -135,15 +118,6 @@ def escalate_conversation(
     background_tasks: BackgroundTasks,
     current_user: ClerkUser = Depends(require_db_role("user", "lawyer", "admin")),
 ):
-    """
-    Phase 1: User clicks "Talk to a Lawyer" in the chat.
-
-    Creates an escalation ticket. The ticket will automatically include:
-    - The latest AI-generated conversation summary (from conversations.conversation_summary)
-    - The user's profile (display_name, email, phone)
-
-    No practice area selection — lawyers see the case brief from the DB summary.
-    """
     user_id = _user_service.get_user_id_from_clerk_id(current_user.clerk_user_id)
 
     # Prevent duplicate escalations for the same conversation
@@ -183,10 +157,6 @@ def escalate_conversation(
     }
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# LAWYER QUEUE
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 @router.get(
     "/queue",
     summary="Get open ticket queue (lawyers and admins)",
@@ -208,10 +178,6 @@ def get_ticket_queue(
     return tickets
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# SELF-ASSIGNMENT (Lawyer)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 @router.patch(
     "/tickets/{ticket_id}/assign",
     summary="Lawyer self-assigns a ticket from the queue",
@@ -221,16 +187,6 @@ def assign_ticket(
     background_tasks: BackgroundTasks,
     current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
 ):
-    """
-    Phase 4: Lawyer clicks "Claim" on a ticket in the queue.
-
-    Race-condition safe — if two lawyers click simultaneously, only the first
-    one succeeds (DB-level .eq("status","open") guard). Returns 409 to the loser.
-
-    After successful assignment:
-    - Sends email to user notifying them their case has been accepted
-    - User's chat UI can now poll for ticket status and show the booking flow
-    """
     lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
 
     success = _hitl_service.assign_ticket(ticket_id, lawyer_id)
@@ -303,11 +259,11 @@ def update_lawyer_specialization(
                             expertise_domains=req.expertise_domains
                         )
             except Exception as mail_err:
-                logger.warning(f"⚠️ Failed to queue lawyer specialization update email to admins: {mail_err}")
+                logger.warning(f" Failed to queue lawyer specialization update email to admins: {mail_err}")
 
         return {"message": "Specialization updated successfully.", "profile": resp.data[0] if resp.data else {}}
     except Exception as e:
-        logger.error(f"❌ Failed to update lawyer specialization | {e}")
+        logger.error(f" Failed to update lawyer specialization | {e}")
         raise HTTPException(status_code=500, detail="Failed to update specialization profile.")
 
 
@@ -429,7 +385,7 @@ async def _send_assignment_notification(ticket_id: str, lawyer_id: str):
                 )
     except Exception as notify_exc:
         # Non-fatal — the assignment itself succeeded
-        logger.warning(f"⚠️ User notification after assign failed (non-fatal) | {notify_exc}")
+        logger.warning(f" User notification after assign failed (non-fatal) | {notify_exc}")
 
     return {"message": "Ticket assigned successfully.", "ticket_id": ticket_id}
 
@@ -468,13 +424,7 @@ async def _send_escalation_notifications(ticket_id: str, user_id: str):
                             user_display_name=user_name
                         )
     except Exception as exc:
-        logger.warning(f"⚠️ Escalation notification emails failed (non-fatal) | {exc}")
-
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# TICKET DETAILS (Assigned Lawyer)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        logger.warning(f" Escalation notification emails failed (non-fatal) | {exc}")
 
 @router.get(
     "/tickets/{ticket_id}/details",
@@ -484,14 +434,6 @@ def get_ticket_details(
     ticket_id: str,
     current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
 ):
-    """
-    Phase 4: Assigned lawyer views the full case detail page.
-
-    Returns user info, conversation summary (case brief), trigger message,
-    booking status, and Google Meet link (once booking is confirmed).
-
-    Access: Only the assigned lawyer or admin can call this.
-    """
     lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
     user_role = current_lawyer.db_role or current_lawyer.role
 
@@ -504,11 +446,6 @@ def get_ticket_details(
 
     return details
 
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# RESPOND / RESOLVE (Lawyer)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 @router.post(
     "/tickets/{ticket_id}/respond",
     summary="Lawyer submits response and resolves the ticket",
@@ -519,16 +456,6 @@ def respond_to_ticket(
     background_tasks: BackgroundTasks,
     current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
 ):
-    """
-    Phase 8: Lawyer submits their final written response, optionally adding
-    outcome notes for record-keeping.
-
-    - content:       The written legal response sent to the user
-    - outcome_notes: Optional internal notes (billing, case outcome, follow-up)
-
-    Only the assigned lawyer can resolve their own ticket.
-    Status transitions: assigned|booked → resolved
-    """
     lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
     user_role = current_lawyer.db_role or current_lawyer.role
 
@@ -570,10 +497,6 @@ def mark_no_show(
     req: NoShowRequest = NoShowRequest(),
     current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
 ):
-    """
-    Lawyer reporting that the user did not show up for the meeting.
-    Status moves to 'no_show'.
-    """
     lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
     success = _hitl_service.mark_no_show(
         ticket_id, 
@@ -585,11 +508,6 @@ def mark_no_show(
     
     return {"message": f"Case marked as {req.no_show_type} no-show. Rescheduling enabled."}
 
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# USER TICKET STATUS
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 @router.get(
     "/my-tickets",
     summary="User views their own escalation tickets",
@@ -597,13 +515,6 @@ def mark_no_show(
 def get_my_tickets(
     current_user: ClerkUser = Depends(require_db_role("user", "lawyer", "admin")),
 ):
-    """
-    User views all their own escalation tickets with current status.
-    The frontend uses this to detect when a lawyer is assigned and trigger
-    the Cal.com booking slot picker.
-
-    Returns: ticket_id, status, booking_url, booking_confirmed_at, assigned_lawyer_id, created_at
-    """
     user_id = _user_service.get_user_id_from_clerk_id(current_user.clerk_user_id)
     tickets = _hitl_service.get_user_tickets(user_id)
     return tickets
@@ -616,10 +527,6 @@ def get_my_tickets(
 def get_my_active_tickets(
     current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
 ):
-    """
-    Lawyer views their own cases that are currently 'assigned' or 'booked'.
-    Returns flattened data including user info and conversation summary.
-    """
     lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
     tickets = _hitl_service.get_lawyer_active_tickets(lawyer_id)
     return tickets
@@ -648,10 +555,6 @@ def get_escalation_status(
     conversation_id: str,
     current_user: ClerkUser = Depends(require_db_role("user", "lawyer", "admin")),
 ):
-    """
-    Check if this conversation already has an active escalation ticket.
-    Used by the chat UI to show the correct status and details.
-    """
     ticket = _hitl_service.get_ticket_by_conversation(conversation_id)
     is_escalated = ticket is not None and (
         ticket.get("status") in ["open", "assigned", "booked", "resolved"] or
@@ -710,7 +613,7 @@ async def _send_resolution_notification(ticket_id: str, content: str):
                     ticket_id=ticket_id
                 )
     except Exception as exc:
-        logger.warning(f"⚠️ Resolution email notification failed (non-fatal) | {exc}")
+        logger.warning(f" Resolution email notification failed (non-fatal) | {exc}")
 
 @router.get("/lawyer/analytics/personal")
 async def get_lawyer_personal_analytics(

@@ -1,16 +1,3 @@
-"""
-agents/generator_agent.py — Conversational & Legal Response Generator Agent
-
-Refactored per TL Code Review Guidelines:
-1. Injected LLM dependency (__init__(self, llm=None, temperature=0.7)) & instance reuse.
-2. Shared history formatting via utils/history_formatter.py.
-3. LanguageInstructionBuilder for structured language instructions.
-4. Immutable prompt composition (System Prompt -> Memory Block -> User Query).
-5. DRY shared streaming engine (_stream_llm_response).
-6. Removed dead `buffer` variable & replaced character-by-character error loops with block yields.
-7. System prompts extracted to prompts/casual_prompt.txt & prompts/legal_prompt.txt.
-"""
-
 import asyncio
 import logging
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -108,10 +95,10 @@ class GeneratorAgent:
                 break
             except Exception as exc:
                 if attempt < PRE_STREAM_MAX_RETRIES:
-                    logger.warning(f"⚠️ GeneratorAgent: [{log_label}] pre-stream attempt {attempt + 1} failed: {exc}. Retrying...")
+                    logger.warning(f" GeneratorAgent: [{log_label}] pre-stream attempt {attempt + 1} failed: {exc}. Retrying...")
                     await asyncio.sleep(PRE_STREAM_RETRY_DELAY * (2 ** attempt))
                 else:
-                    logger.error(f"❌ GeneratorAgent: [{log_label}] pre-stream failed after retries: {exc}")
+                    logger.error(f" GeneratorAgent: [{log_label}] pre-stream failed after retries: {exc}")
                     raise
 
         chunk_count = 0

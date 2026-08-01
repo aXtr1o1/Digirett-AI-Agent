@@ -1,15 +1,3 @@
-"""
-api/routes/cal.py — Cal.com slot fetching & booking creation
-
-Refactored according to TL code review guidelines:
-- Pure FastAPI Dependency Injection via Request.app.state
-- Zero direct Supabase / database queries in route functions or helpers
-- Encapsulated lawyer credential resolution inside UserService
-- Dedicated Pydantic response models for Swagger contract consistency
-- TicketStatus enum usage instead of magic raw status strings
-- Reusable ticket authorization helper (_authorize_ticket_access)
-"""
-
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -25,9 +13,6 @@ from services.user_service import UserService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cal", tags=["Cal.com Booking"])
-
-
-# ── Dependency Resolvers ─────────────────────────────────────────────
 
 def get_cal_service(request: Request) -> CalService:
     svc = getattr(request.app.state, "cal_service", None)
@@ -57,9 +42,6 @@ def get_user_service(request: Request) -> UserService:
             detail="UserService is not initialized on application state.",
         )
     return svc
-
-
-# ── Schemas ──────────────────────────────────────────────────────────
 
 class BookingRequest(BaseModel):
     start_time: str
@@ -95,16 +77,11 @@ class CalConfigUpdateRequest(BaseModel):
     cal_event_type_id: str
     cal_api_key: str
 
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Internal Helpers
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 def _resolve_lawyer_credentials(ticket: Dict[str, Any], user_service: UserService) -> Tuple[str, int]:
     """Resolves and validates Cal.com credentials using UserService."""
     lawyer_id = ticket.get("assigned_lawyer_id")
     if not lawyer_id:
-        logger.warning(f"⚠️ Cal.com credentials lookup failed: No lawyer assigned to ticket {ticket.get('ticket_id')}")
+        logger.warning(f" Cal.com credentials lookup failed: No lawyer assigned to ticket {ticket.get('ticket_id')}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No lawyer assigned to this ticket yet.",
@@ -112,7 +89,7 @@ def _resolve_lawyer_credentials(ticket: Dict[str, Any], user_service: UserServic
 
     profile = user_service.get_lawyer_cal_credentials(lawyer_id)
     if not profile:
-        logger.error(f"❌ Cal.com credentials lookup failed: No profile found for lawyer_id {lawyer_id}")
+        logger.error(f" Cal.com credentials lookup failed: No profile found for lawyer_id {lawyer_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Lawyer profile not found. Please ensure the lawyer has configured their Cal.com settings.",
@@ -122,7 +99,7 @@ def _resolve_lawyer_credentials(ticket: Dict[str, Any], user_service: UserServic
     event_type_id = profile.get("cal_event_type_id")
 
     if not api_key or not event_type_id:
-        logger.error(f"❌ Cal.com credentials lookup failed: Profile found for {lawyer_id} but missing api_key or event_type_id")
+        logger.error(f" Cal.com credentials lookup failed: Profile found for {lawyer_id} but missing api_key or event_type_id")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Lawyer has not fully configured their Cal.com credentials.",
@@ -154,11 +131,6 @@ def _authorize_ticket_access(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to access slots for this ticket.",
             )
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ROUTES
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @router.get(
     "/slots/{ticket_id}",
@@ -201,7 +173,7 @@ async def get_lawyer_slots(
             timezone=timezone,
         )
     except ValueError as exc:
-        logger.warning(f"⚠️ CalService error: {exc}")
+        logger.warning(f" CalService error: {exc}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     return CalSlotsResponse(
@@ -268,7 +240,7 @@ async def create_booking(
         meeting_time=req.start_time,
     )
 
-    logger.info(f"✅ Booking created | ticket={ticket_id} | cal_id={booking_result.id} | start={req.start_time}")
+    logger.info(f" Booking created | ticket={ticket_id} | cal_id={booking_result.id} | start={req.start_time}")
 
     raw_data = booking_result.raw_data or {}
 

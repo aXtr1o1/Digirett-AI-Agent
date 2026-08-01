@@ -1,13 +1,3 @@
-"""
-agents/orchestrator_agent.py — Workflow Orchestrator Agent
-
-Refactored per TL Code Review Guidelines:
-1. Orchestrates intent classification, history loading, and casual generation workflow.
-2. Utilizes injected GeneratorAgent dependency.
-3. Returns typed IntentResult Pydantic model from classification.
-4. Uses named constants (INTENT_CONTEXT_MESSAGES = 2).
-"""
-
 import logging
 from typing import AsyncIterator, Dict, List, Optional
 

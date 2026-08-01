@@ -1,14 +1,3 @@
-"""
-api/routes/messages.py — Conversation message endpoints.
-
-Refactored according to TL code review guidelines:
-- Pure FastAPI Dependency Injection via Request.app.state
-- Requires Depends(get_current_user) authentication & ownership authorization
-- Native UUID path parameter validation (conversation_id: UUID)
-- Single query optimization (get_conversation_messages_or_404)
-- Standardized error logging without raw internal leakage
-"""
-
 import logging
 from typing import List, Tuple
 from uuid import UUID
@@ -26,9 +15,6 @@ from services.user_service import UserService
 logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
-
-
-# ── Dependency Resolvers ─────────────────────────────────────────────
 
 def get_message_service(request: Request) -> MessageService:
     svc = getattr(request.app.state, "message_service", None)
@@ -92,11 +78,6 @@ def _authorize_conversation_access(
         )
     return conv
 
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ROUTES
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 @router.get(
     "/messages/{conversation_id}",
     response_model=List[MessageResponse],
@@ -121,7 +102,7 @@ async def get_messages(
         messages = message_service.get_conversation_messages(conv_id_str)
         return [MessageResponse(**m) for m in messages]
     except Exception as exc:
-        logger.exception(f"❌ get_messages failed | conversation={conv_id_str} | {exc}")
+        logger.exception(f" get_messages failed | conversation={conv_id_str} | {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch messages.",

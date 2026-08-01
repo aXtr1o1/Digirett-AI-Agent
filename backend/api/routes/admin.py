@@ -1,14 +1,3 @@
-"""
-api/routes/admin.py — Admin management endpoints
-
-Refactored according to code review standards:
-- FastAPI Dependency Injection for services
-- Response Models for Swagger quality and type safety
-- Enum / Literal validation for request payload values
-- Zero direct database access in route handlers
-- Delegated SLA reporting and Domain analytics to service layer
-"""
-
 import logging
 from enum import Enum
 from typing import Any, Dict, List, Optional, Literal
@@ -65,21 +54,12 @@ def get_hitl_service(request: Request) -> HitlService:
         raise RuntimeError("HitlService is not initialized.")
     return svc
 
-
-
-
-
-
-# ── Enums ─────────────────────────────────────────────────────────────
-
 class AllowedUserRole(str, Enum):
     USER = "user"
     LAWYER = "lawyer"
     ADMIN = "admin"
     SYSTEM_ADMIN = "system_admin"
 
-
-# ── Response & Request Pydantic Schemas ──────────────────────────────
 
 class SuccessResponse(BaseModel):
     status: str = "success"
@@ -152,10 +132,6 @@ class DomainAnalyticsResponse(BaseModel):
     total: int
     distribution: List[DomainAnalyticsItem]
 
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# USER MANAGEMENT
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @router.post(
     "/invite",
@@ -383,10 +359,6 @@ async def admin_unsuspend_user(
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# CASE QUEUE MANAGEMENT
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @router.get(
     "/tickets",

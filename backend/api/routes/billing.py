@@ -1,14 +1,3 @@
-"""
-api/routes/billing.py — Billing customer portal endpoints
-
-Refactored according to TL code review guidelines:
-- Pure FastAPI Dependency Injection via Request.app.state
-- Delegated business logic to BillingService & StripeGateway
-- Zero direct Stripe SDK or Supabase database calls in route handler
-- Explicit BillingPortalResponse model for Swagger contracts & type safety
-- Granular HTTP exception status codes (400, 403, 404, 500)
-"""
-
 import logging
 from typing import Optional
 
@@ -32,15 +21,9 @@ def get_billing_service(request: Request) -> BillingService:
         )
     return svc
 
-
-# ── Schemas ──────────────────────────────────────────────────────────
-
 class BillingPortalResponse(BaseModel):
     status: str = "success"
     url: HttpUrl
-
-
-# ── Endpoints ────────────────────────────────────────────────────────
 
 @router.post(
     "/portal-session",

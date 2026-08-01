@@ -1,16 +1,3 @@
-"""
-api/routes/library.py — Library document management endpoints.
-
-Refactored according to TL code review guidelines:
-- Pure FastAPI Dependency Injection via Request.app.state
-- Zero direct private member database access (_user_service._supabase)
-- Reusable get_current_internal_user dependency
-- 3-Layer File Security Validation (Extension + MIME Type + Magic Byte Signatures)
-- Centralized configuration via settings.MAX_DOCUMENT_SIZE
-- Typed response model LibraryDeleteResponse for delete operations
-- Standardized, safe error logging without raw exception leakage
-"""
-
 import logging
 import urllib.parse
 from typing import List, Optional, Tuple
@@ -30,9 +17,6 @@ from services.user_service import UserService
 logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
-
-
-# ── Dependency Resolvers ─────────────────────────────────────────────
 
 def get_library_service(request: Request) -> LibraryService:
     svc = getattr(request.app.state, "library_service", None)
@@ -66,9 +50,6 @@ def get_current_internal_user(
             detail="User profile not found in database.",
         )
     return user, internal_user_id
-
-
-# ── File Validation Helpers ──────────────────────────────────────────
 
 _ALLOWED_EXTENSIONS = {"pdf", "docx", "doc"}
 _ALLOWED_MIME_TYPES = {
@@ -112,11 +93,6 @@ def _validate_file_security(filename: str, content_type: str, file_bytes: bytes)
             )
 
     return ext
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ROUTES
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @router.post(
     "/library/documents/upload",
@@ -165,13 +141,13 @@ async def upload_to_library(
     except HTTPException:
         raise
     except ValueError as val_exc:
-        logger.warning(f"⚠️ Library upload validation failed: {val_exc}")
+        logger.warning(f" Library upload validation failed: {val_exc}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(val_exc),
         )
     except Exception as exc:
-        logger.exception(f"❌ Error uploading to library: {exc}")
+        logger.exception(f" Error uploading to library: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to upload document to library.",
@@ -195,7 +171,7 @@ async def get_library_documents(
         documents = library_service.get_library_documents(internal_user_id)
         return [LibraryDocumentResponse(**d) for d in documents]
     except Exception as exc:
-        logger.exception(f"❌ Error getting library documents: {exc}")
+        logger.exception(f" Error getting library documents: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve library documents.",
@@ -231,7 +207,7 @@ async def delete_library_document(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception(f"❌ Error deleting library document {document_id}: {exc}")
+        logger.exception(f" Error deleting library document {document_id}: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete document from library.",
@@ -264,7 +240,7 @@ async def update_library_document_note(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception(f"❌ Error updating library document note {document_id}: {exc}")
+        logger.exception(f" Error updating library document note {document_id}: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update document note.",
@@ -312,7 +288,7 @@ async def get_library_document_view(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception(f"❌ Error viewing library document {document_id}: {exc}")
+        logger.exception(f" Error viewing library document {document_id}: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve library document binary.",

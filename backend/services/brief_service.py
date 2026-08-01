@@ -64,7 +64,7 @@ class BriefService:
                     conversation_id = ticket_res.data[0].get("conversation_id")
 
             if not conversation_id:
-                logger.warning(f"⚠️ No conversation_id found for ticket {ticket_id}")
+                logger.warning(f" No conversation_id found for ticket {ticket_id}")
                 return CaseBrief(matter_type="General Inquiry", key_issues=[], relevant_laws=[], risk_level="Low")
 
             resp = self._supabase.execute_query(
@@ -77,7 +77,7 @@ class BriefService:
 
             messages = resp.data or []
             if not messages:
-                logger.warning(f"⚠️ No messages found for conversation {conversation_id}")
+                logger.warning(f" No messages found for conversation {conversation_id}")
                 return CaseBrief(matter_type="General Inquiry", key_issues=[], relevant_laws=[], risk_level="Low")
 
             convo_text = ConversationFormatter.format_messages(messages)

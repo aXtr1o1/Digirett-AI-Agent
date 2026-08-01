@@ -1,14 +1,3 @@
-"""
-api/routes/ticket_messages.py — Pre-consultation ticket messaging thread endpoints.
-
-Refactored according to TL code review guidelines:
-- Route -> TicketMessageService -> NotificationService -> EmailService architecture
-- Pure FastAPI Dependency Injection via Request.app.state
-- Reusable get_current_internal_user dependency
-- Native UUID path parameter validation (ticket_id: UUID)
-- Typed Response Models (TicketMessageResponse, TicketMessageListResponse, TicketMessageReadResponse)
-"""
-
 import logging
 from typing import List, Optional, Tuple
 from uuid import UUID
@@ -23,9 +12,6 @@ from services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/hitl/tickets", tags=["HITL Messaging"])
-
-
-# ── Dependency Resolvers ─────────────────────────────────────────────
 
 def get_ticket_message_service(request: Request) -> TicketMessageService:
     svc = getattr(request.app.state, "ticket_message_service", None)
@@ -65,11 +51,6 @@ class MessageCreateRequest(BaseModel):
     file_name: Optional[str] = None
     document_id: Optional[str] = None
 
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ROUTES
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 @router.get(
     "/{ticket_id}/messages",
     response_model=TicketMessageListResponse,
@@ -97,7 +78,7 @@ async def get_ticket_messages(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except Exception as exc:
-        logger.exception(f"❌ Failed to fetch ticket messages: {exc}")
+        logger.exception(f" Failed to fetch ticket messages: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch ticket messages.",
@@ -145,7 +126,7 @@ async def create_ticket_message(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except Exception as exc:
-        logger.exception(f"❌ Failed to create ticket message: {exc}")
+        logger.exception(f" Failed to create ticket message: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to send message.",
@@ -179,7 +160,7 @@ async def mark_messages_read(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except Exception as exc:
-        logger.exception(f"❌ Failed to mark messages as read: {exc}")
+        logger.exception(f" Failed to mark messages as read: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to mark messages as read.",

@@ -1,13 +1,4 @@
-"""
-agents/document_classifier_agent.py — Document Query Classifier Agent
 
-Refactored per TL Code Review Guidelines:
-1. Injected LLM client dependency (__init__(self, llm=None)) following Dependency Inversion Principle (DIP).
-2. System prompt extracted to prompts/document_classifier.txt.
-3. Named constants for slice boundaries.
-4. PromptBuilder utility class for reusable context construction.
-5. Pydantic schema validation (ClassificationResult) & robust json_repair fallback layer.
-"""
 
 import json
 import logging

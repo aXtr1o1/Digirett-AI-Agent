@@ -1,15 +1,3 @@
-"""
-api/routes/documents.py — Document upload + session status + document retrieval endpoints.
-
-Refactored according to TL code review guidelines:
-- Pure FastAPI Dependency Injection via Request.app.state
-- Defense-in-depth authorization on document retrieval
-- 3-Layer Comprehensive File Validation (Extension + MIME Type + Magic Byte Signatures)
-- Centralized configuration via settings.MAX_DOCUMENT_SIZE
-- Fixed Pydantic mutable default in SessionStatusResponse (Field(default_factory=list))
-- Reusable get_current_internal_user dependency
-"""
-
 import asyncio
 import logging
 import re
@@ -30,9 +18,6 @@ from services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-# ── Dependency Resolvers ─────────────────────────────────────────────
 
 def get_document_service(request: Request) -> DocumentService:
     svc = getattr(request.app.state, "document_service", None)
@@ -71,9 +56,6 @@ def get_current_internal_user(
         )
     return user, internal_user_id
 
-
-# ── Pydantic Response Schemas ─────────────────────────────────────────
-
 class DocumentUploadResponse(BaseModel):
     document_id: str
     file_name: str
@@ -110,9 +92,6 @@ class FileMessageRequest(BaseModel):
 class SummaryMessageRequest(BaseModel):
     content: str
     document_id: Optional[str] = None
-
-
-# ── File Validation Helpers ──────────────────────────────────────────
 
 _ALLOWED_EXTENSIONS = {"pdf", "docx", "doc"}
 _ALLOWED_MIME_TYPES = {
@@ -157,11 +136,6 @@ def _validate_file_security(filename: str, content_type: str, file_bytes: bytes)
             )
 
     return ext
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ROUTES
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @router.post(
     "/documents/upload",
@@ -217,7 +191,7 @@ async def upload_document(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except Exception as exc:
-        logger.error(f"❌ Document upload failed | conv={conversation_id} | {exc}", exc_info=True)
+        logger.error(f" Document upload failed | conv={conversation_id} | {exc}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process document: {exc}",
@@ -247,7 +221,7 @@ async def upload_document(
                         accumulated.append(token)
                         yield token
                 except Exception as exc:
-                    logger.warning(f"⚠️ Live summary stream failed, generating fallback | {exc}")
+                    logger.warning(f" Live summary stream failed, generating fallback | {exc}")
 
             if not accumulated:
                 # If LLM stream produced nothing, stream clean extracted text without page headers
@@ -263,7 +237,7 @@ async def upload_document(
             if summary_str and doc_meta.get("file_hash"):
                 document_service.update_file_summary(doc_meta["file_hash"], summary_str)
 
-        logger.info(f"📝 Streaming new auto-summary | doc_id={doc_meta['document_id']}")
+        logger.info(f" Streaming new auto-summary | doc_id={doc_meta['document_id']}")
 
     filename_encoded = urllib.parse.quote(filename)
     is_duplicate_str = "true" if doc_meta.get("duplicate", False) else "false"
@@ -305,7 +279,7 @@ async def save_file_message(
         )
         return {"message_id": message_id, "status": "saved"}
     except Exception as exc:
-        logger.error(f"❌ save_file_message failed | conv={conversation_id} | {exc}", exc_info=True)
+        logger.error(f" save_file_message failed | conv={conversation_id} | {exc}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to save file message: {exc}",
@@ -331,7 +305,7 @@ async def save_summary_message(
         )
         return {"message_id": message_id, "status": "saved"}
     except Exception as exc:
-        logger.error(f"❌ save_summary_message failed | conv={conversation_id} | {exc}", exc_info=True)
+        logger.error(f" save_summary_message failed | conv={conversation_id} | {exc}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to save summary message: {exc}",

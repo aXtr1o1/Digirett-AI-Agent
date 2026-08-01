@@ -1,15 +1,3 @@
-"""
-agents/router_agent.py — Legal Query Taxonomy Router Agent
-
-Refactored per TL Code Review Guidelines:
-1. Derived Taxonomy Single Source-of-Truth — builds taxonomy prompt & validation maps dynamically from router.taxonomy_loader.
-2. Decoupled System Prompt (prompts/router_prompt.txt).
-3. Project-wide JsonResponseParser & RouterResult Pydantic schema validation.
-4. Externalized router filter configs (VALID_B2B_B2C, VALID_REL_TYPES, VALID_JURISDICTIONS in config_domains.py).
-5. Low-confidence routing fallback strategy (confidence < MIN_CONFIDENCE_THRESHOLD -> broad search fallback).
-6. Injected AzureChatOpenAI dependency (__init__(self, llm=None)) & API retries.
-"""
-
 import asyncio
 import logging
 from typing import Any, Dict, List, Optional

@@ -1,15 +1,3 @@
-"""
-services/chat_orchestrator.py — WebSocket Chat Orchestration Service
-
-Orchestrates WebSocket chat query execution:
-  - _handle_quota()        : Rolling 4-hour quota checks
-  - _handle_conversation() : Conversation creation & authorization
-  - _handle_streaming()    : Token streaming & background citation translation
-  - _handle_persistence()  : Persisting exchanges & source links
-  - _handle_memory()       : Conversation summary & user fact extraction
-  - _handle_title()        : Automatic title generation after 2nd exchange
-"""
-
 import asyncio
 import logging
 from datetime import datetime
@@ -59,7 +47,7 @@ class ChatOrchestrator:
 
         allowed_turn, _ = self._document_service.check_turn_limit(user_id, user_role=user_role)
         if not allowed_turn:
-            logger.warning(f"⚠️ Quota exceeded (Turns) | user={user_id}")
+            logger.warning(f" Quota exceeded (Turns) | user={user_id}")
             await self._send_ws_json(websocket, {
                 "type": "error",
                 "error_type": "quota_exceeded",
@@ -69,7 +57,7 @@ class ChatOrchestrator:
 
         allowed_token, _ = self._document_service.check_token_limit(user_id, user_role=user_role)
         if not allowed_token:
-            logger.warning(f"⚠️ Quota exceeded (Tokens) | user={user_id}")
+            logger.warning(f" Quota exceeded (Tokens) | user={user_id}")
             await self._send_ws_json(websocket, {
                 "type": "error",
                 "error_type": "quota_exceeded",
@@ -94,7 +82,7 @@ class ChatOrchestrator:
             conv = self._conversation_service.create_conversation(user_id=user_id, title=None)
             conversation_id = conv["conversation_id"]
             is_first_exchange = True
-            logger.info(f"ℹ️ Auto-created conversation: {conversation_id}")
+            logger.info(f" Auto-created conversation: {conversation_id}")
         else:
             existing_conv = self._conversation_service.get_conversation(conversation_id)
             if not existing_conv:
@@ -120,7 +108,7 @@ class ChatOrchestrator:
                 try:
                     title_map_live = await fetcher.resolve_titles(src_urls)
                 except Exception as e:
-                    logger.warning(f"⚠️ Sources title resolve failed: {e}")
+                    logger.warning(f" Sources title resolve failed: {e}")
 
             norwegian_titles = [
                 title_map_live.get(s["url"]) or s["url"] if isinstance(s, dict) and s.get("url") else ""
@@ -144,7 +132,7 @@ class ChatOrchestrator:
                     ts.append(s)
             return ts
         except Exception as exc:
-            logger.error(f"❌ Translation task failed: {exc}")
+            logger.error(f" Translation task failed: {exc}")
             return vs_list
 
     async def _handle_persistence(
@@ -182,10 +170,10 @@ class ChatOrchestrator:
                 rag_chunks=chunks_to_save,
                 skip_save_user=skip_save_user,
             )
-            logger.info(f"ℹ️ Saved exchange | user={user_msg_id} | assistant={assistant_msg_id}")
+            logger.info(f" Saved exchange | user={user_msg_id} | assistant={assistant_msg_id}")
             return user_msg_id, assistant_msg_id, resolved_title_map
         except Exception as save_exc:
-            logger.error(f"❌ Save failed | conv={conversation_id} | {save_exc}", exc_info=True)
+            logger.error(f" Save failed | conv={conversation_id} | {save_exc}", exc_info=True)
             return None, None, {}
 
     async def _handle_memory(self, conversation_id: str, user_id: str, query: str) -> None:
@@ -209,7 +197,7 @@ class ChatOrchestrator:
                     )
                 )
         except Exception as mem_exc:
-            logger.warning(f"⚠️ Memory update failed (non-fatal) | {mem_exc}")
+            logger.warning(f" Memory update failed (non-fatal) | {mem_exc}")
 
     async def _handle_title(self, conversation_id: str) -> Optional[str]:
         """Stage 6: Auto-generates conversation title after 2nd exchange."""
@@ -242,7 +230,7 @@ class ChatOrchestrator:
                 logger.info(f"ℹ️ Auto-title generated (2+2): '{title}'")
                 return title
         except Exception as title_exc:
-            logger.warning(f"⚠️ Title generation failed (non-fatal) | {title_exc}")
+            logger.warning(f" Title generation failed (non-fatal) | {title_exc}")
         return None
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -362,7 +350,7 @@ class ChatOrchestrator:
                     await self._send_ws_json(websocket, event)
 
         except Exception as exc:
-            logger.error(f"❌ Query execution error | conv={conversation_id} | {exc}", exc_info=True)
+            logger.error(f" Query execution error | conv={conversation_id} | {exc}", exc_info=True)
             try:
                 await self._send_ws_json(websocket, {"type": "error", "message": str(exc)})
             except Exception:

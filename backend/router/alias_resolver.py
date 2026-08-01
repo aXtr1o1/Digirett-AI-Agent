@@ -40,6 +40,6 @@ class AliasResolver:
                 invalid_aliases.append((src, target))
 
         if invalid_aliases:
-            logger.warning(f"⚠️ Invalid alias targets detected: {invalid_aliases}")
+            logger.warning(f" Invalid alias targets detected: {invalid_aliases}")
             return False
         return True

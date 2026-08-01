@@ -119,7 +119,7 @@ class BM25Reranker:
             return reranked
 
         except Exception as exc:
-            logger.warning(f"⚠️ BM25 rerank failed: {exc} — using dense-only")
+            logger.warning(f" BM25 rerank failed: {exc} — using dense-only")
             fallback_res = []
             for r in results[:top_k]:
                 c = r.copy()

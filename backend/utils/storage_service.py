@@ -1,7 +1,3 @@
-"""
-utils/storage_service.py — Storage Abstraction Wrapper for Supabase Storage
-"""
-
 import logging
 from typing import Any, List, Optional, Union
 

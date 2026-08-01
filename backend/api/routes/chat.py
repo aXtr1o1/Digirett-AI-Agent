@@ -1,13 +1,3 @@
-"""
-api/routes/chat.py  — WebSocket streaming route
-
-Refactored according to TL code review guidelines:
-- Pure FastAPI Dependency Injection via Request.app.state / websocket.app.state
-- Delegated chat query orchestration to ChatOrchestrator
-- Zero direct Supabase / database calls or private member access
-- Clean single-responsibility architecture
-"""
-
 import json
 import logging
 import time
@@ -23,9 +13,6 @@ from services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-# ── Dependency Resolvers ─────────────────────────────────────────────
 
 def get_chat_orchestrator(request: Request) -> ChatOrchestrator:
     orchestrator = getattr(request.app.state, "chat_orchestrator", None)
@@ -45,11 +32,6 @@ def get_user_service(request: Request) -> UserService:
             detail="UserService is not initialized on application state.",
         )
     return user_svc
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# In-process rate limiter
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 class _RateLimiter:
     _WINDOW = 60
@@ -71,10 +53,6 @@ class _RateLimiter:
 _rate_limiter = _RateLimiter()
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Swagger UI OpenAPI Endpoint for Chat Streaming Documentation
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 from schemas.responses import ChatResponse
 
 @router.post(
@@ -90,10 +68,6 @@ async def chat_stream_doc(chat_request: ChatRequest):
         conversation_id=chat_request.conversation_id,
     )
 
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# WebSocket Endpoint
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
 @router.websocket("/chat/ws")
@@ -176,10 +150,10 @@ async def chat_websocket(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception as exc:
-        logger.error(f"❌ WS fatal error | ip={client_ip} | {exc}", exc_info=True)
+        logger.error(f" WS fatal error | ip={client_ip} | {exc}", exc_info=True)
         try:
             await websocket.send_json({"type": "error", "message": str(exc)})
         except Exception:
             pass
     finally:
-        logger.info(f"ℹ️ WS session ended | ip={client_ip}")
+        logger.info(f" WS session ended | ip={client_ip}")

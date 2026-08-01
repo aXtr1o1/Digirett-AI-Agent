@@ -1,15 +1,3 @@
-"""
-agents/query_reasoning_agent.py — Legal Query Reasoning & Statute Classifier Agent
-
-Refactored per TL Code Review Guidelines:
-1. Injected LLM & StatuteRegistry dependencies (__init__(self, llm=None, registry=None)).
-2. Decoupled 200+ line prompt into prompts/query_reasoning_prompt.txt.
-3. Project-wide JsonResponseParser & Pydantic ReasoningResult validation replacing 7 redundant extraction functions.
-4. Imported centralized ALLOWED_DOMAINS from config_domains.py.
-5. Exponential backoff retry strategy for transient 429/500/503 errors.
-6. Explicit named constants (MAX_LOG_QUERY_LEN = 70, MAX_PREV_QUERY_LEN = 400).
-"""
-
 import asyncio
 import logging
 from typing import Any, Dict, List, Optional
@@ -111,10 +99,10 @@ class QueryReasoningAgent:
                 break
             except Exception as exc:
                 if attempt < MAX_RETRIES:
-                    logger.warning(f"⚠️ QueryReasoningAgent: attempt {attempt + 1} failed: {exc}. Retrying...")
+                    logger.warning(f" QueryReasoningAgent: attempt {attempt + 1} failed: {exc}. Retrying...")
                     await asyncio.sleep(RETRY_DELAY * (2 ** attempt))
                 else:
-                    logger.error(f"❌ QueryReasoningAgent: LLM execution failed after retries: {exc}")
+                    logger.error(f" QueryReasoningAgent: LLM execution failed after retries: {exc}")
 
         # 3. Parse JSON with project-wide JsonResponseParser & ReasoningResult validation
         if response and response.generations and response.generations[0]:

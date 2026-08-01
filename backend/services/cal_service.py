@@ -106,13 +106,13 @@ class CalService:
         try:
             resp = await self._client.get(url, params=params, headers=headers)
             if resp.status_code != 200:
-                logger.error(f"❌ Cal.com slots fetch failed | status={resp.status_code} | {resp.text}")
+                logger.error(f" Cal.com slots fetch failed | status={resp.status_code} | {resp.text}")
                 raise CalApiException(status_code=resp.status_code, detail=f"Cal.com slots fetch failed: {resp.text}")
 
             data = resp.json().get("data", {})
             return SlotResponse(slots=data.get("slots", {}))
         except httpx.RequestError as exc:
-            logger.error(f"❌ Network error fetching Cal.com slots | {exc}")
+            logger.error(f" Network error fetching Cal.com slots | {exc}")
             raise CalApiException(status_code=503, detail=f"Network error connecting to Cal.com: {exc}") from exc
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=3), reraise=True)
@@ -148,7 +148,7 @@ class CalService:
         try:
             resp = await self._client.post(url, json=payload, headers=headers)
             if resp.status_code not in (200, 201):
-                logger.error(f"❌ Cal.com booking failed | status={resp.status_code} | {resp.text}")
+                logger.error(f" Cal.com booking failed | status={resp.status_code} | {resp.text}")
                 raise CalApiException(status_code=resp.status_code, detail=f"Cal.com booking creation failed: {resp.text}")
 
             data = resp.json().get("data", {})
@@ -160,5 +160,5 @@ class CalService:
                 raw_data=data,
             )
         except httpx.RequestError as exc:
-            logger.error(f"❌ Network error creating Cal.com booking | {exc}")
+            logger.error(f" Network error creating Cal.com booking | {exc}")
             raise CalApiException(status_code=503, detail=f"Network error connecting to Cal.com: {exc}") from exc
