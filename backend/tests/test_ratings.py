@@ -87,6 +87,13 @@ class TestRatingsSystem(unittest.TestCase):
         db.supabase_client.get_supabase = lambda: self.mock_supabase
         api.routes.ratings.get_supabase = lambda: self.mock_supabase
         
+        # Set app state services required by routes
+        from services.rating_service import RatingService
+        app.state.rating_service = RatingService(self.mock_supabase)
+        mock_user_svc = MagicMock()
+        mock_user_svc.get_user_id_from_clerk_id.side_effect = lambda clerk_id, **kw: "lawyer_internal_id" if "lawyer" in str(clerk_id) else ("admin_internal_id" if "admin" in str(clerk_id) else "user_internal_id")
+        app.state.user_service = mock_user_svc
+
         # Setup test roles users
         self.standard_user = ClerkUser({
             "clerk_user_id": "user_clerk_id",

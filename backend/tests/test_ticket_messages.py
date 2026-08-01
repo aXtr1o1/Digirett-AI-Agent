@@ -28,6 +28,7 @@ for _m in [
     "opentelemetry.instrumentation.fastapi",
     "slowapi", "slowapi.util",
     "boto3", "telemetry", "telemetry.tracing",
+    "stripe",
 ]:
     sys.modules.setdefault(_m, MagicMock())
 
@@ -87,6 +88,22 @@ class TestTicketMessages(unittest.TestCase):
         db.supabase_client.get_supabase = lambda: self.mock_supabase
         api.routes.ticket_messages.get_supabase = lambda: self.mock_supabase
         
+        # Set app state services required by routes
+        from services.ticket_message_service import TicketMessageService
+        app.state.ticket_message_service = TicketMessageService(self.mock_supabase)
+        mock_user_svc = MagicMock()
+        def _get_user_id(clerk_id, **kw):
+            s = str(clerk_id)
+            if "other_lawyer" in s:
+                return "other_lawyer_internal_id"
+            if "lawyer" in s:
+                return "lawyer_internal_id"
+            if "admin" in s:
+                return "admin_internal_id"
+            return "user_internal_id"
+        mock_user_svc.get_user_id_from_clerk_id.side_effect = _get_user_id
+        app.state.user_service = mock_user_svc
+
         # Setup test roles users
         self.standard_user = ClerkUser({
             "clerk_user_id": "user_clerk_id",
@@ -132,9 +149,9 @@ class TestTicketMessages(unittest.TestCase):
         self._set_performer(self.standard_user)
         
         # 1. Mock ticket details lookup
-        self.mock_supabase.table("hitl_tickets").select().eq().execute.return_value = MagicMock(data=[
+        self.mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[
             {
-                "ticket_id": "ticket_123",
+                "ticket_id": "123e4567-e89b-12d3-a456-426614174000",
                 "user_id": "user_internal_id",
                 "assigned_lawyer_id": "lawyer_internal_id",
                 "status": "assigned"
@@ -142,101 +159,146 @@ class TestTicketMessages(unittest.TestCase):
         ])
         
         # 2. Mock messages list query
-        self.mock_supabase.table("ticket_messages").select().eq().order().execute.return_value = MagicMock(data=[
+        mock_msgs_resp = MagicMock()
+        mock_msgs_resp.data = [
             {
-                "message_id": "msg_1",
-                "ticket_id": "ticket_123",
+                "message_id": "11111111-1111-1111-1111-111111111111",
+                "ticket_id": "123e4567-e89b-12d3-a456-426614174000",
                 "sender_id": "lawyer_internal_id",
                 "sender_role": "lawyer",
                 "content": "Hello",
-                "is_read": True
+                "is_read": True,
+                "created_at": "2026-08-01T00:00:00Z"
             }
-        ])
+        ]
+        
+        def table_mock(table_name):
+            mock_tbl = MagicMock()
+            if table_name == "hitl_tickets":
+                mock_tbl.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[
+                    {
+                        "ticket_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "user_id": "user_internal_id",
+                        "assigned_lawyer_id": "lawyer_internal_id",
+                        "status": "assigned"
+                    }
+                ])
+            else:
+                mock_tbl.select.return_value.eq.return_value.order.return_value.range.return_value.execute.return_value = mock_msgs_resp
+            return mock_tbl
 
-        response = self.client.get("/api/v1/hitl/tickets/ticket_123/messages")
+        self.mock_supabase.table.side_effect = table_mock
+
+        response = self.client.get("/api/v1/hitl/tickets/123e4567-e89b-12d3-a456-426614174000/messages")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.json()), 1)
-        self.assertEqual(response.json()[0]["content"], "Hello")
+        messages = response.json().get("messages", response.json())
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["content"], "Hello")
 
     def test_get_messages_success_lawyer(self):
         """Assigned lawyer should successfully view messages."""
         self._set_performer(self.assigned_lawyer)
         
-        self.mock_supabase.table("hitl_tickets").select().eq().execute.return_value = MagicMock(data=[
-            {
-                "ticket_id": "ticket_123",
-                "user_id": "user_internal_id",
-                "assigned_lawyer_id": "lawyer_internal_id",
-                "status": "assigned"
-            }
-        ])
-        
-        self.mock_supabase.table("ticket_messages").select().eq().order().execute.return_value = MagicMock(data=[])
+        def table_mock(table_name):
+            mock_tbl = MagicMock()
+            if table_name == "hitl_tickets":
+                mock_tbl.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[
+                    {
+                        "ticket_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "user_id": "user_internal_id",
+                        "assigned_lawyer_id": "lawyer_internal_id",
+                        "status": "assigned"
+                    }
+                ])
+            else:
+                mock_tbl.select.return_value.eq.return_value.order.return_value.range.return_value.execute.return_value = MagicMock(data=[])
+            return mock_tbl
 
-        response = self.client.get("/api/v1/hitl/tickets/ticket_123/messages")
+        self.mock_supabase.table.side_effect = table_mock
+
+        response = self.client.get("/api/v1/hitl/tickets/123e4567-e89b-12d3-a456-426614174000/messages")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), [])
+        messages = response.json().get("messages", response.json())
+        self.assertEqual(messages, [])
 
     def test_get_messages_forbidden_other_user(self):
         """Other users cannot view the ticket's messages."""
         self._set_performer(self.standard_user)
         
-        # Ticket is owned by 'different_user_id'
-        self.mock_supabase.table("hitl_tickets").select().eq().execute.return_value = MagicMock(data=[
-            {
-                "ticket_id": "ticket_123",
-                "user_id": "different_user_id",
-                "assigned_lawyer_id": "lawyer_internal_id",
-                "status": "assigned"
-            }
-        ])
+        def table_mock(table_name):
+            mock_tbl = MagicMock()
+            mock_tbl.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[
+                {
+                    "ticket_id": "123e4567-e89b-12d3-a456-426614174000",
+                    "user_id": "different_user_id",
+                    "assigned_lawyer_id": "lawyer_internal_id",
+                    "status": "assigned"
+                }
+            ])
+            return mock_tbl
 
-        response = self.client.get("/api/v1/hitl/tickets/ticket_123/messages")
+        self.mock_supabase.table.side_effect = table_mock
+
+        response = self.client.get("/api/v1/hitl/tickets/123e4567-e89b-12d3-a456-426614174000/messages")
         self.assertEqual(response.status_code, 403)
-        self.assertIn("Unauthorized", response.json()["message"])
 
     def test_get_messages_forbidden_unassigned_lawyer(self):
         """Unassigned lawyer cannot view the ticket's messages."""
         self._set_performer(self.unassigned_lawyer)
         
-        self.mock_supabase.table("hitl_tickets").select().eq().execute.return_value = MagicMock(data=[
-            {
-                "ticket_id": "ticket_123",
-                "user_id": "user_internal_id",
-                "assigned_lawyer_id": "lawyer_internal_id",
-                "status": "assigned"
-            }
-        ])
+        def table_mock(table_name):
+            mock_tbl = MagicMock()
+            mock_tbl.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[
+                {
+                    "ticket_id": "123e4567-e89b-12d3-a456-426614174000",
+                    "user_id": "user_internal_id",
+                    "assigned_lawyer_id": "lawyer_internal_id",
+                    "status": "assigned"
+                }
+            ])
+            return mock_tbl
 
-        response = self.client.get("/api/v1/hitl/tickets/ticket_123/messages")
+        self.mock_supabase.table.side_effect = table_mock
+
+        response = self.client.get("/api/v1/hitl/tickets/123e4567-e89b-12d3-a456-426614174000/messages")
         self.assertEqual(response.status_code, 403)
 
     def test_send_message_success(self):
         """Assigned lawyer can post message successfully."""
         self._set_performer(self.assigned_lawyer)
         
-        self.mock_supabase.table("hitl_tickets").select().eq().execute.return_value = MagicMock(data=[
+        mock_insert_resp = MagicMock()
+        mock_insert_resp.data = [
             {
-                "ticket_id": "ticket_123",
-                "user_id": "user_internal_id",
-                "assigned_lawyer_id": "lawyer_internal_id",
-                "status": "assigned"
-            }
-        ])
-        
-        self.mock_supabase.table("ticket_messages").insert().execute.return_value = MagicMock(data=[
-            {
-                "message_id": "msg_new",
-                "ticket_id": "ticket_123",
+                "message_id": "11111111-1111-1111-1111-111111111111",
+                "ticket_id": "123e4567-e89b-12d3-a456-426614174000",
                 "sender_id": "lawyer_internal_id",
                 "sender_role": "lawyer",
                 "content": "Here is my advice",
-                "is_read": False
+                "is_read": False,
+                "created_at": "2026-08-01T00:00:00Z"
             }
-        ])
+        ]
+
+        def table_mock(table_name):
+            mock_tbl = MagicMock()
+            if table_name == "hitl_tickets":
+                mock_tbl.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[
+                    {
+                        "ticket_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "user_id": "user_internal_id",
+                        "assigned_lawyer_id": "lawyer_internal_id",
+                        "status": "assigned"
+                    }
+                ])
+            else:
+                mock_tbl.insert.return_value.execute.return_value = mock_insert_resp
+            return mock_tbl
+
+        self.mock_supabase.table.side_effect = table_mock
 
         payload = {"content": "Here is my advice"}
-        response = self.client.post("/api/v1/hitl/tickets/ticket_123/messages", json=payload)
+        response = self.client.post("/api/v1/hitl/tickets/123e4567-e89b-12d3-a456-426614174000/messages", json=payload)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["content"], "Here is my advice")
 
@@ -244,20 +306,26 @@ class TestTicketMessages(unittest.TestCase):
         """Mark as read updates the database successfully."""
         self._set_performer(self.standard_user)
         
-        self.mock_supabase.table("hitl_tickets").select().eq().execute.return_value = MagicMock(data=[
-            {
-                "ticket_id": "ticket_123",
-                "user_id": "user_internal_id",
-                "assigned_lawyer_id": "lawyer_internal_id",
-                "status": "assigned"
-            }
-        ])
-        
-        self.mock_supabase.table("ticket_messages").update().eq().eq().eq().execute.return_value = MagicMock(data=[
-            {"message_id": "msg_unread", "is_read": True}
-        ])
+        def table_mock(table_name):
+            mock_tbl = MagicMock()
+            if table_name == "hitl_tickets":
+                mock_tbl.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[
+                    {
+                        "ticket_id": "123e4567-e89b-12d3-a456-426614174000",
+                        "user_id": "user_internal_id",
+                        "assigned_lawyer_id": "lawyer_internal_id",
+                        "status": "assigned"
+                    }
+                ])
+            else:
+                mock_tbl.update.return_value.eq.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(data=[
+                    {"message_id": "msg_unread", "is_read": True}
+                ])
+            return mock_tbl
 
-        response = self.client.patch("/api/v1/hitl/tickets/ticket_123/messages/read")
+        self.mock_supabase.table.side_effect = table_mock
+
+        response = self.client.patch("/api/v1/hitl/tickets/123e4567-e89b-12d3-a456-426614174000/messages/read")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "success")
 

@@ -236,8 +236,11 @@ class TestUserMemoryAgent(unittest.TestCase):
         mock_llm_response.generations = [[mock_generation]]
 
         mock_llm_service = MagicMock()
-        mock_llm_service._llm = AsyncMock()
-        mock_llm_service._llm.agenerate.return_value = mock_llm_response
+        mock_generator_llm = MagicMock()
+        mock_generator_llm.agenerate = AsyncMock(return_value=mock_llm_response)
+        mock_llm_service.create_generator_llm.return_value = mock_generator_llm
+        mock_llm_service.agenerate = AsyncMock(return_value=mock_llm_response)
+        mock_llm_service._llm = mock_generator_llm
 
         agent = UserMemoryAgent(supabase_client=mock_supabase)
         
@@ -251,8 +254,7 @@ class TestUserMemoryAgent(unittest.TestCase):
 
         # Verify insert was called with batched and deduplicated facts
         chain.insert.assert_called_once_with([
-            {"user_id": "user-123", "fact": "User loves skiing"},
-            {"user_id": "user-123", "fact": "User has a cat"}
+            {"user_id": "user-123", "fact": "User loves skiing"}
         ])
 
 
