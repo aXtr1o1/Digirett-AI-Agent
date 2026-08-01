@@ -85,3 +85,13 @@ def normalize_domain(domain_input: Optional[str]) -> Optional[str]:
 def is_valid_domain(domain: Optional[str]) -> bool:
     """Check if domain is in canonical set."""
     return domain in DOMAINS_CANONICAL if domain else False
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ROUTER FILTER CONFIGURATIONS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+VALID_B2B_B2C = frozenset({"B2B", "B2C", "BOTH"})
+VALID_REL_TYPES = frozenset({"commercial", "consumer", "employment"})
+VALID_JURISDICTIONS = frozenset({"NO", "EU-EEA", "BOTH"})
+

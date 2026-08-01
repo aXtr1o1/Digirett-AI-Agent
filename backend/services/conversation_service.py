@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -20,6 +21,22 @@ class ConversationService:
         self._supabase = supabase_client
         self._cache = redis_client
         logger.info("ConversationService initialized")
+
+    def _touch_conversation(self, conversation_id: str, now: str) -> None:
+        """Helper to non-blockingly touch updated_at timestamp on a conversation."""
+        async def _touch_async():
+            try:
+                self._supabase.table("conversations").update({
+                    "updated_at": now
+                }).eq("conversation_id", conversation_id).execute()
+            except Exception:
+                pass
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_touch_async())
+        except RuntimeError:
+            pass
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # CREATE
@@ -60,33 +77,20 @@ class ConversationService:
 
             if cached:
                 logger.debug(f" Conversation cache hit: {conversation_id}")
-
-                # 🔥 Update updated_at even if coming from cache
                 now = datetime.utcnow().isoformat()
-
-                def _touch():
-                    try:
-                        self._supabase.table("conversations").update({
-                            "updated_at": now
-                        }).eq("conversation_id", conversation_id).execute()
-                    except Exception:
-                        pass
-                
-                import threading
-                threading.Thread(target=_touch, daemon=True).start()
+                self._touch_conversation(conversation_id, now)
 
                 cached["updated_at"] = now
                 self._cache.set_conversation_meta(conversation_id, cached)
 
                 return cached
 
-            response = (
+            query = (
                 self._supabase.table("conversations")
                 .select("*")
                 .eq("conversation_id", conversation_id)
-                .eq("is_deleted", False)
-                .execute()
             )
+            response = self._supabase.execute_query(query)
 
             if not response.data:
                 logger.warning(f"⚠️  Conversation not found: {conversation_id}")
@@ -94,22 +98,10 @@ class ConversationService:
 
             conversation = response.data[0]
 
-            # 🔥 Update updated_at when accessed
             now = datetime.utcnow().isoformat()
-
-            def _touch2():
-                try:
-                    self._supabase.table("conversations").update({
-                        "updated_at": now
-                    }).eq("conversation_id", conversation_id).execute()
-                except Exception:
-                    pass
-            
-            import threading
-            threading.Thread(target=_touch2, daemon=True).start()
+            self._touch_conversation(conversation_id, now)
 
             conversation["updated_at"] = now
-
             self._cache.set_conversation_meta(conversation_id, conversation)
 
             return conversation
@@ -127,15 +119,15 @@ class ConversationService:
     ) -> List[Dict[str, Any]]:
 
         try:
-            response = (
+            query = (
                 self._supabase.table("conversations")
                 .select("*")
                 .eq("user_id", user_id)
                 .or_("is_deleted.eq.false,is_deleted.is.null")
                 .order("updated_at", desc=True)
                 .range(offset, offset + limit - 1)
-                .execute()
             )
+            response = self._supabase.execute_query(query)
 
             conversations = response.data or []
 

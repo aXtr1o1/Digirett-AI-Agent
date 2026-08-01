@@ -1,21 +1,86 @@
+"""
+services/cal_service.py — Cal.com Integration Service
+"""
+
 import logging
-import httpx
-from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+from fastapi import HTTPException
+import httpx
+from pydantic import BaseModel, Field
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
 
-class CalService:
-    """
-    CalService — handles interaction with Cal.com API v2.
-    """
+CAL_API_VERSION = "2024-06-11"
 
-    # Cal.com API v2 Base URL
+
+class CalApiException(HTTPException):
+    def __init__(self, status_code: int, detail: str) -> None:
+        super().__init__(status_code=status_code, detail=detail)
+
+
+class BookingResponse(BaseModel):
+    id: str
+    uid: Optional[str] = None
+    status: str
+    event_type_id: Optional[int] = None
+    raw_data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SlotResponse(BaseModel):
+    slots: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
+
+
+class CalService:
     BASE_URL = "https://api.cal.com/v2"
 
-    def __init__(self) -> None:
-        logger.info("[OK] CalService initialized (API v2)")
+    def __init__(self, client: Optional[httpx.AsyncClient] = None) -> None:
+        self._client = client or httpx.AsyncClient(timeout=15.0)
+        logger.info("[OK] CalService initialized (Persistent HTTP Client Pool)")
 
+    @staticmethod
+    def extract_meet_link(booking: Any) -> Optional[str]:
+        """Extract meeting URL (Google Meet, Zoom, Daily.co) from Cal.com booking data."""
+        if not booking:
+            return None
+
+        data = booking.raw_data if hasattr(booking, "raw_data") else (booking if isinstance(booking, dict) else {})
+
+        # 1. Direct top-level meeting URL attributes
+        for key in ("meetingUrl", "meeting_url", "videoCallUrl", "video_call_url", "locationUrl", "location_url"):
+            if data.get(key):
+                return str(data[key])
+
+        # 2. Check metadata dictionary
+        meta = data.get("metadata") or {}
+        if isinstance(meta, dict):
+            for key in ("videoCallUrl", "video_call_url", "meetingUrl", "meeting_url"):
+                if meta.get(key):
+                    return str(meta[key])
+
+        # 3. Check references array
+        refs = data.get("references") or []
+        uid = data.get("uid")
+        if isinstance(refs, list):
+            for ref in refs:
+                if isinstance(ref, dict):
+                    ref_type = str(ref.get("type", "")).lower()
+                    if ref_type == "daily_video" and uid:
+                        return f"https://app.cal.com/video/{uid}"
+                    if ref.get("meetingUrl"):
+                        return str(ref["meetingUrl"])
+
+        return None
+
+    def _build_headers(self, cal_api_key: str) -> Dict[str, str]:
+        return {
+            "Authorization": f"Bearer {cal_api_key}",
+            "Content-Type": "application/json",
+            "cal-api-version": CAL_API_VERSION,
+        }
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=3), reraise=True)
     async def get_available_slots(
         self,
         cal_api_key: str,
@@ -23,14 +88,7 @@ class CalService:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         timezone: str = "Europe/Oslo",
-    ) -> Dict[str, Any]:
-        """
-        Fetches available slots for a specific event type using Cal.com API v2.
-        
-        Args:
-            start_date: YYYY-MM-DD (defaults to today)
-            end_date:   YYYY-MM-DD (defaults to 7 days from now)
-        """
+    ) -> SlotResponse:
         if not start_date:
             start_date = datetime.utcnow().strftime("%Y-%m-%d")
         if not end_date:
@@ -43,35 +101,21 @@ class CalService:
             "endTime": f"{end_date}T23:59:59Z",
             "timeZone": timezone,
         }
+        headers = self._build_headers(cal_api_key)
 
-        headers = {
-            "Authorization": f"Bearer {cal_api_key}",
-            "Content-Type": "application/json",
-            "cal-api-version": "2024-06-11" # Required version header for v2
-        }
+        try:
+            resp = await self._client.get(url, params=params, headers=headers)
+            if resp.status_code != 200:
+                logger.error(f"❌ Cal.com slots fetch failed | status={resp.status_code} | {resp.text}")
+                raise CalApiException(status_code=resp.status_code, detail=f"Cal.com slots fetch failed: {resp.text}")
 
-        async with httpx.AsyncClient() as client:
-            try:
-                resp = await client.get(url, params=params, headers=headers, timeout=15.0)
-                
-                if resp.status_code != 200:
-                    error_detail = resp.text
-                    logger.error(f"❌ Cal.com slots fetch failed | status={resp.status_code} | {error_detail}")
-                    raise ValueError(f"Cal.com API error {resp.status_code}: {error_detail}")
+            data = resp.json().get("data", {})
+            return SlotResponse(slots=data.get("slots", {}))
+        except httpx.RequestError as exc:
+            logger.error(f"❌ Network error fetching Cal.com slots | {exc}")
+            raise CalApiException(status_code=503, detail=f"Network error connecting to Cal.com: {exc}") from exc
 
-                data = resp.json()
-                # v2 returns slots in a slightly different structure: data['data']['slots']
-                result = data.get("data", {})
-                logger.info(
-                    f"📅 Cal.com slots fetched | event_type={event_type_id} | "
-                    f"days={len(result.get('slots', {}))}"
-                )
-                return result
-
-            except httpx.RequestError as exc:
-                logger.error(f"❌ Network error fetching Cal.com slots | {exc}")
-                raise ValueError(f"Failed to connect to Cal.com: {exc}")
-
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=3), reraise=True)
     async def create_booking(
         self,
         cal_api_key: str,
@@ -82,91 +126,39 @@ class CalService:
         ticket_id: str,
         conversation_id: str,
         timezone: str = "Europe/Oslo",
-    ) -> Dict[str, Any]:
-        """
-        Creates a booking on Cal.com v2.
-        Passes ticketId and conversationId in the metadata so the webhook can link it back.
-        """
+    ) -> BookingResponse:
         url = f"{self.BASE_URL}/bookings"
-        
         payload = {
             "eventTypeId": event_type_id,
             "start": start_time,
+            "language": "en",
             "responses": {
                 "name": user_name,
                 "email": user_email,
+                "language": "en",
             },
             "metadata": {
                 "ticketId": ticket_id,
-                "conversationId": conversation_id
+                "conversationId": conversation_id,
             },
             "timeZone": timezone,
-            "language": "en"
         }
+        headers = self._build_headers(cal_api_key)
 
-        headers = {
-            "Authorization": f"Bearer {cal_api_key}",
-            "Content-Type": "application/json",
-            "cal-api-version": "2024-06-11"
-        }
+        try:
+            resp = await self._client.post(url, json=payload, headers=headers)
+            if resp.status_code not in (200, 201):
+                logger.error(f"❌ Cal.com booking failed | status={resp.status_code} | {resp.text}")
+                raise CalApiException(status_code=resp.status_code, detail=f"Cal.com booking creation failed: {resp.text}")
 
-        async with httpx.AsyncClient() as client:
-            try:
-                resp = await client.post(url, json=payload, headers=headers, timeout=15.0)
-                
-                if resp.status_code not in (200, 201):
-                    error_detail = resp.text
-                    logger.error(f"[ERROR] Cal.com booking failed | status={resp.status_code} | {error_detail}")
-                    raise ValueError(f"Cal.com Booking error {resp.status_code}: {error_detail}")
-
-                result = resp.json()
-                data = result.get("data", result)
-                logger.info(f"[OK] Cal.com booking created | id={data.get('id')} | ticket={ticket_id}")
-                return data
-
-            except httpx.RequestError as exc:
-                logger.error(f"[ERROR] Network error creating Cal.com booking | {exc}")
-                raise ValueError(f"Failed to connect to Cal.com: {exc}")
-
-    @staticmethod
-    def extract_meet_link(booking_payload: Dict[str, Any]) -> Optional[str]:
-        """
-        Helper to find the Google Meet or Video URL in a Cal.com booking payload.
-        Handles both v1 and v2 webhook formats.
-        Prioritizes actual Google Meet/Zoom links, and uses Cal.com branded
-        video links for Cal Video (Daily) rather than direct Daily.co links.
-        """
-        # 1. Check references for external integrations (Google Meet, Zoom, etc.)
-        references = booking_payload.get("references", [])
-        for ref in references:
-            ref_url = ref.get("meetingUrl") or ref.get("url") or ""
-            if ref_url:
-                # If it's Google Meet, Zoom, or Teams, return it immediately
-                if "meet.google.com" in ref_url or "zoom.us" in ref_url or "teams.microsoft.com" in ref_url:
-                    return ref_url
-
-        # 2. Check for Cal Video / Daily.co
-        # If it's a daily.co link, we want to redirect to the Cal.com video page instead
-        uid = booking_payload.get("uid")
-        metadata = booking_payload.get("metadata") or {}
-        
-        # If there is a videoCallUrl in metadata, use it
-        video_call_url = metadata.get("videoCallUrl")
-        if video_call_url and "cal.com" in video_call_url:
-            return video_call_url
-
-        # Otherwise, if we have a uid, we can construct the Cal.com video link
-        if uid:
-            return f"https://app.cal.com/video/{uid}"
-
-        # 3. Fallback to any meetingUrl in references (even if it's daily.co)
-        for ref in references:
-            ref_url = ref.get("meetingUrl") or ref.get("url")
-            if ref_url:
-                return ref_url
-
-        # 4. Fallback to top level meetingUrl or videoCallUrl
-        if booking_payload.get("meetingUrl"):
-            return booking_payload["meetingUrl"]
-            
-        return booking_payload.get("videoCallUrl") or booking_payload.get("video_call_url")
+            data = resp.json().get("data", {})
+            return BookingResponse(
+                id=str(data.get("id", "")),
+                uid=data.get("uid"),
+                status=data.get("status", "accepted"),
+                event_type_id=event_type_id,
+                raw_data=data,
+            )
+        except httpx.RequestError as exc:
+            logger.error(f"❌ Network error creating Cal.com booking | {exc}")
+            raise CalApiException(status_code=503, detail=f"Network error connecting to Cal.com: {exc}") from exc

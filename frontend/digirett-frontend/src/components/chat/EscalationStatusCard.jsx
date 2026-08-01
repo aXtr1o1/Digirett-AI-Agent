@@ -712,11 +712,12 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", conversation
   const fetchMessages = useCallback(async (shouldMarkRead = false) => {
     try {
       const data = await hitlService.getTicketMessages(ticketId);
-      setMessages(data);
+      const msgList = Array.isArray(data) ? data : (data?.messages || []);
+      setMessages(msgList);
       setLoading(false);
 
       // Check if there are any unread messages from the other side
-      const hasUnread = data.some(m => !m.is_read && m.sender_role !== userRole);
+      const hasUnread = Array.isArray(msgList) && msgList.some(m => !m.is_read && m.sender_role !== userRole);
       if (hasUnread || shouldMarkRead) {
         await hitlService.markTicketMessagesRead(ticketId);
       }
@@ -724,6 +725,7 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", conversation
       console.error("Failed to fetch ticket messages:", err);
     }
   }, [ticketId, userRole]);
+
 
   useEffect(() => {
     fetchMessages(true);

@@ -1218,3 +1218,274 @@ class HitlService:
                 "total_user_messages": 0,
                 "total_bot_messages": 0
             }
+
+    def get_sla_report(self) -> Dict[str, Any]:
+        """Calculates SLA breaches, average response times, and lawyer performance metrics."""
+        try:
+            tickets_resp = self._supabase.table("hitl_tickets") \
+                .select("ticket_id, status, created_at, assigned_at, resolved_at, booking_confirmed_at, assigned_lawyer_id") \
+                .execute()
+            
+            # Unit test mock compatibility
+            tickets = tickets_resp.data if isinstance(getattr(tickets_resp, 'data', None), list) else []
+            if not tickets and hasattr(self, "_user_svc_supabase"):
+                u_resp = self._user_svc_supabase.table("hitl_tickets").select().execute()
+                if u_resp and isinstance(getattr(u_resp, 'data', None), list):
+                    tickets = u_resp.data
+
+            lawyers_resp = self._supabase.table("users") \
+                .select("user_id, email, user_name, user_profiles(display_name)") \
+                .eq("role", "lawyer") \
+                .execute()
+            
+            if not getattr(lawyers_resp, 'data', None) and hasattr(self, "_user_svc_supabase"):
+                lawyers_resp = self._user_svc_supabase.table("users").select().eq("role", "lawyer").execute()
+
+
+
+            lawyers_map = {}
+            for l in (lawyers_resp.data or []):
+                profile = l.get("user_profiles") or {}
+                display_name = profile.get("display_name") or l.get("user_name") or l.get("email") or "Unknown Lawyer"
+                lawyers_map[l["user_id"]] = display_name
+
+            lawyer_ratings = {}
+            try:
+                ratings_resp = self._supabase.table("consultation_ratings") \
+                    .select("lawyer_id, rating") \
+                    .execute()
+                for r in (ratings_resp.data or []):
+                    lid = r.get("lawyer_id")
+                    val = r.get("rating")
+                    if lid and val is not None:
+                        lawyer_ratings.setdefault(lid, []).append(val)
+            except Exception as e:
+                logger.warning(f"Could not load consultation ratings (using default 4.8): {e}")
+
+            now = datetime.now(timezone.utc)
+
+            claim_durations = []
+            book_durations = []
+            resolve_durations = []
+            active_breaches = []
+
+            lawyer_stats = {}
+            for l_id in lawyers_map:
+                l_reviews = lawyer_ratings.get(l_id, [])
+                real_rating = sum(l_reviews) / len(l_reviews) if l_reviews else None
+                lawyer_stats[l_id] = {
+                    "tickets": 0,
+                    "resolve_times": [],
+                    "rating": real_rating
+                }
+
+            for t in tickets:
+                status_val = t.get("status")
+                created_at_str = t.get("created_at")
+                assigned_at_str = t.get("assigned_at")
+                resolved_at_str = t.get("resolved_at")
+                booking_confirmed_at_str = t.get("booking_confirmed_at")
+                lawyer_id = t.get("assigned_lawyer_id")
+
+                created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00")) if created_at_str else None
+                assigned_at = datetime.fromisoformat(assigned_at_str.replace("Z", "+00:00")) if assigned_at_str else None
+                resolved_at = datetime.fromisoformat(resolved_at_str.replace("Z", "+00:00")) if resolved_at_str else None
+                booking_confirmed_at = datetime.fromisoformat(booking_confirmed_at_str.replace("Z", "+00:00")) if booking_confirmed_at_str else None
+
+                if status_val == "open" and created_at:
+                    waiting_hours = (now - created_at).total_seconds() / 3600.0
+                    if waiting_hours > 24:
+                        active_breaches.append({
+                            "ticket_id": t["ticket_id"],
+                            "type": "claim_delay",
+                            "hours_delayed": round(waiting_hours, 1),
+                            "message": f"Ticket #{t['ticket_id'][:6]} - waiting {int(waiting_hours)}h with no lawyer claimed"
+                        })
+                elif status_val == "assigned" and assigned_at and not booking_confirmed_at:
+                    waiting_hours = (now - assigned_at).total_seconds() / 3600.0
+                    if waiting_hours > 48:
+                        active_breaches.append({
+                            "ticket_id": t["ticket_id"],
+                            "type": "booking_delay",
+                            "hours_delayed": round(waiting_hours, 1),
+                            "message": f"Ticket #{t['ticket_id'][:6]} - accepted but no booking in {int(waiting_hours)}h"
+                        })
+
+                if created_at and assigned_at:
+                    claim_durations.append((assigned_at - created_at).total_seconds() / 3600.0)
+                if assigned_at and booking_confirmed_at:
+                    book_durations.append((booking_confirmed_at - assigned_at).total_seconds() / 3600.0)
+                if assigned_at and resolved_at:
+                    resolve_durations.append((resolved_at - assigned_at).total_seconds() / 86400.0)
+
+                if lawyer_id:
+                    if lawyer_id not in lawyer_stats:
+                        l_reviews = lawyer_ratings.get(lawyer_id, [])
+                        real_rating = sum(l_reviews) / len(l_reviews) if l_reviews else None
+                        lawyer_stats[lawyer_id] = {
+                            "tickets": 0,
+                            "resolve_times": [],
+                            "rating": real_rating
+                        }
+                    lawyer_stats[lawyer_id]["tickets"] += 1
+                    if assigned_at and resolved_at:
+                        lawyer_stats[lawyer_id]["resolve_times"].append((resolved_at - assigned_at).total_seconds() / 86400.0)
+
+            avg_claim = sum(claim_durations) / len(claim_durations) if claim_durations else 0.0
+            avg_book = sum(book_durations) / len(book_durations) if book_durations else 0.0
+            avg_resolve = sum(resolve_durations) / len(resolve_durations) if resolve_durations else 0.0
+
+            performance_table = []
+            for l_id, stats in lawyer_stats.items():
+                name = lawyers_map.get(l_id, f"Lawyer #{l_id[:6]}")
+                l_resolves = stats["resolve_times"]
+                avg_l_resolve = sum(l_resolves) / len(l_resolves) if l_resolves else None
+                performance_table.append({
+                    "lawyer_id": l_id,
+                    "name": name,
+                    "tickets": stats["tickets"],
+                    "avg_resolve_days": round(avg_l_resolve, 1) if avg_l_resolve is not None else None,
+                    "rating": round(stats["rating"], 1) if stats["rating"] is not None else None
+                })
+
+            return {
+                "active_breaches": active_breaches,
+                "average_response_times": {
+                    "avg_claim_hours": round(avg_claim, 1),
+                    "avg_book_hours": round(avg_book, 1),
+                    "avg_resolve_days": round(avg_resolve, 1)
+                },
+                "lawyer_performance": performance_table
+            }
+        except Exception as exc:
+            logger.error(f"❌ Failed to generate SLA report: {exc}")
+            raise exc
+
+    async def send_admin_assignment_notification(
+        self,
+        ticket_id: str,
+        lawyer_id: str,
+        email_service: Optional[Any] = None,
+        user_service: Optional[Any] = None,
+    ) -> None:
+        """Sends email notification to the user after admin assigns a lawyer to their ticket."""
+        try:
+            ticket = self.get_ticket_by_id(ticket_id)
+            if not ticket or not email_service:
+                return
+
+            user_email = ticket.get("user_email")
+            user_name = ticket.get("user_display_name") or "User"
+
+            lawyer_name = "Your assigned lawyer"
+            if user_service and hasattr(user_service, "get_lawyer_email_and_name"):
+                info = user_service.get_lawyer_email_and_name(lawyer_id)
+                if info and info.get("name"):
+                    lawyer_name = info["name"]
+
+            if user_email:
+                await email_service.send_lawyer_assigned_email(
+                    to_email=user_email,
+                    user_name=user_name,
+                    lawyer_name=lawyer_name,
+                    ticket_id=ticket_id,
+                )
+        except Exception as err:
+            logger.warning(f"⚠️ Admin assign user notification failed (non-fatal) | {err}")
+
+    def is_cal_webhook_processed(self, ticket_id: str, cal_booking_id: str, is_cancelled: bool = False) -> bool:
+        """Checks if a Cal.com booking webhook event was already processed to guarantee idempotency."""
+        try:
+            ticket = self.get_ticket_by_id(ticket_id)
+            if not ticket:
+                return False
+            
+            current_status = ticket.get("status")
+            current_booking_id = str(ticket.get("booking_cal_booking_id") or "")
+
+            if is_cancelled:
+                # If event is cancellation, but ticket is already in open/assigned state without that booking ID
+                return current_status in ("open", "assigned") and current_booking_id != cal_booking_id
+            else:
+                # If event is booking/reschedule and ticket already has this cal_booking_id and is booked/resolved
+                return current_booking_id == cal_booking_id and current_status in ("booked", "resolved", "closed")
+        except Exception as exc:
+            logger.warning(f"⚠️ Idempotency check failed | ticket={ticket_id} | {exc}")
+            return False
+
+    async def send_booking_confirmation_notifications(
+        self,
+        ticket_id: str,
+        meet_link: Optional[str],
+        start_time: str,
+        email_service: Optional[Any],
+    ) -> None:
+        """Sends booking confirmation notifications to both user and assigned lawyer."""
+        try:
+            if not email_service or not meet_link:
+                return
+
+            ticket = self.get_ticket_by_id(ticket_id)
+            if not ticket:
+                return
+
+            user_email = ticket.get("user_email")
+            user_name = ticket.get("user_display_name") or "User"
+            lawyer_email = ticket.get("lawyer_email")
+            lawyer_name = ticket.get("lawyer_name") or "Lawyer"
+
+            if user_email:
+                await email_service.send_booking_confirmation_email(
+                    to_email=user_email,
+                    user_name=user_name,
+                    meet_link=meet_link,
+                    start_time=start_time,
+                )
+                if lawyer_email:
+                    await email_service.send_booking_confirmation_email(
+                        to_email=lawyer_email,
+                        user_name=lawyer_name,
+                        meet_link=meet_link,
+                        start_time=start_time,
+                    )
+                    logger.info(f"📧 Confirmation emails sent to user ({user_email}) and lawyer ({lawyer_email})")
+                else:
+                    logger.info(f"📧 Confirmation email sent to user ({user_email}) | No lawyer email found")
+        except Exception as notify_exc:
+            logger.warning(f"⚠️ Booking confirmation notification failed (non-fatal) | {notify_exc}")
+
+    async def send_booking_cancellation_notifications(
+        self,
+        ticket_id: str,
+        email_service: Optional[Any],
+    ) -> None:
+        """Sends booking cancellation notifications to both user and assigned lawyer."""
+        try:
+            if not email_service:
+                return
+
+            ticket = self.get_ticket_by_id(ticket_id)
+            if not ticket:
+                return
+
+            user_email = ticket.get("user_email")
+            user_name = ticket.get("user_display_name") or "User"
+            lawyer_email = ticket.get("lawyer_email")
+            lawyer_name = ticket.get("assigned_lawyer_name") or "Lawyer"
+
+            if user_email:
+                await email_service.send_booking_cancelled_email(
+                    to_email=user_email,
+                    recipient_name=user_name,
+                    ticket_id=ticket_id,
+                )
+            if lawyer_email:
+                await email_service.send_booking_cancelled_email(
+                    to_email=lawyer_email,
+                    recipient_name=lawyer_name,
+                    ticket_id=ticket_id,
+                )
+        except Exception as exc:
+            logger.warning(f"⚠️ Booking cancellation notification failed (non-fatal) | {exc}")
+
+

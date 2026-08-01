@@ -13,7 +13,7 @@ from typing import Optional
 
 
 class _ColoredFormatter(logging.Formatter):
-    """Adds ANSI color codes per log level for terminal readability."""
+    """Adds ANSI color codes per log level and OpenTelemetry trace correlation."""
 
     COLORS = {
         "DEBUG":    "\033[36m",   # Cyan
@@ -27,6 +27,22 @@ class _ColoredFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         color = self.COLORS.get(record.levelname, self.COLORS["RESET"])
         reset = self.COLORS["RESET"]
+
+        # OpenTelemetry Trace Context Correlation
+        try:
+            from opentelemetry import trace
+            span = trace.get_current_span()
+            span_ctx = span.get_span_context() if span else None
+            if span_ctx and span_ctx.is_valid:
+                record.trace_id = f"{span_ctx.trace_id:032x}"
+                record.span_id = f"{span_ctx.span_id:016x}"
+            else:
+                record.trace_id = "0" * 32
+                record.span_id = "0" * 16
+        except Exception:
+            record.trace_id = "0" * 32
+            record.span_id = "0" * 16
+
         record.levelname = f"{color}{record.levelname}{reset}"
         return super().format(record)
 

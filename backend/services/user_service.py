@@ -14,7 +14,9 @@ import logging
 import httpx
 from datetime import datetime
 from typing import Any, Dict, Optional, List
+from pydantic import BaseModel
 from uuid import uuid4
+
 from functools import lru_cache
 from config import settings
 
@@ -22,12 +24,23 @@ from db.supabase_client import SupabaseClient
 
 logger = logging.getLogger(__name__)
 
+class AcceptInviteResult(BaseModel):
+
+    success: bool
+    status_code: int = 200
+    detail: str = ""
+    role: Optional[str] = None
+    invited_by: Optional[str] = None
+
+
+from utils.clerk_client import ClerkClient
 
 class UserService:
 
     def __init__(self, supabase_client: SupabaseClient) -> None:
         self._supabase = supabase_client
-        logger.info("[OK] UserService initialized")
+        self._clerk = ClerkClient()
+        logger.info("[OK] UserService initialized with ClerkClient")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # CREATE (called by Clerk webhook handler)
@@ -178,7 +191,6 @@ class UserService:
             logger.error(f"[ERROR] get_user_by_id failed | {exc}")
             return None
 
-    @lru_cache(maxsize=1000)
     def get_user_id_from_clerk_id(self, clerk_user_id: str, email: str = None) -> Optional[str]:
         """
         Quick lookup: Clerk user ID -> Supabase user_id.
@@ -317,75 +329,87 @@ class UserService:
     # ROLE MANAGEMENT (PHASE 2)
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    def accept_invite(self, token: str, clerk_user_id: str, email: str) -> bool:
+    async def accept_invite(self, token: str, clerk_user_id: str, email: str) -> AcceptInviteResult:
+
         """
         Accepts a pending invitation. Validates the token and email, 
         promotes the user, and marks the invite as accepted.
+        Returns an AcceptInviteResult detailing the outcome status, role, and details.
         """
         try:
             # 1. Look up the invite
-            resp = self._supabase.table("role_invites").select("*").eq("token", token).eq("status", "pending").execute()
+            resp = self._supabase.table("role_invites").select("*").eq("token", token).execute()
             if not resp.data:
-                logger.warning(f"[WARN] Invalid or expired invite token: {token}")
-                return False
-                
+                logger.warning(f"[WARN] Invite token not found: {token}")
+                return AcceptInviteResult(success=False, status_code=404, detail="Invitation token not found.")
+
             invite = resp.data[0]
-            
-            # 3. Get user_id from clerk_id
+            if invite.get("status") != "pending":
+                logger.warning(f"[WARN] Invite token already accepted/revoked: {token} (status={invite.get('status')})")
+                return AcceptInviteResult(success=False, status_code=410, detail="Invitation token has already been accepted or revoked.")
+
+            # 2. Get user_id from clerk_id
             user_id = self.get_user_id_from_clerk_id(clerk_user_id)
             if not user_id:
                 logger.error(f"[ERROR] Could not find internal user_id for clerk_id: {clerk_user_id}")
-                return False
-                
+                return AcceptInviteResult(success=False, status_code=404, detail="User account not found.")
+
             user_info = self.get_user_by_id(user_id)
             if not user_info:
                 logger.error(f"[ERROR] Could not find user info for user_id: {user_id}")
-                return False
-                
+                return AcceptInviteResult(success=False, status_code=404, detail="User record not found.")
+
             db_email = user_info.get("email")
-            
-            # 2. Validate email matches
             invite_email = invite.get("email")
-            
+
             if not invite_email or not db_email:
                 logger.warning(f"[WARN] Missing email for verification. Token email: {invite_email}, DB email: {db_email}")
-                return False
-                
+                return AcceptInviteResult(success=False, status_code=400, detail="Missing email for token verification.")
+
             if invite_email.lower() != db_email.lower():
                 logger.warning(f"[WARN] Invite email mismatch. Token email: {invite_email}, DB email: {db_email}")
-                return False
-                
+                return AcceptInviteResult(success=False, status_code=403, detail=f"This invitation token belongs to {invite_email}, not {db_email}.")
+
             role = invite["role"]
             current_role = user_info.get("role", "user")
 
             if role == "lawyer":
                 if current_role == "admin":
-                    # DUAL ROLE SCENARIO: Keep as Admin, just add Lawyer profile
                     logger.info(f"[INFO] Dual-role detected for Admin {user_id}. Creating lawyer profile...")
                     success = self.enable_lawyer_dashboard_for_admin(user_id=user_id, admin_id=user_id)
                 else:
-                    success = self.promote_to_lawyer(user_id=user_id, admin_id=None, bar_license="PENDING", bar_council="PENDING")
+                    success = await self.promote_to_lawyer(user_id=user_id, admin_id=None, bar_license="PENDING", bar_council="PENDING")
             elif role == "admin":
                 full_name = user_info.get("user_name") if user_info else "Admin"
-                success = self.promote_to_admin(user_id=user_id, admin_id="system", full_name=full_name)
+                success = await self.promote_to_admin(user_id=user_id, admin_id="system", full_name=full_name)
             elif role == "system_admin":
-                success = self.promote_to_system_admin(user_id=user_id, admin_id="system")
-                
+                success = await self.promote_to_system_admin(user_id=user_id, admin_id="system")
+            else:
+                success = True
+
             if not success:
-                return False
-                
-            # 5. Mark invite as accepted
+                return AcceptInviteResult(success=False, status_code=500, detail="Failed to update user role.")
+
+            # Mark invite as accepted
             self._supabase.table("role_invites").update({"status": "accepted"}).eq("invite_id", invite["invite_id"]).execute()
-            
-            # 6. Audit log
+
+            # Audit log
             self._log_audit("user.invite_accepted", user_id, {"role": role, "invite_id": invite["invite_id"]})
-            
+
             logger.info(f"[OK] Invite accepted for {email} -> {role}")
-            return True
-            
+            return AcceptInviteResult(
+                success=True,
+                status_code=200,
+                detail="Invitation accepted. Role updated.",
+                role=role,
+                invited_by=invite.get("invited_by"),
+            )
+
         except Exception as exc:
             logger.error(f"[ERROR] accept_invite failed | {exc}")
-            return False
+            return AcceptInviteResult(success=False, status_code=500, detail=f"Internal server error: {str(exc)}")
+
+
 
     async def invite_user(self, email: str, role: str, admin_id: str, email_service: Any, admin_email: Optional[str] = None) -> bool:
         """
@@ -703,3 +727,227 @@ class UserService:
         except Exception as exc:
             logger.error(f"❌ Failed to fetch invitations | {exc}")
             return []
+
+    def get_all_users_with_profiles(self) -> List[Dict[str, Any]]:
+        """Fetch all users joined with user_profiles and lawyer_profiles."""
+        response = (
+            self._supabase.table("users")
+            .select(
+                "*, user_profiles(display_name), "
+                "lawyer_profiles!lawyer_profiles_lawyer_id_fkey("
+                "expertise_domains, specialization_label, availability_status, last_seen_at)"
+            )
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return response.data or []
+
+    def demote_user(self, user_id: str) -> bool:
+        """Demotes a user/lawyer back to role 'user'."""
+        user_info = self.get_user_by_id(user_id)
+        if not user_info:
+            return False
+        self._supabase.table("users").update({"role": "user"}).eq("user_id", user_id).execute()
+        self._sync_clerk_role(user_info["clerk_user_id"], "user")
+        return True
+
+    def get_all_lawyers_with_cal(self) -> List[Dict[str, Any]]:
+        """Fetch list of all lawyers with their Cal.com setup status."""
+        resp = (
+            self._supabase.table("users")
+            .select(
+                "user_id, email, user_name, role, "
+                "user_profiles(display_name), "
+                "lawyer_profiles!inner(cal_event_type_id, cal_api_key, verification_status, expertise_domains, specialization_label)"
+            )
+            .order("created_at", desc=False)
+            .execute()
+        )
+        lawyers = []
+        for u in (resp.data or []):
+            profile = u.get("user_profiles") or {}
+            lp = u.get("lawyer_profiles") or {}
+            lawyers.append({
+                "user_id": u["user_id"],
+                "email": u.get("email"),
+                "display_name": profile.get("display_name") or u.get("user_name"),
+                "cal_configured": bool(lp.get("cal_api_key") and lp.get("cal_event_type_id")),
+                "expertise_domains": lp.get("expertise_domains") or [],
+                "specialization_label": lp.get("specialization_label"),
+            })
+        return lawyers
+
+    def update_lawyer_cal_credentials(self, lawyer_id: str, cal_api_key: str, cal_event_type_id: str) -> bool:
+        """Update Cal.com credentials for a specific lawyer."""
+        resp = (
+            self._supabase.table("lawyer_profiles")
+            .update({
+                "cal_api_key": cal_api_key,
+                "cal_event_type_id": cal_event_type_id,
+            })
+            .eq("lawyer_id", lawyer_id)
+            .execute()
+        )
+        return bool(resp.data)
+
+    def update_lawyer_specialization(self, lawyer_id: str, expertise_domains: List[str], specialization_label: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Update expertise domains and specialization label for a lawyer profile."""
+        resp = (
+            self._supabase.table("lawyer_profiles")
+            .update({
+                "expertise_domains": expertise_domains,
+                "specialization_label": specialization_label,
+            })
+            .eq("lawyer_id", lawyer_id)
+            .execute()
+        )
+        return resp.data[0] if resp.data else None
+
+    def get_lawyer_email_and_name(self, lawyer_id: str) -> Optional[Dict[str, str]]:
+        """Utility to fetch email and display name for a lawyer."""
+        lawyer_user_resp = (
+            self._supabase.table("users")
+            .select("email, user_profiles(display_name)")
+            .eq("user_id", lawyer_id)
+            .execute()
+        )
+        if lawyer_user_resp.data:
+            lawyer_user = lawyer_user_resp.data[0]
+            lawyer_email = lawyer_user.get("email")
+            lawyer_profile = lawyer_user.get("user_profiles") or {}
+            lawyer_name = lawyer_profile.get("display_name") or (lawyer_email.split("@")[0] if lawyer_email else "Lawyer")
+            return {"email": lawyer_email, "name": lawyer_name}
+        return None
+
+    def get_domain_analytics(self) -> Dict[str, Any]:
+        """Calculates domain query distribution analytics across assistant messages."""
+        from config_domains import DOMAINS_CANONICAL
+        DOMAIN_DISPLAY_NAMES = {
+            "arbeidsrett": "Employment Law (Arbeidsrett)",
+            "arsregnskap_og_selskapsrapportering": "Financial Statements & Reporting (Årsregnskap og Selskapsrapportering)",
+            "avtalerett": "Contract Law (Avtalerett)",
+            "inkasso_og_tvangsfullbyrdelse": "Debt Collection & Enforcement (Inkasso og Tvangsfullbyrdelse)",
+            "konkursrett_og_insolvens": "Bankruptcy & Insolvency (Konkursrett og Insolvens)",
+            "manda_fusjon_fisjon": "M&A, Mergers & Acquisitions (M&A, Fusjon, Fisjon)",
+            "obligasjonsrett": "Law of Obligations (Obligasjonsrett)",
+            "panterett_og_sikkerhetsrett": "Liens & Security Rights (Panterett og Sikkerhetsrett)",
+            "pengekravsrett_fordringer": "Monetary Claims & Debt (Pengekravsrett og Fordringer)",
+            "personvern_gdpr_business_compliance": "Privacy & GDPR Compliance (Personvern, GDPR & Compliance)",
+            "selskapsrett": "Company Law (Selskapsrett)",
+            "tvistelosning_smb": "Dispute Resolution for SMBs (Tvisteløsning, SMB)",
+            "straffeloven": "Criminal Law (Straffeloven)",
+            "strafferett": "Criminal Law (Strafferett)",
+            "familierett": "Family Law (Familierett)",
+            "arverett": "Inheritance Law (Arverett)",
+            "skatterett": "Tax Law (Skatterett)",
+            "utlendingsrett": "Immigration Law (Utlendingsrett)",
+            "forvaltningsrett": "Administrative Law (Forvaltningsrett)",
+            "tingsrett": "Property Law (Tingsrett)",
+            "erstatningsrett": "Tort Law (Erstatningsrett)",
+            "immaterialrett": "Intellectual Property Law (Immaterialrett)",
+            "entrepriserett": "Construction Law (Entrepriserett)",
+            "miljorett": "Environmental Law (Miljørett)",
+        }
+
+        resp = (
+            self._supabase.table("messages")
+            .select("metadata")
+            .eq("role", "assistant")
+            .execute()
+        )
+
+        counts = {}
+        total = 0
+        for msg in (resp.data or []):
+            meta = msg.get("metadata") or {}
+            domain = meta.get("detected_domain")
+            if domain:
+                counts[domain] = counts.get(domain, 0) + 1
+                total += 1
+
+        distribution = []
+        for domain, count in counts.items():
+            lower_domain = domain.lower()
+            if lower_domain in DOMAIN_DISPLAY_NAMES:
+                display_name = DOMAIN_DISPLAY_NAMES[lower_domain]
+            else:
+                display_name = lower_domain.replace("_", " ").title()
+                display_name = f"{display_name} ({domain})"
+
+            distribution.append({
+                "name": display_name,
+                "raw_key": lower_domain,
+                "is_canonical": lower_domain in DOMAINS_CANONICAL,
+                "queries": count,
+                "percentage": round((count / total) * 100, 1) if total > 0 else 0
+            })
+
+        distribution.sort(key=lambda x: x["queries"], reverse=True)
+        return {"total": total, "distribution": distribution}
+
+    def get_stripe_customer_id(self, user_id: str) -> Optional[str]:
+        """Fetches stored stripe_customer_id for a user from the users table."""
+        try:
+            resp = self._supabase.table("users").select("stripe_customer_id").eq("user_id", user_id).limit(1).execute()
+            if resp.data and len(resp.data) > 0:
+                return resp.data[0].get("stripe_customer_id")
+        except Exception as exc:
+            logger.warning(f"⚠️ Could not fetch stripe_customer_id for user {user_id}: {exc}")
+        return None
+
+    def set_stripe_customer_id(self, user_id: str, customer_id: str) -> bool:
+        """Stores stripe_customer_id on the user row for future lookups."""
+        try:
+            resp = self._supabase.table("users").update({"stripe_customer_id": customer_id}).eq("user_id", user_id).execute()
+            return bool(resp.data)
+        except Exception as exc:
+            logger.warning(f"⚠️ Failed to update stripe_customer_id for user {user_id}: {exc}")
+            return False
+
+    def get_lawyer_cal_credentials(self, lawyer_id: str) -> Optional[Dict[str, Any]]:
+        """Fetches cal_api_key and cal_event_type_id for a lawyer from lawyer_profiles table."""
+        try:
+            resp = (
+                self._supabase.table("lawyer_profiles")
+                .select("cal_api_key, cal_event_type_id")
+                .eq("lawyer_id", lawyer_id)
+                .limit(1)
+                .execute()
+            )
+            if resp.data and len(resp.data) > 0:
+                return resp.data[0]
+        except Exception as exc:
+            logger.error(f"❌ Failed to fetch Cal.com credentials for lawyer {lawyer_id}: {exc}")
+        return None
+
+    def get_user_profile_for_booking(self, user_id: str) -> Dict[str, str]:
+        """Fetches email and display name for a user for booking creation."""
+        try:
+            resp = (
+                self._supabase.table("users")
+                .select("email, user_name, user_profiles(display_name)")
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
+            if resp.data and len(resp.data) > 0:
+                user_data = resp.data[0]
+                profile = user_data.get("user_profiles") or {}
+                display_name = profile.get("display_name") or user_data.get("user_name") or "User"
+                email = user_data.get("email") or ""
+                return {"user_name": display_name, "email": email}
+        except Exception as exc:
+            logger.error(f"❌ Failed to fetch user profile for booking | user={user_id} | {exc}")
+        return {"user_name": "User", "email": ""}
+
+    def get_user_role(self, clerk_user_id: str) -> str:
+        """Resolves user role by clerk_user_id from the database."""
+        try:
+            resp = self._supabase.table("users").select("role").eq("clerk_user_id", clerk_user_id).single().execute()
+            if resp.data:
+                return resp.data.get("role", "user")
+        except Exception as exc:
+            logger.warning(f"⚠️ get_user_role failed for clerk_id={clerk_user_id}: {exc}")
+        return "user"
+
+

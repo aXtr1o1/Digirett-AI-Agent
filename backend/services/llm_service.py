@@ -61,13 +61,108 @@ class LLMService:
             logger.error(f"[ERROR] LLMService init failed | {exc}", exc_info=True)
             raise
 
-    # ── Factory methods (used by RAGService to wire OrchestratorAgent) ──
+    def get_llm_client(self) -> AzureChatOpenAI:
+        """Returns the underlying AzureChatOpenAI LLM client."""
+        return self._llm
+
+    async def agenerate(self, prompt: str) -> str:
+        """Helper method to generate text asynchronously using the underlying LLM client."""
+        response = await self._llm.agenerate([[HumanMessage(content=prompt)]])
+        return response.generations[0][0].text.strip()
+
+    def create_classifier_llm(self, temperature: float = 0.0) -> AzureChatOpenAI:
+        """Factory method creating an LLM client instance for classification tasks."""
+        return AzureChatOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+            temperature=temperature,
+        )
+
+    def create_qa_llm(self, temperature: float = 0.2, streaming: bool = True) -> AzureChatOpenAI:
+        """Factory method creating an LLM client instance for document QA & hybrid retrieval tasks."""
+        return AzureChatOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+            temperature=temperature,
+            streaming=streaming,
+        )
+
+    def get_document_qa_agent(self) -> Any:
+        """Factory method returning an initialized DocumentQAAgent with injected LLM."""
+        from agents.document_qa_agent import DocumentQAAgent
+        return DocumentQAAgent(llm=self.create_qa_llm(temperature=0.2, streaming=True))
+
+    def get_document_classifier_agent(self) -> Any:
+        """Factory method returning an initialized DocumentClassifierAgent with injected LLM."""
+        from agents.document_classifier_agent import DocumentClassifierAgent
+        return DocumentClassifierAgent(llm=self.create_classifier_llm(temperature=0.0))
+
+
+    def create_reasoning_llm(self, temperature: float = 0.0) -> AzureChatOpenAI:
+        """Factory method creating an LLM client instance for legal query reasoning tasks."""
+        return AzureChatOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+            temperature=temperature,
+        )
+
+    def get_query_reasoning_agent(self) -> Any:
+        """Factory method returning an initialized QueryReasoningAgent with injected LLM."""
+        from agents.query_reasoning_agent import QueryReasoningAgent
+        return QueryReasoningAgent(llm=self.create_reasoning_llm(temperature=0.0))
+
+    def create_router_llm(self, temperature: float = 0.0) -> AzureChatOpenAI:
+        """Factory method creating an LLM client instance for routing tasks."""
+        return AzureChatOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+            temperature=temperature,
+        )
+
+    def get_user_memory_agent(self, supabase_client: Any) -> Any:
+        """Factory method returning an initialized UserMemoryAgent with injected LLM."""
+        from agents.user_memory_agent import UserMemoryAgent
+        return UserMemoryAgent(supabase_client=supabase_client, llm=self.create_generator_llm(temperature=0.0))
+
+    def create_generator_llm(self, temperature: float = 0.7, streaming: bool = True) -> AzureChatOpenAI:
+
+
+
+        """Factory method creating an LLM client instance for response generation."""
+        return AzureChatOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+            temperature=temperature,
+            streaming=streaming,
+        )
+
+    def create_intent_llm(self, temperature: float = 0.1) -> AzureChatOpenAI:
+        """Factory method creating an LLM client instance for intent classification."""
+        return AzureChatOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+            temperature=temperature,
+        )
 
     def get_intent_agent(self) -> IntentAgent:
-        return self._intent_agent
+        return IntentAgent(llm=self.create_intent_llm(temperature=0.1))
 
     def get_generator_agent(self) -> GeneratorAgent:
-        return self._generator_agent
+        return GeneratorAgent(llm=self.create_generator_llm(temperature=0.7))
+
+
 
     # ── Public generation methods ─────────────────────────────────────────
 
@@ -291,28 +386,22 @@ class LLMService:
 
         messages = [
             SystemMessage(content=(
-                "You are a document summarizer. "
-                "Identify the language of the document and Strictly respond ONLY in that language. "
-                "English document → English summary. "
-                "Norwegian document → Norwegian summary. "
-                "Never translate. Never switch languages. and Never mix languages in your response."
+                "You are an expert legal document summarizer. "
+                "Identify the language of the document and strictly respond ONLY in that language. "
+                "English document → English summary. Norwegian document → Norwegian summary. "
+                "Format your summary cleanly using standard Markdown formatting: "
+                "use bold section headers (e.g., **Key Details**, **Main Purpose**, **Core Findings**) "
+                "and clean bullet points with line breaks between paragraphs. "
+                "Never output single monolithic blocks of unformatted text or inline bullet points with bullet symbols like '•'."
             )),
             HumanMessage(content=(
-                f"Summarize the following document in 3-5 sentences. "
-                f"Cover only the main purpose and key points. "
-                f"Do not use code blocks or backticks.\n\n"
+                f"Provide a structured summary of the following document using Markdown headings and bullet points.\n\n"
                 f"DOCUMENT:\n{truncated}"
             )),
         ]
 
-        llm = AzureChatOpenAI(
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-            api_key=settings.AZURE_OPENAI_API_KEY,
-            api_version=settings.AZURE_OPENAI_API_VERSION,
-            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
-            temperature=0.3,
-            streaming=True,
-        )
+
+        llm = self.create_qa_llm(temperature=0.3, streaming=True)
 
         async with llm_span("document_summarization"):
             async for chunk in llm.astream(messages):

@@ -69,13 +69,15 @@ export default function TicketDetailsPage() {
 
   const checkUnreadStatus = useCallback(async () => {
     try {
-      const msgs = await hitlService.getTicketMessages(id);
-      const hasUnread = msgs.some(m => !m.is_read && m.sender_role === "user");
+      const data = await hitlService.getTicketMessages(id);
+      const msgs = Array.isArray(data) ? data : (data?.messages || []);
+      const hasUnread = Array.isArray(msgs) && msgs.some(m => !m.is_read && m.sender_role === "user");
       setHasUnreadMessages(hasUnread);
     } catch (err) {
       console.error("Failed to check unread messages:", err);
     }
   }, [id]);
+
 
   const fetchData = useCallback(async () => {
     try {

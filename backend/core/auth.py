@@ -1,32 +1,13 @@
-"""
-core/auth.py — Clerk JWT verification + role-based access middleware
-
-HOW IT WORKS:
-1. Every HTTP request that needs auth passes through `get_current_user()`.
-   It reads the `Authorization: Bearer <token>` header, verifies the JWT
-   against Clerk's JWKS endpoint (RS256), and returns a `ClerkUser` dict
-   with clerk_user_id, email, and role.
-
-2. `require_role(*allowed_roles)` is a FastAPI dependency that wraps
-   `get_current_user()` and checks if the user's role is in the
-   allowed set. Returns 403 if not.
-
-3. For WebSocket routes (chat), use `verify_ws_token(token)` directly
-   since FastAPI dependencies don't work on raw WebSocket handlers.
-
-JWKS CACHING:
-Clerk's JWKS (public keys) are fetched once at startup and cached in-memory.
-They auto-refresh every 6 hours or on verification failure (key rotation).
-"""
-
 import logging
 import time
 from typing import Any, Dict, List, Optional
-
+import json
 import httpx
 from fastapi import Depends, HTTPException, Request, status
-from jose import JWTError, jwt
 
+import jwt
+from jwt import PyJWTError
+from jwt.algorithms import RSAAlgorithm
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -160,17 +141,30 @@ async def verify_token(token: str) -> ClerkUser:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token signing key not found",
             )
+        # Convert Clerk's JWK dictionary into an RSA public key.
+        public_key = RSAAlgorithm.from_jwk(json.dumps(rsa_key))
 
-        # Verify and decode the JWT with leeway to prevent race conditions
+        # Options for verify_iss and verify_aud
+        decode_options = {
+            "verify_aud": bool(getattr(settings, "CLERK_AUDIENCE", None)),
+            "verify_iss": bool(getattr(settings, "CLERK_ISSUER", None)),
+            "require": ["exp", "iat", "sub"],
+        }
+        decode_kwargs = {
+            "algorithms": ["RS256"],
+            "options": decode_options,
+            "leeway": 60,
+        }
+        if getattr(settings, "CLERK_ISSUER", None):
+            decode_kwargs["issuer"] = settings.CLERK_ISSUER
+        if getattr(settings, "CLERK_AUDIENCE", None):
+            decode_kwargs["audience"] = settings.CLERK_AUDIENCE
+
+        # Verify and decode the Clerk JWT.
         payload = jwt.decode(
             token,
-            rsa_key,
-            algorithms=["RS256"],
-            options={
-                "verify_aud": False,  # Clerk doesn't always set audience
-                "verify_iss": False,  # We validate via JWKS instead
-                "leeway": 60,         # Prevent 401 Signature Expired errors due to clock skew
-            },
+            public_key,
+            **decode_kwargs,
         )
 
         clerk_user_id = payload.get("sub")
@@ -204,7 +198,7 @@ async def verify_token(token: str) -> ClerkUser:
 
     except HTTPException:
         raise
-    except JWTError as exc:
+    except PyJWTError as exc:
         logger.warning(f"⚠️ JWT verification failed | {exc}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -259,8 +253,9 @@ async def get_current_user(request: Request = None, websocket: WebSocket = None,
     
     token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else auth_header
     
-    # 0. Check for Static API Key (for Swagger/Admin)
-    if hasattr(settings, "BACKEND_API_KEY") and token == settings.BACKEND_API_KEY:
+    # 0. Check for Static API Key (restricted to non-production environments)
+    is_prod = getattr(settings, "ENVIRONMENT", "development").lower() == "production"
+    if not is_prod and hasattr(settings, "BACKEND_API_KEY") and settings.BACKEND_API_KEY and token == settings.BACKEND_API_KEY:
         return ClerkUser({
             "clerk_user_id": "swagger_admin",
             "email": "admin@digirett.no",
@@ -273,44 +268,44 @@ async def get_current_user(request: Request = None, websocket: WebSocket = None,
     # 1. Verify Clerk JWT
     user = await verify_token(auth_header)
     
-    # 2. Authoritative check against Supabase
-    import asyncio
+    # 2. Authoritative enrichment from Supabase
     from db.supabase_client import get_supabase
-    supabase = get_supabase()
+    return await enrich_user_from_database(user, get_supabase())
+
+
+async def enrich_user_from_database(user: ClerkUser, supabase: Any) -> ClerkUser:
+    """Shared helper to fetch and attach database role and status to ClerkUser."""
+    if not user or not user.clerk_user_id:
+        return user
+
+    import asyncio
     try:
-        # Check status and role using a background thread to prevent event loop blocking
         def fetch_user_status():
             query = supabase.table("users") \
                 .select("user_id, role, status") \
                 .eq("clerk_user_id", user.clerk_user_id) \
                 .limit(1)
             return supabase.execute_query(query)
-        
+
         resp = await asyncio.to_thread(fetch_user_status)
-        
-        if resp.data:
-            db_user = resp.data[0]
-            # ENFORCEMENT: Block suspended users
+
+        if resp and resp.data:
+            db_user = resp.data[0] if isinstance(resp.data, list) else resp.data
             if db_user.get("status") == "suspended":
                 logger.warning(f"🚫 Suspended user attempt | user={user.clerk_user_id}")
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Your account has been suspended. Please contact support."
                 )
-            
-            # ENRICHMENT: Add DB info to user object
+
             user["db_user_id"] = db_user.get("user_id")
             user["db_role"] = db_user.get("role")
             user["status"] = db_user.get("status")
-            
     except HTTPException:
         raise
     except Exception as exc:
-        # We don't fail the request if DB is down, but we log it
-        # This allows basic chat/auth to work if Supabase has a blip, 
-        # though role-specific logic might fail later.
-        logger.error(f"⚠️ Global user status check failed | {exc}")
-        
+        logger.error(f"⚠️ User status check failed | {exc}")
+
     return user
 
 
@@ -318,15 +313,6 @@ def require_role(*allowed_roles: str):
     """
     FastAPI dependency factory — checks that the authenticated user
     has one of the specified roles.
-
-    Usage:
-        @router.get("/admin/users")
-        async def list_users(user: ClerkUser = Depends(require_role("admin"))):
-            ...
-
-        @router.get("/lawyer/tickets")
-        async def tickets(user: ClerkUser = Depends(require_role("lawyer", "admin"))):
-            ...
     """
     async def _role_checker(user: ClerkUser = Depends(get_current_user)) -> ClerkUser:
         allowed = list(allowed_roles)
@@ -355,34 +341,12 @@ def require_db_role(*allowed_roles: str):
     roles according to the authoritative role stored in the Supabase `users` table.
     """
     async def _db_role_checker(user: ClerkUser = Depends(get_current_user)) -> ClerkUser:
-        # Use enriched db_role from get_current_user if available
         db_role = user.db_role
-        
-        # Fallback in case get_current_user's enrichment failed (unlikely)
         if not db_role:
-            import asyncio
             from db.supabase_client import get_supabase
-            supabase = get_supabase()
-            try:
-                def fetch_fallback_role():
-                    query = supabase.table("users").select("user_id, role, status").eq("clerk_user_id", user.clerk_user_id).single()
-                    return supabase.execute_query(query)
-                
-                resp = await asyncio.to_thread(fetch_fallback_role)
-                if resp.data:
-                    db_user = resp.data
-                    db_role = db_user.get("role")
-                    # Enrich the user object
-                    user["db_user_id"] = db_user.get("user_id")
-                    user["db_role"] = db_role
-                    user["status"] = db_user.get("status")
-                else:
-                    db_role = None
-            except Exception as exc:
-                logger.error(f"❌ DB role check fallback failed for {user.clerk_user_id} | {exc}")
-                db_role = None
+            user = await enrich_user_from_database(user, get_supabase())
+            db_role = user.db_role
 
-        # Allow system_admin to access admin and lawyer endpoints as well
         allowed = list(allowed_roles)
         if "admin" in allowed and "system_admin" not in allowed:
             allowed.append("system_admin")
@@ -399,6 +363,7 @@ def require_db_role(*allowed_roles: str):
             )
         return user
     return _db_role_checker
+
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

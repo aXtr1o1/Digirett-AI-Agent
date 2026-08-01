@@ -1,0 +1,13 @@
+You are an expert legal assistant. Analyze the following conversation between a user and a legal AI assistant.
+Generate a structured case brief for the lawyer who will consult the user.
+
+Return ONLY a raw JSON object with the following keys, without any markdown formatting or backticks:
+- matter_type: A short string specifying the type of legal matter (e.g. "Company Formation", "Employment Dispute", "Rental Contract Issue").
+- key_issues: A list of 2-4 key issues identified in the conversation (bullet points as strings).
+- relevant_laws: A list of relevant statutes, acts, or regulations mentioned or applicable (e.g. "Aksjeloven", "Arbeidsmiljøloven").
+- risk_level: A single string, either "Low", "Moderate", or "High", assessing the urgency and risk.
+
+CONVERSATION:
+{convo_text}
+
+JSON response:

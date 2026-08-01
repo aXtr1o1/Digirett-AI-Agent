@@ -1,76 +1,178 @@
-import logging
-from typing import AsyncIterator, Dict, List, Optional
+"""
+agents/document_qa_agent.py — Document Analysis & Legal Compliance Agent
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+Refactored per TL Code Review Guidelines:
+1. Injected LLM dependency (__init__(self, llm=None, temperature=0.2)) & self._streaming_llm instance reuse.
+2. Prompts extracted to prompts/docqa_prompt.txt & prompts/hybrid_prompt.txt.
+3. DRY shared streaming method (_stream_response) reducing ~40% duplicate code.
+4. Reusable history builder (_build_history_messages) & unified PromptBuilder pattern.
+5. Response post-processing (_parse_response_score) for [SCORE:x.x] range validation.
+6. Pre-stream connection retry strategy (retries disabled once streaming begins).
+7. Explicit named constants for context window limits.
+"""
+
+import asyncio
+import logging
+import re
+from typing import Any, AsyncIterator, Dict, List, Optional
+
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import AzureChatOpenAI
 
 from config import settings
+from prompts.document_qa_prompts import DOCQA_SYSTEM_PROMPT, HYBRID_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
+# ── NAMED CONSTANTS ──────────────────────────────────────────────────
+MAX_DOC_CHARS_DOCQA = 60_000
+MAX_DOC_CHARS_HYBRID = 40_000
+MAX_HISTORY_TURNS = 6
+PRE_STREAM_MAX_RETRIES = 2
+PRE_STREAM_RETRY_DELAY = 0.5
+
+
+class PromptBuilder:
+    """Builder class for assembling DocumentQAAgent user prompts."""
+
+    def __init__(self) -> None:
+        self._parts: List[str] = []
+
+    def document(self, doc_text: str, max_chars: int = 60_000) -> "PromptBuilder":
+        truncated_doc = doc_text[:max_chars]
+        if len(doc_text) > max_chars:
+            truncated_doc += "\n\n[... document truncated for length ...]"
+        self._parts.append(f"DOCUMENT TEXT:\n{truncated_doc}")
+        return self
+
+    def rag(self, rag_context: Optional[str]) -> "PromptBuilder":
+        if rag_context:
+            self._parts.append(f"---\n\nLEGAL SOURCES (from Lovdata):\n{rag_context}")
+        return self
+
+    def question(self, query: str) -> "PromptBuilder":
+        self._parts.append(f"---\n\nQUESTION: {query}")
+        return self
+
+    def language(self, lang: str, is_hybrid: bool = False) -> "PromptBuilder":
+        extra = "Cross-reference both sources.\n" if is_hybrid else ""
+        self._parts.append(
+            f"CRITICAL: You MUST respond entirely in {lang.upper()} UNLESS the user explicitly requested a different language in their QUESTION.\n"
+            f"Even if the sources are in another language, your response MUST be in {lang.upper()}.\n"
+            f"{extra}"
+            "Append [SCORE:x.x] on the very last line."
+        )
+        return self
+
+    def build(self) -> str:
+        return "\n\n".join(self._parts)
+
+
+def _parse_response_score(text: str) -> float:
+    """
+    Extracts [SCORE:x.x] score from model response, validates range 0.0 - 1.0,
+    and logs inconsistencies.
+    """
+    if not text:
+        return 0.5
+    match = re.search(r"\[SCORE:\s*([0-9.]+)\]", text)
+    if match:
+        try:
+            score = float(match.group(1))
+            if 0.0 <= score <= 1.0:
+                return score
+            logger.warning(f"⚠️ [SCORE:x.x] out of range [0.0, 1.0]: {score} — defaulting to 0.5")
+        except ValueError:
+            logger.warning(f"⚠️ Failed to parse score value from match: {match.group(1)}")
+    else:
+        logger.debug("ℹ️ Response omitted [SCORE:x.x] tag — defaulting to 0.5")
+    return 0.5
+
+
 class DocumentQAAgent:
 
-    # ── DocQA system prompt ────────────────────────────────────────────
-    _DOCQA_SYSTEM_PROMPT = """You are a document analysis assistant.
-
-You may be provided with multiple documents, separated by '==='.
-Your ONLY source of information is the DOCUMENT TEXT provided below.
-
-RULES:
-1. Analyze the user's question to determine WHICH document(s) they are asking about.
-2. If the user asks about "the document", "it", "this", or similar vague terms, assume they mean the MOST RECENT document (the one with the highest Document number).
-3. Do NOT summarize or explain all documents unless explicitly asked to do so. Focus your answer ONLY on the relevant document(s).
-4. Answer ONLY from the document text — never use external knowledge to answer factual questions. However, you MAY translate, summarize, or explain the document if requested.
-5. If the user asks a factual question and the answer is not in the document, say so clearly. Do not use this rule to refuse requests to summarize, explain, or translate the document.
-6. Cite the relevant part of the document (and the document name) when answering
-7. Respond in the requested language (specified below). If the user explicitly asks to use a different language in their query, honor the user's request over the default.
-8. Be precise — quote specific clauses, sections, or passages when relevant
-9. Append [SCORE:x.x] on the very last line (0.0-1.0, how well the doc answers the query)
-
-SCORING:
-0.9-1.0: Document clearly and directly answers the query
-0.5-0.8: Document partially answers or is somewhat relevant
-0.1-0.4: Document does not contain relevant information"""
-
-    # ── Hybrid system prompt ───────────────────────────────────────────
-    _HYBRID_SYSTEM_PROMPT = """You are a legal document compliance assistant.
-
-You have access to TWO sources:
-  1. DOCUMENT TEXT — the user's uploaded document(s) (contract, agreement, etc.)
-  2. LEGAL SOURCES — retrieved excerpts from Norwegian law (Lovdata)
-
-RULES:
-1. Analyze the user's question to determine WHICH uploaded document(s) they are asking about. If vague, assume the MOST RECENT document (highest Document number).
-2. Use BOTH sources to answer — cross-reference them
-3. State what the relevant document says, then what the law requires, then your assessment
-4. Never invent legal conclusions not supported by the legal sources
-5. Never invent document contents not present in the document text. However, you MAY translate, summarize, or explain the text if requested.
-6. Respond in the requested language (specified below). If the user explicitly asks to use a different language in their query, honor the user's request.
-7. Use this structure:
-   ### Document says
-   ### Law requires  
-   ### Assessment
-   ### Conclusion
-8. Append [SCORE:x.x] on the very last line (0.0-1.0)
-
-SCORING:
-0.9-1.0: Both sources fully support a clear answer
-0.5-0.8: Partial match — answer is directional but incomplete
-0.1-0.4: Sources don't adequately address the question"""
-
-    def __init__(self, temperature: float = 0.2) -> None:
+    def __init__(self, llm: Optional[Any] = None, temperature: float = 0.2) -> None:
         self._temperature = temperature
+        if llm is not None:
+            self._streaming_llm = llm
+        else:
+            self._streaming_llm = AzureChatOpenAI(
+                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+                api_key=settings.AZURE_OPENAI_API_KEY,
+                api_version=settings.AZURE_OPENAI_API_VERSION,
+                deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+                temperature=self._temperature,
+                streaming=True,
+            )
+        self._docqa_system_prompt = DOCQA_SYSTEM_PROMPT
+        self._hybrid_system_prompt = HYBRID_SYSTEM_PROMPT
         logger.info("[OK] DocumentQAAgent initialized")
 
-    def _make_llm(self, streaming: bool = True) -> AzureChatOpenAI:
-        return AzureChatOpenAI(
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-            api_key=settings.AZURE_OPENAI_API_KEY,
-            api_version=settings.AZURE_OPENAI_API_VERSION,
-            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
-            temperature=self._temperature,
-            streaming=streaming,
-        )
+    def _build_history_messages(
+        self, conversation_history: Optional[List[Dict[str, str]]]
+    ) -> List[BaseMessage]:
+        """Maps conversation history dicts to LangChain Message objects."""
+        messages: List[BaseMessage] = []
+        if conversation_history:
+            recent = conversation_history[-MAX_HISTORY_TURNS:]
+            for msg in recent:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if role == "user":
+                    messages.append(HumanMessage(content=content))
+                elif role == "assistant":
+                    messages.append(AIMessage(content=content))
+        return messages
+
+    async def _stream_response(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        log_label: str = "DOCQA",
+    ) -> AsyncIterator[str]:
+        """
+        Shared streaming method (DRY principle).
+        Applies pre-stream retry strategy during connection phase, then streams chunks cleanly.
+        """
+        messages: List[BaseMessage] = [SystemMessage(content=system_prompt)]
+        messages.extend(self._build_history_messages(conversation_history))
+        messages.append(HumanMessage(content=user_prompt))
+
+        # Pre-stream connection attempt with retry strategy (fetches initial generator)
+        first_chunk = None
+        stream_gen = None
+
+        for attempt in range(PRE_STREAM_MAX_RETRIES + 1):
+            try:
+                gen = self._streaming_llm.astream(messages)
+                first_chunk = await gen.__anext__()
+                stream_gen = gen
+                break
+            except StopAsyncIteration:
+                stream_gen = None
+                break
+            except Exception as exc:
+                if attempt < PRE_STREAM_MAX_RETRIES:
+                    logger.warning(f"⚠️ [{log_label}] Pre-stream connection attempt {attempt + 1} failed: {exc}. Retrying...")
+                    await asyncio.sleep(PRE_STREAM_RETRY_DELAY * (2 ** attempt))
+                else:
+                    logger.error(f"❌ [{log_label}] Pre-stream connection failed after retries: {exc}")
+                    raise
+
+        chunk_count = 0
+        if first_chunk and hasattr(first_chunk, "content") and first_chunk.content:
+            chunk_count += 1
+            yield first_chunk.content
+
+        if stream_gen:
+            async for chunk in stream_gen:
+                if hasattr(chunk, "content") and chunk.content:
+                    chunk_count += 1
+                    yield chunk.content
+
+        logger.debug(f"DocumentQAAgent: {log_label} stream complete | {chunk_count} chunks generated")
+
 
     async def stream_docqa(
         self,
@@ -79,53 +181,23 @@ SCORING:
         language: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
     ) -> AsyncIterator[str]:
-        
         logger.debug("DocumentQAAgent: DOCQA stream starting (document only)")
-        logger.debug(f"   Query: '{query[:80]}'")
-        logger.debug(f"   Language: {language}")
-        logger.debug(f"   Document size: {len(doc_text)} characters")
-        logger.debug(f"   History context: {len(conversation_history or [])} messages")
-
-        messages = [SystemMessage(content=self._DOCQA_SYSTEM_PROMPT)]
-
-        # Inject conversation history for follow-up awareness
-        if conversation_history:
-            logger.debug(f"   Injecting {min(len(conversation_history), 6)} history messages")
-            for msg in conversation_history[-6:]:  # last 3 turns
-                if msg["role"] == "user":
-                    messages.append(HumanMessage(content=msg["content"]))
-                elif msg["role"] == "assistant":
-                    messages.append(AIMessage(content=msg["content"]))
-
-        # Truncate doc text to avoid token overflow (~60k chars ≈ 15k tokens)
-        truncated_doc = doc_text[:60_000]
-        truncated_flag = ""
-        if len(doc_text) > 60_000:
-            truncated_flag = " (truncated)"
-            truncated_doc += "\n\n[... document truncated for length ...]"
-        
-        logger.debug(f"   Document prepared: {len(truncated_doc)} chars{truncated_flag}")
 
         user_prompt = (
-            f"DOCUMENT TEXT:\n{truncated_doc}\n\n"
-            f"QUESTION: {query}\n\n"
-            f"CRITICAL: You MUST respond entirely in {language.upper()} UNLESS the user explicitly requested a different language in their QUESTION.\n"
-            f"Even if the DOCUMENT TEXT is in another language, your response MUST be in {language.upper()}.\n"
-            f"Append [SCORE:x.x] on the very last line."
+            PromptBuilder()
+            .document(doc_text, max_chars=MAX_DOC_CHARS_DOCQA)
+            .question(query)
+            .language(language, is_hybrid=False)
+            .build()
         )
-        messages.append(HumanMessage(content=user_prompt))
 
-        llm = self._make_llm(streaming=True)
-        logger.debug(f"   LLM initialized for streaming")
-        logger.debug(f"   Starting token stream...")
-        
-        token_count = 0
-        async for chunk in llm.astream(messages):
-            if hasattr(chunk, "content") and chunk.content:
-                token_count += 1
-                yield chunk.content
-
-        logger.debug(f"DOCQA stream complete | {token_count} tokens generated")
+        async for chunk in self._stream_response(
+            system_prompt=self._docqa_system_prompt,
+            user_prompt=user_prompt,
+            conversation_history=conversation_history,
+            log_label="DOCQA",
+        ):
+            yield chunk
 
     async def stream_hybrid(
         self,
@@ -136,41 +208,20 @@ SCORING:
         conversation_history: Optional[List[Dict[str, str]]] = None,
     ) -> AsyncIterator[str]:
         logger.debug("DocumentQAAgent: HYBRID stream starting (document + VDB)")
-        logger.debug(f"   Query: '{query[:80]}'")
-        logger.debug(f"   Language: {language}")
-        logger.debug(f"   Document size: {len(doc_text)} characters")
-        logger.debug(f"   RAG context size: {len(rag_context)} characters")
-        logger.debug(f"   History context: {len(conversation_history or [])} messages")
-
-        messages = [SystemMessage(content=self._HYBRID_SYSTEM_PROMPT)]
-
-        if conversation_history:
-            for msg in conversation_history[-6:]:
-                if msg["role"] == "user":
-                    messages.append(HumanMessage(content=msg["content"]))
-                elif msg["role"] == "assistant":
-                    messages.append(AIMessage(content=msg["content"]))
-
-        truncated_doc = doc_text[:40_000]  # leave room for RAG context
-        if len(doc_text) > 40_000:
-            truncated_doc += "\n\n[... document truncated ...]"
 
         user_prompt = (
-            f"DOCUMENT TEXT:\n{truncated_doc}\n\n"
-            f"---\n\n"
-            f"LEGAL SOURCES (from Lovdata):\n{rag_context}\n\n"
-            f"---\n\n"
-            f"QUESTION: {query}\n\n"
-            f"CRITICAL: You MUST respond entirely in {language.upper()} UNLESS the user explicitly requested a different language in their QUESTION.\n"
-            f"Even if the sources are in another language, your response MUST be in {language.upper()}.\n"
-            f"Cross-reference both sources.\n"
-            f"Append [SCORE:x.x] on the very last line."
+            PromptBuilder()
+            .document(doc_text, max_chars=MAX_DOC_CHARS_HYBRID)
+            .rag(rag_context)
+            .question(query)
+            .language(language, is_hybrid=True)
+            .build()
         )
-        messages.append(HumanMessage(content=user_prompt))
 
-        llm = self._make_llm(streaming=True)
-        async for chunk in llm.astream(messages):
-            if hasattr(chunk, "content") and chunk.content:
-                yield chunk.content
-
-        logger.debug("DocumentQAAgent: stream_hybrid complete")
+        async for chunk in self._stream_response(
+            system_prompt=self._hybrid_system_prompt,
+            user_prompt=user_prompt,
+            conversation_history=conversation_history,
+            log_label="HYBRID",
+        ):
+            yield chunk

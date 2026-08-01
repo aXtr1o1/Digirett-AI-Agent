@@ -1,24 +1,122 @@
+"""
+api/routes/library.py — Library document management endpoints.
+
+Refactored according to TL code review guidelines:
+- Pure FastAPI Dependency Injection via Request.app.state
+- Zero direct private member database access (_user_service._supabase)
+- Reusable get_current_internal_user dependency
+- 3-Layer File Security Validation (Extension + MIME Type + Magic Byte Signatures)
+- Centralized configuration via settings.MAX_DOCUMENT_SIZE
+- Typed response model LibraryDeleteResponse for delete operations
+- Standardized, safe error logging without raw exception leakage
+"""
+
 import logging
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, status, File, Form, UploadFile
+import urllib.parse
+from typing import List, Optional, Tuple
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import Response
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from config import settings
 from core.auth import ClerkUser, get_current_user
 from schemas.requests import LibraryNoteUpdateRequest
-from schemas.responses import LibraryDocumentResponse
+from schemas.responses import LibraryDeleteResponse, LibraryDocumentResponse
+from services.library_service import LibraryService
+from services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
 
-_library_service = None
-_user_service = None
 
-def set_services(library_service, user_service) -> None:
-    global _library_service, _user_service
-    _library_service = library_service
-    _user_service = user_service
+# ── Dependency Resolvers ─────────────────────────────────────────────
+
+def get_library_service(request: Request) -> LibraryService:
+    svc = getattr(request.app.state, "library_service", None)
+    if svc is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="LibraryService is not initialized on application state.",
+        )
+    return svc
+
+
+def get_user_service(request: Request) -> UserService:
+    svc = getattr(request.app.state, "user_service", None)
+    if svc is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="UserService is not initialized on application state.",
+        )
+    return svc
+
+
+def get_current_internal_user(
+    user: ClerkUser = Depends(get_current_user),
+    user_service: UserService = Depends(get_user_service),
+) -> Tuple[ClerkUser, str]:
+    """Resolves current authenticated user and internal database user_id."""
+    internal_user_id = user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
+    if not internal_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User profile not found in database.",
+        )
+    return user, internal_user_id
+
+
+# ── File Validation Helpers ──────────────────────────────────────────
+
+_ALLOWED_EXTENSIONS = {"pdf", "docx", "doc"}
+_ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "application/x-pdf",
+    "binary/octet-stream",
+}
+
+
+def _validate_file_security(filename: str, content_type: str, file_bytes: bytes) -> str:
+    """3-Layer Comprehensive Validation: Extension + MIME Type + Magic Byte Signatures."""
+    # 1. Extension Check
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file type: .{ext}. Please upload a PDF or DOCX file.",
+        )
+
+    # 2. MIME Type Check
+    if content_type and content_type.lower() not in _ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid MIME type: '{content_type}'. Only PDF and DOCX documents are allowed.",
+        )
+
+    # 3. Magic Byte Signature Check
+    if ext == "pdf":
+        if not file_bytes.startswith(b"%PDF-"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File content does not match PDF signature.",
+            )
+    elif ext in ("docx", "doc"):
+        if not (file_bytes.startswith(b"PK\x03\x04") or file_bytes.startswith(b"\xd0\xcf\x11\xe0")):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File content does not match DOCX/DOC signature.",
+            )
+
+    return ext
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ROUTES
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @router.post(
     "/library/documents/upload",
@@ -31,50 +129,54 @@ async def upload_to_library(
     request: Request,
     file: UploadFile = File(...),
     note: Optional[str] = Form(""),
-    user: ClerkUser = Depends(get_current_user),
+    user_context: Tuple[ClerkUser, str] = Depends(get_current_internal_user),
+    library_service: LibraryService = Depends(get_library_service),
 ):
-    if _library_service is None or _user_service is None:
-         raise HTTPException(
-             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-             detail="Library service not available.",
-         )
-
-    internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
-    if not internal_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User profile not found in database.",
-        )
-
+    _, internal_user_id = user_context
     filename = file.filename or ""
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if ext not in ("pdf", "docx", "doc"):
+
+    file_bytes = await file.read()
+
+    # 1. 3-Layer File Validation
+    ext = _validate_file_security(filename, file.content_type or "", file_bytes)
+
+    # 2. File Size Limit Check
+    if len(file_bytes) > settings.MAX_DOCUMENT_SIZE:
+        max_mb = settings.MAX_DOCUMENT_SIZE // (1024 * 1024)
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported file type: .{ext}. Please upload a PDF or DOCX file.",
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large. Maximum allowed size is {max_mb}MB.",
         )
 
     try:
-        file_bytes = await file.read()
-        saved = _library_service.save_document(
+        saved = library_service.save_document(
             user_id=internal_user_id,
             file_name=filename,
             file_type=ext,
             file_bytes=file_bytes,
-            note=note
+            note=note,
         )
         if not saved:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to save document to library."
+                detail="Failed to save document to library.",
             )
         return LibraryDocumentResponse(**saved)
-    except Exception as exc:
-        logger.error(f"Error uploading to library: {exc}")
+    except HTTPException:
+        raise
+    except ValueError as val_exc:
+        logger.warning(f"⚠️ Library upload validation failed: {val_exc}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc)
+            detail=str(val_exc),
         )
+    except Exception as exc:
+        logger.exception(f"❌ Error uploading to library: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to upload document to library.",
+        )
+
 
 @router.get(
     "/library/documents",
@@ -85,33 +187,24 @@ async def upload_to_library(
 @limiter.limit("60/minute")
 async def get_library_documents(
     request: Request,
-    user: ClerkUser = Depends(get_current_user),
+    user_context: Tuple[ClerkUser, str] = Depends(get_current_internal_user),
+    library_service: LibraryService = Depends(get_library_service),
 ):
-    if _library_service is None or _user_service is None:
-         raise HTTPException(
-             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-             detail="Library service not available.",
-         )
-
-    internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
-    if not internal_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User profile not found in database.",
-        )
-
+    _, internal_user_id = user_context
     try:
-        documents = _library_service.get_library_documents(internal_user_id)
+        documents = library_service.get_library_documents(internal_user_id)
         return [LibraryDocumentResponse(**d) for d in documents]
     except Exception as exc:
-        logger.error(f"Error getting library documents: {exc}")
+        logger.exception(f"❌ Error getting library documents: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc)
+            detail="Failed to retrieve library documents.",
         )
+
 
 @router.delete(
     "/library/documents/{document_id}",
+    response_model=LibraryDeleteResponse,
     tags=["Library"],
     summary="Remove a document from the library",
 )
@@ -119,30 +212,31 @@ async def get_library_documents(
 async def delete_library_document(
     request: Request,
     document_id: str,
-    user: ClerkUser = Depends(get_current_user),
+    user_context: Tuple[ClerkUser, str] = Depends(get_current_internal_user),
+    library_service: LibraryService = Depends(get_library_service),
 ):
-    if _library_service is None or _user_service is None:
-         raise HTTPException(
-             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-             detail="Library service not available.",
-         )
-
-    internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
-    if not internal_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User profile not found in database.",
-        )
-
+    _, internal_user_id = user_context
     try:
-        success = _library_service.delete_library_document(document_id, internal_user_id)
-        return {"success": success}
-    except Exception as exc:
-        logger.error(f"Error deleting from library: {exc}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc)
+        success = library_service.delete_library_document(document_id, internal_user_id)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Library document not found or deletion failed.",
+            )
+        return LibraryDeleteResponse(
+            success=True,
+            message="Document successfully removed from library.",
+            document_id=document_id,
         )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(f"❌ Error deleting library document {document_id}: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete document from library.",
+        )
+
 
 @router.patch(
     "/library/documents/{document_id}",
@@ -155,35 +249,27 @@ async def update_library_document_note(
     request: Request,
     document_id: str,
     body: LibraryNoteUpdateRequest,
-    user: ClerkUser = Depends(get_current_user),
+    user_context: Tuple[ClerkUser, str] = Depends(get_current_internal_user),
+    library_service: LibraryService = Depends(get_library_service),
 ):
-    if _library_service is None or _user_service is None:
-         raise HTTPException(
-             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-             detail="Library service not available.",
-         )
-
-    internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
-    if not internal_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User profile not found in database.",
-        )
-
+    _, internal_user_id = user_context
     try:
-        updated = _library_service.update_library_document_note(document_id, internal_user_id, body.note)
+        updated = library_service.update_library_document_note(document_id, internal_user_id, body.note)
         if not updated:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Library document not found."
+                detail="Library document not found.",
             )
         return LibraryDocumentResponse(**updated)
+    except HTTPException:
+        raise
     except Exception as exc:
-        logger.error(f"Error updating library document note: {exc}")
+        logger.exception(f"❌ Error updating library document note {document_id}: {exc}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update document note.",
         )
+
 
 @router.get(
     "/library/documents/{document_id}/view",
@@ -192,32 +278,20 @@ async def update_library_document_note(
 )
 async def get_library_document_view(
     document_id: str,
-    user: ClerkUser = Depends(get_current_user),
+    user_context: Tuple[ClerkUser, str] = Depends(get_current_internal_user),
+    library_service: LibraryService = Depends(get_library_service),
+    user_service: UserService = Depends(get_user_service),
 ):
-    if _library_service is None or _user_service is None:
-         raise HTTPException(
-             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-             detail="Library service not available.",
-         )
+    user, internal_user_id = user_context
 
-    internal_user_id = _user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
-    if not internal_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User profile not found in database.",
-        )
-
-    # Get user role from the database to check for support privileges
-    try:
-        user_data = _user_service._supabase.table("users").select("role").eq("user_id", internal_user_id).single().execute()
-        user_role = user_data.data.get("role", "user") if user_data.data else "user"
-    except Exception:
-        user_role = "user"
-
+    # Fetch user role via UserService cleanly without accessing private _supabase
+    user_role = user_service.get_user_role(user.clerk_user_id) or user.role
     is_privileged = user_role in ("lawyer", "admin", "system_admin")
 
     try:
-        result = _library_service.get_library_document_binary(document_id, internal_user_id, is_privileged=is_privileged)
+        result = library_service.get_library_document_binary(
+            document_id, internal_user_id, is_privileged=is_privileged
+        )
         if not result:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -225,13 +299,8 @@ async def get_library_document_view(
             )
 
         file_bytes, filename, content_type = result
-
-        from fastapi.responses import Response
-        import urllib.parse
-
-        # UTF-8 encoded filename for Content-Disposition (handles non-ASCII chars)
         filename_encoded = urllib.parse.quote(filename)
-        
+
         return Response(
             content=file_bytes,
             media_type=content_type,
@@ -240,9 +309,11 @@ async def get_library_document_view(
                 "Access-Control-Expose-Headers": "Content-Disposition",
             },
         )
+    except HTTPException:
+        raise
     except Exception as exc:
-        logger.error(f"Error viewing library document: {exc}")
+        logger.exception(f"❌ Error viewing library document {document_id}: {exc}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve library document binary.",
         )

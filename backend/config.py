@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     MAX_CONTEXT_MESSAGES: int = 20
     CONVERSATION_META_TTL: int = 3600
     USER_CONVERSATIONS_TTL: int = 1800
+    MAX_DOCUMENT_SIZE: int = 20 * 1024 * 1024
 
     # ── Supabase ─────────────────────────────────────────────────────────
     SUPABASE_URL: str

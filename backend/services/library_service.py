@@ -1,24 +1,26 @@
+import hashlib
 import logging
 import uuid
-import fitz  # PyMuPDF
-from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
+from utils.document_parser import DocumentParser
+from utils.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
 
+
 class LibraryService:
-    def __init__(self, supabase_client):
+    def __init__(self, supabase_client: Any) -> None:
         self._supabase = supabase_client
+        self._storage = StorageService(supabase_client)
 
     def _parse_text(self, file_bytes: bytes, file_type: str) -> str:
-        """Helper to extract text from PDF or DOCX file bytes."""
+        """Helper to extract text from document content via shared DocumentParser."""
+        if not file_bytes:
+            return ""
         try:
-            doc = fitz.open(stream=file_bytes, filetype="pdf" if file_type == "pdf" else "docx")
-            pages = []
-            for page_num in range(len(doc)):
-                page = doc.load_page(page_num)
-                pages.append(page.get_text("text"))
-            return "\n".join(pages)
+            return DocumentParser.extract_text_from_pdf(file_bytes)
         except Exception as exc:
             logger.warning(f"Failed to parse document content for text extraction: {exc}")
             return ""
@@ -33,26 +35,39 @@ class LibraryService:
     ) -> Optional[Dict[str, Any]]:
         """Save a new document to the library, uploading it to storage and recording metadata."""
         try:
+            file_hash = hashlib.sha256(file_bytes).hexdigest()
+
+            # SHA-256 & file_name duplicate check within user's library
+            try:
+                existing = self._supabase.table("library_documents") \
+                    .select("*") \
+                    .eq("user_id", user_id) \
+                    .eq("file_name", file_name) \
+                    .execute()
+                if existing.data and len(existing.data) > 0:
+                    logger.info(f"✨ Duplicate document name detected for user {user_id}: {file_name}")
+                    raise ValueError(f"A document with the name '{file_name}' already exists in your library.")
+            except ValueError:
+                raise
+            except Exception as exc:
+                logger.warning(f"⚠️ Duplicate check query failed: {exc}")
+
             document_id = str(uuid.uuid4())
             extracted_text = self._parse_text(file_bytes, file_type)
             char_count = len(extracted_text)
 
-            # Upload binary file to existing storage bucket
+            # Upload binary file via StorageService
             storage_path = f"library/{document_id}.{file_type}"
             content_type = "application/pdf" if file_type == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            
+
             try:
-                # Access the client storage
-                client = self._supabase
-                if hasattr(client, "_get"):
-                    client = client._get()
-                
-                client.storage.from_("lovdata-documents").upload(
+                self._storage.upload(
+                    bucket="lovdata-documents",
                     path=storage_path,
-                    file=file_bytes,
-                    file_options={"content-type": content_type}
+                    file_bytes=file_bytes,
+                    content_type=content_type,
                 )
-                logger.info(f"Binary file uploaded to library storage | path={storage_path}")
+                logger.info(f"Binary file uploaded to library storage via StorageService | path={storage_path}")
             except Exception as storage_exc:
                 logger.error(f"Supabase Storage upload failed for library doc: {storage_exc}")
                 raise
@@ -95,13 +110,9 @@ class LibraryService:
                     .execute()
                 
                 if expired.data:
-                    client = self._supabase
-                    if hasattr(client, "_get"):
-                        client = client._get()
-                    
                     for item in expired.data:
                         try:
-                            client.storage.from_("lovdata-documents").remove([item["storage_path"]])
+                            self._storage.delete("lovdata-documents", item["storage_path"])
                         except Exception as storage_del_exc:
                             logger.warning(f"Failed to delete expired file {item['storage_path']} from storage: {storage_del_exc}")
                     
@@ -182,12 +193,9 @@ class LibraryService:
             
             if doc_data.data and isinstance(doc_data.data, dict):
                 storage_path = doc_data.data.get("storage_path")
-                # Delete from Storage
+                # Delete from Storage via StorageService
                 try:
-                    client = self._supabase
-                    if hasattr(client, "_get"):
-                        client = client._get()
-                    client.storage.from_("lovdata-documents").remove([storage_path])
+                    self._storage.delete("lovdata-documents", storage_path)
                 except Exception as storage_del_exc:
                     logger.warning(f"Failed to remove library document {storage_path} from storage: {storage_del_exc}")
 
@@ -288,27 +296,34 @@ class LibraryService:
                 .eq("id", document_id)
             if not is_privileged:
                 query = query.eq("user_id", user_id)
-            doc_data = query.single().execute()
+            doc_data = query.execute()
             
-            if doc_data.data and isinstance(doc_data.data, dict):
-                storage_path = doc_data.data.get("storage_path")
-                filename = doc_data.data.get("file_name")
-                file_type = doc_data.data.get("file_type")
+            if doc_data.data and len(doc_data.data) > 0:
+                first_row = doc_data.data[0]
+                storage_path = first_row.get("storage_path")
+                filename = first_row.get("file_name")
+                file_type = first_row.get("file_type")
             else:
                 # 2. Fall back to documents (chat-uploaded files)
                 chat_query = self._supabase.table("documents") \
-                    .select("file_name, file_type") \
+                    .select("file_name, file_type, file_hash") \
                     .eq("document_id", document_id)
                 if not is_privileged:
                     chat_query = chat_query.eq("user_id", user_id)
-                chat_doc_data = chat_query.single().execute()
+                chat_doc_data = chat_query.execute()
                 
-                if not chat_doc_data.data or not isinstance(chat_doc_data.data, dict):
+                if not chat_doc_data.data or len(chat_doc_data.data) == 0:
                     return None
                     
-                filename = chat_doc_data.data.get("file_name")
-                file_type = chat_doc_data.data.get("file_type")
-                storage_path = f"uploads/{document_id}.{file_type}"
+                first_row = chat_doc_data.data[0]
+                filename = first_row.get("file_name")
+                file_type = first_row.get("file_type")
+                file_hash = first_row.get("file_hash")
+                if file_hash:
+                    storage_path = f"uploads/{file_hash}.{file_type}"
+                else:
+                    storage_path = f"uploads/{document_id}.{file_type}"
+
             
             # Download from Storage
             client = self._supabase

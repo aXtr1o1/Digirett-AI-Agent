@@ -1,123 +1,147 @@
+"""
+agents/reranker_agent.py — Legal Relevance Reranker Agent
+
+Refactored per TL Code Review Guidelines:
+1. Sensitive text log suppression — logs chunk metrics instead of full chunk text.
+2. Non-mutating return objects — returns fresh copy dicts without in-place caller mutation.
+3. Score boundary validation (0 <= score <= 100).
+4. Project-wide JsonResponseParser & MAX_RERANK_CHARS = 1500 constant.
+5. Injected AzureOpenAI client dependency (__init__(self, client=None)).
+6. Pre-execution exponential backoff retry strategy.
+"""
+
+import copy
 import logging
-import json
-import re
-from typing import Any, Dict, List
+import time
+from typing import Any, Dict, List, Optional
 
 from openai import AzureOpenAI
+from pydantic import BaseModel, Field
+
 from config import settings
+from utils.json_response_parser import parse_json_response
 
 logger = logging.getLogger(__name__)
+
+# ── NAMED CONSTANTS ──────────────────────────────────────────────────
+MAX_RERANK_CHARS = 1500
+DEFAULT_TOP_K = 5
+MAX_RETRIES = 2
+RETRY_DELAY = 0.5
+
+
+class ChunkScoreItem(BaseModel):
+    chunk: int = Field(ge=1)
+    score: float = Field(ge=0.0, le=100.0)
 
 
 class RerankerAgent:
 
-    def __init__(self) -> None:
-        logger.info("RerankerAgent: using Azure OpenAI deployment for reranking")
-
-        self._client = AzureOpenAI(
-            api_key=settings.AZURE_OPENAI_API_KEY,
-            api_version=settings.AZURE_OPENAI_API_VERSION,
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-        )
-
+    def __init__(self, client: Optional[Any] = None) -> None:
+        if client is not None:
+            self._client = client
+        else:
+            self._client = AzureOpenAI(
+                api_key=settings.AZURE_OPENAI_API_KEY,
+                api_version=settings.AZURE_OPENAI_API_VERSION,
+                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            )
         self._deployment = settings.AZURE_OPENAI_DEPLOYMENT
-
         logger.info("[OK] RerankerAgent initialized")
 
     def rerank(
         self,
         query: str,
         chunks: List[Dict[str, Any]],
-        top_k: int = 5,
+        top_k: int = DEFAULT_TOP_K,
     ) -> List[Dict[str, Any]]:
 
         if not chunks:
             logger.warning("RerankerAgent: no chunks to rerank")
             return []
 
-        # Limit chunk size to control token usage
+        # Non-mutating copy of input chunks with default 0.0 score
+        copied_chunks = [copy.deepcopy(c) for c in chunks]
+        for c in copied_chunks:
+            c["rerank_score"] = 0.0
+
+
+        # Sensitive log suppression: log metrics only, never full text
+        logger.info("Reranking chunks", extra={"chunk_count": len(chunks), "top_k": top_k})
+
+        # Format chunks using MAX_RERANK_CHARS constant
         formatted_chunks = "\n\n".join(
             [
-                f"{i+1}. {chunk.get('text', '')[:1500]}"
-                for i, chunk in enumerate(chunks)
+                f"{i+1}. {chunk.get('text', '')[:MAX_RERANK_CHARS]}"
+                for i, chunk in enumerate(copied_chunks)
             ]
         )
-        logger.info(f"Formatted Chunk: {formatted_chunks}")
 
-        prompt = f"""
-You are a legal relevance scoring system.
+        prompt = (
+            f"You are a legal relevance scoring system.\n\n"
+            f"Query:\n{query}\n\n"
+            f"Chunks:\n{formatted_chunks}\n\n"
+            f"For EACH chunk assign a relevance score from 0 to 100.\n"
+            f"Return ONLY valid JSON in this format:\n"
+            f'[\n  {{"chunk": 1, "score": 87}},\n  {{"chunk": 2, "score": 45}}\n]\n\n'
+            f"Higher score = more legally relevant.\nReturn nothing else."
+        )
 
-Query:
-{query}
+        # Execution with exponential backoff retry policy
+        response = None
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response = self._client.chat.completions.create(
+                    model=self._deployment,
+                    temperature=0,
+                    messages=[
+                        {"role": "system", "content": "You score legal documents strictly by relevance."},
+                        {"role": "user", "content": prompt},
+                    ],
+                )
+                break
+            except Exception as exc:
+                if attempt < MAX_RETRIES:
+                    logger.warning(f"⚠️ RerankerAgent: attempt {attempt + 1} failed: {exc}. Retrying...")
+                    time.sleep(RETRY_DELAY * (2 ** attempt))
+                else:
+                    logger.error(f"❌ RerankerAgent failed after retries: {exc}")
 
-Chunks:
-{formatted_chunks}
-
-For EACH chunk assign a relevance score from 0 to 100.
-
-Return ONLY valid JSON in this format:
-
-[
-  {{"chunk": 1, "score": 87}},
-  {{"chunk": 2, "score": 45}}
-]
-
-Higher score = more legally relevant.
-Return nothing else.
-"""
-
-        try:
-            response = self._client.chat.completions.create(
-                model=self._deployment,
-                temperature=0,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You score legal documents strictly by relevance.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            )
-
+        if response and response.choices and response.choices[0].message.content:
             raw_output = response.choices[0].message.content.strip()
-            logger.debug(f"Reranker raw output: {raw_output}")
+            parsed_data = parse_json_response(raw_output)
 
-            # Guard: empty response
-            if not raw_output:
-                logger.warning("Reranker returned empty response — using fallback scores")
-                for chunk in chunks:
-                    chunk["rerank_score"] = 0.0
-                return chunks[:top_k]
+            # Accept list of dicts directly from parse_json_response if list, or parse list
+            if not isinstance(parsed_data, list):
+                # parse_json_response returns dict or None; if wrapped in list, inspect raw JSON
+                import json
+                try:
+                    parsed_data = json.loads(raw_output)
+                except Exception:
+                    parsed_data = None
 
-            # Strip markdown code fences if present (```json ... ```)
-            clean = raw_output
-            if clean.startswith("```"):
-                clean = re.sub(r"^```[a-zA-Z]*\n?", "", clean)
-                clean = re.sub(r"\n?```$", "", clean)
-                clean = clean.strip()
+            if isinstance(parsed_data, list):
+                for item in parsed_data:
+                    if isinstance(item, dict) and "chunk" in item and "score" in item:
+                        try:
+                            validated_item = ChunkScoreItem(
+                                chunk=int(item["chunk"]),
+                                score=float(item["score"]),
+                            )
+                            idx = validated_item.chunk - 1
+                            if 0 <= idx < len(copied_chunks):
+                                copied_chunks[idx]["rerank_score"] = validated_item.score
+                        except Exception as val_exc:
+                            logger.warning(f"⚠️ RerankerAgent: invalid score item '{item}': {val_exc}")
 
-            results = json.loads(clean)
+                sorted_chunks = sorted(
+                    copied_chunks,
+                    key=lambda x: x.get("rerank_score", 0.0),
+                    reverse=True,
+                )
+                return sorted_chunks[:top_k]
 
-            # Attach rerank_score to chunks
-            for item in results:
-                idx = item["chunk"] - 1
-                if 0 <= idx < len(chunks):
-                    chunks[idx]["rerank_score"] = float(item["score"])
-
-            # Sort chunks by rerank_score descending
-            sorted_chunks = sorted(
-                chunks,
-                key=lambda x: x.get("rerank_score", 0.0),
-                reverse=True,
-            )
-
-            return sorted_chunks[:top_k]
-
-        except Exception as e:
-            logger.error(f"Reranking failed: {e}", exc_info=True)
-
-            # fallback — return original chunks without scoring
-            for chunk in chunks:
-                chunk["rerank_score"] = 0.0
-
-            return chunks[:top_k]
+        # Fallback — return original copied chunks with 0.0 score
+        for chunk in copied_chunks:
+            chunk["rerank_score"] = 0.0
+        return copied_chunks[:top_k]

@@ -33,10 +33,23 @@ from services.rag_service import RAGService
 from services.user_service import UserService
 from services.notes_service import NotesService
 from services.library_service import LibraryService
-from config import settings
-from db.milvus_client import get_milvus
-from db.redis_client import get_redis
-from db.supabase_client import get_supabase
+from services.stripe_gateway import StripeGateway
+from services.billing_service import BillingService
+from services.invite_service import InviteService
+from services.notification_service import NotificationService
+from services.rating_service import RatingService
+from services.subscription_service import SubscriptionService
+from services.ticket_message_service import TicketMessageService
+from services.title_translation_service import TitleTranslationService
+from services.webhook_service import WebhookService
+
+
+from services.chat_orchestrator import ChatOrchestrator
+
+
+from startup.database import init_database_connections
+from startup.services import init_and_register_services
+from startup.routes import setup_routes_and_middleware
 from telemetry.tracing import setup_tracing
 from utils.logger import setup_logger
 
@@ -73,236 +86,76 @@ async def lifespan(app: FastAPI):
     redis_client  = None
 
     try:
-        logger.info("Connecting to Milvus...")
-        milvus_client = get_milvus()
-        milvus_client.connect(
-            host=settings.MILVUS_HOST,
-            port=settings.MILVUS_PORT,
-            collection_name=settings.MILVUS_COLLECTION,
-        )
+        # 1. Connect to Database Infrastructure
+        milvus_client, redis_client, supabase_client = init_database_connections()
 
-        logger.info("Connecting to Redis...")
-        redis_client = get_redis()
-        redis_client.connect(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            db=settings.REDIS_DB,
-            password=settings.REDIS_PASSWORD,
-        )
-
-        logger.info("Connecting to Supabase...")
-        supabase_client = get_supabase()
-        
-        # Use SERVICE_ROLE_KEY if available (for backend God Mode), otherwise fallback to ANON_KEY
-        sb_key = settings.SUPABASE_SERVICE_ROLE_KEY or settings.SUPABASE_KEY
-        supabase_client.connect(
-            url=settings.SUPABASE_URL,
-            key=sb_key,
-        )
-
-        logger.info("Initializing LLM service...")
-        llm_service = LLMService(temperature=settings.OPENAI_TEMPERATURE)
-
-        logger.info("Initializing Embedding service...")
-        embedding_service = EmbeddingService()
-
-        logger.info("Initializing Document service...")
-        document_service = DocumentService(
-            redis_client=redis_client,
-            supabase_client=supabase_client,
-        )
-
-        logger.info("Initializing RAG service...")
-        rag_service = RAGService(
-            llm_service=llm_service,
+        # 2. Instantiate and Register Services onto app.state
+        init_and_register_services(
+            app=app,
             milvus_client=milvus_client,
             redis_client=redis_client,
             supabase_client=supabase_client,
-            embedding_service=embedding_service,
-            document_service=document_service,
         )
-
-        logger.info("Initializing Conversation service...")
-        conversation_service = ConversationService(
-            supabase_client=supabase_client,
-            redis_client=redis_client,
-        )
-
-        logger.info("Initializing User service...")
-        user_service = UserService(
-            supabase_client=supabase_client,
-        )
-
-        logger.info("Initializing Email service...")
-        email_service = EmailService(
-            smtp_host=settings.SMTP_HOST,
-            smtp_port=settings.SMTP_PORT,
-            smtp_user=settings.SMTP_USER,
-            smtp_pass=settings.SMTP_PASS,
-            from_email=settings.INVITE_FROM_EMAIL,
-        )
-
-        logger.info("Initializing HITL service...")
-        hitl_service = HitlService(
-            supabase_client=supabase_client,
-        )
-
-        logger.info("Initializing Cal.com service...")
-        cal_service = CalService()
-
-        logger.info("Initializing Notes service...")
-        notes_service = NotesService(supabase_client=supabase_client)
-
-        logger.info("Initializing Library service...")
-        library_service = LibraryService(supabase_client=supabase_client)
-
-        # ── Title fetcher must be created BEFORE MessageService ──────────
-        # It resolves Lovdata URLs to human-readable Norwegian titles using
-        # a 3-layer cache: Redis (L1) → Supabase lovdata_url_titles (L2)
-        # → httpx fetch (L3). MessageService calls it inside save_exchange.
-        logger.info("Initializing Lovdata title fetcher...")
-        title_fetcher = LovdataTitleFetcher(
-            redis_client=redis_client,
-            supabase_client=supabase_client,
-        )
-
-        logger.info("Initializing Message service...")
-        message_service = MessageService(
-            supabase_client=supabase_client,
-            redis_client=redis_client,
-            title_fetcher=title_fetcher,          # ← wired in
-        )
-
-        logger.info("Injecting services into route modules...")
 
         health.set_clients(
             milvus=milvus_client,
             redis=redis_client,
             supabase=supabase_client,
-            llm=llm_service,
+            llm=app.state.llm_service,
         )
-        chat.set_services(
-            rag_service=rag_service,
-            conversation_service=conversation_service,
-            message_service=message_service,
-            llm_service=llm_service,
-            document_service=document_service,  # ← added
-            user_service=user_service,
-        )
-        conversations.set_services(
-            conversation_service=conversation_service,
-            message_service=message_service,
-            user_service=user_service,
-            hitl_service=hitl_service,
-            document_service=document_service,
-        )
-        messages.set_services(
-            message_service=message_service,
-            conversation_service=conversation_service,
-        )
-        documents.set_services(
-            document_service=document_service,
-            llm_service=llm_service,
-            user_service=user_service,
-        )
-        webhooks.set_services(
-            user_service=user_service,
-            email_service=email_service,
-        )
+
+        # Legacy backward-compatibility module injections for un-refactored endpoints
         admin.set_services(
-            user_svc=user_service,
-            email_svc=email_service,
-            hitl_svc=hitl_service,
+            user_svc=app.state.user_service,
+            email_svc=app.state.email_service,
+            hitl_svc=app.state.hitl_service,
         )
         hitl.set_services(
-            hitl_svc=hitl_service,
-            user_svc=user_service,
-            email_svc=email_service,
-        )
-        cal_routes.set_services(
-            cal_svc=cal_service,
-            hitl_svc=hitl_service,
-            user_svc=user_service,
-        )
-        cal_webhooks.set_services(
-            hitl_svc=hitl_service,
-            email_svc=email_service,
-        )
-        invite.set_services(
-            supabase_client=supabase_client,
-        )
-        auth.set_services(
-            user_service=user_service,
-        )
-        billing.set_services(
-            user_service=user_service,
-        )
-        notes.set_services(
-            notes_svc=notes_service,
-            user_svc=user_service,
-        )
-        library.set_services(
-            library_service=library_service,
-            user_service=user_service,
-        )
-        ticket_messages.set_services(
-            hitl_svc=hitl_service,
-            user_svc=user_service,
-            email_svc=email_service,
-        )
-        ratings.set_services(
-            email_svc=email_service,
+            hitl_svc=app.state.hitl_service,
+            user_svc=app.state.user_service,
+            email_svc=app.state.email_service,
         )
 
         logger.info("All services ready — server is live")
 
         # ── 30-minute background alert task ──────────────────────────────────
-        # Fires every 30 minutes. Finds open tickets older than 30 minutes
-        # that haven't had an alert sent yet, emails admin, marks alert_sent_at.
         async def _unassigned_ticket_alert_task():
-            INTERVAL_SECONDS = 30 * 60  # 30 minutes
-            await asyncio.sleep(60)  # short initial delay to let startup finish
+            INTERVAL_SECONDS = 30 * 60
+            await asyncio.sleep(60)
             while True:
                 try:
                     admin_email = settings.ADMIN_ALERT_EMAIL
-                    if not admin_email:
-                        logger.debug("⏰ ADMIN_ALERT_EMAIL not set — skipping unassigned ticket check")
-                    else:
-                        stale = hitl_service.get_unassigned_tickets_older_than_minutes(minutes=30)
+                    if admin_email and hasattr(app.state, "hitl_service"):
+                        stale = app.state.hitl_service.get_unassigned_tickets_older_than_minutes(minutes=30)
                         if stale:
-                            logger.info(
-                                f"⚠️ Background task: {len(stale)} unassigned tickets older than 30min — alerting admin"
-                            )
-                            await email_service.send_admin_unassigned_alert(
+                            logger.info(f"⚠️ Background task: {len(stale)} unassigned tickets older than 30min — alerting admin")
+                            await app.state.email_service.send_admin_unassigned_alert(
                                 admin_email=admin_email,
                                 unassigned_tickets=stale,
                             )
-                            hitl_service.mark_alert_sent([t["ticket_id"] for t in stale])
-                        else:
-                            logger.debug("⏰ Background task: no stale unassigned tickets")
+                            app.state.hitl_service.mark_alert_sent([t["ticket_id"] for t in stale])
                 except Exception as bg_exc:
                     logger.warning(f"⚠️ Alert background task error (non-fatal) | {bg_exc}")
 
                 await asyncio.sleep(INTERVAL_SECONDS)
 
         asyncio.create_task(_unassigned_ticket_alert_task())
-        logger.info(" 30-min unassigned ticket alert task started")
 
         # ── 15-minute background auto-close task ──────────────────────────────
         async def _auto_close_tickets_task():
-            INTERVAL_SECONDS = 15 * 60  # 15 minutes
-            await asyncio.sleep(120)  # offset delay to not clash on startup
+            INTERVAL_SECONDS = 15 * 60
+            await asyncio.sleep(120)
             while True:
                 try:
-                    closed_count = hitl_service.auto_close_stale_resolved_tickets()
-                    if closed_count > 0:
-                        logger.info(f" Auto-closed {closed_count} stale resolved tickets.")
+                    if hasattr(app.state, "hitl_service"):
+                        closed_count = app.state.hitl_service.auto_close_stale_resolved_tickets()
+                        if closed_count > 0:
+                            logger.info(f" Auto-closed {closed_count} stale resolved tickets.")
                 except Exception as bg_exc:
                     logger.warning(f" Auto-close background task error (non-fatal) | {bg_exc}")
                 await asyncio.sleep(INTERVAL_SECONDS)
 
         asyncio.create_task(_auto_close_tickets_task())
-        logger.info(" 15-min auto-close resolved tickets task started")
 
         yield
 
@@ -406,6 +259,37 @@ async def add_security_headers(request: Request, call_next):
 
 
 from core.auth import get_current_user
+from fastapi.openapi.utils import get_openapi
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="Digirett AI Agent API",
+        version="2.0.0",
+        description="Legal AI Assistant API with RAG & HITL workflows",
+        routes=app.routes,
+    )
+    openapi_schema["components"] = openapi_schema.get("components", {})
+    openapi_schema["components"]["securitySchemes"] = {
+        "HTTPBearer": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "Enter your Clerk JWT token or Static BACKEND_API_KEY (non-prod) here."
+        }
+    }
+    # Attach security requirement to all protected routes in OpenAPI schema
+    for path, path_item in openapi_schema.get("paths", {}).items():
+        if not path.startswith("/api/v1/health") and not path.startswith("/api/v1/webhooks") and not path.startswith("/api/v1/invite"):
+            for method in path_item:
+                if isinstance(path_item[method], dict):
+                    path_item[method]["security"] = [{"HTTPBearer": []}]
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 # Public / Webhook routes (no global token required)
 app.include_router(health.router,          prefix="/api/v1")

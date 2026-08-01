@@ -1,60 +1,101 @@
+"""
+agents/document_classifier_agent.py — Document Query Classifier Agent
+
+Refactored per TL Code Review Guidelines:
+1. Injected LLM client dependency (__init__(self, llm=None)) following Dependency Inversion Principle (DIP).
+2. System prompt extracted to prompts/document_classifier.txt.
+3. Named constants for slice boundaries.
+4. PromptBuilder utility class for reusable context construction.
+5. Pydantic schema validation (ClassificationResult) & robust json_repair fallback layer.
+"""
+
 import json
 import logging
 import re
-from typing import Dict, List, Optional
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import AzureChatOpenAI
+from pydantic import BaseModel, Field
+
+try:
+    import json_repair
+except ImportError:
+    json_repair = None
 
 from config import settings
+from prompts.document_classifier_prompt import DOCUMENT_CLASSIFIER_PROMPT
 
 logger = logging.getLogger(__name__)
+
+# ── NAMED CONSTANTS ──────────────────────────────────────────────────
+MAX_LOG_QUERY_LEN = 80
+MAX_DOC_PREVIEW_LEN = 500
+MAX_HISTORY_TURNS = 4
+MAX_HISTORY_MSG_LEN = 200
+
+
+class IntentEnum(str, Enum):
+    DOCQA = "DOCQA"
+    LEGAL = "LEGAL"
+    HYBRID = "HYBRID"
+    FOLLOWUP = "FOLLOWUP"
+
+
+class ClassificationResult(BaseModel):
+    intent: IntentEnum = Field(default=IntentEnum.HYBRID)
+    reason: str = Field(default="")
+
+
+class PromptBuilder:
+    """Builder class for assembling document classification context."""
+
+    def __init__(self) -> None:
+        self._parts: List[str] = []
+
+    def add_document(self, doc_summary: Optional[str]) -> "PromptBuilder":
+        if doc_summary:
+            preview = doc_summary[:MAX_DOC_PREVIEW_LEN]
+            self._parts.append(f"DOCUMENT PREVIEW (first {MAX_DOC_PREVIEW_LEN} chars):\n{preview}")
+        return self
+
+    def add_history(self, conversation_history: Optional[List[Dict[str, str]]]) -> "PromptBuilder":
+        if conversation_history:
+            recent = conversation_history[-MAX_HISTORY_TURNS:]
+            history_str = "\n".join(
+                f"{m['role'].capitalize()}: {m['content'][:MAX_HISTORY_MSG_LEN]}"
+                for m in recent
+            )
+            self._parts.append(f"RECENT CONVERSATION:\n{history_str}")
+        return self
+
+    def add_query(self, query: str) -> "PromptBuilder":
+        self._parts.append(f"CURRENT QUERY:\n{query}")
+        return self
+
+    def build(self) -> str:
+        return "\n\n".join(self._parts)
 
 
 class DocumentClassifierAgent:
 
-    _SYSTEM_PROMPT = """You are a legal query classifier. A user has uploaded a document AND asked a legal question.
-
-Your job: decide HOW to answer the question.
-
-OUTPUT — respond with ONLY valid JSON, no markdown fences:
-{"intent": "<DOCQA|LEGAL|HYBRID|FOLLOWUP>", "reason": "<one short sentence>"}
-
-CLASSIFICATION RULES:
-
-DOCQA — use ONLY when:
-  - The question wants answer that can ONLY be found in the document (e.g. "What does this document say about X?")
-  - The question asks to summarize, explain, or extract content from the uploaded document
-  - The question is about specific details that can ONLY exist inside a particular document 
-
-LEGAL — use ONLY when:
-  - The question asks about Norwegian law, statutes, regulations, legal principles
-  - The document is only relevant as background context, NOT as the source of the answer
-  - The question would be answerable even without the document
-
-HYBRID — use when:
-  - The question needs both what's IN the document AND what the law says
-  - Both the document content AND legal statutes are necessary to answer correctly
-
-FOLLOWUP — use when:
-  - The question refers to a PREVIOUS answer in the conversation
-  - The question continues a thread that was already answered (legal or doc-based)
-  - The question has no new legal or document subject — it just extends the prior turn
-
-IMPORTANT:
-  - If in doubt between HYBRID and DOCQA, choose HYBRID
-  - If in doubt between HYBRID and LEGAL, choose HYBRID
-  - NEVER return CASUAL — that is handled upstream
-  - Always return valid JSON only"""
-
-    def __init__(self) -> None:
-        self._llm = AzureChatOpenAI(
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-            api_key=settings.AZURE_OPENAI_API_KEY,
-            api_version=settings.AZURE_OPENAI_API_VERSION,
-            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
-            temperature=0.0,
-        )
+    def __init__(self, llm: Optional[Any] = None) -> None:
+        """
+        Accepts injected LLM client (Dependency Inversion Principle).
+        If llm is None, falls back to default AzureChatOpenAI instance.
+        """
+        if llm is not None:
+            self._llm = llm
+        else:
+            self._llm = AzureChatOpenAI(
+                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+                api_key=settings.AZURE_OPENAI_API_KEY,
+                api_version=settings.AZURE_OPENAI_API_VERSION,
+                deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+                temperature=0.0,
+            )
+        self._system_prompt = DOCUMENT_CLASSIFIER_PROMPT
         logger.info("[OK] DocumentClassifierAgent initialized")
 
     async def classify(
@@ -63,62 +104,65 @@ IMPORTANT:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         doc_summary: Optional[str] = None,
     ) -> Dict[str, str]:
-        logger.debug(f"DocumentClassifierAgent: classifying '{query[:80]}'")
+        logger.debug(f"DocumentClassifierAgent: classifying '{query[:MAX_LOG_QUERY_LEN]}'")
 
-        # Build user content — include doc preview and recent history as context
-        parts = []
-
-        if doc_summary:
-            parts.append(
-                f"DOCUMENT PREVIEW (first 500 chars):\n{doc_summary[:500]}"
-            )
-
-        if conversation_history:
-            recent = conversation_history[-4:]  # last 2 turns
-            history_str = "\n".join(
-                f"{m['role'].capitalize()}: {m['content'][:200]}"
-                for m in recent
-            )
-            parts.append(f"RECENT CONVERSATION:\n{history_str}")
-
-        parts.append(f"CURRENT QUERY:\n{query}")
-
-        user_content = "\n\n".join(parts)
+        # Assemble prompt using PromptBuilder
+        builder = PromptBuilder()
+        user_content = (
+            builder
+            .add_document(doc_summary)
+            .add_history(conversation_history)
+            .add_query(query)
+            .build()
+        )
 
         try:
             messages = [
-                SystemMessage(content=self._SYSTEM_PROMPT),
+                SystemMessage(content=self._system_prompt),
                 HumanMessage(content=user_content),
             ]
             response = await self._llm.agenerate([messages])
             raw = response.generations[0][0].text.strip()
 
-            # Strip markdown fences if present
+            # Clean markdown code blocks if present
             raw = re.sub(r"```json\s*", "", raw)
             raw = re.sub(r"```\s*", "", raw).strip()
 
-            match = re.search(r"\{[^}]+\}", raw, re.DOTALL)
-            if match:
-                result = json.loads(match.group(0))
-                intent = result.get("intent", "HYBRID").upper()
-                reason = result.get("reason", "")
+            # Parse JSON with json_repair / json.loads fallback
+            parsed_data = None
+            try:
+                parsed_data = json.loads(raw)
+            except Exception:
+                if json_repair is not None:
+                    try:
+                        parsed_data = json_repair.loads(raw)
+                    except Exception:
+                        pass
+                if not parsed_data:
+                    match = re.search(r"\{.*\}", raw, re.DOTALL)
+                    if match:
+                        parsed_data = json.loads(match.group(0))
 
-                # Validate intent value
-                if intent not in ("DOCQA", "LEGAL", "HYBRID", "FOLLOWUP"):
-                    logger.warning(
-                        f"[DEV:WARN] DocumentClassifierAgent: unknown intent '{intent}' — "
-                        "defaulting to HYBRID"
-                    )
-                    intent = "HYBRID"
+            if isinstance(parsed_data, dict):
+                # Normalize raw intent string
+                raw_intent = str(parsed_data.get("intent", "HYBRID")).upper()
+                if raw_intent not in ("DOCQA", "LEGAL", "HYBRID", "FOLLOWUP"):
+                    logger.warning(f"[DEV:WARN] DocumentClassifierAgent: unknown intent '{raw_intent}' — defaulting to HYBRID")
+                    raw_intent = "HYBRID"
 
-                logger.debug(
-                    f"DocumentClassifierAgent: intent={intent} | reason='{reason}'"
+                raw_reason = parsed_data.get("reason", "")
+                if isinstance(raw_reason, dict):
+                    raw_reason = str(raw_reason.get("text", raw_reason))
+
+                validated = ClassificationResult(
+                    intent=IntentEnum(raw_intent),
+                    reason=str(raw_reason),
                 )
-                return {"intent": intent, "reason": reason}
+
+                logger.debug(f"DocumentClassifierAgent: intent={validated.intent.value} | reason='{validated.reason}'")
+                return {"intent": validated.intent.value, "reason": validated.reason}
 
         except Exception as exc:
-            logger.warning(
-                f"[WARN] DocumentClassifierAgent failed, defaulting to HYBRID | {exc}"
-            )
+            logger.warning(f"[WARN] DocumentClassifierAgent failed, defaulting to HYBRID | {exc}")
 
         return {"intent": "HYBRID", "reason": "Classification fallback"}

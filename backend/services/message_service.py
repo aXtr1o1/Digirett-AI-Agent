@@ -412,3 +412,41 @@ class MessageService:
             normalized.append({"title": title, "url": url})
 
         return normalized
+
+    def get_title_fetcher(self):
+        """Returns title_fetcher instance."""
+        return self._title_fetcher
+
+    def get_cache(self):
+        """Returns redis_client cache instance."""
+        return self._cache
+
+    def get_first_messages(self, conversation_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Fetches first N messages in chronological order for title generation."""
+        try:
+            resp = (
+                self._supabase.table("messages")
+                .select("role, content")
+                .eq("conversation_id", conversation_id)
+                .order("created_at", desc=False)
+                .limit(limit)
+                .execute()
+            )
+            return resp.data or []
+        except Exception as exc:
+            logger.warning(f"⚠️ get_first_messages failed | conv={conversation_id} | {exc}")
+            return []
+
+    def update_message_sources(self, message_id: str, sources: List[Dict[str, Any]]) -> bool:
+        """Updates translated sources for a message in database."""
+        try:
+            resp = (
+                self._supabase.table("messages")
+                .update({"sources": sources})
+                .eq("message_id", message_id)
+                .execute()
+            )
+            return bool(resp.data)
+        except Exception as exc:
+            logger.warning(f"⚠️ update_message_sources failed | msg={message_id} | {exc}")
+            return False
