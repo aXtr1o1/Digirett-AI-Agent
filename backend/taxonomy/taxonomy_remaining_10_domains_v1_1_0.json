@@ -173,7 +173,7 @@
           ],
           "scope_out": [
             "Authority to enter contracts — route to D04_CONTRACT / CL-02",
-            "Shareholder rights and general meeting — route to CY-03"
+            "Shareholder rights and general meeting — route to CY-04"
           ],
           "routing_constraints": {
             "b2b_b2c": [
@@ -220,7 +220,7 @@
             },
             {
               "term": "generalforsamling",
-              "correct_route": "D01_COMPANY / CY-03",
+              "correct_route": "D01_COMPANY / CY-04",
               "reason": "General meeting is shareholder rights."
             },
             {
@@ -245,81 +245,6 @@
         },
         {
           "subdomain_id": "CY-03",
-          "name_en": "Shareholder Rights & Records",
-          "name_nb": "Aksjonærrettigheter og aksjeeierbok",
-          "scope_in": [
-            "General meeting (generalforsamling) — convening, quorum, resolutions",
-            "Shareholder register (aksjeeierbok) and transparency",
-            "Minority shareholder rights and protection",
-            "Pre-emption rights on share transfers",
-            "Right of inspection (innsynsrett)"
-          ],
-          "scope_out": [
-            "Share issuance / capital increase — route to CY-04",
-            "Dividends — route to CY-05"
-          ],
-          "routing_constraints": {
-            "b2b_b2c": [
-              "B2B"
-            ],
-            "jurisdiction": [
-              "NO"
-            ],
-            "relationship_type": [
-              "commercial"
-            ],
-            "tier_ceiling": 2
-          },
-          "routing_keywords": [
-            "generalforsamling",
-            "ekstraordinær generalforsamling",
-            "innkalle generalforsamling",
-            "aksjeeierbok",
-            "aksjonærregister",
-            "aksjonærrettigheter",
-            "innsynsrett",
-            "minoritetsvern",
-            "forkjøpsrett aksjer",
-            "overdragelse av aksjer",
-            "stemmerett aksjonær",
-            "aksjonæravtale",
-            "reglene for generalforsamling",
-            "gyldig vedtak generalforsamling",
-            "beslutningsdyktighet",
-            "quorum generalforsamling",
-            "krav innkalling",
-            "fullmakt generalforsamling",
-            "simpelt flertall",
-            "kvalifisert flertall"
-          ],
-          "confusers": [
-            {
-              "term": "kapitalforhøyelse",
-              "correct_route": "D01_COMPANY / CY-04",
-              "reason": "Capital increase is share capital subdomain."
-            },
-            {
-              "term": "utbytte",
-              "correct_route": "D01_COMPANY / CY-05",
-              "reason": "Dividends are distributions subdomain."
-            },
-            {
-              "term": "styrevedtak",
-              "correct_route": "D01_COMPANY / CY-02",
-              "reason": "Board resolutions are governance subdomain."
-            }
-          ],
-          "required_sources": [
-            {
-              "source_id": "LOV-1997-06-13-44",
-              "title": "Aksjeloven",
-              "sections": "§§ 4-1 – 5-25",
-              "tier": 1
-            }
-          ]
-        },
-        {
-          "subdomain_id": "CY-04",
           "name_en": "Share Capital & Equity Changes",
           "name_nb": "Aksjekapital og kapitalendringer",
           "scope_in": [
@@ -366,6 +291,11 @@
           ],
           "confusers": [
             {
+              "term": "generalforsamling",
+              "correct_route": "D01_COMPANY / CY-04",
+              "reason": "General meetings belong to shareholder rights subdomain."
+            },
+            {
               "term": "utbytte",
               "correct_route": "D01_COMPANY / CY-05",
               "reason": "Dividends are distributions."
@@ -386,6 +316,81 @@
           ]
         },
         {
+          "subdomain_id": "CY-04",
+          "name_en": "Shareholder Rights & General Meeting",
+          "name_nb": "Aksjonærrettigheter og generalforsamling",
+          "scope_in": [
+            "General meeting (generalforsamling) — convening, quorum, resolutions",
+            "Shareholder register (aksjeeierbok) and transparency",
+            "Minority shareholder rights and protection",
+            "Pre-emption rights on share transfers",
+            "Right of inspection (innsynsrett)"
+          ],
+          "scope_out": [
+            "Share issuance / capital increase — route to CY-03",
+            "Dividends — route to CY-05"
+          ],
+          "routing_constraints": {
+            "b2b_b2c": [
+              "B2B"
+            ],
+            "jurisdiction": [
+              "NO"
+            ],
+            "relationship_type": [
+              "commercial"
+            ],
+            "tier_ceiling": 2
+          },
+          "routing_keywords": [
+            "generalforsamling",
+            "ekstraordinær generalforsamling",
+            "innkalle generalforsamling",
+            "aksjeeierbok",
+            "aksjonærregister",
+            "aksjonærrettigheter",
+            "innsynsrett",
+            "minoritetsvern",
+            "forkjøpsrett aksjer",
+            "overdragelse av aksjer",
+            "stemmerett aksjonær",
+            "aksjonæravtale",
+            "reglene for generalforsamling",
+            "gyldig vedtak generalforsamling",
+            "beslutningsdyktighet",
+            "quorum generalforsamling",
+            "krav innkalling",
+            "fullmakt generalforsamling",
+            "simpelt flertall",
+            "kvalifisert flertall"
+          ],
+          "confusers": [
+            {
+              "term": "kapitalforhøyelse",
+              "correct_route": "D01_COMPANY / CY-03",
+              "reason": "Capital increase is share capital subdomain."
+            },
+            {
+              "term": "utbytte",
+              "correct_route": "D01_COMPANY / CY-05",
+              "reason": "Dividends are distributions subdomain."
+            },
+            {
+              "term": "styrevedtak",
+              "correct_route": "D01_COMPANY / CY-02",
+              "reason": "Board resolutions are governance subdomain."
+            }
+          ],
+          "required_sources": [
+            {
+              "source_id": "LOV-1997-06-13-44",
+              "title": "Aksjeloven",
+              "sections": "§§ 4-1 – 5-25",
+              "tier": 1
+            }
+          ]
+        },
+        {
           "subdomain_id": "CY-05",
           "name_en": "Distributions",
           "name_nb": "Utdelinger",
@@ -395,7 +400,7 @@
             "Return of capital and share buybacks"
           ],
           "scope_out": [
-            "Capital reduction procedure — route to CY-04",
+            "Capital reduction procedure — route to CY-03",
             "Loss of equity / board duty to act — route to CY-06"
           ],
           "routing_constraints": {
@@ -429,7 +434,7 @@
           "confusers": [
             {
               "term": "kapitalnedsettelse",
-              "correct_route": "D01_COMPANY / CY-04",
+              "correct_route": "D01_COMPANY / CY-03",
               "reason": "Capital reduction is share capital subdomain."
             },
             {
@@ -526,6 +531,12 @@
               "title": "Aksjeloven",
               "sections": "§ 17-1 (shared with IN-04 — applies from håpløshetstidspunkt)",
               "tier": 1
+            },
+            {
+              "source_id": "LOV-1989-06-16-69",
+              "title": "Forsikringsavtaleloven",
+              "sections": "§§ 1-1 – 1-8, §§ 1A-1 – 1A-3, §§ 1B-1 – 1B-4, §§ 1C-1 – 1C-11, §§ 1D-1 – 1D-4, §§ 2-1 – 24-5",
+              "tier": 2
             }
           ]
         }
@@ -2356,6 +2367,18 @@
               "source_id": "LOV-1984-06-08-59",
               "title": "Dekningsloven",
               "sections": "§ 9-3",
+              "tier": 1
+            },
+            {
+              "source_id": "LOV-1973-12-14-61",
+              "title": "Lønnsgarantiloven",
+              "sections": "§§ 1-12",
+              "tier": 1
+            },
+            {
+              "source_id": "FOR-1998-10-28-999",
+              "title": "Lønnsgarantiforskriften",
+              "sections": "§§ 1-1 – 8-1",
               "tier": 1
             }
           ]
