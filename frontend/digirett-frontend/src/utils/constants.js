@@ -1,8 +1,6 @@
 // Base URL — backend runs with /api/v1 prefix (confirmed from server logs)
 export const API_BASE_URL = import.meta.env.VITE_API_URL
 
-// User ID is resolved from Clerk JWTs now.
-
 export const API_ENDPOINTS = {
   CONVERSATIONS: {
     CREATE: "/conversations",
