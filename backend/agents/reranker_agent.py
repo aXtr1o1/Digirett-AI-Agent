@@ -9,18 +9,35 @@ from pydantic import BaseModel, Field
 from config import settings
 from utils.json_response_parser import parse_json_response
 
-logger = logging.getLogger(__name__)
+from prompts.reranker_prompts import RERANKER_PROMPT_TEMPLATE
 
-# ── NAMED CONSTANTS ──────────────────────────────────────────────────
-MAX_RERANK_CHARS = 1500
-DEFAULT_TOP_K = 5
-MAX_RETRIES = 2
-RETRY_DELAY = 0.5
+def _safe_int(val: Any, default: int) -> int:
+    return val if isinstance(val, int) else default
+
+# ── OPERATIONAL CONSTANTS & RATIONALE ────────────────────────────────
+# Configurable constants loaded from settings with sane upper caps
+MAX_RERANK_CHARS = min(_safe_int(getattr(settings, "RERANKER_MAX_CHARS", 1500), 1500), 4000)
+DEFAULT_TOP_K = min(_safe_int(getattr(settings, "RERANKER_DEFAULT_TOP_K", getattr(settings, "DEFAULT_TOP_K", 5)), 5), 20)
+MAX_RETRIES = min(_safe_int(getattr(settings, "RERANKER_MAX_RETRIES", 2), 2), 5)
+RETRY_DELAY = getattr(settings, "RERANKER_RETRY_DELAY", 0.5) if isinstance(getattr(settings, "RERANKER_RETRY_DELAY", 0.5), (int, float)) else 0.5
+
+
+logger = logging.getLogger(__name__)
 
 
 class ChunkScoreItem(BaseModel):
-    chunk: int = Field(ge=1)
-    score: float = Field(ge=0.0, le=100.0)
+    chunk: int = Field(
+        ...,
+        ge=1,
+        description="1-indexed chunk position identifier matching LLM prompt input"
+    )
+    score: float = Field(
+        ...,
+        ge=0.0,
+        le=100.0,
+        description="Legal relevance score from 0.0 (irrelevant) to 100.0 (highly relevant)"
+    )
+
 
 
 class RerankerAgent:
@@ -65,15 +82,7 @@ class RerankerAgent:
             ]
         )
 
-        prompt = (
-            f"You are a legal relevance scoring system.\n\n"
-            f"Query:\n{query}\n\n"
-            f"Chunks:\n{formatted_chunks}\n\n"
-            f"For EACH chunk assign a relevance score from 0 to 100.\n"
-            f"Return ONLY valid JSON in this format:\n"
-            f'[\n  {{"chunk": 1, "score": 87}},\n  {{"chunk": 2, "score": 45}}\n]\n\n'
-            f"Higher score = more legally relevant.\nReturn nothing else."
-        )
+        prompt = RERANKER_PROMPT_TEMPLATE.format(query=query,formatted_chunks=formatted_chunks,)
 
         # Execution with exponential backoff retry policy
         response = None
@@ -118,7 +127,8 @@ class RerankerAgent:
                             )
                             idx = validated_item.chunk - 1
                             if 0 <= idx < len(copied_chunks):
-                                copied_chunks[idx]["rerank_score"] = validated_item.score
+                                copied_chunks[idx]["rerank_score"] = round(validated_item.score, 2)
+
                         except Exception as val_exc:
                             logger.warning(f" RerankerAgent: invalid score item '{item}': {val_exc}")
 

@@ -34,7 +34,6 @@ def get_conversation_service(request: Request) -> ConversationService:
         )
     return svc
 
-
 def get_message_service(request: Request) -> MessageService:
     svc = getattr(request.app.state, "message_service", None)
     if svc is None:
@@ -43,7 +42,6 @@ def get_message_service(request: Request) -> MessageService:
             detail="MessageService is not initialized on application state.",
         )
     return svc
-
 
 def get_user_service(request: Request) -> UserService:
     svc = getattr(request.app.state, "user_service", None)
@@ -54,7 +52,6 @@ def get_user_service(request: Request) -> UserService:
         )
     return svc
 
-
 def get_hitl_service(request: Request) -> HitlService:
     svc = getattr(request.app.state, "hitl_service", None)
     if svc is None:
@@ -64,10 +61,8 @@ def get_hitl_service(request: Request) -> HitlService:
         )
     return svc
 
-
 def get_document_service(request: Request) -> Optional[DocumentService]:
     return getattr(request.app.state, "document_service", None)
-
 
 def get_current_internal_user(
     user: ClerkUser = Depends(get_current_user),
@@ -146,7 +141,6 @@ async def create_conversation(
             detail=f"Failed to create conversation: {exc}",
         )
 
-
 @router.get(
     "/conversations/me",
     response_model=List[ConversationResponse],
@@ -187,7 +181,6 @@ async def get_my_conversations(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch conversations: {exc}",
         )
-
 
 @router.get(
     "/conversations/{conversation_id}",
@@ -237,7 +230,6 @@ async def get_conversation(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch conversation: {exc}",
         )
-
 
 @router.delete(
     "/conversations/{conversation_id}",

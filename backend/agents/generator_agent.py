@@ -19,13 +19,26 @@ PRE_STREAM_RETRY_DELAY = 0.5
 
 
 class LanguageInstructionBuilder:
-    """Builder class for language instructions without inline string mutation."""
+    """Builder class for language instructions with input validation and fallback."""
 
-    @staticmethod
-    def build(language: Optional[str]) -> str:
-        if not language:
+    DEFAULT_LANGUAGE = "English"
+    ALLOWED_LANGUAGES = {"english", "norwegian", "no", "en"}
+
+    @classmethod
+    def build(cls, language: Optional[str]) -> str:
+        if not language or not isinstance(language, str) or not language.strip():
             return ""
-        lang_name = language.capitalize()
+
+        cleaned = language.strip().lower()
+        if cleaned not in cls.ALLOWED_LANGUAGES:
+            logger.warning(
+                f" LanguageInstructionBuilder: unknown language '{language}' — "
+                f"defaulting to '{cls.DEFAULT_LANGUAGE}'"
+            )
+            lang_name = cls.DEFAULT_LANGUAGE
+        else:
+            lang_name = "Norwegian" if cleaned in ("norwegian", "no") else "English"
+
         return (
             f"\n\nCRITICAL LANGUAGE INSTRUCTION:\n"
             f"You MUST respond ONLY in {lang_name}. Do NOT use Norwegian unless {lang_name} is Norwegian.\n"
@@ -83,6 +96,7 @@ class GeneratorAgent:
         # Pre-stream connection attempt with retry strategy
         first_chunk = None
         stream_gen = None
+        last_exception: Optional[Exception] = None
 
         for attempt in range(PRE_STREAM_MAX_RETRIES + 1):
             try:
@@ -91,28 +105,56 @@ class GeneratorAgent:
                 stream_gen = gen
                 break
             except StopAsyncIteration:
+                logger.info(f"ℹ️ GeneratorAgent: [{log_label}] LLM returned an empty stream response (StopAsyncIteration on initial chunk)")
                 stream_gen = None
+                first_chunk = None
                 break
             except Exception as exc:
+                last_exception = exc
+                backoff_delay = min(PRE_STREAM_RETRY_DELAY * (2 ** attempt), 2.0)
                 if attempt < PRE_STREAM_MAX_RETRIES:
-                    logger.warning(f" GeneratorAgent: [{log_label}] pre-stream attempt {attempt + 1} failed: {exc}. Retrying...")
-                    await asyncio.sleep(PRE_STREAM_RETRY_DELAY * (2 ** attempt))
+                    logger.warning(
+                        f" GeneratorAgent: [{log_label}] pre-stream attempt failed | "
+                        f"attempt={attempt + 1}/{PRE_STREAM_MAX_RETRIES + 1} | "
+                        f"backoff_ms={int(backoff_delay * 1000)} | error={exc}"
+                    )
+                    await asyncio.sleep(backoff_delay)
                 else:
-                    logger.error(f" GeneratorAgent: [{log_label}] pre-stream failed after retries: {exc}")
-                    raise
+                    logger.error(
+                        f" GeneratorAgent: [{log_label}] pre-stream failed after retries | "
+                        f"total_attempts={PRE_STREAM_MAX_RETRIES + 1} | final_error={exc}"
+                    )
+                    raise RuntimeError(
+                        f"GeneratorAgent [{log_label}] connection failed after {PRE_STREAM_MAX_RETRIES + 1} attempts. "
+                        f"Last error: {exc}"
+                    ) from exc
+
 
         chunk_count = 0
-        if first_chunk and hasattr(first_chunk, "content") and first_chunk.content:
-            chunk_count += 1
-            yield first_chunk.content
+        try:
+            if first_chunk and hasattr(first_chunk, "content") and first_chunk.content:
+                chunk_count += 1
+                yield first_chunk.content
 
-        if stream_gen:
-            async for chunk in stream_gen:
-                if hasattr(chunk, "content") and chunk.content:
-                    chunk_count += 1
-                    yield chunk.content
+            if stream_gen:
+                async for chunk in stream_gen:
+                    if hasattr(chunk, "content") and chunk.content:
+                        chunk_count += 1
+                        yield chunk.content
+        except GeneratorExit:
+            logger.debug(f"GeneratorAgent: [{log_label}] Client disconnected — closing stream generator")
+            raise
+        except Exception as exc:
+            logger.error(f" GeneratorAgent: [{log_label}] LLM streaming error: {exc}")
+            raise
+        finally:
+            if stream_gen and hasattr(stream_gen, "aclose"):
+                try:
+                    await stream_gen.aclose()
+                except Exception as close_exc:
+                    logger.debug(f"GeneratorAgent: [{log_label}] Non-fatal error closing generator: {close_exc}")
+            logger.debug(f"GeneratorAgent: {log_label} stream finalized | {chunk_count} chunks emitted")
 
-        logger.debug(f"GeneratorAgent: {log_label} stream complete | {chunk_count} chunks generated")
 
     async def stream_casual(
         self,

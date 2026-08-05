@@ -55,7 +55,7 @@ async def get_notes(
     try:
         return notes_service.get_notes_by_lawyer(lawyer_id)
     except Exception as exc:
-        logger.exception(f"❌ Failed to fetch notes for lawyer {lawyer_id}: {exc}")
+        logger.exception(f" Failed to fetch notes for lawyer {lawyer_id}: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch notes.",

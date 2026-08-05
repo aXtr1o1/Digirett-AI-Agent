@@ -65,11 +65,6 @@ class LLMService:
         """Returns the underlying AzureChatOpenAI LLM client."""
         return self._llm
 
-    async def agenerate(self, prompt: str) -> str:
-        """Helper method to generate text asynchronously using the underlying LLM client."""
-        response = await self._llm.agenerate([[HumanMessage(content=prompt)]])
-        return response.generations[0][0].text.strip()
-
     def create_classifier_llm(self, temperature: float = 0.0) -> AzureChatOpenAI:
         """Factory method creating an LLM client instance for classification tasks."""
         return AzureChatOpenAI(
@@ -401,7 +396,14 @@ class LLMService:
         ]
 
 
-        llm = self.create_qa_llm(temperature=0.3, streaming=True)
+        llm = AzureChatOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+            temperature=0.3,
+            streaming=True,
+        )
 
         async with llm_span("document_summarization"):
             async for chunk in llm.astream(messages):

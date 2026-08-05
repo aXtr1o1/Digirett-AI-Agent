@@ -256,7 +256,7 @@ class RedisClient:
             self._get().setex(
                 f"user:conversations:{user_id}",
                 ttl,
-                json.dumps(conversation_ids, default=str),
+                json.dumps(conversation_ids),
             )
             return True
         except Exception as exc:

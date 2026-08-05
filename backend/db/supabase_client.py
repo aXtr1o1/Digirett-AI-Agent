@@ -162,7 +162,7 @@ class SupabaseClient:
             return True
 
         except Exception as exc:
-            logger.error(f"❌ update_conversation_summary failed | {exc}")
+            logger.error(f" update_conversation_summary failed | {exc}")
             return False
 
     def soft_delete_conversation(self, conversation_id: str) -> bool:
@@ -197,7 +197,7 @@ class SupabaseClient:
             )
             return resp.data[0] if resp.data else None
         except Exception as exc:
-            logger.error(f"❌ get_conversation_by_id failed | {exc}")
+            logger.error(f" get_conversation_by_id failed | {exc}")
             return None
 
     def touch_conversation(self, conversation_id: str) -> bool:
@@ -211,7 +211,7 @@ class SupabaseClient:
             )
             return True
         except Exception as exc:
-            logger.error(f"❌ touch_conversation failed | {exc}")
+            logger.error(f" touch_conversation failed | {exc}")
             return False
 
     def save_case_brief(self, ticket_id: str, brief_data: Dict[str, Any]) -> bool:
@@ -224,7 +224,7 @@ class SupabaseClient:
             )
             return True
         except Exception as exc:
-            logger.error(f"❌ save_case_brief failed for ticket {ticket_id} | {exc}")
+            logger.error(f" save_case_brief failed for ticket {ticket_id} | {exc}")
             return False
 
     def get_document_by_id(self, document_id: str) -> Optional[Dict[str, Any]]:
@@ -237,13 +237,9 @@ class SupabaseClient:
             )
             return resp.data[0] if resp.data else None
         except Exception as exc:
-            logger.error(f"❌ get_document_by_id failed for {document_id} | {exc}")
+            logger.error(f" get_document_by_id failed for {document_id} | {exc}")
             return None
 
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # MESSAGES
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     def _deduplicate_sources(
         self,
         sources: Optional[List[Dict[str, Any]]]
@@ -375,10 +371,7 @@ class SupabaseClient:
             logger.error(f" save_rag_retrievals failed | {exc}")
             return False
 
-
-# Module-level singleton and DI factory
 supabase_client = SupabaseClient()
-
 
 def get_supabase() -> SupabaseClient:
     """Return the singleton SupabaseClient (for dependency injection in main.py)."""

@@ -21,9 +21,8 @@ def get_billing_service(request: Request) -> BillingService:
         )
     return svc
 
-class BillingPortalResponse(BaseModel):
-    status: str = "success"
-    url: HttpUrl
+from schemas.responses import BillingPortalResponse
+
 
 @router.post(
     "/portal-session",
@@ -34,10 +33,7 @@ async def create_portal_session(
     current_user: ClerkUser = Depends(get_current_user),
     billing_service: BillingService = Depends(get_billing_service),
 ):
-    """
-    Creates a Stripe billing customer portal session URL for the active user,
-    allowing them to manage payment methods, view invoices, or cancel subscriptions.
-    """
+   
     logger.info(f"Generating billing portal session | user={current_user.clerk_user_id}")
 
     result = await billing_service.create_portal_session(

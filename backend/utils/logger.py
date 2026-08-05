@@ -44,17 +44,7 @@ def setup_logger(
     level: str = "INFO",
     log_file: Optional[str] = None,
 ) -> logging.Logger:
-    """
-    Create a logger with console output and optional file output.
-
-    Args:
-        name:     Logger name (pass __name__ from the calling module).
-        level:    One of DEBUG / INFO / WARNING / ERROR / CRITICAL.
-        log_file: Optional path for a file handler.
-
-    Returns:
-        Configured logging.Logger instance.
-    """
+    
     logger = logging.getLogger(name)
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
     logger.handlers.clear()

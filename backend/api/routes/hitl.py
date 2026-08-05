@@ -12,6 +12,18 @@ from services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 
+from schemas.requests import (
+    AvailabilityRequest,
+    EscalateRequest,
+    NoShowRequest,
+    PriorityUpdateRequest,
+    ReEscalateRequest,
+    RespondRequest,
+    SpecializationRequest,
+)
+
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/hitl", tags=["HITL Escalation"])
 
 # ── Services ─────────────────────────────────────────────────────────
@@ -30,40 +42,7 @@ def set_services(
     _user_service = user_svc
     _email_service = email_svc
 
-class EscalateRequest(BaseModel):
-    conversation_id: str
-    trigger_message_id: Optional[str] = None
-    trigger_message_id: Optional[str] = None
-    user_note: Optional[str] = None
-    priority: Optional[str] = "normal"
-    urgent_reason: Optional[str] = None
 
-
-class RespondRequest(BaseModel):
-    content: str
-    outcome_notes: Optional[str] = None  # Phase 8: optional outcome notes
-
-
-class NoShowRequest(BaseModel):
-    outcome_notes: Optional[str] = None
-    no_show_type: str = "user" # "user" or "both"
-
-
-class SpecializationRequest(BaseModel):
-    expertise_domains: List[str]
-    specialization_label: Optional[str] = None
-
-
-class AvailabilityRequest(BaseModel):
-    availability_status: str
-
-
-class PriorityUpdateRequest(BaseModel):
-    priority: str
-
-
-class ReEscalateRequest(BaseModel):
-    option: str
 
 
 @router.get(
@@ -103,11 +82,6 @@ def check_user_status(identifier: str):
     except Exception as exc:
         logger.error(f" check_user_status failed | {exc}")
         return {"status": "error", "is_suspended": False}
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ESCALATION (User)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @router.post(
     "/escalate",
@@ -164,15 +138,6 @@ def escalate_conversation(
 def get_ticket_queue(
     current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
 ):
-    """
-    Phase 3: Lawyers see the shared queue of open (unassigned) tickets.
-
-    Each ticket card includes:
-    - User display_name, email, phone_number
-    - conversation_summary (AI-generated, from conversations table)
-    - created_at timestamp
-    - status (always 'open' in this queue)
-    """
     lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
     tickets = _hitl_service.get_open_tickets(lawyer_id=lawyer_id)
     return tickets
@@ -288,7 +253,7 @@ def update_lawyer_availability(
         }).execute()
         return {"message": "Availability status updated successfully.", "profile": resp.data[0] if resp.data else {}}
     except Exception as e:
-        logger.error(f"❌ Failed to update lawyer availability | {e}")
+        logger.error(f" Failed to update lawyer availability | {e}")
         raise HTTPException(status_code=500, detail="Failed to update availability status.")
 
 

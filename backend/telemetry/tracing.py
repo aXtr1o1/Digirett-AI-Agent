@@ -1,17 +1,3 @@
-"""
-OpenTelemetry tracing setup.
-
-Measures:
-  - API endpoint latency  (via FastAPI instrumentation)
-  - LLM call latency      (manual spans around each LLM call)
-
-Usage — wrap any LLM call:
-    from telemetry.tracing import llm_span
-
-    async with llm_span("intent_classification"):
-        result = await intent_agent.run(query)
-"""
-
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -67,10 +53,7 @@ async def llm_span(
     user_id: Optional[str] = None,
     model_name: Optional[str] = "gpt-4o-mini",
 ):
-    """
-    Async context manager that wraps an LLM call in a named trace span
-    and logs latency in milliseconds with rich metadata.
-    """
+    
     tracer = get_tracer()
 
     start_time = time.perf_counter()

@@ -14,10 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def init_database_connections() -> Tuple[MilvusClient, RedisClient, SupabaseClient]:
-    """
-    Connect to Milvus, Redis, and Supabase database infrastructure.
-    Returns tuple of initialized clients: (milvus_client, redis_client, supabase_client)
-    """
+    
     logger.info("Connecting to Milvus...")
     milvus_client = get_milvus()
     milvus_client.connect(

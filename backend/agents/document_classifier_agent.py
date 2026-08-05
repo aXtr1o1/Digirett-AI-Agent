@@ -1,5 +1,3 @@
-
-
 import json
 import logging
 import re
@@ -54,11 +52,14 @@ class PromptBuilder:
     def add_history(self, conversation_history: Optional[List[Dict[str, str]]]) -> "PromptBuilder":
         if conversation_history:
             recent = conversation_history[-MAX_HISTORY_TURNS:]
-            history_str = "\n".join(
-                f"{m['role'].capitalize()}: {m['content'][:MAX_HISTORY_MSG_LEN]}"
-                for m in recent
-            )
-            self._parts.append(f"RECENT CONVERSATION:\n{history_str}")
+            history_lines = []
+            for m in recent:
+                if isinstance(m, dict):
+                    role = str(m.get("role", "user")).capitalize()
+                    content = str(m.get("content", ""))[:MAX_HISTORY_MSG_LEN]
+                    history_lines.append(f"{role}: {content}")
+            if history_lines:
+                self._parts.append("RECENT CONVERSATION:\n" + "\n".join(history_lines))
         return self
 
     def add_query(self, query: str) -> "PromptBuilder":
@@ -95,7 +96,7 @@ class DocumentClassifierAgent:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         doc_summary: Optional[str] = None,
     ) -> Dict[str, str]:
-        logger.debug(f"DocumentClassifierAgent: classifying '{query[:MAX_LOG_QUERY_LEN]}'")
+        logger.debug(f"DocumentClassifierAgent: classifying query (len={len(query)})")
 
         # Assemble prompt using PromptBuilder
         builder = PromptBuilder()
@@ -129,10 +130,14 @@ class DocumentClassifierAgent:
                         parsed_data = json_repair.loads(raw)
                     except Exception:
                         pass
-                if not parsed_data:
-                    match = re.search(r"\{.*\}", raw, re.DOTALL)
+                if not isinstance(parsed_data, dict):
+                    match = re.search(r"\{.*?\}", raw, re.DOTALL)
                     if match:
-                        parsed_data = json.loads(match.group(0))
+                        try:
+                            parsed_data = json.loads(match.group(0))
+                        except Exception:
+                            pass
+
 
             if isinstance(parsed_data, dict):
                 # Normalize raw intent string

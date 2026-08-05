@@ -5,7 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from core.auth import ClerkUser, require_db_role
+from schemas.requests import AcceptInviteRequest
+from schemas.responses import AcceptInviteResponse
 from services.user_service import UserService, AcceptInviteResult
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -16,21 +20,6 @@ def get_user_service(request: Request) -> UserService:
     if svc is None:
         raise RuntimeError("UserService is not initialized on application state.")
     return svc
-
-class AcceptInviteRequest(BaseModel):
-    token: Annotated[
-        str,
-        Field(
-            min_length=36,
-            max_length=36,
-            description="UUID string representation of invitation token",
-        ),
-    ]
-
-class AcceptInviteResponse(BaseModel):
-    status: str = "success"
-    message: str
-    role: Optional[str] = None
 
 @router.post(
     "/accept-invite",

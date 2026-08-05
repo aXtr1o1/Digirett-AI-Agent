@@ -12,8 +12,6 @@ logger = logging.getLogger(__name__)
 
 PLAN_MAPPING = {
     "start_up": "start_up",
-    "start-up": "start_up",
-    "startup":  "start_up",
     "vekst":    "vekst",
     "smb":      "smb",
     "enterprise": "enterprise",
@@ -38,7 +36,7 @@ class SubscriptionService:
     def sync_user_plan(self, clerk_user_id: str, plan_tier: str, role: Optional[str] = None) -> bool:
         """Consolidates plan tier updates across Supabase database and Clerk metadata."""
         if not self._user_service or not self._supabase:
-            logger.error("❌ SubscriptionService missing dependencies for plan sync.")
+            logger.error(" SubscriptionService missing dependencies for plan sync.")
             return False
 
         assigned_role = role or plan_tier
@@ -55,9 +53,9 @@ class SubscriptionService:
                 .eq("clerk_user_id", clerk_user_id)
             )
             self._supabase.execute_query(update_query)
-            logger.info(f"💾 DB plan_tier updated to '{plan_tier}' for Clerk ID: {clerk_user_id}")
+            logger.info(f" DB plan_tier updated to '{plan_tier}' for Clerk ID: {clerk_user_id}")
         except Exception as db_exc:
-            logger.error(f"❌ Supabase update failed for user {clerk_user_id}: {db_exc}")
+            logger.error(f" Supabase update failed for user {clerk_user_id}: {db_exc}")
             return False
 
         # 2. Update Clerk Metadata
@@ -66,8 +64,8 @@ class SubscriptionService:
                 "role": assigned_role,
                 "plan_tier": plan_tier,
             })
-            logger.info(f"💾 Clerk metadata updated to '{plan_tier}' for user {clerk_user_id}")
+            logger.info(f" Clerk metadata updated to '{plan_tier}' for user {clerk_user_id}")
         except Exception as clerk_exc:
-            logger.error(f"❌ Clerk metadata update failed for user {clerk_user_id}: {clerk_exc}")
+            logger.error(f" Clerk metadata update failed for user {clerk_user_id}: {clerk_exc}")
 
         return True

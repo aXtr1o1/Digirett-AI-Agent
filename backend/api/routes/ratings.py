@@ -45,10 +45,8 @@ def get_current_internal_user(
     return user, internal_user_id
 
 
-class RatingSubmitRequest(BaseModel):
-    ticket_id: str
-    rating: int = Field(..., ge=1, le=5)
-    comment: Optional[str] = None
+from schemas.requests import RatingSubmitRequest
+
 
 @router.post(
     "",

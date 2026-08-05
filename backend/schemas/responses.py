@@ -224,3 +224,124 @@ class WebhookResponse(BaseModel):
     status: str
     message: Optional[str] = None
     reason: Optional[str] = None
+
+
+# ── Cal.com Response Schemas ───────────────────────────────────────────
+class CalSlotsResponse(BaseModel):
+    ticket_id: str
+    lawyer_id: Optional[str] = None
+    slots: Dict[str, Any]
+
+
+class CalBookingResponse(BaseModel):
+    ticket_id: str
+    cal_booking_id: Optional[Any] = None
+    uid: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    status: Optional[str] = None
+    message: str
+
+
+class CalLawyerConfigResponse(BaseModel):
+    cal_event_type_id: str
+    cal_api_key: str
+
+
+class CalMessageResponse(BaseModel):
+    message: str
+
+
+class CalWebhookResponse(BaseModel):
+    status: str
+    ticket_id: Optional[str] = None
+    cal_booking_id: Optional[str] = None
+    booking_url: Optional[str] = None
+    action: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class AcceptInviteResponse(BaseModel):
+    status: str = "success"
+    message: str
+    role: Optional[str] = None
+
+
+# ── Document Agent Response Schemas ────────────────────────────────────
+class DocumentUploadResponse(BaseModel):
+    document_id: str
+    file_name: str
+    file_type: str
+    char_count: int
+    upload_order: int
+    docs_remaining: int
+    message: str
+    duplicate: bool = False
+
+
+class SessionStatusResponse(BaseModel):
+    conversation_id: str
+    doc_count: int
+    turn_count: int
+    token_count: int = 0
+    docs_remaining: int
+    turns_remaining: int
+    tokens_remaining: int = 0
+    has_documents: bool
+    session_active: bool
+    reset_at: Optional[str] = None
+    docs: List[Any] = Field(default_factory=list)
+
+
+# ── Billing Response Schemas ───────────────────────────────────────────
+class BillingPortalResponse(BaseModel):
+    status: str = "success"
+    url: str
+
+
+# ── Admin Response Schemas ─────────────────────────────────────────────
+class SuccessResponse(BaseModel):
+    status: str = "success"
+    message: str
+
+
+class LawyerSummaryResponse(BaseModel):
+    user_id: str
+    email: Optional[str] = None
+    display_name: str
+    cal_configured: bool
+    expertise_domains: List[str] = Field(default_factory=list)
+    specialization_label: Optional[str] = None
+
+
+class AverageResponseTimes(BaseModel):
+    avg_claim_hours: float
+    avg_book_hours: float
+    avg_resolve_days: float
+
+
+class LawyerPerformanceMetric(BaseModel):
+    lawyer_id: str
+    name: str
+    tickets: int
+    avg_resolve_days: Optional[float] = None
+    rating: Optional[float] = None
+
+
+class SLAReportResponse(BaseModel):
+    active_breaches: List[Dict[str, Any]] = Field(default_factory=list)
+    average_response_times: AverageResponseTimes
+    lawyer_performance: List[LawyerPerformanceMetric] = Field(default_factory=list)
+
+
+class DomainAnalyticsItem(BaseModel):
+    name: str
+    raw_key: str
+    is_canonical: bool
+    queries: int
+    percentage: float
+
+
+class DomainAnalyticsResponse(BaseModel):
+    total: int
+    distribution: List[DomainAnalyticsItem] = Field(default_factory=list)

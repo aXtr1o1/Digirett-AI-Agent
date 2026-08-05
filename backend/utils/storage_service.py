@@ -5,10 +5,6 @@ logger = logging.getLogger(__name__)
 
 
 class StorageService:
-    """
-    Lightweight wrapper exposing upload(), download(), and delete() operations
-    over Supabase Storage buckets while preserving underlying client behavior.
-    """
 
     def __init__(self, supabase_client: Any) -> None:
         self._supabase = supabase_client
@@ -39,10 +35,10 @@ class StorageService:
                 file=file_bytes,
                 file_options=file_options,
             )
-            logger.info(f"💾 StorageService: Uploaded file | bucket={bucket} | path={path}")
+            logger.info(f" StorageService: Uploaded file | bucket={bucket} | path={path}")
             return True
         except Exception as exc:
-            logger.error(f"❌ StorageService upload failed | bucket={bucket} | path={path} | {exc}", exc_info=True)
+            logger.error(f" StorageService upload failed | bucket={bucket} | path={path} | {exc}", exc_info=True)
             raise
 
     def download(self, bucket: str, path: str) -> bytes:
@@ -50,10 +46,10 @@ class StorageService:
         try:
             client = self._get_client()
             content = client.storage.from_(bucket).download(path)
-            logger.info(f"📥 StorageService: Downloaded file | bucket={bucket} | path={path}")
+            logger.info(f" StorageService: Downloaded file | bucket={bucket} | path={path}")
             return content
         except Exception as exc:
-            logger.error(f"❌ StorageService download failed | bucket={bucket} | path={path} | {exc}", exc_info=True)
+            logger.error(f" StorageService download failed | bucket={bucket} | path={path} | {exc}", exc_info=True)
             raise
 
     def delete(self, bucket: str, paths: Union[str, List[str]]) -> bool:
@@ -65,8 +61,8 @@ class StorageService:
         try:
             client = self._get_client()
             client.storage.from_(bucket).remove(path_list)
-            logger.info(f"🗑️ StorageService: Deleted files | bucket={bucket} | count={len(path_list)}")
+            logger.info(f" StorageService: Deleted files | bucket={bucket} | count={len(path_list)}")
             return True
         except Exception as exc:
-            logger.warning(f"⚠️ StorageService delete failed | bucket={bucket} | {exc}")
+            logger.warning(f" StorageService delete failed | bucket={bucket} | {exc}")
             return False

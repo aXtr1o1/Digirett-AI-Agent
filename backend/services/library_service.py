@@ -319,12 +319,10 @@ class LibraryService:
                 filename = first_row.get("file_name")
                 file_type = first_row.get("file_type")
                 file_hash = first_row.get("file_hash")
-                if file_hash:
-                    storage_path = f"uploads/{file_hash}.{file_type}"
-                else:
-                    storage_path = f"uploads/{document_id}.{file_type}"
+                identifier = file_hash or document_id
+                storage_path = f"uploads/{identifier}.{file_type}"
 
-            
+ 
             # Download from Storage
             client = self._supabase
             if hasattr(client, "_get"):

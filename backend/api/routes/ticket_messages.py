@@ -6,7 +6,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from pydantic import BaseModel
 
 from core.auth import ClerkUser, get_current_user
+from schemas.requests import MessageCreateRequest
+
 from schemas.responses import TicketMessageListResponse, TicketMessageReadResponse, TicketMessageResponse
+
 from services.ticket_message_service import TicketMessageService
 from services.user_service import UserService
 
@@ -46,10 +49,7 @@ def get_current_internal_user(
     return user, internal_user_id
 
 
-class MessageCreateRequest(BaseModel):
-    content: str
-    file_name: Optional[str] = None
-    document_id: Optional[str] = None
+
 
 @router.get(
     "/{ticket_id}/messages",

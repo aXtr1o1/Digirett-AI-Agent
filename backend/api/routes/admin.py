@@ -6,6 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel, EmailStr
 
 from core.auth import ClerkUser, require_db_role
+from schemas.requests import (
+    AdminCloseTicketRequest,
+    AdminSpecializationRequest,
+    AllowedUserRole,
+    InviteRequest,
+    PromoteAdminRequest,
+    PromoteLawyerRequest,
+)
 from services.email_service import EmailService
 from services.hitl_service import HitlService
 from services.user_service import UserService
@@ -54,83 +62,17 @@ def get_hitl_service(request: Request) -> HitlService:
         raise RuntimeError("HitlService is not initialized.")
     return svc
 
-class AllowedUserRole(str, Enum):
-    USER = "user"
-    LAWYER = "lawyer"
-    ADMIN = "admin"
-    SYSTEM_ADMIN = "system_admin"
 
+from schemas.responses import (
+    AverageResponseTimes,
+    DomainAnalyticsItem,
+    DomainAnalyticsResponse,
+    LawyerPerformanceMetric,
+    LawyerSummaryResponse,
+    SLAReportResponse,
+    SuccessResponse,
+)
 
-class SuccessResponse(BaseModel):
-    status: str = "success"
-    message: str
-
-
-class InviteRequest(BaseModel):
-    email: EmailStr
-    role: AllowedUserRole
-
-
-class PromoteLawyerRequest(BaseModel):
-    user_id: str
-    bar_license: Optional[str] = None
-    bar_council: Optional[str] = None
-
-
-class PromoteAdminRequest(BaseModel):
-    user_id: str
-    full_name: Optional[str] = None
-
-
-class AdminCloseTicketRequest(BaseModel):
-    outcome_notes: Optional[str] = None
-
-
-class AdminSpecializationRequest(BaseModel):
-    expertise_domains: List[str]
-    specialization_label: Optional[str] = None
-
-
-class LawyerSummaryResponse(BaseModel):
-    user_id: str
-    email: Optional[str] = None
-    display_name: str
-    cal_configured: bool
-    expertise_domains: List[str] = []
-    specialization_label: Optional[str] = None
-
-
-class AverageResponseTimes(BaseModel):
-    avg_claim_hours: float
-    avg_book_hours: float
-    avg_resolve_days: float
-
-
-class LawyerPerformanceMetric(BaseModel):
-    lawyer_id: str
-    name: str
-    tickets: int
-    avg_resolve_days: Optional[float] = None
-    rating: Optional[float] = None
-
-
-class SLAReportResponse(BaseModel):
-    active_breaches: List[Dict[str, Any]]
-    average_response_times: AverageResponseTimes
-    lawyer_performance: List[LawyerPerformanceMetric]
-
-
-class DomainAnalyticsItem(BaseModel):
-    name: str
-    raw_key: str
-    is_canonical: bool
-    queries: int
-    percentage: float
-
-
-class DomainAnalyticsResponse(BaseModel):
-    total: int
-    distribution: List[DomainAnalyticsItem]
 
 
 @router.post(
@@ -528,11 +470,6 @@ async def get_sla_report(
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
-
-
-
-
-
 @router.patch(
     "/lawyers/{lawyer_id}/specialization",
     summary="Admin overrides a lawyer's specialization settings",
@@ -570,7 +507,7 @@ async def admin_set_lawyer_specialization(
                         expertise_domains=req.expertise_domains,
                     )
             except Exception as mail_err:
-                logger.warning(f"⚠️ Failed to queue lawyer specialization override email: {mail_err}")
+                logger.warning(f" Failed to queue lawyer specialization override email: {mail_err}")
 
         return {"status": "success", "message": "Lawyer specialization updated by admin.", "profile": updated_profile}
     except HTTPException:

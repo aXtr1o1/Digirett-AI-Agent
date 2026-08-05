@@ -5,39 +5,35 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status, BackgroundTasks
 
-from pydantic import BaseModel
-
 from config import settings
+from schemas.responses import CalWebhookResponse
 from services.cal_service import CalService
 from services.email_service import EmailService
 from services.hitl_service import HitlService
+from services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(prefix="/webhooks/cal", tags=["Cal.com Webhooks"])
 
 
 def get_hitl_service(request: Request) -> HitlService:
     svc = getattr(request.app.state, "hitl_service", None)
     if svc is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="HitlService is not initialized on application state.",
-        )
+        raise RuntimeError("HitlService is not initialized on application state.")
+    return svc
+
+
+def get_user_service(request: Request) -> UserService:
+    svc = getattr(request.app.state, "user_service", None)
+    if svc is None:
+        raise RuntimeError("UserService is not initialized on application state.")
     return svc
 
 
 def get_email_service(request: Request) -> Optional[EmailService]:
     return getattr(request.app.state, "email_service", None)
 
-
-class CalWebhookResponse(BaseModel):
-    status: str
-    ticket_id: Optional[str] = None
-    cal_booking_id: Optional[str] = None
-    booking_url: Optional[str] = None
-    action: Optional[str] = None
-    reason: Optional[str] = None
 
 def _verify_cal_signature(payload: bytes, signature_header: Optional[str]) -> bool:
     """
@@ -46,7 +42,7 @@ def _verify_cal_signature(payload: bytes, signature_header: Optional[str]) -> bo
     """
     secret = settings.CAL_COM_WEBHOOK_SECRET
     if not secret:
-        logger.warning("⚠️ CAL_COM_WEBHOOK_SECRET not set — skipping webhook signature verification")
+        logger.warning(" CAL_COM_WEBHOOK_SECRET not set — skipping webhook signature verification")
         return True
 
     if not signature_header:
@@ -102,7 +98,7 @@ async def cal_webhook(
     is_cancelled_event = trigger_event in ("BOOKING_CANCELLED", "booking.cancelled")
 
     if not (is_booking_event or is_reschedule_event or is_cancelled_event):
-        logger.info(f"ℹ️ Cal.com webhook ignored | event={trigger_event}")
+        logger.info(f" Cal.com webhook ignored | event={trigger_event}")
         return CalWebhookResponse(status="ignored", reason=f"Unhandled event: {trigger_event}")
 
     booking = data.get("payload") or data

@@ -51,14 +51,20 @@ def get_current_internal_user(
         )
     return user, internal_user_id
 
-_ALLOWED_EXTENSIONS = {"pdf", "docx", "doc"}
-_ALLOWED_MIME_TYPES = {
-    "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/msword",
-    "application/x-pdf",
-    "binary/octet-stream",
-}
+_ALLOWED_EXTENSIONS = set(getattr(settings, "ALLOWED_FILE_EXTENSIONS", ["pdf", "docx", "doc"]))
+_ALLOWED_MIME_TYPES = set(
+    getattr(
+        settings,
+        "ALLOWED_MIME_TYPES",
+        [
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/msword",
+            "application/x-pdf",
+            "binary/octet-stream",
+        ],
+    )
+)
 
 
 def _validate_file_security(filename: str, content_type: str, file_bytes: bytes) -> str:

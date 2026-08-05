@@ -1,10 +1,3 @@
-"""
-services/memory_service.py — Conversation Memory Service
-
-Responsible strictly for loading & caching conversation history via Redis and Supabase.
-Rebranded from MemoryAgent per Single Responsibility Principle (SRP).
-"""
-
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -12,8 +5,13 @@ from utils.context_builder import ContextBuilder
 
 logger = logging.getLogger(__name__)
 
-# ── CONSTANTS ────────────────────────────────────────────────────────
-INTENT_CONTEXT_MESSAGES = 2
+from config import settings
+
+# Unified constant aligned with OrchestratorAgent
+val = getattr(settings, "INTENT_CONTEXT_MESSAGES", 2)
+INTENT_CONTEXT_MESSAGES = min(val, 6) if isinstance(val, int) else 2
+
+
 
 
 class ConversationMemoryService:
@@ -34,7 +32,7 @@ class ConversationMemoryService:
                 logger.debug(f"ConversationMemoryService (Redis): {len(messages)} messages")
                 return messages
         except Exception as exc:
-            logger.warning(f"⚠️ ConversationMemoryService Redis error: {exc}")
+            logger.warning(f" ConversationMemoryService Redis error: {exc}")
 
         # ── Supabase fallback ─────────────────────────────────────────────
         try:
@@ -51,7 +49,7 @@ class ConversationMemoryService:
             logger.debug(f"ConversationMemoryService (Supabase): {len(messages)} messages")
             return messages
         except Exception as exc:
-            logger.error(f"❌ ConversationMemoryService Supabase error: {exc}", exc_info=True)
+            logger.error(f" ConversationMemoryService Supabase error: {exc}", exc_info=True)
             return []
 
     def build_intent_context(

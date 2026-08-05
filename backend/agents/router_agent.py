@@ -20,10 +20,15 @@ from utils.json_response_parser import parse_json_response
 
 logger = logging.getLogger(__name__)
 
-# ── NAMED CONSTANTS ──────────────────────────────────────────────────
-MIN_CONFIDENCE_THRESHOLD = 0.6
-MAX_RETRIES = 2
-RETRY_DELAY = 0.5
+
+def _safe_int(val: Any, default: int) -> int:
+    return val if isinstance(val, int) else default
+
+# Configurable constants loaded from settings with sane bounds
+val_conf = getattr(settings, "ROUTER_MIN_CONFIDENCE", 0.6)
+MIN_CONFIDENCE_THRESHOLD = min(max(val_conf, 0.0), 1.0) if isinstance(val_conf, (int, float)) else 0.6
+MAX_RETRIES = min(_safe_int(getattr(settings, "ROUTER_MAX_RETRIES", 2), 2), 5)
+RETRY_DELAY = getattr(settings, "ROUTER_RETRY_DELAY", 0.5) if isinstance(getattr(settings, "ROUTER_RETRY_DELAY", 0.5), (int, float)) else 0.5
 
 
 class RouterResult(BaseModel):
@@ -134,10 +139,10 @@ class RouterAgent:
                 break
             except Exception as exc:
                 if attempt < MAX_RETRIES:
-                    logger.warning(f"⚠️ RouterAgent: attempt {attempt + 1} failed: {exc}. Retrying...")
+                    logger.warning(f" RouterAgent: attempt {attempt + 1} failed: {exc}. Retrying...")
                     await asyncio.sleep(RETRY_DELAY * (2 ** attempt))
                 else:
-                    logger.error(f"❌ RouterAgent: LLM execution failed after retries: {exc}")
+                    logger.error(f" RouterAgent: LLM execution failed after retries: {exc}")
 
         # Parse JSON with project-wide JsonResponseParser & RouterResult validation
         if response and response.generations and response.generations[0]:
@@ -182,7 +187,7 @@ class RouterAgent:
                 low_conf_fallback = False
                 if confidence < MIN_CONFIDENCE_THRESHOLD:
                     logger.warning(
-                        f"⚠️ RouterAgent: low confidence score ({confidence:.2f} < {MIN_CONFIDENCE_THRESHOLD}) "
+                        f" RouterAgent: low confidence score ({confidence:.2f} < {MIN_CONFIDENCE_THRESHOLD}) "
                         f"— triggering domain-level broad search fallback"
                     )
                     valid_subs = []  # Clear restricted subdomains to force broad search

@@ -15,11 +15,15 @@ from utils.json_response_parser import parse_json_response
 
 logger = logging.getLogger(__name__)
 
-# ── NAMED CONSTANTS ──────────────────────────────────────────────────
-MAX_LOG_QUERY_LEN = 70
-MAX_PREV_QUERY_LEN = 400
-MAX_RETRIES = 2
-RETRY_DELAY = 0.5
+def _safe_int(val: Any, default: int) -> int:
+    return val if isinstance(val, int) else default
+
+# Configurable constants loaded from settings with sane upper caps
+MAX_LOG_QUERY_LEN = min(_safe_int(getattr(settings, "QUERY_REASONING_MAX_LOG_LEN", 70), 70), 200)
+MAX_PREV_QUERY_LEN = min(_safe_int(getattr(settings, "QUERY_REASONING_MAX_PREV_LEN", 400), 400), 1000)
+MAX_RETRIES = min(_safe_int(getattr(settings, "QUERY_REASONING_MAX_RETRIES", 2), 2), 5)
+RETRY_DELAY = getattr(settings, "QUERY_REASONING_RETRY_DELAY", 0.5) if isinstance(getattr(settings, "QUERY_REASONING_RETRY_DELAY", 0.5), (int, float)) else 0.5
+
 
 
 class ReasoningResult(BaseModel):

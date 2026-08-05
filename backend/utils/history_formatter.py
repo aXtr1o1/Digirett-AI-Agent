@@ -10,13 +10,6 @@ def convert_history_to_messages(
     conversation_history: Optional[List[Dict[str, str]]] = None,
     max_turns: Optional[int] = None,
 ) -> List[BaseMessage]:
-    """
-    Converts conversation history dictionary lists into LangChain Message objects.
-    
-    Args:
-        conversation_history: List of {"role": "user"|"assistant", "content": "..."}
-        max_turns: Optional limit for recent turns (e.g. 6)
-    """
     messages: List[BaseMessage] = []
     if conversation_history:
         history_slice = conversation_history[-max_turns:] if max_turns else conversation_history

@@ -3,6 +3,8 @@ import logging
 import time
 from collections import defaultdict
 from typing import Optional
+from config import settings
+
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect, status
 
@@ -34,17 +36,15 @@ def get_user_service(request: Request) -> UserService:
     return user_svc
 
 class _RateLimiter:
-    _WINDOW = 60
-    _MAX = 250
-
     def __init__(self):
+        self._window = getattr(settings, "RATE_LIMIT_WINDOW_SECONDS", 60)
+        self._max = getattr(settings, "RATE_LIMIT_MAX_REQUESTS", 250)
         self._buckets: dict = defaultdict(list)
-
     def is_allowed(self, ip: str) -> bool:
         now = time.time()
-        cutoff = now - self._WINDOW
+        cutoff = now - self._window
         self._buckets[ip] = [t for t in self._buckets[ip] if t > cutoff]
-        if len(self._buckets[ip]) >= self._MAX:
+        if len(self._buckets[ip]) >= self._max:
             return False
         self._buckets[ip].append(now)
         return True
@@ -84,7 +84,7 @@ async def chat_websocket(websocket: WebSocket):
 
     # 1. Rate Limit Check
     if not _rate_limiter.is_allowed(client_ip):
-        logger.warning(f"⛔ WS rate limit exceeded | ip={client_ip}")
+        logger.warning(f" WS rate limit exceeded | ip={client_ip}")
         await websocket.send_json({"type": "error", "message": "Rate limit exceeded"})
         await websocket.close(code=1008, reason="Rate limit exceeded")
         return
@@ -92,14 +92,14 @@ async def chat_websocket(websocket: WebSocket):
     # 2. Extract & Verify Token
     token = websocket.query_params.get("token")
     if not token:
-        logger.warning(f"⛔ WS connection rejected (Missing token) | ip={client_ip}")
+        logger.warning(f" WS connection rejected (Missing token) | ip={client_ip}")
         await websocket.send_json({"type": "error", "message": "Authentication token is required"})
         await websocket.close(code=1008, reason="Authentication failed")
         return
 
     clerk_user = await verify_ws_token(token)
     if not clerk_user:
-        logger.warning(f"⛔ WS connection rejected (Invalid token) | ip={client_ip}")
+        logger.warning(f" WS connection rejected (Invalid token) | ip={client_ip}")
         await websocket.send_json({"type": "error", "message": "Invalid authentication token"})
         await websocket.close(code=1008, reason="Authentication failed")
         return
@@ -109,14 +109,14 @@ async def chat_websocket(websocket: WebSocket):
     user_service: Optional[UserService] = getattr(websocket.app.state, "user_service", None)
 
     if not orchestrator or not user_service:
-        logger.error("❌ WS rejected: Services not initialized on app.state")
+        logger.error(" WS rejected: Services not initialized on app.state")
         await websocket.send_json({"type": "error", "message": "Chat service unavailable"})
         await websocket.close(code=1011, reason="Service unavailable")
         return
 
     internal_user_id = user_service.get_user_id_from_clerk_id(clerk_user.clerk_user_id)
     if not internal_user_id:
-        logger.warning(f"⛔ WS connection rejected (User not found) | clerk_id={clerk_user.clerk_user_id}")
+        logger.warning(f" WS connection rejected (User not found) | clerk_id={clerk_user.clerk_user_id}")
         await websocket.send_json({"type": "error", "message": "User profile not found"})
         await websocket.close(code=1008, reason="Authentication failed")
         return

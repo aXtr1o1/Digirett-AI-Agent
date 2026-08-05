@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 _jwks_cache: Dict[str, Any] = {}
 _jwks_fetched_at: float = 0.0
-_JWKS_TTL_SECONDS = 6 * 3600
+_JWKS_TTL_SECONDS = 6 * 3600  # Refresh every 6 hours
 
 
 async def _fetch_jwks() -> Dict[str, Any]:
@@ -53,10 +53,7 @@ async def _get_jwks() -> Dict[str, Any]:
     return _jwks_cache
 
 class ClerkUser(dict):
-    """
-    A dict subclass returned by get_current_user().
-    Keys: clerk_user_id, email, role, db_user_id, status
-    """
+   
     @property
     def clerk_user_id(self) -> str:
         return self["clerk_user_id"]
@@ -109,7 +106,7 @@ async def verify_token(token: str) -> ClerkUser:
 
         if not rsa_key:
             # Key not found — maybe rotated. Force refresh and retry once.
-            logger.warning("⚠️ JWT kid not found in cached JWKS — refreshing")
+            logger.warning(" JWT kid not found in cached JWKS — refreshing")
             jwks = await _fetch_jwks()
             for key in jwks.get("keys", []):
                 if key.get("kid") == kid:
@@ -154,6 +151,8 @@ async def verify_token(token: str) -> ClerkUser:
                 detail="Token missing subject claim",
             )
 
+        # Extract role from Clerk's publicMetadata (embedded in JWT)
+        # Clerk puts publicMetadata at the root level of the JWT payload
         metadata = payload.get("publicMetadata") or payload.get("public_metadata") or {}
         role = metadata.get("role", "user")
 
@@ -189,6 +188,7 @@ async def verify_token(token: str) -> ClerkUser:
             detail="Authentication failed",
         )
 
+
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi import Request, WebSocket
 
@@ -206,7 +206,7 @@ class WebSocketFriendlyBearer(HTTPBearer):
 security_bearer = WebSocketFriendlyBearer(auto_error=False)
 
 async def get_current_user(request: Request = None, websocket: WebSocket = None, credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)) -> ClerkUser:
-
+    
     req = request or websocket
     auth_header = req.headers.get("Authorization", "")
     if not auth_header and getattr(req, "query_params", None):
@@ -271,7 +271,7 @@ async def enrich_user_from_database(user: ClerkUser, supabase: Any) -> ClerkUser
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error(f" User status check failed | {exc}")
+        logger.error(f"User status check failed | {exc}")
 
     return user
 
@@ -303,6 +303,10 @@ def require_role(*allowed_roles: str):
 
 
 def require_db_role(*allowed_roles: str):
+    """
+    FastAPI dependency factory — checks that the authenticated user has one of the allowed
+    roles according to the authoritative role stored in the Supabase `users` table.
+    """
     async def _db_role_checker(user: ClerkUser = Depends(get_current_user)) -> ClerkUser:
         db_role = user.db_role
         if not db_role:
@@ -327,7 +331,11 @@ def require_db_role(*allowed_roles: str):
         return user
     return _db_role_checker
 
+
+
+
 async def verify_ws_token(token: Optional[str]) -> Optional[ClerkUser]:
+    
     if not token:
         return None
     try:

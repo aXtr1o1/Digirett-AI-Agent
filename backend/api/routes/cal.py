@@ -6,6 +6,13 @@ from pydantic import BaseModel
 
 from core.auth import ClerkUser, require_db_role
 from schemas.enums import TicketStatus
+from schemas.requests import BookingRequest, CalConfigUpdateRequest
+from schemas.responses import (
+    CalBookingResponse,
+    CalLawyerConfigResponse,
+    CalMessageResponse,
+    CalSlotsResponse,
+)
 from services.cal_service import CalService
 from services.hitl_service import HitlService
 from services.user_service import UserService
@@ -13,6 +20,17 @@ from services.user_service import UserService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cal", tags=["Cal.com Booking"])
+
+_hitl_service: Optional[HitlService] = None
+_user_service: Optional[UserService] = None
+
+
+def set_services(hitl_svc: HitlService, user_svc: Optional[UserService] = None) -> None:
+    """Legacy service injector for testing / backwards compatibility."""
+    global _hitl_service, _user_service
+    _hitl_service = hitl_svc
+    _user_service = user_svc
+
 
 def get_cal_service(request: Request) -> CalService:
     svc = getattr(request.app.state, "cal_service", None)
@@ -25,7 +43,7 @@ def get_cal_service(request: Request) -> CalService:
 
 
 def get_hitl_service(request: Request) -> HitlService:
-    svc = getattr(request.app.state, "hitl_service", None)
+    svc = getattr(request.app.state, "hitl_service", None) or _hitl_service
     if svc is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -35,7 +53,7 @@ def get_hitl_service(request: Request) -> HitlService:
 
 
 def get_user_service(request: Request) -> UserService:
-    svc = getattr(request.app.state, "user_service", None)
+    svc = getattr(request.app.state, "user_service", None) or _user_service
     if svc is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -43,39 +61,6 @@ def get_user_service(request: Request) -> UserService:
         )
     return svc
 
-class BookingRequest(BaseModel):
-    start_time: str
-    timezone: str = "Europe/Oslo"
-
-
-class CalSlotsResponse(BaseModel):
-    ticket_id: str
-    lawyer_id: Optional[str]
-    slots: Dict[str, Any]
-
-
-class CalBookingResponse(BaseModel):
-    ticket_id: str
-    cal_booking_id: Optional[Any] = None
-    uid: Optional[str] = None
-    start_time: Optional[str] = None
-    end_time: Optional[str] = None
-    status: Optional[str] = None
-    message: str
-
-
-class CalLawyerConfigResponse(BaseModel):
-    cal_event_type_id: str
-    cal_api_key: str
-
-
-class CalMessageResponse(BaseModel):
-    message: str
-
-
-class CalConfigUpdateRequest(BaseModel):
-    cal_event_type_id: str
-    cal_api_key: str
 
 def _resolve_lawyer_credentials(ticket: Dict[str, Any], user_service: UserService) -> Tuple[str, int]:
     """Resolves and validates Cal.com credentials using UserService."""

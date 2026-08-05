@@ -15,10 +15,6 @@ logger = logging.getLogger(__name__)
 
 
 def parse_json_response(raw_text: str) -> Optional[Dict[str, Any]]:
-    """
-    Parses a JSON response string using standard json.loads and json_repair fallbacks.
-    Does not rely on fragile regular expressions.
-    """
     if not raw_text or not isinstance(raw_text, str):
         return None
 
@@ -58,6 +54,6 @@ def parse_json_response(raw_text: str) -> Optional[Dict[str, Any]]:
             if isinstance(data, dict):
                 return data
     except Exception as exc:
-        logger.warning(f"⚠️ JSON parsing fallback failed: {exc}")
+        logger.warning(f" JSON parsing fallback failed: {exc}")
 
     return None

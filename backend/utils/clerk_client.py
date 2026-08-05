@@ -12,10 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class ClerkClient:
-    """
-    Encapsulates direct HTTP communication with Clerk REST API endpoints.
-    Used by UserService for metadata synchronization and user lookups.
-    """
+    
 
     def __init__(self, secret_key: Optional[str] = None) -> None:
         self._secret_key = secret_key or settings.CLERK_SECRET_KEY
@@ -37,10 +34,10 @@ class ClerkClient:
                 resp = await client.get(url, headers=self._headers())
                 if resp.status_code == 200:
                     return resp.json()
-                logger.warning(f"⚠️ Clerk get_user failed | status={resp.status_code} | id={clerk_user_id}")
+                logger.warning(f" Clerk get_user failed | status={resp.status_code} | id={clerk_user_id}")
                 return None
         except Exception as exc:
-            logger.error(f"❌ ClerkClient get_user error | id={clerk_user_id} | {exc}")
+            logger.error(f" ClerkClient get_user error | id={clerk_user_id} | {exc}")
             return None
 
     async def update_user_metadata(
@@ -57,10 +54,10 @@ class ClerkClient:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.patch(url, headers=self._headers(), json=payload)
                 if resp.status_code in (200, 204):
-                    logger.info(f"✅ Clerk user public_metadata updated | id={clerk_user_id}")
+                    logger.info(f" Clerk user public_metadata updated | id={clerk_user_id}")
                     return True
-                logger.warning(f"⚠️ Clerk update_user_metadata failed | status={resp.status_code} | id={clerk_user_id}")
+                logger.warning(f" Clerk update_user_metadata failed | status={resp.status_code} | id={clerk_user_id}")
                 return False
         except Exception as exc:
-            logger.error(f"❌ ClerkClient update_user_metadata error | id={clerk_user_id} | {exc}")
+            logger.error(f" ClerkClient update_user_metadata error | id={clerk_user_id} | {exc}")
             return False

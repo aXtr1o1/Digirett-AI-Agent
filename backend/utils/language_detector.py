@@ -26,11 +26,11 @@ class LanguageDetector:
             elif detected_lang in ("en", "en-US", "en-GB"):
                 return "english"
             else:
-                logger.info(f"🌐 Detected language code: {detected_lang}")
+                logger.info(f" Detected language code: {detected_lang}")
                 return detected_lang
         except LangDetectException as exc:
-            logger.warning(f"⚠️ Language detection failed ({exc}) — defaulting to 'english'")
+            logger.warning(f" Language detection failed ({exc}) — defaulting to 'english'")
             return "english"
         except Exception as exc:
-            logger.error(f"❌ Language detection error ({exc}) — defaulting to 'english'")
+            logger.error(f" Language detection error ({exc}) — defaulting to 'english'")
             return "english"

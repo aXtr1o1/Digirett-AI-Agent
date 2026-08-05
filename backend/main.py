@@ -104,7 +104,6 @@ async def lifespan(app: FastAPI):
             llm=app.state.llm_service,
         )
 
-        # Legacy backward-compatibility module injections for un-refactored endpoints
         admin.set_services(
             user_svc=app.state.user_service,
             email_svc=app.state.email_service,
@@ -118,7 +117,6 @@ async def lifespan(app: FastAPI):
 
         logger.info("All services ready — server is live")
 
-        # ── 30-minute background alert task ──────────────────────────────────
         async def _unassigned_ticket_alert_task():
             INTERVAL_SECONDS = 30 * 60
             await asyncio.sleep(60)
@@ -128,20 +126,19 @@ async def lifespan(app: FastAPI):
                     if admin_email and hasattr(app.state, "hitl_service"):
                         stale = app.state.hitl_service.get_unassigned_tickets_older_than_minutes(minutes=30)
                         if stale:
-                            logger.info(f"⚠️ Background task: {len(stale)} unassigned tickets older than 30min — alerting admin")
+                            logger.info(f" Background task: {len(stale)} unassigned tickets older than 30min — alerting admin")
                             await app.state.email_service.send_admin_unassigned_alert(
                                 admin_email=admin_email,
                                 unassigned_tickets=stale,
                             )
                             app.state.hitl_service.mark_alert_sent([t["ticket_id"] for t in stale])
                 except Exception as bg_exc:
-                    logger.warning(f"⚠️ Alert background task error (non-fatal) | {bg_exc}")
+                    logger.warning(f" Alert background task error (non-fatal) | {bg_exc}")
 
                 await asyncio.sleep(INTERVAL_SECONDS)
 
         asyncio.create_task(_unassigned_ticket_alert_task())
 
-        # ── 15-minute background auto-close task ──────────────────────────────
         async def _auto_close_tickets_task():
             INTERVAL_SECONDS = 15 * 60
             await asyncio.sleep(120)
@@ -203,7 +200,6 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException
 
-
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
@@ -211,7 +207,6 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         content={"message": exc.detail if isinstance(exc.detail, str) else str(exc.detail)},
         headers=getattr(exc, "headers", None),
     )
-
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -222,7 +217,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"message": msg},
     )
 
-
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception | {exc}", exc_info=True)
@@ -230,7 +224,6 @@ async def generic_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"message": "An unexpected error occurred. Please try again."},
     )
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -254,9 +247,6 @@ async def add_security_headers(request: Request, call_next):
     # XSS Protection (older browsers)
     response.headers["X-XSS-Protection"] = "1; mode=block"
     return response
-
-
-
 
 from core.auth import get_current_user
 from fastapi.openapi.utils import get_openapi
@@ -327,4 +317,3 @@ if __name__ == "__main__":
         loop="asyncio",
         log_level="info",
     )
-# Reload trigger comment to refresh settings and clear schema caches.

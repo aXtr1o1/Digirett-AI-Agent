@@ -1,7 +1,3 @@
-"""
-startup/services.py — Application Service Registration & Validation
-"""
-
 import logging
 from typing import Dict, Any
 
@@ -40,13 +36,6 @@ logger = logging.getLogger(__name__)
 
 
 def validate_external_services_config() -> None:
-    """
-    Lightweight health & configuration validation for external integrations:
-    - Azure OpenAI
-    - SMTP
-    - Clerk
-    - Cal.com
-    """
     # 1. Azure OpenAI Validation
     if getattr(settings, "AZURE_OPENAI_ENDPOINT", None) and getattr(settings, "AZURE_OPENAI_API_KEY", None):
         logger.info(" Azure OpenAI configuration validated")

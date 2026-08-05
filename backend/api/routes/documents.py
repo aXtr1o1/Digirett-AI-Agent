@@ -56,42 +56,9 @@ def get_current_internal_user(
         )
     return user, internal_user_id
 
-class DocumentUploadResponse(BaseModel):
-    document_id: str
-    file_name: str
-    file_type: str
-    char_count: int
-    upload_order: int
-    docs_remaining: int
-    message: str
-    duplicate: bool = False
+from schemas.requests import FileMessageRequest, SummaryMessageRequest
+from schemas.responses import DocumentUploadResponse, SessionStatusResponse
 
-
-class SessionStatusResponse(BaseModel):
-    conversation_id: str
-    doc_count: int
-    turn_count: int
-    token_count: int = 0
-    docs_remaining: int
-    turns_remaining: int
-    tokens_remaining: int = 0
-    has_documents: bool
-    session_active: bool
-    reset_at: Optional[str] = None
-    docs: List[Any] = Field(default_factory=list)
-
-
-class FileMessageRequest(BaseModel):
-    role: str
-    content: Optional[str] = None
-    type: str = "file-with-text"
-    file_name: str
-    document_id: Optional[str] = None
-
-
-class SummaryMessageRequest(BaseModel):
-    content: str
-    document_id: Optional[str] = None
 
 _ALLOWED_EXTENSIONS = {"pdf", "docx", "doc"}
 _ALLOWED_MIME_TYPES = {

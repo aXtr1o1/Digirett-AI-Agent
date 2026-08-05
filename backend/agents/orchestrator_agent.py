@@ -4,11 +4,13 @@ from typing import AsyncIterator, Dict, List, Optional
 from agents.generator_agent import GeneratorAgent
 from agents.intent_agent import IntentAgent, IntentResult
 from services.memory_service import ConversationMemoryService
+from config import settings
 
 logger = logging.getLogger(__name__)
 
-# ── NAMED CONSTANTS ──────────────────────────────────────────────────
-INTENT_CONTEXT_MESSAGES = 2
+val = getattr(settings, "INTENT_CONTEXT_MESSAGES", 2)
+INTENT_CONTEXT_MESSAGES = min(val, 6) if isinstance(val, int) else 2
+
 
 
 class OrchestratorAgent:
