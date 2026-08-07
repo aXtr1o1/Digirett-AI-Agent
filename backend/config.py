@@ -183,6 +183,17 @@ class Settings(BaseSettings):
     ROUTER_MAX_RETRIES: int = 2
     ROUTER_RETRY_DELAY: float = 0.5
 
+# ── Document QA Agent Stream & History Parameters ─────────────────────
+    DOCQA_MAX_HISTORY_TURNS: int = 6
+    DOCQA_PRE_STREAM_MAX_RETRIES: int = 2
+    DOCQA_PRE_STREAM_RETRY_DELAY: float = 0.5
+    # ── Generator Agent Settings ─────────────────────────────────────────
+    CASUAL_TEMPERATURE: float = 0.7
+    LEGAL_TEMPERATURE: float = 0.2
+    PRE_STREAM_MAX_RETRIES: int = 2
+    PRE_STREAM_RETRY_DELAY: float = 0.5
+
+
     # ── Rate Limiting Configuration ───────────────────────────────────────
     RATE_LIMIT_WINDOW_SECONDS: int = 60
     RATE_LIMIT_MAX_REQUESTS: int = 250

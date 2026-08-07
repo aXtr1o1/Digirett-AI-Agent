@@ -6,16 +6,16 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import AzureChatOpenAI
 
 from config import settings
-from prompts.generator_prompts import CASUAL_SYSTEM_PROMPT, LEGAL_SYSTEM_PROMPT
+from prompts.generator_prompts import CASUAL_SYSTEM_PROMPT, LEGAL_SYSTEM_PROMPT, LANGUAGE_INSTRUCTION_TEMPLATE
 from utils.history_formatter import convert_history_to_messages
 
 logger = logging.getLogger(__name__)
 
 # ── NAMED CONSTANTS & TEMPERATURE CONFIGURATIONS ──────────────────────
-CASUAL_TEMPERATURE = 0.7
-LEGAL_TEMPERATURE = 0.2
-PRE_STREAM_MAX_RETRIES = 2
-PRE_STREAM_RETRY_DELAY = 0.5
+CASUAL_TEMPERATURE = getattr(settings, "CASUAL_TEMPERATURE", 0.7)
+LEGAL_TEMPERATURE = getattr(settings, "LEGAL_TEMPERATURE", 0.2)
+PRE_STREAM_MAX_RETRIES = getattr(settings, "PRE_STREAM_MAX_RETRIES", 2)
+PRE_STREAM_RETRY_DELAY = getattr(settings, "PRE_STREAM_RETRY_DELAY", 0.5)
 
 
 class LanguageInstructionBuilder:
@@ -39,11 +39,7 @@ class LanguageInstructionBuilder:
         else:
             lang_name = "Norwegian" if cleaned in ("norwegian", "no") else "English"
 
-        return (
-            f"\n\nCRITICAL LANGUAGE INSTRUCTION:\n"
-            f"You MUST respond ONLY in {lang_name}. Do NOT use Norwegian unless {lang_name} is Norwegian.\n"
-            f"Even though the legal sources (KILDER) are in Norwegian, you must write your entire explanation, analysis, and response in {lang_name}."
-        )
+        return LANGUAGE_INSTRUCTION_TEMPLATE.format(lang_name=lang_name)
 
 
 class GeneratorAgent:

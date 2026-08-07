@@ -17,9 +17,10 @@ def _safe_int(val: Any, default: int) -> int:
 # Max character limits loaded from settings with sane upper caps (max 100,000 chars)
 MAX_DOC_CHARS_DOCQA = min(_safe_int(getattr(settings, "DOCQA_MAX_DOC_CHARS", 60_000), 60_000), 100_000)
 MAX_DOC_CHARS_HYBRID = min(_safe_int(getattr(settings, "HYBRID_MAX_DOC_CHARS", 40_000), 40_000), 80_000)
-MAX_HISTORY_TURNS = 6
-PRE_STREAM_MAX_RETRIES = 2
-PRE_STREAM_RETRY_DELAY = 0.5
+MAX_HISTORY_TURNS = _safe_int(getattr(settings, "DOCQA_MAX_HISTORY_TURNS", 6), 6)
+PRE_STREAM_MAX_RETRIES = _safe_int(getattr(settings, "DOCQA_PRE_STREAM_MAX_RETRIES", 2), 2)
+PRE_STREAM_RETRY_DELAY = getattr(settings, "DOCQA_PRE_STREAM_RETRY_DELAY", 0.5)
+
 
 
 

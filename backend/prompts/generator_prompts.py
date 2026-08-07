@@ -22,3 +22,10 @@ LEGAL_SYSTEM_PROMPT = _read(
     "legal_prompt.txt",
     "You are an AI Legal Assistant specialized in Norwegian law. Answer from provided sources. Prepend [SCORE:x.x] on line 1."
 )
+
+LANGUAGE_INSTRUCTION_TEMPLATE = (
+    "\n\nCRITICAL LANGUAGE INSTRUCTION:\n"
+    "You MUST respond ONLY in {lang_name}. Do NOT use Norwegian unless {lang_name} is Norwegian.\n"
+    "Even though the legal sources (KILDER) are in Norwegian, you must write your entire explanation, analysis, and response in {lang_name}."
+)
+
