@@ -1,0 +1,29 @@
+{
+  "rules": [
+    {
+      "rule_id": "contract_ecom",
+      "keywords": ["angrerett", "e-handel", "ordreknapp", "kjøpsknapp", "nettbutikk", "abonnement"],
+      "route": "CL-05"
+    },
+    {
+      "rule_id": "contract_terms",
+      "keywords": ["standardvilkår", "salgsbetingelser", "innkjøpsvilkår", "click-wrap", "lenke", "referanse"],
+      "route": "CL-04"
+    },
+    {
+      "rule_id": "employment_working_hours",
+      "keywords": ["overtid", "ferie", "skift", "turnus", "hviletid", "pauser", "gjennommssnittsberegning", "arbeidstid"],
+      "route": "EL-03"
+    },
+    {
+      "rule_id": "employment_formation",
+      "keywords": ["prøvetid", "midlertidig", "vikariat", "stillingsprosent", "innleie", "konkurranseklausul", "styringsrett", "skriftlig"],
+      "route": "EL-01"
+    },
+    {
+      "rule_id": "cookies_privacy",
+      "keywords": ["cookies", "informasjonskapsler", "cookie-banner", "sporing", "tracking"],
+      "route": "PR-08"
+    }
+  ]
+}

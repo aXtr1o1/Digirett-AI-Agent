@@ -1,83 +1,59 @@
-"""
-api/routes/invite.py
-====================
-Public endpoints for the invitation flow.
-No authentication required — these are hit BEFORE the user has a Clerk account.
-"""
-from fastapi import APIRouter, HTTPException
+import logging
 from typing import Optional
 
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+
+from schemas.responses import InviteVerificationResponse
+from services.invite_service import InviteService
+
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/invite", tags=["Invite"])
 
-# ── Service reference ────────────────────────────────────────
-_supabase = None
 
-def set_services(supabase_client):
-    global _supabase
-    _supabase = supabase_client
+def get_invite_service(request: Request) -> InviteService:
+    svc = getattr(request.app.state, "invite_service", None)
+    if svc is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="InviteService is not initialized on application state.",
+        )
+    return svc
 
 
-# ── Routes ───────────────────────────────────────────────────
-
-@router.get("/verify")
-async def verify_invite_token(token: str):
+@router.get(
+    "/verify",
+    response_model=InviteVerificationResponse,
+    summary="Validate invitation token and return role + masked email",
+)
+async def verify_invite_token(
+    token: str,
+    invite_service: InviteService = Depends(get_invite_service),
+):
     """
-    Called by the frontend /invite page to validate the invite token.
-    Returns the role and masked email so the frontend can guide the user.
-
-    Flow:
-      1. Frontend /invite page loads with ?token=...
-      2. Frontend calls GET /api/v1/invite/verify?token=...
-      3. This endpoint checks role_invites table
-      4. Returns { valid: true, role: "lawyer", email: "s****@axtr.in" }
-      5. Frontend shows "You were invited as a Lawyer. Sign up to continue."
-      6. Frontend redirects user to Clerk signup/signin
+    Called by frontend /invite page to validate an invite token.
+    Returns validity, role, and defensively masked email.
     """
-    if not token:
-        raise HTTPException(status_code=400, detail="Token is required.")
+    if not token or not token.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token is required.",
+        )
 
     try:
-        resp = _supabase.table("role_invites") \
-            .select("email, role, status") \
-            .eq("token", token) \
-            .execute()
-
-        if not resp.data:
+        result = invite_service.verify_token(token.strip())
+        if not result["valid"] and result.get("reason") == "not_found":
             raise HTTPException(
-                status_code=404,
-                detail="Invitation not found. It may have expired or already been used."
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result["message"],
             )
 
-        invite = resp.data[0]
-
-        if invite["status"] == "accepted":
-            return {
-                "valid": False,
-                "reason": "already_accepted",
-                "message": "This invitation has already been used. Please sign in instead."
-            }
-
-        if invite["status"] == "expired":
-            return {
-                "valid": False,
-                "reason": "expired",
-                "message": "This invitation has expired. Please ask an admin to resend."
-            }
-
-        # Mask email for display: "sabari@axtr.in" -> "s****@axtr.in"
-        email = invite["email"]
-        local, domain = email.split("@", 1)
-        masked_email = local[0] + "****@" + domain
-
-        return {
-            "valid": True,
-            "role": invite["role"],
-            "masked_email": masked_email,
-            "token": token,
-            "message": f"You have been invited as a {invite['role'].capitalize()}. Sign up to activate your account."
-        }
+        return InviteVerificationResponse(**result)
 
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to verify invite: {exc}")
+        logger.exception(f" Failed to verify invite token: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to verify invitation token.",
+        )

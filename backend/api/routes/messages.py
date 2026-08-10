@@ -1,37 +1,82 @@
 import logging
-import re
-from typing import List
+from typing import List, Tuple
+from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from core.auth import ClerkUser, get_current_user
 from schemas.responses import MessageResponse
+from services.conversation_service import ConversationService
+from services.message_service import MessageService
+from services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
 
-_UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-    re.IGNORECASE,
-)
-
-_message_service = None
-_conversation_service = None
-
-
-def _is_valid_uuid(value: str) -> bool:
-    return bool(_UUID_RE.match(value.strip())) if value else False
+def get_message_service(request: Request) -> MessageService:
+    svc = getattr(request.app.state, "message_service", None)
+    if svc is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MessageService is not initialized on application state.",
+        )
+    return svc
 
 
-def set_services(message_service, conversation_service=None) -> None:
-    global _message_service, _conversation_service
-    _message_service = message_service
-    _conversation_service = conversation_service
+def get_conversation_service(request: Request) -> ConversationService:
+    svc = getattr(request.app.state, "conversation_service", None)
+    if svc is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ConversationService is not initialized on application state.",
+        )
+    return svc
 
 
+def get_user_service(request: Request) -> UserService:
+    svc = getattr(request.app.state, "user_service", None)
+    if svc is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="UserService is not initialized on application state.",
+        )
+    return svc
 
+
+def get_current_internal_user(
+    user: ClerkUser = Depends(get_current_user),
+    user_service: UserService = Depends(get_user_service),
+) -> Tuple[ClerkUser, str]:
+    internal_user_id = user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
+    if not internal_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User profile not found in database.",
+        )
+    return user, internal_user_id
+
+
+def _authorize_conversation_access(
+    conversation_id: str,
+    user_context: Tuple[ClerkUser, str],
+    conversation_service: ConversationService,
+):
+    user, internal_user_id = user_context
+    conv = conversation_service.get_conversation(conversation_id)
+    if not conv:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found.",
+        )
+    if conv.get("user_id") != internal_user_id and user.role not in ("admin", "system_admin", "lawyer"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You do not own this conversation.",
+        )
+    return conv
 
 @router.get(
     "/messages/{conversation_id}",
@@ -40,36 +85,24 @@ def set_services(message_service, conversation_service=None) -> None:
     summary="Fetch all messages for a conversation",
 )
 @limiter.limit("100/minute")
-async def get_messages(request: Request, conversation_id: str):
+async def get_messages(
+    request: Request,
+    conversation_id: UUID,
+    user_context: Tuple[ClerkUser, str] = Depends(get_current_internal_user),
+    message_service: MessageService = Depends(get_message_service),
+    conversation_service: ConversationService = Depends(get_conversation_service),
+):
+    conv_id_str = str(conversation_id)
 
-    # API-2: not a valid UUID → 400
-    if not _is_valid_uuid(conversation_id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid conversation_id format. Must be a valid UUID.",
-        )
+    # 1. Authenticate & Authorize Access
+    _authorize_conversation_access(conv_id_str, user_context, conversation_service)
 
+    # 2. Fetch Messages
     try:
-        # API-3: get_conversation_messages returns [] for both
-        # "exists but empty" and "does not exist" — check existence first.
-        if _conversation_service:
-            conversation = _conversation_service.get_conversation(conversation_id)
-            if not conversation:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Conversation not found.",
-                )
-
-        messages = _message_service.get_conversation_messages(conversation_id)
+        messages = message_service.get_conversation_messages(conv_id_str)
         return [MessageResponse(**m) for m in messages]
-
-    except HTTPException:
-        raise
     except Exception as exc:
-        logger.error(
-            f"get_messages failed | conversation={conversation_id} | {exc}",
-            exc_info=True,
-        )
+        logger.exception(f" get_messages failed | conversation={conv_id_str} | {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch messages.",

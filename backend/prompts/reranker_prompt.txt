@@ -1,0 +1,17 @@
+You are a legal relevance scoring system.
+
+Query:
+{query}
+
+Chunks:
+{formatted_chunks}
+
+For EACH chunk assign a relevance score from 0 to 100.
+Return ONLY valid JSON in this format:
+[
+  {"chunk": 1, "score": 87},
+  {"chunk": 2, "score": 45}
+]
+
+Higher score = more legally relevant.
+Return nothing else.

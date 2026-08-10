@@ -1,92 +1,82 @@
-# backend/router/confuser_resolver.py
+"""
+router/confuser_resolver.py — Confuser Term Resolution Engine
+"""
 
 import logging
-from typing import Optional, Dict, Any
+import re
+from typing import Optional
 from router.taxonomy_loader import taxonomy_loader
+from router.utils.models import ResolvedRoute
+from router.utils.stem_matcher import StemMatcher, Tokenizer
 
 logger = logging.getLogger(__name__)
 
+
 class ConfuserResolver:
-    
+
     @staticmethod
     def resolve(subdomain_id: str, query_text: str) -> str:
-        """
-        Checks if the query matches any of the subdomain's confuser terms.
-        If matched, redirects to the correct subdomain route.
-        """
+        res = ConfuserResolver.resolve_detailed(subdomain_id, query_text)
+        return res.route
+
+    @staticmethod
+    def resolve_detailed(subdomain_id: str, query_text: str) -> ResolvedRoute:
         sub_data = taxonomy_loader.get_subdomain(subdomain_id)
         if not sub_data:
-            return subdomain_id
+            return ResolvedRoute(route=subdomain_id, reason="No taxonomy data")
 
         confusers = sub_data.get("confusers", [])
         if not confusers:
-            return subdomain_id
+            return ResolvedRoute(route=subdomain_id, reason="No confusers configured")
 
-        q_lower = query_text.lower()
+        query_words = Tokenizer.tokenize(query_text)
+        query_stems = StemMatcher.get_stems(query_words)
 
         for confuser in confusers:
             term = confuser.get("term", "").lower()
             if not term:
                 continue
 
-            # Stem matching: split parenthetical context from the core term
             clean_term = re.sub(r"\(.*?\)", "", term).strip()
-            term_words = re.findall(r"\b\w{3,}\b", clean_term)
-            
-            # Smart stemming to prevent short root-word collisions (e.g. "konkurs" vs "konkursbegjæring")
-            def get_stem(word: str) -> str:
-                if len(word) <= 6:
-                    return word
-                return word[:10]
-                
-            term_stems = {get_stem(w) for w in term_words}
-            
-            query_words = re.findall(r"\b\w{3,}\b", q_lower)
-            query_stems = {get_stem(w) for w in query_words}
+            term_words = Tokenizer.tokenize(clean_term)
+            term_stems = StemMatcher.get_stems(term_words)
 
-            # Check if all core term stems exist in query
             if term_stems and term_stems.issubset(query_stems):
-                # If parenthetical context exists, check if at least one context stem matches the query
                 paren_match = re.search(r"\((.*?)\)", term)
                 if paren_match:
-                    paren_words = re.findall(r"\b\w{3,}\b", paren_match.group(1))
-                    paren_stems = {get_stem(w) for w in paren_words}
+                    paren_words = Tokenizer.tokenize(paren_match.group(1))
+                    paren_stems = StemMatcher.get_stems(paren_words)
                     if paren_stems and not paren_stems.intersection(query_stems):
                         continue
 
                 correct_route_str = confuser.get("correct_route", "")
+                reason = confuser.get("reason", "Confuser rule hit")
                 logger.info(
                     f"⚠️ Confuser hit: '{term}' matched query stems. "
-                    f"Redirecting route from {subdomain_id} to '{correct_route_str}' | "
-                    f"Reason: {confuser.get('reason')}"
+                    f"Redirecting route from {subdomain_id} to '{correct_route_str}' | Reason: {reason}"
                 )
-                
+
                 resolved_id = ConfuserResolver._parse_subdomain_id(correct_route_str)
                 if resolved_id:
-                    return resolved_id
+                    return ResolvedRoute(
+                        route=resolved_id,
+                        reason=reason,
+                        matched_term=term,
+                    )
 
-        return subdomain_id
+        return ResolvedRoute(route=subdomain_id, reason="No confuser match")
 
     @staticmethod
     def _parse_subdomain_id(route_str: str) -> Optional[str]:
         if not route_str:
             return None
-        
-        # Check for standard subdomain codes (e.g. CY-01, CL-02, EL-04, etc.)
-        # Match using regex pattern: two uppercase letters followed by a dash and two digits
         match = re.search(r"\b([A-Z]{2}-\d{2})\b", route_str)
         if match:
             return match.group(1)
-            
-        # Try splitting by slashes or spaces
+
         parts = route_str.replace("/", " ").split()
         for p in parts:
             p_strip = p.strip().upper()
-            # If matches domain key or subdomain code
             if len(p_strip) == 5 and p_strip[2] == "-":
                 return p_strip
-                
         return None
-
-# Import re in module since we reference it in _parse_subdomain_id
-import re

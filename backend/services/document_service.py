@@ -5,7 +5,12 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 import fitz  # PyMuPDF
-from langdetect import detect, LangDetectException
+try:
+    from langdetect import detect, LangDetectException
+    _LANGDETECT_AVAILABLE = True
+except ImportError:
+    _LANGDETECT_AVAILABLE = False
+    class LangDetectException(Exception): pass
 
 from config import settings
 from db.redis_client import RedisClient
@@ -18,6 +23,9 @@ logger = logging.getLogger(__name__)
 SESSION_TTL_SECONDS  = settings.DOC_SESSION_TTL_SECONDS
 
 
+from utils.document_parser import DocumentParser
+from utils.language_detector import LanguageDetector
+
 class DocumentService:
 
     def __init__(
@@ -25,40 +33,23 @@ class DocumentService:
         redis_client: RedisClient,
         supabase_client: SupabaseClient,
     ) -> None:
+        from utils.storage_service import StorageService
         self._redis    = redis_client
         self._supabase = supabase_client
+        self._storage  = StorageService(self._supabase)
         logger.info("[OK] DocumentService initialized")
         if settings.DOC_TESTING_MODE:
             logger.info("[TEST] TESTING MODE ACTIVE - Document limits disabled for testing")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # LANGUAGE DETECTION
+    # LANGUAGE DETECTION & PDF PARSING UTILITIES
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     def detect_document_language(self, text: str) -> str:
-        
-        try:
-            if not text or len(text.strip()) < 50:
-                logger.warning("Document too short for reliable language detection")
-                return "english"
-            
-            # Detect language from first 1000 characters
-            detected_lang = detect(text[:1000])
-            
-            # Normalize language codes
-            if detected_lang in ('no', 'nb', 'nn'):
-                return "norwegian"
-            elif detected_lang in ('en', 'en-US', 'en-GB'):
-                return "english"
-            else:
-                logger.info(f"🌐 Detected language code: {detected_lang}")
-                return detected_lang
-        except LangDetectException as exc:
-            logger.warning(f"⚠️ Language detection failed | {exc} | defaulting to 'english'")
-            return "english"
-        except Exception as exc:
-            logger.error(f"❌ Language detection error | {exc}")
-            return "english"
+        return LanguageDetector.detect_language(text)
+
+    def extract_pdf_text(self, content: bytes) -> str:
+        return DocumentParser.extract_text_from_pdf(content)
 
     # ── Quota Session (User-based) ───────────────────────────────────
     def get_quota_session(self, user_id: str) -> Dict[str, Any]:
@@ -313,14 +304,16 @@ class DocumentService:
             char_count = len(extracted_text)
             storage_path = f"uploads/{file_hash}.{ext}"
 
-            # ── Store binary content in Supabase Storage ──────────────────────
+            # ── Store binary content in Supabase Storage via StorageService ──
             try:
-                self._supabase._get().storage.from_("lovdata-documents").upload(
+                content_type = f"application/{ext}" if ext != 'pdf' else 'application/pdf'
+                self._storage.upload(
+                    bucket="lovdata-documents",
                     path=storage_path,
-                    file=file_bytes,
-                    file_options={"content-type": f"application/{ext}" if ext != 'pdf' else 'application/pdf'}
+                    file_bytes=file_bytes,
+                    content_type=content_type,
                 )
-                logger.info(f"💾 Binary file uploaded to storage | path={storage_path}")
+                logger.info(f"💾 Binary file uploaded to storage via StorageService | path={storage_path}")
             except Exception as storage_exc:
                 logger.error(f"❌ Supabase Storage upload failed | {storage_exc}")
                 # Don't fail completely if storage fails, RAG text is primary

@@ -1,40 +1,68 @@
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+import logging
+from typing import Optional, Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field
 
 from core.auth import ClerkUser, require_db_role
-from services.user_service import UserService
-from typing import Optional
+from schemas.requests import AcceptInviteRequest
+from schemas.responses import AcceptInviteResponse
+from services.user_service import UserService, AcceptInviteResult
+
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-_user_service: Optional[UserService] = None
+def get_user_service(request: Request) -> UserService:
+    svc = getattr(request.app.state, "user_service", None)
+    if svc is None:
+        raise RuntimeError("UserService is not initialized on application state.")
+    return svc
 
-def set_services(user_service: UserService) -> None:
-    global _user_service
-    _user_service = user_service
-
-class AcceptInviteRequest(BaseModel):
-    token: str
-
-@router.post("/accept-invite")
+@router.post(
+    "/accept-invite",
+    summary="Accept a role invitation",
+    response_model=AcceptInviteResponse,
+)
 async def accept_invite(
     req: AcceptInviteRequest,
-    current_user: ClerkUser = Depends(require_db_role("user", "lawyer", "admin"))
+    current_user: ClerkUser = Depends(require_db_role("user", "lawyer", "admin")),
+    user_service: UserService = Depends(get_user_service),
 ):
     """
-    User accepts an invitation using the token from their email.
-    If they are already logged in, this upgrades their role immediately.
+    User accepts an invitation using the UUID token from their email.
+    Upgrades their system role upon successful verification.
     """
-    if not _user_service:
-        raise HTTPException(status_code=500, detail="UserService not initialized")
-        
-    success = _user_service.accept_invite(
-        token=req.token, 
-        clerk_user_id=current_user.clerk_user_id,
-        email=current_user.email
+    logger.info(
+        f"Processing invitation acceptance attempt | user={current_user.clerk_user_id} | token={req.token[:8]}..."
     )
-    
-    if not success:
-        raise HTTPException(status_code=400, detail="Invalid, expired, or mismatched invitation token.")
-        
-    return {"status": "success", "message": "Invitation accepted. Role updated."}
+
+    result: AcceptInviteResult = await user_service.accept_invite(
+        token=req.token,
+        clerk_user_id=current_user.clerk_user_id,
+        email=current_user.email or "",
+    )
+
+    if not result.success:
+        logger.warning(
+            f"Invitation acceptance failed | status={result.status_code} | detail={result.detail}",
+            extra={"user": current_user.clerk_user_id, "token": req.token[:8]}
+        )
+        raise HTTPException(status_code=result.status_code, detail=result.detail)
+
+    logger.info(
+        "Invitation accepted successfully",
+        extra={
+            "user": current_user.clerk_user_id,
+            "role": result.role,
+            "invited_by": result.invited_by,
+        }
+    )
+
+    return AcceptInviteResponse(
+        status="success",
+        message="Invitation accepted. Role updated.",
+        role=result.role,
+    )

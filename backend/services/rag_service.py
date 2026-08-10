@@ -18,7 +18,9 @@ from db.supabase_client import SupabaseClient
 from services.embedding_service import EmbeddingService
 from services.llm_service import LLMService, _extract_score, _score_to_confidence
 from services.document_service import DocumentService
+from services.summary_service import SummaryService
 from config import settings
+
 from config_domains import normalize_domain
 
 # ── Import Integrated Router Modules ──
@@ -160,9 +162,12 @@ class RAGService:
             redis_client=redis_client,
             supabase_client=supabase_client,
         )
-        self._user_memory_agent = UserMemoryAgent(
-            supabase_client=supabase_client
+        self._summary_service = SummaryService(
+            supabase_client=supabase_client,
         )
+        self._user_memory_agent = llm_service.get_user_memory_agent(supabase_client=supabase_client)
+
+
         self._retriever_agent = RetrieverAgent(
             embedding_service=embedding_service,
             milvus_client=milvus_client,
@@ -172,10 +177,14 @@ class RAGService:
             memory_agent=self._memory_agent,
             generator_agent=llm_service.get_generator_agent(),
         )
-        self._reasoning_agent = QueryReasoningAgent()
-        self._router_agent = RouterAgent()
-        self._doc_classifier = DocumentClassifierAgent()
-        self._doc_qa_agent = DocumentQAAgent()
+        self._reasoning_agent = QueryReasoningAgent(llm=llm_service.create_reasoning_llm(temperature=0.0))
+        self._router_agent = RouterAgent(llm=llm_service.create_router_llm(temperature=0.0))
+
+
+        self._doc_classifier = DocumentClassifierAgent(llm=llm_service.create_classifier_llm(temperature=0.0))
+        self._doc_qa_agent = DocumentQAAgent(llm=llm_service.create_qa_llm(temperature=0.2, streaming=True))
+
+
         # self._validation_agent = SourceValidationAgent()  # TEMPORARILY DISABLED
 
         logger.info(
@@ -213,9 +222,10 @@ class RAGService:
                 query=query,
                 conversation_id=conversation_id,
             )
-            intent = intent_result["intent"]
-            language = intent_result["language"]
+            intent = getattr(intent_result, "intent", None) or intent_result.get("intent", "CASUAL")
+            language = getattr(intent_result, "language", None) or intent_result.get("language", "english")
             logger.info(f"Intent: {intent} | Language: {language}")
+
 
             # ── [Removed] Language override with document language ────────────
             # We no longer override query language with document language. 
@@ -453,17 +463,19 @@ class RAGService:
         domain                = reasoning_result.get("domain")
         jurisdiction          = reasoning_result.get("jurisdiction")
         statute_from_registry = reasoning_result.get("statute_from_registry", False)
- 
+        query_scope           = reasoning_result.get("query_scope", "SPECIFIC_PROVISION")
+        logger.info(f"Query Scope: {query_scope}")
+
         if domain:
             domain = normalize_domain(domain) or domain
- 
-        logger.info(f"Enriched query : \'{enriched_query[:80]}\'")
+
+        logger.info(f"Enriched query : '{enriched_query[:80]}'")
         logger.info(
             f"   statute={primary_statute_id} | "
             f"registry={statute_from_registry} | "
-            f"domain={domain} | jurisdiction={jurisdiction} | style=\'{response_style}\'"
+            f"domain={domain} | scope={query_scope} | jurisdiction={jurisdiction} | style='{response_style}'"
         )
- 
+
         # ── [2] New Integrated Routing Pipeline ──
         # 1. Deterministic Pre-Router
         resolved_subdomain = DeterministicRules.evaluate(query)
@@ -525,52 +537,25 @@ class RAGService:
             
             # 7. Co-Retrieval Checks
             target_subdomains = CoRetrievalResolver.get_targets(subdomain_list, query)
-            
-            # Dynamic Taxonomy-based Subdomain Expansion with Stemming (only run if no subdomains resolved to avoid dilution)
-            if not target_subdomains:
-                expanded_subs = list(target_subdomains)
-                q_words = set(re.findall(r"\b\w{4,}\b", query.lower()))
-                q_stems = {w[:5] for w in q_words}
-                
-                for sub_id, sub_data in taxonomy_loader.get_all_subdomains().items():
-                    if sub_id in expanded_subs:
-                        continue
-                    matched = False
-                    for kw in sub_data.get("routing_keywords", []):
-                        kw_words = set(re.findall(r"\b\w{4,}\b", kw.lower()))
-                        kw_stems = {w[:5] for w in kw_words}
-                        if q_stems.intersection(kw_stems):
-                            sub_domain_family = sub_id.split("-")[0]
-                            orig_families = {s.split("-")[0] for s in target_subdomains}
-                            is_related = (
-                                sub_domain_family in orig_families or
-                                (sub_domain_family in ("CY", "IN") and any(f in ("CY", "IN") for f in orig_families))
-                            )
-                            if is_related:
-                                expanded_subs.append(sub_id)
-                                matched = True
-                                break
-                    if matched:
-                        continue
-                target_subdomains = expanded_subs
-            
-            # Extract metadata dynamically from taxonomy for the resolved primary subdomain
-            primary_sub_data = taxonomy_loader.get_subdomain(resolved_subdomain)
-            if primary_sub_data:
-                taxonomy_domain_id = primary_sub_data.get("domain_id")
-                final_domain = TAXONOMY_DOMAIN_TO_CANONICAL.get(taxonomy_domain_id, domain)
-                
-                constraints = primary_sub_data.get("routing_constraints", {})
-                if constraints:
-                    allowed_j = constraints.get("jurisdiction", [])
-                    if allowed_j:
-                        final_jurisdiction = allowed_j[0]
-                    allowed_b = constraints.get("b2b_b2c", [])
-                    if allowed_b:
-                        b2b_b2c = allowed_b[0]
 
         if not target_subdomains and resolved_subdomain:
             target_subdomains = [resolved_subdomain]
+
+        # ── BROAD OVERVIEW SUBDOMAIN EXPANSION ─────────────────────────────
+        # If the user query asks for a broad overview of a legal domain (e.g. "Explain Norway labour law"),
+        # expand target_subdomains to cover ALL subdomains in that domain family to guarantee chapter coverage.
+        if query_scope == "BROAD_OVERVIEW" or "explain" in query.lower() or "oversikt" in query.lower():
+            current_domain_canonical = normalize_domain(final_domain or domain)
+            if current_domain_canonical:
+                all_domain_subs = []
+                for sub_id, sub_data in taxonomy_loader.get_all_subdomains().items():
+                    tax_dom_id = sub_data.get("domain_id")
+                    dom_can = TAXONOMY_DOMAIN_TO_CANONICAL.get(tax_dom_id)
+                    if dom_can == current_domain_canonical:
+                        all_domain_subs.append(sub_id)
+                if all_domain_subs:
+                    target_subdomains = all_domain_subs
+                    logger.info(f"🌐 Broad Overview Mode: Expanded subdomains to cover entire domain '{current_domain_canonical}': {target_subdomains}")
 
         if final_domain:
             final_domain = normalize_domain(final_domain) or final_domain
@@ -602,6 +587,9 @@ class RAGService:
         # ── [4] Multi-Pass Retrieval & Deduplication ──────────────────────
         raw_retrieved_chunks = []
         
+        # Determine per-subdomain fetch limit (2 chunks per subdomain for broad overview, top_k for targeted)
+        per_pass_top_k = 2 if query_scope == "BROAD_OVERVIEW" and len(target_subdomains) > 1 else top_k
+
         # Execute a search pass for each target subdomain to prevent domain-level filtering issues
         for sub_candidate in (target_subdomains or [None]):
             sub_subdomain_candidates = [sub_candidate] if sub_candidate else None
@@ -631,7 +619,7 @@ class RAGService:
                 sub_results = await self._retriever_agent.run(
                     query=query,
                     enriched_query=enriched_query,
-                    top_k=top_k,
+                    top_k=per_pass_top_k,
                     min_score=min_score,
                     history=history,
                     statute_filter=sub_statute_filter,
@@ -670,8 +658,8 @@ class RAGService:
                 return
             raw_retrieved_chunks.extend(sub_results)
 
-        # Merge and deduplicate results
-        search_results = ResultMerger.merge(raw_retrieved_chunks)
+        # Merge and deduplicate results with domain validation
+        search_results = ResultMerger.merge(raw_retrieved_chunks, target_domain=final_domain)
  
         # ── [5] Handle empty retrieval ─────────────────────────────────────
         if not search_results:
@@ -787,7 +775,9 @@ class RAGService:
                     visible_sources = []
                     for chunk in search_results:
                         base_url    = chunk.get("source_doc_url") or chunk.get("url") or ""
-                        section_ref = (chunk.get("section_ref") or "").strip()
+                        raw_section_ref = (chunk.get("section_ref") or "").strip()
+                        # Normalize non-breaking spaces (\xa0) and extra whitespace
+                        section_ref = re.sub(r"\s+", " ", raw_section_ref.replace("\xa0", " ")).strip()
                         doc_title   = chunk.get("doc_title") or ""
                         
                         # URL encode the section reference to prevent broken space-containing URLs

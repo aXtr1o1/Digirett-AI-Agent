@@ -174,8 +174,9 @@ const hitlService = {
    */
   getTicketMessages: async (ticketId) => {
     const response = await api.get(`/hitl/tickets/${ticketId}/messages`);
-    return response.data;
+    return response.data?.messages || (Array.isArray(response.data) ? response.data : []);
   },
+
 
   /**
    * Send a pre-consultation message for a ticket

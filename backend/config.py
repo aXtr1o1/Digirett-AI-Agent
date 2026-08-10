@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     MAX_CONTEXT_MESSAGES: int = 20
     CONVERSATION_META_TTL: int = 3600
     USER_CONVERSATIONS_TTL: int = 1800
+    MAX_DOCUMENT_SIZE: int = 20 * 1024 * 1024
 
     # ── Supabase ─────────────────────────────────────────────────────────
     SUPABASE_URL: str
@@ -135,6 +136,11 @@ class Settings(BaseSettings):
     # Max file size for document uploads (bytes). Default = 20 MB.
     DOC_MAX_FILE_SIZE_BYTES: int = 20 * 1024 * 1024
 
+    # Document context character truncation limits (with sane caps)
+    DOCQA_MAX_DOC_CHARS: int = 60000
+    HYBRID_MAX_DOC_CHARS: int = 40000
+
+
     # ── Logging ───────────────────────────────────────────────────────────
     # DEBUG level for detailed workflow visibility, INFO for production
     LOG_LEVEL: str = "DEBUG" if DOC_TESTING_MODE else "INFO"
@@ -149,8 +155,57 @@ class Settings(BaseSettings):
     ENRICHMENT_KEYWORDS_COUNT: int = 5
 
     # ── Retry ─────────────────────────────────────────────────────────────
+    
     MAX_RETRIES: int = 3
     RETRY_DELAY: float = 1.0
+
+    # ── Intent Agent Configuration ─────────────────────────────────────────
+    INTENT_MAX_RETRIES: int = 2
+    INTENT_RETRY_DELAY: float = 0.5
+    INTENT_LOG_QUERY_LEN: int = 80
+
+    # Number of recent dialogue turns passed to IntentAgent (1 turn = 2 messages: user + assistant)
+    INTENT_CONTEXT_MESSAGES: int = 2
+
+    # ── Query Reasoning Agent Configuration ───────────────────────────────
+    QUERY_REASONING_MAX_LOG_LEN: int = 70
+    QUERY_REASONING_MAX_PREV_LEN: int = 400
+    QUERY_REASONING_MAX_RETRIES: int = 2
+    QUERY_REASONING_RETRY_DELAY: float = 0.5
+
+    # ── Reranker Agent Configuration ──────────────────────────────────────
+    RERANKER_MAX_CHARS: int = 1500
+    RERANKER_DEFAULT_TOP_K: int = 5
+    RERANKER_MAX_RETRIES: int = 2
+    RERANKER_RETRY_DELAY: float = 0.5
+    # ── Router Agent Configuration ─────────────────────────────────────────
+    ROUTER_MIN_CONFIDENCE: float = 0.6
+    ROUTER_MAX_RETRIES: int = 2
+    ROUTER_RETRY_DELAY: float = 0.5
+
+# ── Document QA Agent Stream & History Parameters ─────────────────────
+    DOCQA_MAX_HISTORY_TURNS: int = 6
+    DOCQA_PRE_STREAM_MAX_RETRIES: int = 2
+    DOCQA_PRE_STREAM_RETRY_DELAY: float = 0.5
+    # ── Generator Agent Settings ─────────────────────────────────────────
+    CASUAL_TEMPERATURE: float = 0.7
+    LEGAL_TEMPERATURE: float = 0.2
+    PRE_STREAM_MAX_RETRIES: int = 2
+    PRE_STREAM_RETRY_DELAY: float = 0.5
+
+
+    # ── Rate Limiting Configuration ───────────────────────────────────────
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_MAX_REQUESTS: int = 250
+    # ── Document Library Allowed Uploads ──────────────────────────────────
+    ALLOWED_FILE_EXTENSIONS: List[str] = ["pdf", "docx", "doc"]
+    ALLOWED_MIME_TYPES: List[str] = [
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+        "application/x-pdf",
+        "binary/octet-stream",
+    ]
 
     # ── Cal.com Integration ────────────────────────────────────────────────
     # Shared webhook secret from Cal.com dashboard → Webhooks → Secret

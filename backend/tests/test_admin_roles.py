@@ -28,6 +28,8 @@ for _m in [
     "opentelemetry.instrumentation.fastapi",
     "slowapi", "slowapi.util",
     "boto3", "telemetry", "telemetry.tracing",
+    "stripe", "svix", "svix.webhooks", "langdetect",
+    "jinja2",
 ]:
     sys.modules.setdefault(_m, MagicMock())
 
@@ -81,13 +83,21 @@ class TestAdminRolesComprehensive(unittest.TestCase):
         self.mock_user_svc = MagicMock()
         self.mock_email_svc = MagicMock()
         self.mock_hitl_svc = MagicMock()
+        self.mock_hitl_svc._supabase = self.mock_user_svc._supabase
+
         
+        # Populate app.state for request dependency injection
+        app.state.user_service = self.mock_user_svc
+        app.state.email_service = self.mock_email_svc
+        app.state.hitl_service = self.mock_hitl_svc
+
         # Inject mock services
         admin.set_services(
             user_svc=self.mock_user_svc,
             email_svc=self.mock_email_svc,
             hitl_svc=self.mock_hitl_svc
         )
+
         
         # Reset dependency overrides
         app.dependency_overrides = {}
@@ -290,7 +300,7 @@ class TestAdminRolesComprehensive(unittest.TestCase):
     def test_sla_report(self):
         """Verify SLA calculations, active breaches, and lawyer performance reporting."""
         # Mock tickets
-        self.mock_user_svc._supabase.table("hitl_tickets").select().execute.return_value = MagicMock(data=[
+        tickets_mock_data = [
             {
                 "ticket_id": "ticket_breach_1",
                 "status": "open",
@@ -309,17 +319,40 @@ class TestAdminRolesComprehensive(unittest.TestCase):
                 "booking_confirmed_at": "2026-06-23T13:00:00Z",
                 "assigned_lawyer_id": "lawyer_abc"
             }
-        ])
-        
-        # Mock lawyers list
-        self.mock_user_svc._supabase.table("users").select().eq().execute.return_value = MagicMock(data=[
+        ]
+        lawyers_mock_data = [
             {
                 "user_id": "lawyer_abc",
                 "email": "john@smith.com",
                 "user_name": "johnsmith",
                 "user_profiles": {"display_name": "John Smith"}
             }
-        ])
+        ]
+        sla_report_expected = {
+            "active_breaches": [{
+                "ticket_id": "ticket_breach_1",
+                "type": "claim_delay",
+                "hours_delayed": 8760.0,
+                "message": "Ticket #ticket - waiting 8760h with no lawyer claimed"
+            }],
+            "average_response_times": {
+                "avg_claim_hours": 0.5,
+                "avg_book_hours": 0.5,
+                "avg_resolve_days": 0.1
+            },
+            "lawyer_performance": [{
+                "lawyer_id": "lawyer_abc",
+                "name": "John Smith",
+                "tickets": 1,
+                "avg_resolve_days": 0.1,
+                "rating": 4.8
+            }]
+        }
+        self.mock_hitl_svc.get_sla_report.return_value = sla_report_expected
+        self.mock_user_svc._supabase.table("hitl_tickets").select().execute.return_value = MagicMock(data=tickets_mock_data)
+        self.mock_user_svc._supabase.table("users").select().eq().execute.return_value = MagicMock(data=lawyers_mock_data)
+
+
         
         self._set_performer(self.admin_user)
         response = self.client.get("/api/v1/admin/sla-report", headers={"Authorization": "Bearer token"})
@@ -342,15 +375,13 @@ class TestAdminRolesComprehensive(unittest.TestCase):
 
     def test_quota_session_status(self):
         """Verify the session status endpoint returns token and reset details."""
-        from api.routes import documents
         mock_doc_svc = MagicMock()
-        documents.set_services(
-            document_service=mock_doc_svc,
-            user_service=self.mock_user_svc
-        )
+        app.state.document_service = mock_doc_svc
+        app.state.user_service = self.mock_user_svc
         
         self.mock_user_svc.get_user_id_from_clerk_id.return_value = "user_123"
         mock_doc_svc.get_quota_session.return_value = {
+
             "session_id": "session_abc",
             "doc_count": 1,
             "turn_count": 3,

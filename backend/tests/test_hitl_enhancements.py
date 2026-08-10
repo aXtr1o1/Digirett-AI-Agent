@@ -31,6 +31,7 @@ for _m in [
     "opentelemetry.instrumentation.fastapi",
     "slowapi", "slowapi.util",
     "boto3", "telemetry", "telemetry.tracing",
+    "stripe", "jinja2",
 ]:
     sys.modules.setdefault(_m, MagicMock())
 
@@ -146,23 +147,18 @@ class TestHitlEnhancements(unittest.TestCase):
         self.assertEqual(open_tickets[1]["ticket_id"], "t2")
         self.assertEqual(open_tickets[2]["ticket_id"], "t1")
 
-    @patch("services.brief_service.AzureChatOpenAI")
-    def test_case_brief_generation(self, mock_llm_class):
+    def test_case_brief_generation(self):
         async def run_test():
-            # Mock LLM generation output
-            mock_llm_instance = MagicMock()
-            mock_llm_class.return_value = mock_llm_instance
-            
-            mock_resp = MagicMock()
-            mock_resp.generations = [[MagicMock(text='''
+            # Mock LLM service
+            mock_llm_service = MagicMock()
+            mock_llm_service.agenerate = AsyncMock(return_value='''
             {
                 "matter_type": "Company Formation",
                 "key_issues": ["Vesting clause questions", "Equity split"],
                 "relevant_laws": ["Aksjeloven"],
                 "risk_level": "Moderate"
             }
-            ''')]]
-            mock_llm_instance.agenerate = AsyncMock(return_value=mock_resp)
+            ''')
 
             # Mock conversation messages select
             mock_messages_resp = MagicMock()
@@ -182,14 +178,17 @@ class TestHitlEnhancements(unittest.TestCase):
             self.mock_supabase.table.side_effect = table_mock
 
             # Run generator
-            brief_service = BriefService(self.mock_supabase)
+            brief_service = BriefService(self.mock_supabase, llm_service=mock_llm_service)
             brief = await brief_service.generate_case_brief("ticket_123", "conv_456")
             
             # Verify LLM call content and DB update execution
-            self.assertEqual(brief["matter_type"], "Company Formation")
-            self.assertEqual(brief["risk_level"], "Moderate")
-            self.assertIn("Aksjeloven", brief["relevant_laws"])
-            self.mock_supabase.table.assert_any_call("hitl_tickets")
+            matter_type = brief.matter_type if hasattr(brief, "matter_type") else brief["matter_type"]
+            risk_level = brief.risk_level if hasattr(brief, "risk_level") else brief["risk_level"]
+            relevant_laws = brief.relevant_laws if hasattr(brief, "relevant_laws") else brief["relevant_laws"]
+            self.assertEqual(matter_type, "Company Formation")
+            self.assertEqual(risk_level, "Moderate")
+            self.assertIn("Aksjeloven", relevant_laws)
+            self.mock_supabase.save_case_brief.assert_called_once()
             
         asyncio.run(run_test())
 
