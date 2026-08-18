@@ -6,8 +6,8 @@ import { ChevronDown, ChevronUp, Zap } from "lucide-react";
 const barColor = (used, max) => {
   const pct = max > 0 ? (used / max) * 100 : 0;
   if (pct >= 90) return { fill: "#ef4444", glow: "rgba(239,68,68,0.35)", label: "#ef4444" };
-  if (pct >= 70) return { fill: "#f59e0b", glow: "rgba(245,158,11,0.3)",  label: "#f59e0b" };
-  return           { fill: "#22c55e", glow: "rgba(34,197,94,0.25)",   label: "#22c55e" };
+  if (pct >= 70) return { fill: "#f59e0b", glow: "rgba(245,158,11,0.3)", label: "#f59e0b" };
+  return { fill: "#22c55e", glow: "rgba(34,197,94,0.25)", label: "#22c55e" };
 };
 
 const formatCountdown = (resetAt) => {
@@ -110,7 +110,7 @@ function UsageBar({ label, used, max, isDark, countdown }) {
 
 /* ─── MAIN COMPONENT ───────────────────────────────────── */
 export default function QuotaPanel({ conversationId, isDark }) {
-  const [quota, setQuota]       = useState(null);
+  const [quota, setQuota] = useState(null);
   const [collapsed, setCollapsed] = useState(() => {
     try {
       const saved = localStorage.getItem("quota-panel-collapsed");
@@ -120,9 +120,9 @@ export default function QuotaPanel({ conversationId, isDark }) {
     }
   });
   const [countdown, setCountdown] = useState(null);
-  const [pulse, setPulse]       = useState(false);          // subtle dot pulse on refresh
-  const intervalRef             = useRef(null);
-  const countdownRef            = useRef(null);
+  const [pulse, setPulse] = useState(false);          // subtle dot pulse on refresh
+  const intervalRef = useRef(null);
+  const countdownRef = useRef(null);
 
   const toggleCollapse = () => {
     setCollapsed(prev => {
@@ -149,10 +149,10 @@ export default function QuotaPanel({ conversationId, isDark }) {
     }
   }, [conversationId]);
 
-  /* initial + polling every 10 s */
+  /* initial + polling every 30 s */
   useEffect(() => {
     fetchQuota();
-    intervalRef.current = setInterval(fetchQuota, 10_000);
+    intervalRef.current = setInterval(fetchQuota, 30_000);
     return () => clearInterval(intervalRef.current);
   }, [fetchQuota]);
 
@@ -168,15 +168,15 @@ export default function QuotaPanel({ conversationId, isDark }) {
   /* hide when no data */
   if (!quota) return null;
 
-  const turns = quota.turn_count  ?? 0;
+  const turns = quota.turn_count ?? 0;
   const maxTurns = turns + (quota.turns_remaining ?? 10);
-  const docs  = quota.doc_count   ?? 0;
+  const docs = quota.doc_count ?? 0;
   const maxDocs = docs + (quota.docs_remaining ?? 2);
 
   /* theme tokens */
-  const bg      = isDark ? "rgba(15,23,42,0.75)" : "rgba(255,255,255,0.82)";
-  const border  = isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)";
-  const title   = isDark ? "#cbd5e1" : "#475569";
+  const bg = isDark ? "rgba(15,23,42,0.75)" : "rgba(255,255,255,0.82)";
+  const border = isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)";
+  const title = isDark ? "#cbd5e1" : "#475569";
   const divider = isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
 
   return (
@@ -240,7 +240,7 @@ export default function QuotaPanel({ conversationId, isDark }) {
           <div style={{ height: "1px", background: divider, marginBottom: "1px" }} />
 
           <UsageBar label="Turns" used={turns} max={maxTurns} isDark={isDark} countdown={countdown} />
-          <UsageBar label="Docs"  used={docs}  max={maxDocs}  isDark={isDark} countdown={countdown} />
+          <UsageBar label="Docs" used={docs} max={maxDocs} isDark={isDark} countdown={countdown} />
 
           {/* Reset countdown */}
           {countdown && (

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { useClerk } from "@clerk/clerk-react";
+import { useClerk, useAuth } from "@clerk/clerk-react";
+import { getSupabaseClient } from "../lib/supabase";
 import hitlService from "../services/hitlService";
 import conversationService from "../services/conversationService";
 import {
@@ -42,6 +43,7 @@ import BackgroundLayer from "../components/common/BackgroundLayer";
 export default function TicketDetailsPage() {
   const { theme, isDark, toggleTheme } = useTheme();
   const { signOut } = useClerk();
+  const { getToken } = useAuth();
   const { id } = useParams();
   const navigate = useNavigate();
 
@@ -93,7 +95,7 @@ export default function TicketDetailsPage() {
       if (ratingInfo) {
         setTicketRating(ratingInfo);
       }
-      
+
       await checkUnreadStatus();
     } catch (err) {
       console.error("Failed to fetch details:", err);
@@ -110,12 +112,45 @@ export default function TicketDetailsPage() {
   useEffect(() => {
     if (currentView === "messages") {
       setHasUnreadMessages(false);
-    } else {
-      checkUnreadStatus();
-      const interval = setInterval(checkUnreadStatus, 15000);
-      return () => clearInterval(interval);
+      return;
     }
-  }, [currentView, checkUnreadStatus]);
+
+    checkUnreadStatus();
+
+    let activeChannel = null;
+
+    const setupRealtime = async () => {
+      try {
+        const client = await getSupabaseClient(getToken);
+        const channel = client
+          .channel(`unread-messages-${id}`)
+          .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'ticket_messages', filter: `ticket_id=eq.${id}` },
+            (payload) => {
+              console.log("[Realtime] Unread message check triggered:", payload);
+              checkUnreadStatus();
+            }
+          )
+          .subscribe();
+
+        activeChannel = channel;
+      } catch (err) {
+        console.error("Realtime unread status failed:", err);
+      }
+    };
+
+    setupRealtime();
+
+    const backupInterval = setInterval(checkUnreadStatus, 60000);
+
+    return () => {
+      if (activeChannel) {
+        activeChannel.unsubscribe();
+      }
+      clearInterval(backupInterval);
+    };
+  }, [currentView, id, getToken, checkUnreadStatus]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -210,9 +245,8 @@ export default function TicketDetailsPage() {
       )}
 
       {/* 1) REFINED SIDEBAR (2nd SS Style) */}
-      <aside className={`fixed lg:relative z-50 inset-y-0 left-0 w-64 flex-shrink-0 flex flex-col bg-[#0F172A] text-white transform transition-transform duration-300 ease-in-out h-full border-r border-white/5 ${
-        isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-      }`}>
+      <aside className={`fixed lg:relative z-50 inset-y-0 left-0 w-64 flex-shrink-0 flex flex-col bg-[#0F172A] text-white transform transition-transform duration-300 ease-in-out h-full border-r border-white/5 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        }`}>
         <div className="p-6 flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
             <div className="h-7 w-7 overflow-hidden flex items-center justify-center bg-transparent">
@@ -423,13 +457,12 @@ export default function TicketDetailsPage() {
                                 alert(err.message || "Failed to update priority");
                               }
                             }}
-                            className={`px-3 py-1.5 rounded-xl border text-[11px] font-black uppercase tracking-wider outline-none transition-all cursor-pointer ${
-                              (ticket.priority || "normal").toLowerCase() === "urgent"
+                            className={`px-3 py-1.5 rounded-xl border text-[11px] font-black uppercase tracking-wider outline-none transition-all cursor-pointer ${(ticket.priority || "normal").toLowerCase() === "urgent"
                                 ? "bg-red-500/10 text-red-500 border-red-500/20"
                                 : (ticket.priority || "normal").toLowerCase() === "high"
                                   ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
                                   : "bg-slate-500/10 text-slate-550 border-slate-500/20"
-                            }`}
+                              }`}
                           >
                             <option value="normal" className={isDark ? "bg-slate-900 text-slate-300" : "bg-white text-slate-600"}>Normal</option>
                             <option value="high" className={isDark ? "bg-slate-900 text-amber-500" : "bg-white text-amber-600"}>High</option>
@@ -479,13 +512,12 @@ export default function TicketDetailsPage() {
                           <div className="space-y-1">
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-450 dark:text-slate-500 font-bold">Risk Level</span>
                             <div>
-                              <span className={`inline-block px-3 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-widest border ${
-                                ticket.ai_brief.risk_level?.toLowerCase() === "high"
+                              <span className={`inline-block px-3 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-widest border ${ticket.ai_brief.risk_level?.toLowerCase() === "high"
                                   ? "bg-red-500/10 text-red-500 border-red-500/20"
                                   : ticket.ai_brief.risk_level?.toLowerCase() === "moderate" || ticket.ai_brief.risk_level?.toLowerCase() === "medium"
                                     ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
                                     : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                              }`}>
+                                }`}>
                                 {ticket.ai_brief.risk_level || "Low"}
                               </span>
                             </div>
@@ -615,7 +647,7 @@ export default function TicketDetailsPage() {
                   <h2 className={`text-3xl font-bold tracking-tight mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>Pre-Consultation Chat</h2>
                   <p className="text-gray-400 font-bold uppercase text-[9px] tracking-widest">Secure pre-consultation thread with client</p>
                 </div>
-                
+
                 <PreConsultationChat ticketId={id} isDark={isDark} userRole="lawyer" onReadMarked={() => setHasUnreadMessages(false)} conversationId={ticket?.conversation_id} />
               </div>
             )}
@@ -751,6 +783,7 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", onReadMarked
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const messagesEndRef = React.useRef(null);
+  const { getToken } = useAuth();
 
   const fileInputRef = React.useRef(null);
   const { uploadDocument, isUploading, uploadError, clearUploadError } = useDocumentUpload(conversationId);
@@ -760,7 +793,7 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", onReadMarked
       const data = await hitlService.getTicketMessages(ticketId);
       setMessages(data);
       setLoading(false);
-      
+
       // Check if there are any unread messages from the other side
       const hasUnread = data.some(m => !m.is_read && m.sender_role !== userRole);
       if (hasUnread || shouldMarkRead) {
@@ -774,13 +807,43 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", onReadMarked
 
   useEffect(() => {
     fetchMessages(true);
-    
-    const interval = setInterval(() => {
-      fetchMessages();
-    }, 15000); // 15 seconds polling
 
-    return () => clearInterval(interval);
-  }, [fetchMessages]);
+    let activeChannel = null;
+
+    const setupRealtime = async () => {
+      try {
+        const client = await getSupabaseClient(getToken);
+        const channel = client
+          .channel(`ticket-messages-${ticketId}`)
+          .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'ticket_messages', filter: `ticket_id=eq.${ticketId}` },
+            (payload) => {
+              console.log("[Realtime] New ticket message received:", payload);
+              fetchMessages(true);
+            }
+          )
+          .subscribe();
+
+        activeChannel = channel;
+      } catch (err) {
+        console.error("Realtime ticket messages setup failed:", err);
+      }
+    };
+
+    setupRealtime();
+
+    const backupInterval = setInterval(() => {
+      fetchMessages();
+    }, 60000); // 60s backup fallback
+
+    return () => {
+      if (activeChannel) {
+        activeChannel.unsubscribe();
+      }
+      clearInterval(backupInterval);
+    };
+  }, [getToken, ticketId, fetchMessages]);
 
   useEffect(() => {
     // Scroll to bottom on new messages
@@ -799,7 +862,7 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", onReadMarked
   const handleSend = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || sending) return;
-    
+
     setSending(true);
     try {
       await hitlService.sendTicketMessage(ticketId, newMessage.trim());
@@ -857,18 +920,15 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", onReadMarked
   }
 
   return (
-    <div className={`rounded-2xl border flex flex-col overflow-hidden h-[500px] ${
-      isDark ? "bg-slate-900/40 border-white/5" : "bg-slate-50 border-slate-200"
-    }`}>
-      {/* Header */}
-      <div className={`px-6 py-4 border-b flex items-center justify-between ${
-        isDark ? "bg-slate-900/60 border-white/5" : "bg-slate-100 border-slate-200"
+    <div className={`rounded-2xl border flex flex-col overflow-hidden h-[500px] ${isDark ? "bg-slate-900/40 border-white/5" : "bg-slate-50 border-slate-200"
       }`}>
+      {/* Header */}
+      <div className={`px-6 py-4 border-b flex items-center justify-between ${isDark ? "bg-slate-900/60 border-white/5" : "bg-slate-100 border-slate-200"
+        }`}>
         <div className="flex items-center gap-2">
           <ScaleIcon size={16} className={isDark ? "text-indigo-400" : "text-indigo-600"} />
-          <span className={`text-xs font-black uppercase tracking-widest ${
-            isDark ? "text-slate-300" : "text-slate-700"
-          }`}>
+          <span className={`text-xs font-black uppercase tracking-widest ${isDark ? "text-slate-300" : "text-slate-700"
+            }`}>
             Communication Thread
           </span>
         </div>
@@ -905,38 +965,33 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", onReadMarked
                     {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
-                <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-xs font-semibold leading-relaxed shadow-sm flex flex-col gap-2 ${
-                  isMe
+                <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-xs font-semibold leading-relaxed shadow-sm flex flex-col gap-2 ${isMe
                     ? "bg-blue-600 text-white rounded-tr-none"
-                    : (isDark 
-                        ? "bg-slate-800 text-slate-200 border border-white/5 rounded-tl-none" 
-                        : "bg-white text-slate-800 border border-slate-200 rounded-tl-none")
-                }`}>
+                    : (isDark
+                      ? "bg-slate-800 text-slate-200 border border-white/5 rounded-tl-none"
+                      : "bg-white text-slate-800 border border-slate-200 rounded-tl-none")
+                  }`}>
                   {hasAttachment ? (
-                    <div 
+                    <div
                       onClick={() => handleDownload(msg.document_id, msg.file_name)}
-                      className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
-                        isMe
+                      className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${isMe
                           ? "bg-blue-700/50 border-blue-500/30 hover:bg-blue-700/70"
                           : (isDark
-                              ? "bg-slate-900/60 border-white/5 hover:bg-slate-900/80"
-                              : "bg-slate-100/50 border-slate-200 hover:bg-slate-100/80")
-                      }`}
+                            ? "bg-slate-900/60 border-white/5 hover:bg-slate-900/80"
+                            : "bg-slate-100/50 border-slate-200 hover:bg-slate-100/80")
+                        }`}
                     >
-                      <div className={`p-1.5 rounded-lg ${
-                        isMe ? "bg-blue-500/30" : "bg-blue-500/10 text-blue-500"
-                      }`}>
+                      <div className={`p-1.5 rounded-lg ${isMe ? "bg-blue-500/30" : "bg-blue-500/10 text-blue-500"
+                        }`}>
                         <FileText size={16} className={isMe ? "text-blue-200" : "text-blue-500"} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className={`text-xs font-bold truncate max-w-[180px] ${
-                          isMe ? "text-white" : (isDark ? "text-slate-200" : "text-slate-800")
-                        }`}>
+                        <p className={`text-xs font-bold truncate max-w-[180px] ${isMe ? "text-white" : (isDark ? "text-slate-200" : "text-slate-800")
+                          }`}>
                           {msg.file_name || "Document"}
                         </p>
-                        <p className={`text-[10px] ${
-                          isMe ? "text-blue-200" : "text-slate-400"
-                        }`}>
+                        <p className={`text-[10px] ${isMe ? "text-blue-200" : "text-slate-400"
+                          }`}>
                           Click to download
                         </p>
                       </div>
@@ -959,34 +1014,31 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", onReadMarked
       </div>
 
       {uploadError && (
-        <div className={`px-6 py-2.5 text-xs font-bold text-center border-t transition-all animate-in fade-in duration-300 ${
-          isDark ? "bg-red-500/10 text-red-400 border-red-500/20" : "bg-red-50 text-red-600 border-red-100"
-        }`}>
+        <div className={`px-6 py-2.5 text-xs font-bold text-center border-t transition-all animate-in fade-in duration-300 ${isDark ? "bg-red-500/10 text-red-400 border-red-500/20" : "bg-red-50 text-red-600 border-red-100"
+          }`}>
           {uploadError}
         </div>
       )}
 
       {/* Input Form */}
-      <form onSubmit={handleSend} className={`p-4 border-t flex gap-3 items-center ${
-        isDark ? "bg-slate-900/30 border-white/5" : "bg-white border-slate-200"
-      }`}>
-        <input 
-          type="file" 
-          ref={fileInputRef} 
-          onChange={handleFileUpload} 
-          accept=".pdf,.docx,.doc" 
-          style={{ display: "none" }} 
+      <form onSubmit={handleSend} className={`p-4 border-t flex gap-3 items-center ${isDark ? "bg-slate-900/30 border-white/5" : "bg-white border-slate-200"
+        }`}>
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileUpload}
+          accept=".pdf,.docx,.doc"
+          style={{ display: "none" }}
         />
 
         <button
           type="button"
           onClick={handleAttachClick}
           disabled={isUploading || sending}
-          className={`p-2.5 rounded-xl transition-all flex items-center justify-center flex-shrink-0 ${
-            isDark
+          className={`p-2.5 rounded-xl transition-all flex items-center justify-center flex-shrink-0 ${isDark
               ? "bg-slate-950 border border-white/5 text-slate-400 hover:text-white hover:bg-slate-800/50"
               : "bg-slate-50 border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100"
-          }`}
+            }`}
           title="Attach a document (.pdf, .docx)"
         >
           {isUploading ? (
@@ -1003,20 +1055,18 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", onReadMarked
           placeholder="Type a message to the client..."
           disabled={sending || isUploading}
           style={{ flex: "1 1 0%", minWidth: "0" }}
-          className={`flex-1 min-w-0 px-4 py-3 rounded-xl text-xs font-medium outline-none transition-all ${
-            isDark
+          className={`flex-1 min-w-0 px-4 py-3 rounded-xl text-xs font-medium outline-none transition-all ${isDark
               ? "bg-slate-950 border border-white/5 text-slate-300 focus:border-blue-500/30"
               : "bg-slate-50 border border-slate-200 text-gray-900 focus:border-blue-600/20 focus:bg-white"
-          }`}
+            }`}
         />
         <button
           type="submit"
           disabled={!newMessage.trim() || sending || isUploading}
-          className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-white flex-shrink-0 transition-all ${
-            !newMessage.trim() || sending || isUploading
+          className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-white flex-shrink-0 transition-all ${!newMessage.trim() || sending || isUploading
               ? (isDark ? "bg-slate-800 text-slate-600" : "bg-slate-200 text-slate-400")
               : "bg-blue-600 hover:bg-blue-700 active:scale-95 shadow-md"
-          }`}
+            }`}
         >
           {sending ? "Sending..." : "Send Message"}
         </button>

@@ -2,7 +2,8 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import hitlService from "../services/hitlService";
 import notesService from "../services/notesService";
-import { useUser, useClerk } from "@clerk/clerk-react";
+import { useUser, useClerk, useAuth } from "@clerk/clerk-react";
+import { getSupabaseClient } from "../lib/supabase";
 import CalendarView from "../components/common/CalendarView";
 import {
   Calendar,
@@ -262,6 +263,7 @@ export default function LawyerDashboard() {
   const navigate = useNavigate();
   const { user: clerkUser } = useUser();
   const { signOut, openUserProfile } = useClerk();
+  const { getToken } = useAuth();
 
   const handleLogout = async () => {
     await signOut();
@@ -409,13 +411,45 @@ export default function LawyerDashboard() {
   useEffect(() => {
     fetchData();
     checkQueueStatus();
-    const dataInterval = setInterval(fetchData, 4000);
-    const notifInterval = setInterval(checkQueueStatus, 4000);
-    return () => {
-      clearInterval(dataInterval);
-      clearInterval(notifInterval);
+
+    let activeChannel = null;
+
+    const setupRealtime = async () => {
+      try {
+        const client = await getSupabaseClient(getToken);
+        const channel = client
+          .channel('lawyer-dashboard-changes')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'hitl_tickets' },
+            (payload) => {
+              console.log("[Realtime] Ticket updated:", payload);
+              fetchData();
+              checkQueueStatus();
+            }
+          )
+          .subscribe();
+
+        activeChannel = channel;
+      } catch (err) {
+        console.error("Realtime subscription setup failed:", err);
+      }
     };
-  }, [checkQueueStatus]);
+
+    setupRealtime();
+
+    const backupInterval = setInterval(() => {
+      fetchData();
+      checkQueueStatus();
+    }, 60000); // 60s backup fallback
+
+    return () => {
+      if (activeChannel) {
+        activeChannel.unsubscribe();
+      }
+      clearInterval(backupInterval);
+    };
+  }, [getToken, checkQueueStatus]);
 
   // Logic to determine Intake vs Pending with persistence
   useEffect(() => {
@@ -554,7 +588,7 @@ export default function LawyerDashboard() {
     if (!personalAnalytics) return [];
     const totalConvs = personalAnalytics.total_conversations || 0;
     const escalated = personalAnalytics.total_escalations || 0;
-    
+
     const botResolved = Math.max(0, totalConvs - escalated);
     const resolvedCount = resolvedTickets.length;
     const activeCount = activeTickets.length;
@@ -1045,16 +1079,15 @@ export default function LawyerDashboard() {
                     {personalStats.map((stat, idx) => (
                       <div
                         key={idx}
-                        className={`${isMobile ? "p-3.5 gap-1.5" : "p-4 gap-1.5"} rounded-xl border shadow-sm flex flex-col justify-between ${
-                          isDark ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
-                        }`}
+                        className={`${isMobile ? "p-3.5 gap-1.5" : "p-4 gap-1.5"} rounded-xl border shadow-sm flex flex-col justify-between ${isDark ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-800"
+                          }`}
                       >
                         <div className="flex items-center justify-between mb-0.5">
                           <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">
                             {stat.label}
                           </span>
                         </div>
-                        
+
                         <div className="flex flex-col gap-0.5">
                           <span className="text-2xl font-black">{stat.value}</span>
                           <span className="text-[10px] text-slate-500 font-medium mt-1">
@@ -1866,11 +1899,10 @@ export default function LawyerDashboard() {
                             {/* Common (Generalist) Checkbox */}
                             <label
                               key="common"
-                              className={`p-4 rounded-xl border flex items-start gap-3 select-none transition-all cursor-pointer ${
-                                expertiseDomains.some(d => d.toLowerCase() === "common")
+                              className={`p-4 rounded-xl border flex items-start gap-3 select-none transition-all cursor-pointer ${expertiseDomains.some(d => d.toLowerCase() === "common")
                                   ? (isDark ? "bg-indigo-500/10 border-indigo-500/40 text-white" : "bg-indigo-50 border-indigo-200 text-indigo-900")
                                   : (isDark ? "bg-slate-950/40 border-slate-800/50 hover:border-slate-750 text-slate-400" : "bg-white border-slate-200 hover:border-slate-300 text-slate-600")
-                              }`}
+                                }`}
                             >
                               <input
                                 type="checkbox"
@@ -1895,11 +1927,10 @@ export default function LawyerDashboard() {
                               return (
                                 <label
                                   key={domain.key}
-                                  className={`p-4 rounded-xl border flex items-start gap-3 select-none transition-all cursor-pointer ${
-                                    isChecked
+                                  className={`p-4 rounded-xl border flex items-start gap-3 select-none transition-all cursor-pointer ${isChecked
                                       ? (isDark ? "bg-indigo-500/10 border-indigo-500/40 text-white" : "bg-indigo-50 border-indigo-200 text-indigo-900")
                                       : (isDark ? "bg-slate-950/40 border-slate-800/50 hover:border-slate-750 text-slate-400" : "bg-white border-slate-200 hover:border-slate-300 text-slate-600")
-                                  }`}
+                                    }`}
                                 >
                                   <input
                                     type="checkbox"
@@ -1924,16 +1955,15 @@ export default function LawyerDashboard() {
                         ) : (
                           // Read-only chosen domains view
                           (() => {
-                            const selectedDomains = LEGAL_DOMAINS.filter(domain => 
+                            const selectedDomains = LEGAL_DOMAINS.filter(domain =>
                               expertiseDomains.some(d => d.toLowerCase() === domain.key.toLowerCase())
                             );
                             const hasCommon = expertiseDomains.some(d => d.toLowerCase() === "common");
 
                             if (!hasCommon && selectedDomains.length === 0) {
                               return (
-                                <div className={`col-span-2 p-8 text-center rounded-2xl border border-dashed ${
-                                  isDark ? "border-slate-800 text-slate-500" : "border-slate-200 text-slate-450"
-                                }`}>
+                                <div className={`col-span-2 p-8 text-center rounded-2xl border border-dashed ${isDark ? "border-slate-800 text-slate-500" : "border-slate-200 text-slate-450"
+                                  }`}>
                                   <p className="text-xs font-bold uppercase tracking-wider">No specializations chosen yet</p>
                                   <p className="text-[11px] mt-1 font-medium text-slate-400 dark:text-slate-500">Click the edit button below to configure your profile.</p>
                                 </div>
@@ -1944,9 +1974,8 @@ export default function LawyerDashboard() {
                               <>
                                 {hasCommon && (
                                   <div
-                                    className={`p-4 rounded-xl border flex items-start gap-3 select-none ${
-                                      isDark ? "bg-indigo-500/10 border-indigo-500/30 text-white" : "bg-indigo-50 border-indigo-150 text-indigo-900"
-                                    }`}
+                                    className={`p-4 rounded-xl border flex items-start gap-3 select-none ${isDark ? "bg-indigo-500/10 border-indigo-500/30 text-white" : "bg-indigo-50 border-indigo-150 text-indigo-900"
+                                      }`}
                                   >
                                     <div>
                                       <span className="text-xs font-bold block">Generalist (Common)</span>
@@ -1957,9 +1986,8 @@ export default function LawyerDashboard() {
                                 {selectedDomains.map((domain) => (
                                   <div
                                     key={domain.key}
-                                    className={`p-4 rounded-xl border flex items-start gap-3 select-none ${
-                                      isDark ? "bg-indigo-500/10 border-indigo-500/30 text-white" : "bg-indigo-50 border-indigo-150 text-indigo-900"
-                                    }`}
+                                    className={`p-4 rounded-xl border flex items-start gap-3 select-none ${isDark ? "bg-indigo-500/10 border-indigo-500/30 text-white" : "bg-indigo-50 border-indigo-150 text-indigo-900"
+                                      }`}
                                   >
                                     <div>
                                       <span className="text-xs font-bold block">{domain.en}</span>
@@ -2116,7 +2144,7 @@ export default function LawyerDashboard() {
                         <h3 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-2">Performance Summary</h3>
                         <p className="text-[10px] text-slate-400 font-medium mb-6">Visual comparison of normalized performance metrics</p>
                       </div>
-                      
+
                       <div className="h-[280px] w-full flex items-center justify-center">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart
@@ -2133,11 +2161,11 @@ export default function LawyerDashboard() {
                           >
                             <CartesianGrid strokeDasharray="3 3" horizontal={false} vertical={true} stroke={isDark ? "#1e293b" : "#f1f5f9"} />
                             <XAxis type="number" domain={[0, 100]} hide />
-                            <YAxis 
-                              dataKey="name" 
-                              type="category" 
-                              axisLine={false} 
-                              tickLine={false} 
+                            <YAxis
+                              dataKey="name"
+                              type="category"
+                              axisLine={false}
+                              tickLine={false}
                               tick={{ fontSize: 9, fill: isDark ? "#94a3b8" : "#64748b", fontWeight: 700 }}
                               width={95}
                             />

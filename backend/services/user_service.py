@@ -37,9 +37,12 @@ from utils.clerk_client import ClerkClient
 
 class UserService:
 
-    def __init__(self, supabase_client: SupabaseClient) -> None:
+    def __init__(self, supabase_client: SupabaseClient, redis_client: Optional[Any] = None) -> None:
         self._supabase = supabase_client
         self._clerk = ClerkClient()
+        self._redis = redis_client
+        self._local_cache = {}
+        self._local_cache_expiry = {}
         logger.info("[OK] UserService initialized with ClerkClient")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -193,75 +196,116 @@ class UserService:
 
     def get_user_id_from_clerk_id(self, clerk_user_id: str, email: str = None) -> Optional[str]:
         """
-        Quick lookup: Clerk user ID -> Supabase user_id.
+        Quick lookup: Clerk user ID -> Supabase user_id with dual-layer fallback caching.
         Auto-creates the user in Supabase if missing.
         """
+        import time
         logger.info(f"🔍 DEBUG: get_user_id_from_clerk_id | clerk_id={clerk_user_id} | provided_email={email}")
+        
+        # 1. Try Primary Cache (Redis)
+        cache_key = f"user:clerk_map:{clerk_user_id}"
+        if self._redis:
+            try:
+                cached_uuid = self._redis._get().get(cache_key)
+                if cached_uuid:
+                    logger.info(f"[CACHE HIT] Found clerk ID mapping in Redis: {clerk_user_id} -> {cached_uuid}")
+                    self._local_cache[clerk_user_id] = cached_uuid
+                    self._local_cache_expiry[clerk_user_id] = time.time() + 3600
+                    return cached_uuid
+            except Exception as e:
+                logger.warning(f"[CACHE WARN] Redis get failed for {cache_key}, falling back to memory: {e}")
+
+        # 2. Try Secondary Cache (In-Memory)
+        now = time.time()
+        if clerk_user_id in self._local_cache:
+            expiry = self._local_cache_expiry.get(clerk_user_id, 0)
+            if now < expiry:
+                cached_uuid = self._local_cache[clerk_user_id]
+                logger.info(f"[CACHE HIT] Found clerk ID mapping in Memory: {clerk_user_id} -> {cached_uuid}")
+                return cached_uuid
+            else:
+                self._local_cache.pop(clerk_user_id, None)
+                self._local_cache_expiry.pop(clerk_user_id, None)
+
+        # 3. Cache Miss - Query Supabase
+        user_uuid = None
         user = self.get_user_by_clerk_id(clerk_user_id)
         if user:
             logger.info(f"[OK] Found existing user: {user['user_id']}")
-            return user["user_id"]
-
-        logger.info(f"[INFO] User {clerk_user_id} not found in Supabase. Attempting auto-creation...")
-        # If user not found, auto-create them (fallback for missing webhook)
-        try:
-            real_email = email
-            display_name = None
-            
-            # If no email provided, try to fetch from Clerk API
-            if not real_email and settings.CLERK_SECRET_KEY:
-                logger.info(f"[INFO] Fetching email from Clerk API for {clerk_user_id}...")
-                clerk_url = f"https://api.clerk.com/v1/users/{clerk_user_id}"
-                try:
-                    with httpx.Client() as client:
-                        resp = client.get(clerk_url, headers={"Authorization": f"Bearer {settings.CLERK_SECRET_KEY}"})
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            print(data)
-                            email_addresses = data.get("email_addresses", [])
-                            if email_addresses:
-                                real_email = email_addresses[0].get("email_address")
-                                logger.info(f"[INFO] Fetched email: {real_email}")
-                            
-                            username = data.get("username")
-                            display_name = username
-                        else:
-                            logger.error(f"[ERROR] Clerk API returned {resp.status_code}: {resp.text}")
-                except Exception as e:
-                    logger.error(f"[ERROR] Clerk API request failed: {e}")
-
-            fallback_email = real_email or f"{clerk_user_id}@placeholder.com"
-            logger.info(f"[INFO] Calling create_user_from_webhook with email: {fallback_email}")
-            
-            # Final check: Does this email already exist?
+            user_uuid = user["user_id"]
+        else:
+            logger.info(f"[INFO] User {clerk_user_id} not found in Supabase. Attempting auto-creation...")
             try:
-                existing_email_resp = self._supabase.table("users").select("user_id, clerk_user_id").eq("email", fallback_email).execute()
-                if existing_email_resp.data:
-                    existing = existing_email_resp.data[0]
-                    logger.error(f"[ERROR] EMAIL CONFLICT: Email {fallback_email} is already used by Supabase user {existing['user_id']} (Clerk ID: {existing['clerk_user_id']})")
-                    # Optionally: Update the clerk_user_id if it's the same person but different Clerk instance? 
-                    # For now, just return the existing ID to unblock them, or fail clearly.
-                    return existing["user_id"]
-            except Exception as e:
-                logger.warning(f"[WARN] Email uniqueness check failed (non-fatal): {e}")
+                real_email = email
+                display_name = None
+                
+                if not real_email and settings.CLERK_SECRET_KEY:
+                    logger.info(f"[INFO] Fetching email from Clerk API for {clerk_user_id}...")
+                    clerk_url = f"https://api.clerk.com/v1/users/{clerk_user_id}"
+                    try:
+                        with httpx.Client() as client:
+                            resp = client.get(clerk_url, headers={"Authorization": f"Bearer {settings.CLERK_SECRET_KEY}"})
+                            if resp.status_code == 200:
+                                data = resp.json()
+                                email_addresses = data.get("email_addresses", [])
+                                if email_addresses:
+                                    real_email = email_addresses[0].get("email_address")
+                                    logger.info(f"[INFO] Fetched email: {real_email}")
+                                username = data.get("username")
+                                display_name = username
+                            else:
+                                logger.error(f"[ERROR] Clerk API returned {resp.status_code}: {resp.text}")
+                    except Exception as e:
+                        logger.error(f"[ERROR] Clerk API request failed: {e}")
 
-            new_user = self.create_user_from_webhook(
-                clerk_user_id=clerk_user_id,
-                email=fallback_email,
-                tenant_id=None,
-                display_name=display_name,
-                username=display_name # we set username to display_name in fallback
-            )
-            logger.info(f"[OK] Successfully auto-created user: {new_user.get('user_id')}")
-            return new_user.get("user_id")
-        except Exception as exc:
-            logger.error(f"[ERROR] FATAL: Auto-creation failed for {clerk_user_id} | {exc}", exc_info=True)
+                fallback_email = real_email or f"{clerk_user_id}@placeholder.com"
+                logger.info(f"[INFO] Calling create_user_from_webhook with email: {fallback_email}")
+                
+                try:
+                    existing_email_resp = self._supabase.table("users").select("user_id, clerk_user_id").eq("email", fallback_email).execute()
+                    if existing_email_resp.data:
+                        existing = existing_email_resp.data[0]
+                        logger.error(f"[ERROR] EMAIL CONFLICT: Email {fallback_email} is already used by Supabase user {existing['user_id']} (Clerk ID: {existing['clerk_user_id']})")
+                        user_uuid = existing["user_id"]
+                except Exception as e:
+                    logger.warning(f"[WARN] Email uniqueness check failed (non-fatal): {e}")
 
-        return None
+                if not user_uuid:
+                    new_user = self.create_user_from_webhook(
+                        clerk_user_id=clerk_user_id,
+                        email=fallback_email,
+                        tenant_id=None,
+                        display_name=display_name,
+                        username=display_name
+                    )
+                    logger.info(f"[OK] Successfully auto-created user: {new_user.get('user_id')}")
+                    user_uuid = new_user.get("user_id")
+            except Exception as exc:
+                logger.error(f"[ERROR] FATAL: Auto-creation failed for {clerk_user_id} | {exc}", exc_info=True)
+
+        # 4. Save to Caches
+        if user_uuid:
+            if self._redis:
+                try:
+                    self._redis._get().setex(cache_key, 3600, user_uuid)
+                    logger.info(f"[CACHE WRITE] Saved clerk ID mapping to Redis: {clerk_user_id} -> {user_uuid}")
+                except Exception as e:
+                    logger.warning(f"[CACHE WARN] Redis setex failed: {e}")
+
+            if len(self._local_cache) >= 500:
+                oldest_key = next(iter(self._local_cache))
+                self._local_cache.pop(oldest_key, None)
+                self._local_cache_expiry.pop(oldest_key, None)
+            
+            self._local_cache[clerk_user_id] = user_uuid
+            self._local_cache_expiry[clerk_user_id] = now + 3600
+            logger.info(f"[CACHE WRITE] Saved clerk ID mapping to Memory: {clerk_user_id} -> {user_uuid}")
+
+        return user_uuid
 
     def user_exists(self, clerk_user_id: str) -> bool:
         """Check if a user already exists (prevent duplicate webhook processing)."""
-        return self.get_user_by_clerk_id(clerk_user_id) is not None
+        return self.get_user_id_from_clerk_id(clerk_user_id) is not None
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # UPDATE

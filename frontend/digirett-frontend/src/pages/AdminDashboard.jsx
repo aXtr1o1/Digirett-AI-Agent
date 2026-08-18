@@ -386,8 +386,8 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetchDashboardData();
-    const dataInterval = setInterval(fetchDashboardData, 30000);
-    const notifInterval = setInterval(checkInvitationStatus, 30000);
+    const dataInterval = setInterval(fetchDashboardData, 60000);
+    const notifInterval = setInterval(checkInvitationStatus, 60000);
     return () => {
       clearInterval(dataInterval);
       clearInterval(notifInterval);

@@ -90,7 +90,12 @@ def _resolve_lawyer_credentials(ticket: Dict[str, Any], user_service: UserServic
             detail="Lawyer has not fully configured their Cal.com credentials.",
         )
 
-    return api_key, int(event_type_id)
+    try:
+        resolved_event_type_id = int(event_type_id)
+    except ValueError:
+        resolved_event_type_id = event_type_id
+
+    return api_key, resolved_event_type_id
 
 
 def _authorize_ticket_access(

@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@clerk/clerk-react";
+import { getSupabaseClient } from "../../lib/supabase";
 import hitlService from "../../services/hitlService";
 import BookingSystem from "./BookingSystem";
 import { Loader2, Scale, CheckCircle2, Clock, Calendar, ExternalLink, ShieldCheck, AlertCircle, AlertTriangle, ChevronLeft, X, Quote, Star, Paperclip, FileText, Download } from "lucide-react";
@@ -47,6 +49,7 @@ const getDomainEnglishName = (domain) => {
 };
 
 export default function EscalationStatusCard({ conversationId, theme = "dark", isSidebar = false }) {
+  const { getToken } = useAuth();
   const [statusData, setStatusData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -161,9 +164,41 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
 
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 15000);
-    return () => clearInterval(interval);
-  }, [fetchStatus]);
+
+    let activeChannel = null;
+
+    const setupRealtime = async () => {
+      try {
+        const client = await getSupabaseClient(getToken);
+        const channel = client
+          .channel(`escalation-status-${conversationId}`)
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'hitl_tickets', filter: `conversation_id=eq.${conversationId}` },
+            (payload) => {
+              console.log("[Realtime] Escalation status updated:", payload);
+              fetchStatus();
+            }
+          )
+          .subscribe();
+
+        activeChannel = channel;
+      } catch (err) {
+        console.error("Realtime escalation status failed:", err);
+      }
+    };
+
+    setupRealtime();
+
+    const backupInterval = setInterval(fetchStatus, 60000);
+
+    return () => {
+      if (activeChannel) {
+        activeChannel.unsubscribe();
+      }
+      clearInterval(backupInterval);
+    };
+  }, [conversationId, getToken, fetchStatus]);
 
   if (loading && !statusData) {
     return (
@@ -307,8 +342,8 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
           </div>
           <div className="relative flex justify-center text-[10px] font-black uppercase tracking-widest">
             <span className={`px-3 py-1 rounded-full border shadow-sm backdrop-blur-md ${isDark
-                ? "bg-slate-900/60 border-white/5 text-slate-400"
-                : "bg-white/80 border-slate-200 text-slate-500"
+              ? "bg-slate-900/60 border-white/5 text-slate-400"
+              : "bg-white/80 border-slate-200 text-slate-500"
               }`}>
               or
             </span>
@@ -405,8 +440,8 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
             <span className="text-indigo-600 text-[10px] font-bold uppercase tracking-wider">Legal Resolution</span>
           </div>
           <div className={`relative p-4 rounded-xl border-l-4 border-indigo-500 shadow-sm ${isDark
-              ? "bg-slate-900/60 border-slate-800 text-slate-200"
-              : "bg-slate-50 border-slate-200 text-slate-750"
+            ? "bg-slate-900/60 border-slate-800 text-slate-200"
+            : "bg-slate-50 border-slate-200 text-slate-750"
             }`}>
             <div className="prose prose-sm dark:prose-invert max-w-none relative z-10 text-[11px] leading-relaxed font-medium">
               <ReactMarkdown
@@ -492,8 +527,8 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
                       placeholder="Describe your experience (optional)..."
                       rows={2}
                       className={`w-full p-3 rounded-xl border text-xs font-medium resize-none transition-all outline-none ${isDark
-                          ? "bg-slate-955 border-white/5 focus:border-indigo-500/30 text-slate-300"
-                          : "bg-slate-50 border-slate-200 focus:border-indigo-600/30 text-slate-900 focus:bg-white"
+                        ? "bg-slate-955 border-white/5 focus:border-indigo-500/30 text-slate-300"
+                        : "bg-slate-50 border-slate-200 focus:border-indigo-600/30 text-slate-900 focus:bg-white"
                         }`}
                     />
                   </div>
@@ -509,8 +544,8 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
                       type="submit"
                       disabled={rating === 0 || submittingRating}
                       className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all shadow-md ${rating === 0
-                          ? "bg-slate-800 text-slate-500 cursor-not-allowed opacity-50"
-                          : "bg-indigo-600 hover:bg-indigo-500 active:scale-95"
+                        ? "bg-slate-800 text-slate-500 cursor-not-allowed opacity-50"
+                        : "bg-indigo-600 hover:bg-indigo-500 active:scale-95"
                         }`}
                     >
                       {submittingRating ? "Submitting..." : "Submit Feedback"}
@@ -539,8 +574,8 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
                   onClick={() => handleReescalateCase("different")}
                   disabled={reescalateOption !== null}
                   className={`w-full py-2 rounded-xl text-xs font-semibold border transition-all ${isDark
-                      ? "bg-slate-800 hover:bg-slate-700 text-white border-slate-700"
-                      : "bg-white hover:bg-slate-100 text-slate-700 border-slate-300"
+                    ? "bg-slate-800 hover:bg-slate-700 text-white border-slate-700"
+                    : "bg-white hover:bg-slate-100 text-slate-700 border-slate-300"
                     }`}
                 >
                   {reescalateOption === "different" ? "Re-escalating..." : "Different Lawyer"}
@@ -565,8 +600,8 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
               <button
                 onClick={() => setShowReescalateOptions(true)}
                 className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all ${isDark
-                    ? "bg-slate-800 hover:bg-slate-700 text-white border-slate-700"
-                    : "bg-white hover:bg-slate-100 text-slate-700 border-slate-300"
+                  ? "bg-slate-800 hover:bg-slate-700 text-white border-slate-700"
+                  : "bg-white hover:bg-slate-100 text-slate-700 border-slate-300"
                   }`}
               >
                 Re-escalate
@@ -652,8 +687,8 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
                 placeholder="Describe your experience (optional)..."
                 rows={2}
                 className={`w-full p-3 rounded-xl border text-xs font-medium resize-none transition-all outline-none ${isDark
-                    ? "bg-slate-955 border-white/5 focus:border-indigo-500/30 text-slate-300"
-                    : "bg-slate-50 border-slate-200 focus:border-indigo-600/30 text-slate-900 focus:bg-white"
+                  ? "bg-slate-955 border-white/5 focus:border-indigo-500/30 text-slate-300"
+                  : "bg-slate-50 border-slate-200 focus:border-indigo-600/30 text-slate-900 focus:bg-white"
                   }`}
               />
             </div>
@@ -669,8 +704,8 @@ export default function EscalationStatusCard({ conversationId, theme = "dark", i
                 type="submit"
                 disabled={rating === 0 || submittingRating}
                 className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all shadow-md ${rating === 0
-                    ? "bg-slate-800 text-slate-500 cursor-not-allowed opacity-50"
-                    : "bg-indigo-600 hover:bg-indigo-500 active:scale-95"
+                  ? "bg-slate-800 text-slate-500 cursor-not-allowed opacity-50"
+                  : "bg-indigo-600 hover:bg-indigo-500 active:scale-95"
                   }`}
               >
                 {submittingRating ? "Submitting..." : "Submit Feedback"}
@@ -705,6 +740,7 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", conversation
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const messagesEndRef = React.useRef(null);
+  const { getToken } = useAuth();
 
   const fileInputRef = React.useRef(null);
   const { uploadDocument, isUploading, uploadError, clearUploadError } = useDocumentUpload(conversationId);
@@ -730,12 +766,42 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", conversation
   useEffect(() => {
     fetchMessages(true);
 
-    const interval = setInterval(() => {
-      fetchMessages();
-    }, 15000); // 15 seconds polling
+    let activeChannel = null;
 
-    return () => clearInterval(interval);
-  }, [fetchMessages]);
+    const setupRealtime = async () => {
+      try {
+        const client = await getSupabaseClient(getToken);
+        const channel = client
+          .channel(`escalation-messages-${ticketId}`)
+          .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'ticket_messages', filter: `ticket_id=eq.${ticketId}` },
+            (payload) => {
+              console.log("[Realtime] New escalation message received:", payload);
+              fetchMessages(true);
+            }
+          )
+          .subscribe();
+
+        activeChannel = channel;
+      } catch (err) {
+        console.error("Realtime escalation messages failed:", err);
+      }
+    };
+
+    setupRealtime();
+
+    const backupInterval = setInterval(() => {
+      fetchMessages();
+    }, 60000); // 60s backup fallback
+
+    return () => {
+      if (activeChannel) {
+        activeChannel.unsubscribe();
+      }
+      clearInterval(backupInterval);
+    };
+  }, [getToken, ticketId, fetchMessages]);
 
   useEffect(() => {
     // Scroll to bottom on new messages
@@ -855,19 +921,19 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", conversation
                   </span>
                 </div>
                 <div className={`max-w-[85%] px-3.5 py-2 rounded-2xl text-[11px] font-medium leading-relaxed shadow-sm flex flex-col gap-2 ${isMe
-                    ? "bg-indigo-600 text-white rounded-tr-none"
-                    : (isDark
-                      ? "bg-slate-800 text-slate-200 border border-white/5 rounded-tl-none"
-                      : "bg-white text-slate-800 border border-slate-200 rounded-tl-none")
+                  ? "bg-indigo-600 text-white rounded-tr-none"
+                  : (isDark
+                    ? "bg-slate-800 text-slate-200 border border-white/5 rounded-tl-none"
+                    : "bg-white text-slate-800 border border-slate-200 rounded-tl-none")
                   }`}>
                   {hasAttachment ? (
                     <div
                       onClick={() => handleDownload(msg.document_id, msg.file_name)}
                       className={`flex items-center gap-2.5 p-2 rounded-xl border transition-all cursor-pointer select-none ${isMe
-                          ? "bg-indigo-700/50 border-indigo-500/30 hover:bg-indigo-700/70"
-                          : (isDark
-                            ? "bg-slate-900/60 border-white/5 hover:bg-slate-900/80"
-                            : "bg-slate-50 border-slate-100 hover:bg-slate-100/70")
+                        ? "bg-indigo-700/50 border-indigo-500/30 hover:bg-indigo-700/70"
+                        : (isDark
+                          ? "bg-slate-900/60 border-white/5 hover:bg-slate-900/80"
+                          : "bg-slate-50 border-slate-100 hover:bg-slate-100/70")
                         }`}
                     >
                       <div className={`p-1.5 rounded-lg ${isMe ? "bg-indigo-500/30" : "bg-indigo-500/10 text-indigo-500"
@@ -925,8 +991,8 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", conversation
           onClick={handleAttachClick}
           disabled={isUploading || sending}
           className={`p-2 rounded-xl transition-all flex items-center justify-center flex-shrink-0 ${isDark
-              ? "bg-slate-950 border border-white/5 text-slate-400 hover:text-white hover:bg-slate-800/50"
-              : "bg-slate-50 border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+            ? "bg-slate-950 border border-white/5 text-slate-400 hover:text-white hover:bg-slate-800/50"
+            : "bg-slate-50 border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100"
             }`}
           title="Attach a document (.pdf, .docx)"
         >
@@ -945,16 +1011,16 @@ function PreConsultationChat({ ticketId, isDark, userRole = "user", conversation
           disabled={sending || isUploading}
           style={{ flex: "1 1 0%", minWidth: "0" }}
           className={`flex-1 min-w-0 px-3 py-2 rounded-xl text-[11px] font-medium outline-none transition-all ${isDark
-              ? "bg-slate-950 border border-white/5 text-slate-300 focus:border-indigo-500/30"
-              : "bg-slate-50 border border-slate-200 text-slate-900 focus:border-indigo-600/30 focus:bg-white"
+            ? "bg-slate-950 border border-white/5 text-slate-300 focus:border-indigo-500/30"
+            : "bg-slate-50 border border-slate-200 text-slate-900 focus:border-indigo-600/30 focus:bg-white"
             }`}
         />
         <button
           type="submit"
           disabled={!newMessage.trim() || sending || isUploading}
           className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-white flex-shrink-0 transition-all ${!newMessage.trim() || sending || isUploading
-              ? (isDark ? "bg-slate-800 text-slate-600" : "bg-slate-200 text-slate-400")
-              : "bg-indigo-600 hover:bg-indigo-500 active:scale-95 shadow-md"
+            ? (isDark ? "bg-slate-800 text-slate-600" : "bg-slate-200 text-slate-400")
+            : "bg-indigo-600 hover:bg-indigo-500 active:scale-95 shadow-md"
             }`}
         >
           {sending ? "..." : "Send"}

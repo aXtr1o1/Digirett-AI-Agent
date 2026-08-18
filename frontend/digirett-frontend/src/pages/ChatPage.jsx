@@ -5,7 +5,8 @@ import ChatContainer from "../components/chat/ChatContainer";
 import LibraryDashboard from "../components/chat/LibraryDashboard";
 import LegalPanel from "../components/layout/LegalPanel";
 import useConversations from "../hooks/useConversations";
-import { useUser } from "@clerk/clerk-react";
+import { useUser, useAuth } from "@clerk/clerk-react";
+import { getSupabaseClient } from "../lib/supabase";
 import hitlService from "../services/hitlService";
 import SystemNotification from "../components/chat/ResolutionNotification";
 import { useTheme } from "../providers/ThemeProvider";
@@ -25,6 +26,7 @@ const ChatPage = () => {
   const [searchParams] = useSearchParams();
   const activeView = searchParams.get("view"); // "library" or null
   const { user } = useUser();
+  const { getToken } = useAuth();
   const [isEscalated, setIsEscalated] = useState(false);
   const [isLegalPanelOpen, setIsLegalPanelOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -253,12 +255,44 @@ const ChatPage = () => {
   }, [checkMatterStatus]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    checkMatterStatusRef.current();
+
+    let activeChannel = null;
+
+    const setupRealtime = async () => {
+      try {
+        const client = await getSupabaseClient(getToken);
+        const channel = client
+          .channel('chat-matter-changes')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'hitl_tickets' },
+            (payload) => {
+              console.log("[Realtime] Matter state updated:", payload);
+              checkMatterStatusRef.current();
+            }
+          )
+          .subscribe();
+
+        activeChannel = channel;
+      } catch (err) {
+        console.error("Realtime matter status setup failed:", err);
+      }
+    };
+
+    setupRealtime();
+
+    const backupInterval = setInterval(() => {
       checkMatterStatusRef.current();
-    }, 10000); // Check every 10s for faster updates
-    checkMatterStatusRef.current(); // Initial check
-    return () => clearInterval(interval);
-  }, []);
+    }, 60000); // 60s backup fallback
+
+    return () => {
+      if (activeChannel) {
+        activeChannel.unsubscribe();
+      }
+      clearInterval(backupInterval);
+    };
+  }, [getToken]);
 
   const handleDismissNotification = useCallback((notifId) => {
     // 1. Update General System Dismissals
@@ -431,8 +465,8 @@ const ChatPage = () => {
 
           <div
             className={`relative max-w-md w-full p-8 rounded-2xl border text-center shadow-2xl backdrop-blur-xl transition-all scale-up ${isDark
-                ? "bg-[#12121e]/90 border-indigo-500/30 text-white shadow-indigo-500/10"
-                : "bg-white border-gray-200 text-gray-900 shadow-xl"
+              ? "bg-[#12121e]/90 border-indigo-500/30 text-white shadow-indigo-500/10"
+              : "bg-white border-gray-200 text-gray-900 shadow-xl"
               }`}
           >
             {/* Pulsing visual glow */}
@@ -446,11 +480,11 @@ const ChatPage = () => {
               <span className="text-[10px] uppercase font-black tracking-widest text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full mb-3">
                 Sandbox Payment Success
               </span>
-             
+
               <h3 className="text-2xl font-black mb-2">
                 Subscription Active!
               </h3>
-             
+
               <p className={`text-sm mb-6 ${isDark ? "text-gray-400" : "text-gray-600"}`}>
                 Congratulations! You are now subscribed to the <span className="font-extrabold text-indigo-400 uppercase">{purchasedPlan}</span> plan. Your premium legal assistance privileges have been activated.
               </p>
@@ -465,7 +499,7 @@ const ChatPage = () => {
               </div>
             </div>
           </div>
-         
+
           <style>{`
             @keyframes fall {
               0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }

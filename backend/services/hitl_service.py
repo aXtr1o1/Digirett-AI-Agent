@@ -140,10 +140,10 @@ class HitlService:
             return response.data[0] if response.data else ticket_data
             
         except ValueError as ve:
-            logger.warning(f"⚠️ Create ticket blocked by validation: {ve}")
+            logger.warning(f" Create ticket blocked by validation: {ve}")
             raise ve
         except Exception as exc:
-            logger.error(f"❌ Failed to create HITL ticket | {exc}", exc_info=True)
+            logger.error(f" Failed to create HITL ticket | {exc}", exc_info=True)
             raise ValueError(f"Failed to create ticket: {exc}")
 
     def is_conversation_escalated(self, conversation_id: str) -> bool:
@@ -154,7 +154,7 @@ class HitlService:
                 .execute()
             return len(response.data or []) > 0
         except Exception as exc:
-            logger.error(f"❌ Failed to check escalation status | {exc}")
+            logger.error(f" Failed to check escalation status | {exc}")
             return False
 
     def _auto_handle_no_show(self, ticket: Dict[str, Any]) -> Dict[str, Any]:
@@ -179,7 +179,7 @@ class HitlService:
             
             # If 15 minutes have passed since meeting start
             if (now - meeting_time).total_seconds() > 15 * 60:
-                logger.info(f"⏳ Auto-triggering [BOTH-NO-SHOW] for ticket {ticket['ticket_id']}")
+                logger.info(f" Auto-triggering [BOTH-NO-SHOW] for ticket {ticket['ticket_id']}")
                 
                 # Apply update to DB
                 update_payload = {
@@ -195,7 +195,7 @@ class HitlService:
                 ticket.update(update_payload)
                 
         except Exception as exc:
-            logger.error(f"❌ Error in _auto_handle_no_show | {exc}")
+            logger.error(f" Error in _auto_handle_no_show | {exc}")
             
         return ticket
 
@@ -273,7 +273,7 @@ class HitlService:
                 .execute()
             return {row["conversation_id"] for row in (response.data or [])}
         except Exception as exc:
-            logger.error(f"❌ Failed to fetch escalated IDs | {exc}")
+            logger.error(f" Failed to fetch escalated IDs | {exc}")
             return set()
 
     def get_open_tickets(self, tenant_id: Optional[str] = None, lawyer_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -290,7 +290,7 @@ class HitlService:
                     if lp_resp.data:
                         lawyer_domains = lp_resp.data[0].get("expertise_domains") or []
                 except Exception as e:
-                    logger.warning(f"⚠️ Failed to load domains for lawyer {lawyer_id} | {e}")
+                    logger.warning(f" Failed to load domains for lawyer {lawyer_id} | {e}")
 
             query = self._supabase.table("hitl_tickets").select(
                 "ticket_id, conversation_id, user_id, status, created_at, detected_domain, ai_brief, priority, urgent_reason, excluded_lawyer_ids, "
@@ -337,7 +337,7 @@ class HitlService:
 
             return data
         except Exception as exc:
-            logger.error(f"❌ Failed to fetch open tickets | {exc}")
+            logger.error(f" Failed to fetch open tickets | {exc}")
             return []
 
     def assign_ticket(self, ticket_id: str, lawyer_id: str) -> bool:
@@ -361,7 +361,7 @@ class HitlService:
             self._log_audit("lawyer.ticketclaimed", lawyer_id, {"ticket_id": ticket_id})
             return True
         except Exception as exc:
-            logger.error(f"❌ Failed to assign ticket {ticket_id} | {exc}")
+            logger.error(f" Failed to assign ticket {ticket_id} | {exc}")
             return False
 
     def update_ticket_priority(self, ticket_id: str, priority: str) -> bool:
@@ -395,7 +395,7 @@ class HitlService:
 
             return True
         except Exception as exc:
-            logger.error(f"❌ Failed to update ticket priority | {ticket_id} | {exc}")
+            logger.error(f" Failed to update ticket priority | {ticket_id} | {exc}")
             return False
 
     def close_ticket(self, ticket_id: str, user_id: str) -> bool:
@@ -423,7 +423,7 @@ class HitlService:
             self._log_audit("ticket.closed", user_id, {"ticket_id": ticket_id})
             return True
         except Exception as exc:
-            logger.error(f"❌ Failed to close ticket | {ticket_id} | {exc}")
+            logger.error(f" Failed to close ticket | {ticket_id} | {exc}")
             raise exc
 
     def re_escalate_ticket(self, ticket_id: str, user_id: str, option: str) -> Dict[str, Any]:
@@ -487,7 +487,7 @@ class HitlService:
             return response.data[0] if response.data else ticket_data
 
         except Exception as exc:
-            logger.error(f"❌ Failed to re-escalate ticket | {ticket_id} | {exc}")
+            logger.error(f" Failed to re-escalate ticket | {ticket_id} | {exc}")
             raise exc
 
     def admin_assign_ticket(self, ticket_id: str, lawyer_id: str) -> bool:
@@ -675,6 +675,28 @@ class HitlService:
             response = self._supabase.execute_query(query)
             
             data = response.data or []
+
+            # Check for unread messages sent by the user for any active ticket in a single batch query
+            latest_unread_map = {}
+            if data:
+                try:
+                    ticket_ids = [t["ticket_id"] for t in data]
+                    unread_resp = self._supabase.table("ticket_messages") \
+                        .select("message_id, ticket_id, created_at") \
+                        .in_("ticket_id", ticket_ids) \
+                        .eq("sender_role", "user") \
+                        .eq("is_read", False) \
+                        .order("created_at", desc=True) \
+                        .execute()
+                    
+                    for msg in (unread_resp.data or []):
+                        tid = msg.get("ticket_id")
+                        # Since query is ordered by created_at desc, first match is the latest unread message
+                        if tid and tid not in latest_unread_map:
+                            latest_unread_map[tid] = msg.get("message_id")
+                except Exception as msg_exc:
+                    logger.warning(f"⚠️ Failed to batch fetch unread messages for lawyer active tickets | {msg_exc}")
+
             # Flatten for cleaner consumption
             for ticket in data:
                 raw_user = ticket.pop("users", {}) or {}
@@ -689,26 +711,11 @@ class HitlService:
                 # Apply auto no-show check
                 self._auto_handle_no_show(ticket)
 
-                # Check for unread messages sent by the user
-                try:
-                    unread_resp = self._supabase.table("ticket_messages") \
-                        .select("message_id") \
-                        .eq("ticket_id", ticket.get("ticket_id")) \
-                        .eq("sender_role", "user") \
-                        .eq("is_read", False) \
-                        .order("created_at", desc=True) \
-                        .limit(1) \
-                        .execute()
-                    if unread_resp.data:
-                        ticket["has_unread_messages"] = True
-                        ticket["latest_unread_message_id"] = unread_resp.data[0]["message_id"]
-                    else:
-                        ticket["has_unread_messages"] = False
-                        ticket["latest_unread_message_id"] = None
-                except Exception as msg_exc:
-                    logger.warning(f"⚠️ Failed to fetch unread messages count for ticket {ticket.get('ticket_id')} | {msg_exc}")
-                    ticket["has_unread_messages"] = False
-                    ticket["latest_unread_message_id"] = None
+                # Set unread flag and latest message ID using our pre-fetched map
+                tid = ticket.get("ticket_id")
+                latest_msg_id = latest_unread_map.get(tid)
+                ticket["has_unread_messages"] = latest_msg_id is not None
+                ticket["latest_unread_message_id"] = latest_msg_id
 
             return data
         except Exception as exc:
@@ -733,6 +740,22 @@ class HitlService:
             
             # Clean up the lawyer name for easier frontend consumption
             data = response.data or []
+
+            # Check for unread messages sent by the lawyer for any of these tickets in a single batch query
+            unread_ticket_ids = set()
+            if data:
+                try:
+                    ticket_ids = [t["ticket_id"] for t in data]
+                    msg_query = self._supabase.table("ticket_messages") \
+                        .select("ticket_id") \
+                        .in_("ticket_id", ticket_ids) \
+                        .eq("sender_role", "lawyer") \
+                        .eq("is_read", False)
+                    unread_resp = self._supabase.execute_query(msg_query)
+                    unread_ticket_ids = {msg.get("ticket_id") for msg in (unread_resp.data or []) if msg.get("ticket_id")}
+                except Exception as msg_exc:
+                    logger.warning(f"⚠️ Failed to batch fetch unread messages count for user tickets | {msg_exc}")
+
             for ticket in data:
                 lawyer = ticket.pop("lawyer", {}) or {}
                 if lawyer:
@@ -751,18 +774,8 @@ class HitlService:
                 # Apply auto no-show check
                 self._auto_handle_no_show(ticket)
 
-                # Check for unread messages sent by the lawyer
-                try:
-                    msg_query = self._supabase.table("ticket_messages") \
-                        .select("message_id", count="exact") \
-                        .eq("ticket_id", ticket.get("ticket_id")) \
-                        .eq("sender_role", "lawyer") \
-                        .eq("is_read", False)
-                    unread_resp = self._supabase.execute_query(msg_query)
-                    ticket["has_unread_messages"] = (unread_resp.count or 0) > 0
-                except Exception as msg_exc:
-                    logger.warning(f"⚠️ Failed to fetch unread messages count for ticket {ticket.get('ticket_id')} | {msg_exc}")
-                    ticket["has_unread_messages"] = False
+                # Set unread flag using our pre-fetched set
+                ticket["has_unread_messages"] = ticket.get("ticket_id") in unread_ticket_ids
 
             return data
         except Exception as exc:
@@ -1183,8 +1196,7 @@ class HitlService:
             total_convs_resp = self._supabase.table("conversations").select("conversation_id", count="exact").execute()
             total_convs = total_convs_resp.count or 0
 
-            total_tickets_resp = self._supabase.table("hitl_tickets").select("ticket_id", count="exact").execute()
-            total_tickets = total_tickets_resp.count or 0
+            total_tickets = total_tickets_count
 
             user_msgs_resp = self._supabase.table("messages").select("message_id", count="exact").eq("role", "user").execute()
             user_msgs = user_msgs_resp.count or 0
@@ -1488,4 +1500,4 @@ class HitlService:
         except Exception as exc:
             logger.warning(f"⚠️ Booking cancellation notification failed (non-fatal) | {exc}")
 
-
+

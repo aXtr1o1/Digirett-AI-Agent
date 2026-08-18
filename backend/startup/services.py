@@ -104,6 +104,7 @@ def init_and_register_services(
     logger.info("Initializing User service...")
     user_service = UserService(
         supabase_client=supabase_client,
+        redis_client=redis_client,
     )
 
     logger.info("Initializing Hitl service...")

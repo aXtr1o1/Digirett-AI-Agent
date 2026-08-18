@@ -240,17 +240,77 @@ async def get_current_user(request: Request = None, websocket: WebSocket = None,
     return await enrich_user_from_database(user, get_supabase())
 
 
+_auth_local_cache: Dict[str, Any] = {}
+_auth_local_expiry: Dict[str, float] = {}
+
 async def enrich_user_from_database(user: ClerkUser, supabase: Any) -> ClerkUser:
-    """Shared helper to fetch and attach database role and status to ClerkUser."""
+    """Shared helper to fetch and attach database role and status to ClerkUser with caching."""
     if not user or not user.clerk_user_id:
         return user
 
+    clerk_id = user.clerk_user_id
+    now = time.time()
+
+    # 1. Try local memory cache
+    if clerk_id in _auth_local_cache:
+        expiry = _auth_local_expiry.get(clerk_id, 0.0)
+        if now < expiry:
+            cached = _auth_local_cache[clerk_id]
+            if cached.get("status") == "suspended":
+                logger.warning(f" Suspended user attempt (Memory cache hit) | user={clerk_id}")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your account has been suspended. Please contact support."
+                )
+            user["db_user_id"] = cached.get("user_id")
+            user["db_role"] = cached.get("role")
+            user["status"] = cached.get("status")
+            return user
+        else:
+            _auth_local_cache.pop(clerk_id, None)
+            _auth_local_expiry.pop(clerk_id, None)
+
+    # 2. Try Redis cache
+    from db.redis_client import get_redis
+    redis_client = None
+    cache_key = f"auth:profile:{clerk_id}"
+    try:
+        redis_client = get_redis()
+    except Exception as e:
+        logger.debug(f"Redis get_redis failed in auth: {e}")
+
+    if redis_client:
+        try:
+            cached_raw = redis_client._get().get(cache_key)
+            if cached_raw:
+                cached = json.loads(cached_raw)
+                logger.info(f"[AUTH CACHE HIT] Redis profile hit: {clerk_id} -> {cached}")
+                
+                # Write to local memory cache
+                _auth_local_cache[clerk_id] = cached
+                _auth_local_expiry[clerk_id] = now + 300  # 5 min local TTL
+                
+                if cached.get("status") == "suspended":
+                    logger.warning(f" Suspended user attempt (Redis cache hit) | user={clerk_id}")
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Your account has been suspended. Please contact support."
+                    )
+                user["db_user_id"] = cached.get("user_id")
+                user["db_role"] = cached.get("role")
+                user["status"] = cached.get("status")
+                return user
+        except Exception as e:
+            logger.warning(f"[AUTH CACHE WARN] Redis read failed in auth: {e}")
+
+    # 3. Cache Miss - Query Supabase
     import asyncio
+    db_user = None
     try:
         def fetch_user_status():
             query = supabase.table("users") \
                 .select("user_id, role, status") \
-                .eq("clerk_user_id", user.clerk_user_id) \
+                .eq("clerk_user_id", clerk_id) \
                 .limit(1)
             return supabase.execute_query(query)
 
@@ -259,19 +319,50 @@ async def enrich_user_from_database(user: ClerkUser, supabase: Any) -> ClerkUser
         if resp and resp.data:
             db_user = resp.data[0] if isinstance(resp.data, list) else resp.data
             if db_user.get("status") == "suspended":
-                logger.warning(f" Suspended user attempt | user={user.clerk_user_id}")
+                logger.warning(f" Suspended user attempt | user={clerk_id}")
+                cached_payload = {
+                    "user_id": db_user.get("user_id"),
+                    "role": db_user.get("role"),
+                    "status": "suspended"
+                }
+                _auth_local_cache[clerk_id] = cached_payload
+                _auth_local_expiry[clerk_id] = now + 300
+                if redis_client:
+                    try:
+                        redis_client._get().setex(cache_key, 300, json.dumps(cached_payload))
+                    except Exception as e:
+                        logger.warning(f"[AUTH CACHE WARN] Redis setex failed: {e}")
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Your account has been suspended. Please contact support."
                 )
 
+            # Valid user
+            cached_payload = {
+                "user_id": db_user.get("user_id"),
+                "role": db_user.get("role"),
+                "status": db_user.get("status")
+            }
+            # Save to Memory cache
+            _auth_local_cache[clerk_id] = cached_payload
+            _auth_local_expiry[clerk_id] = now + 300
+            
+            # Save to Redis
+            if redis_client:
+                try:
+                    redis_client._get().setex(cache_key, 300, json.dumps(cached_payload))
+                    logger.info(f"[AUTH CACHE WRITE] Saved user profile to Redis: {clerk_id} -> {cached_payload}")
+                except Exception as e:
+                    logger.warning(f"[AUTH CACHE WARN] Redis setex failed: {e}")
+
             user["db_user_id"] = db_user.get("user_id")
             user["db_role"] = db_user.get("role")
             user["status"] = db_user.get("status")
+
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error(f"User status check failed | {exc}")
+        logger.error(f" Failed to enrich user from database | user={clerk_id} | {exc}", exc_info=True)
 
     return user
 
