@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from ingestion.src.config import SUPABASE_BUCKET
 from ingestion.src.storage.supabase_store import SupabaseStore
 
 logger = logging.getLogger(__name__)
@@ -50,11 +51,11 @@ class ComparingEngine:
     def __init__(
         self,
         supabase_store: Optional[SupabaseStore] = None,
-        bucket_name: str = "raw_json_files",
+        bucket_name: Optional[str] = None,
         ledger_path: str = "ledger/ledger_manifest.json",
     ):
         self.supabase_store = supabase_store or SupabaseStore()
-        self.bucket_name = bucket_name
+        self.bucket_name = bucket_name or SUPABASE_BUCKET
         self.ledger_path = ledger_path
         self._ledger_cache: Optional[Dict[str, Any]] = None
 

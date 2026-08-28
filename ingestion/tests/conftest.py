@@ -1,32 +1,15 @@
-"""
-conftest.py
-===========
-
-Stubs ALL required environment variables before any project module is
-imported. This is the only reliable fix for CI environments (GitHub Actions,
-Docker, etc.) where there is no .env file and no secrets injected.
-
-config.py calls _required_env() at MODULE LEVEL — meaning the moment any
-test file does `from ingestion.src.config import ...`, config.py executes
-and raises RuntimeError for every missing var.
-
-os.environ must be patched HERE, in conftest.py, because pytest loads
-conftest.py before it imports any test module.
-"""
-
 import os
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
 # ── PATH: make sure project root is importable ────────────────────────────────
-ROOT_DIR = str(Path(__file__).resolve().parent.parent)
-if ROOT_DIR not in sys.path:
-    sys.path.insert(0, ROOT_DIR)
+PROJECT_ROOT = str(Path(__file__).resolve().parent.parent.parent)
+INGESTION_ROOT = str(Path(__file__).resolve().parent.parent)
+for p in [PROJECT_ROOT, INGESTION_ROOT]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
-# ── REQUIRED ENV VARS — names taken directly from config.py + .env ───────────
-# Values are CI-safe dummies. Real secrets are never committed here.
-# os.environ.setdefault() means real GitHub Actions secrets always win.
 _CI_ENV = {
     # ── Workbook / input ──────────────────────────────────────────────────────
     "XL_DATASET_FOLDER":                    "/tmp/xl_dataset",
@@ -59,6 +42,9 @@ _CI_ENV = {
     "MILVUS_INDEX_TYPE":                    "HNSW",
 
     # ── Chunking ──────────────────────────────────────────────────────────────
+    "LEGAL_CHUNK_MAX_TOKENS":               "2000",
+    "LEGAL_CHUNK_OVERLAP_TOKENS":           "200",
+    "LEGAL_CHUNK_CHARS_PER_TOKEN":          "4",
     "CHUNK_SIZE":                           "1000",
     "CHUNK_OVERLAP":                        "200",
     "MAX_TOKENS_PER_CHUNK":                 "256",

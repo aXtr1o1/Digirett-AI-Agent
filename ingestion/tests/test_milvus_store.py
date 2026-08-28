@@ -7,7 +7,7 @@ if ROOT_DIR not in sys.path:
 
 import pytest
 from unittest.mock import patch, MagicMock
-from ingestion.src.storage.milvus_store import MilvusTextStore
+from ingestion.src.storage.milvus_store import MilvusChunkStore
 from ingestion.src.config import MILVUS_COLLECTION
 
 
@@ -15,38 +15,38 @@ from ingestion.src.config import MILVUS_COLLECTION
 @patch("ingestion.src.storage.milvus_store.utility.has_collection", return_value=True)
 @patch("ingestion.src.storage.milvus_store.Collection")
 def test_milvus_init(_, __, ___):
-    store = MilvusTextStore()
+    store = MilvusChunkStore()
     assert store.collection_name == MILVUS_COLLECTION
 
 
 def test_fix_embedding_list():
-    s = MilvusTextStore.__new__(MilvusTextStore)
+    s = MilvusChunkStore.__new__(MilvusChunkStore)
     s.embedding_dim = 3
     assert s._fix_embedding([1, 2, 3]) == [1.0, 2.0, 3.0]
 
 
 def test_fix_embedding_nested():
-    s = MilvusTextStore.__new__(MilvusTextStore)
+    s = MilvusChunkStore.__new__(MilvusChunkStore)
     s.embedding_dim = 3
     assert s._fix_embedding([[1, 2, 3]]) == [1.0, 2.0, 3.0]
 
 
 def test_fix_embedding_empty():
-    s = MilvusTextStore.__new__(MilvusTextStore)
+    s = MilvusChunkStore.__new__(MilvusChunkStore)
     s.embedding_dim = 3
     with pytest.raises(ValueError):
         s._fix_embedding([])
 
 
 def test_fix_embedding_bad_type():
-    s = MilvusTextStore.__new__(MilvusTextStore)
+    s = MilvusChunkStore.__new__(MilvusChunkStore)
     s.embedding_dim = 3
     with pytest.raises(TypeError):
         s._fix_embedding("bad")
 
 
 def test_fix_embedding_dimension_mismatch():
-    s = MilvusTextStore.__new__(MilvusTextStore)
+    s = MilvusChunkStore.__new__(MilvusChunkStore)
     s.embedding_dim = 5
     emb = [1, 2, 3]
     with pytest.raises(ValueError):

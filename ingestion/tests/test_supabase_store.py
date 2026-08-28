@@ -1,24 +1,3 @@
-"""
-test_supabase_store.py  —  FIXED
-==================================
-Original tests called methods that don't exist in the current SupabaseStore:
-  - calculate_hash         → REMOVED
-  - upload_xml_to_storage  → REMOVED
-  - file_exists            → REMOVED
-  - get_all_file_hashes    → REMOVED
-
-Current SupabaseStore only has:
-  - _ensure_connection()
-  - _find_in_table_by_file_name(table_name, file_name)
-  - find_source_metadata_by_file_name(file_name)
-  - download_xml_text_from_storage(bucket_path)
-  - upsert_file_metadata(file_name, source_id, source_doc_url, domain,
-                         subdomain, b2b_b2c, tier, jurisdiction,
-                         legal_validation, xml_bucket_path, doc_title)
-
-All tests are rewritten to match this actual API.
-"""
-
 import sys
 from unittest.mock import MagicMock, patch
 

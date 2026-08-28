@@ -14,6 +14,13 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import requests
 
+from ingestion.src.config import (
+    LOVDATA_BASE_URL,
+    URL_VALIDATION_CONCURRENCY,
+    URL_VALIDATION_TIMEOUT,
+    XAPI_BASE_URL,
+)
+
 logger = logging.getLogger("digirett-url-validator")
 
 # Browser headers to ensure authentic Lovdata HTTP responses
@@ -40,14 +47,16 @@ def extract_lovdata_url(doc: Dict[str, Any], doc_type: str = "LAW") -> Optional[
         if isinstance(meta, dict):
             raw_url = meta.get("lovdata_url") or meta.get("url") or meta.get("link")
 
+    lovdata_origin = LOVDATA_BASE_URL.rsplit("/dokument", 1)[0] if "/dokument" in LOVDATA_BASE_URL else "https://lovdata.no"
+
     if raw_url:
         url_str = str(raw_url).strip()
         if url_str.startswith("http://") or url_str.startswith("https://"):
             return url_str
         if url_str.startswith("/"):
-            return f"https://lovdata.no{url_str}"
+            return f"{lovdata_origin}{url_str}"
         if url_str.startswith("dokument/") or url_str.startswith("forskrift/") or url_str.startswith("lov/"):
-            return f"https://lovdata.no/{url_str}"
+            return f"{lovdata_origin}/{url_str}"
 
     # 2. Generate/Construct URL from canonical document identifier
     doc_id = str(
@@ -66,21 +75,22 @@ def extract_lovdata_url(doc: Dict[str, Any], doc_type: str = "LAW") -> Optional[
     # Handle LTI/ (Temporary / Amendatory Forskrifter & Acts)
     if doc_id.startswith("LTI/"):
         suffix = doc_id[len("LTI/") :]
-        return f"https://lovdata.no/{suffix}"
+        return f"{lovdata_origin}/{suffix}"
 
     # Handle standard Law and Regulation prefixes (NL/, SF/, LF/, etc.)
     if doc_id.startswith(("NL/", "SF/", "LF/")):
-        return f"https://lovdata.no/dokument/{doc_id}"
+        return f"{LOVDATA_BASE_URL}/{doc_id}"
 
     # Standard default
-    return f"https://lovdata.no/dokument/{doc_id}"
+    return f"{LOVDATA_BASE_URL}/{doc_id}"
 
 
-def _wait_for_network_recovery(check_interval: float = 10.0) -> None:
-    """Pauses execution and probes network connectivity until Wi-Fi / Internet is restored."""
-    logger.warning("⚠️ [NETWORK OFFLINE] Connection lost during URL verification. Waiting for Wi-Fi reconnection...")
+def _wait_for_network_recovery(check_interval: float = 10.0, max_wait_seconds: float = 60.0) -> None:
+    """Pauses execution and probes network connectivity with a timeout until connection is restored."""
+    logger.warning("⚠️ [NETWORK OFFLINE] Connection lost during URL verification. Waiting for reconnection...")
     import socket
-    while True:
+    start_time = time.time()
+    while time.time() - start_time < max_wait_seconds:
         time.sleep(check_interval)
         is_online = False
         for host, port in [("8.8.8.8", 53), ("1.1.1.1", 53)]:
@@ -94,7 +104,8 @@ def _wait_for_network_recovery(check_interval: float = 10.0) -> None:
         if is_online:
             logger.info("✅ [NETWORK RESTORED] Internet connection re-established. Resuming URL verification...")
             return
-        logger.warning("⏳ [WAITING FOR WI-FI] Still disconnected. Retrying in %ds...", int(check_interval))
+        logger.warning("⏳ [WAITING FOR CONNECTION] Still disconnected. Retrying in %ds...", int(check_interval))
+    logger.error("❌ [NETWORK TIMEOUT] Network did not recover within %ds. Continuing with remaining tasks.", int(max_wait_seconds))
 
 
 def probe_url(url: str, session: requests.Session, timeout: float = 12.0) -> Dict[str, Any]:
@@ -191,7 +202,12 @@ class LovdataURLValidator:
     High-performance URL verification and quarantine management engine.
     """
 
-    def __init__(self, max_workers: int = 5, timeout: float = 12.0, xapi_base_url: str = "https://xapi.no"):
+    def __init__(
+        self,
+        max_workers: int = URL_VALIDATION_CONCURRENCY,
+        timeout: float = URL_VALIDATION_TIMEOUT,
+        xapi_base_url: str = XAPI_BASE_URL,
+    ):
         self.max_workers = max_workers
         self.timeout = timeout
         self.xapi_base_url = xapi_base_url.rstrip("/")
