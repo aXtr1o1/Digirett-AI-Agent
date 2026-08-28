@@ -1,0 +1,1746 @@
+{
+  "schema_version": "1.0",
+  "mapping_version": "1.1.0",
+  "title": "DigiRett AI — rettsområde → domain_id Mapping",
+  "description": "Maps xAPI Lovdata rettsområde values to DigiRett's 12 legal domains. OUT_OF_SCOPE = not covered by DigiRett v1. Values marked confidence=low require legal review before production use.",
+  "source": "xAPI rettsområde list (279 values) provided by Sidecar/Rolf Frøysa, 20 May 2026",
+  "date": "2026-06-05",
+  "status": "Legal review applied. 2 items pending live xAPI verification (Obligasjoner) / by-design paragraph routing (Næringsrett).",
+  "domain_id_legend": {
+    "D01_COMPANY": "Selskapsrett",
+    "D02_MA": "Fusjon/Fisjon",
+    "D03_ACCOUNTS": "Årsregnskap",
+    "D04_CONTRACT": "Avtalerett",
+    "D05_OBLIGATIONS": "Obligasjonsrett",
+    "D06_DEBT": "Inkasso",
+    "D07_INSOLVENCY": "Konkurs",
+    "D08_MONETARY": "Pengekrav",
+    "D09_SECURITY": "Panterett",
+    "D10_DISPUTE": "Tvisteløsning",
+    "D12_EMPLOYMENT": "Arbeidsrett",
+    "D12_PRIVACY": "Personvern/GDPR",
+    "OUT_OF_SCOPE": "Not covered by DigiRett v1",
+    "NEEDS_VERIFICATION": "Pending live xAPI check (see note)",
+    "NEEDS_ROUTING": "Broad tag — resolve by paragraph-level routing, not by this table"
+  },
+  "stats": {
+    "total_values": 279,
+    "in_scope_or_routed": 71,
+    "out_of_scope": 208,
+    "needs_review_low_confidence": 0,
+    "by_domain": {
+      "OUT_OF_SCOPE": 208,
+      "D01_COMPANY": 10,
+      "D12_EMPLOYMENT": 12,
+      "D05_OBLIGATIONS": 10,
+      "NEEDS_ROUTING": 3,
+      "D04_CONTRACT": 9,
+      "D10_DISPUTE": 10,
+      "D07_INSOLVENCY": 4,
+      "D03_ACCOUNTS": 3,
+      "D06_DEBT": 4,
+      "NEEDS_VERIFICATION": 1,
+      "D09_SECURITY": 2,
+      "D12_PRIVACY": 3
+    }
+  },
+  "notes_for_devs": [
+    "Use this table to auto-assign domain_id when xAPI returns a document. A document's 'rettsomrade' field is a JSON array — a document may carry MULTIPLE rettsområde values.",
+    "Resolution rule when multiple values map to different domains: take the most specific in-scope domain. If values map to multiple in-scope domains, tag the chunk to the primary and flag for paragraph-level routing.",
+    "If ALL of a document's rettsområde values are OUT_OF_SCOPE, skip the document — do not ingest.",
+    "rettsområde maps to DOMAIN only, not subdomain. Subdomain assignment still requires paragraph-level routing keywords from the taxonomy JSON.",
+    "Several DigiRett domains have NO dedicated rettsområde (e.g. D02_MA, D08_MONETARY). Content for these lives inside acts tagged with a broader value (e.g. M&A inside 'Aksjeselskaper'). Reach these via paragraph-level routing, not this table.",
+    "Entries with confidence=low are Katrine's to confirm before production."
+  ],
+  "mappings": [
+    {
+      "rettsomrade": "Adopsjon",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Family/adoption law"
+    },
+    {
+      "rettsomrade": "Advokatrett, rettshjelp",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Legal profession regulation; not an SME advice domain"
+    },
+    {
+      "rettsomrade": "Aksjeselskaper og allmennaksjeselskaper",
+      "domain_id": "D01_COMPANY",
+      "confidence": "high",
+      "note": "Core company law (aksjeloven/allmennaksjeloven)"
+    },
+    {
+      "rettsomrade": "Akvakultur. Havbruk",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Aquaculture sector regulation"
+    },
+    {
+      "rettsomrade": "Allemannsretten",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Right to roam / outdoor access"
+    },
+    {
+      "rettsomrade": "Alminnelig strafferett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "General criminal law"
+    },
+    {
+      "rettsomrade": "Alminnelige bestemmelser",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Generic 'general provisions' tag — leave out per legal review."
+    },
+    {
+      "rettsomrade": "Andelslag",
+      "domain_id": "D01_COMPANY",
+      "confidence": "medium",
+      "note": "Cooperative entities — company-law adjacent"
+    },
+    {
+      "rettsomrade": "Ansettelse. Avskjed. Oppsigelse",
+      "domain_id": "D12_EMPLOYMENT",
+      "confidence": "high",
+      "note": "Hiring/dismissal — EL-01/EL-02"
+    },
+    {
+      "rettsomrade": "Anskaffelser",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Public procurement — not in v1 scope"
+    },
+    {
+      "rettsomrade": "Anskaffelser, avtaler, bygg og entrepriser",
+      "domain_id": "D05_OBLIGATIONS",
+      "confidence": "medium",
+      "note": "Construction/entreprise contracts → OB-05. Procurement portion out; route by paragraph."
+    },
+    {
+      "rettsomrade": "Ansvarsforsikringer",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Liability insurance — out of v1 per legal review."
+    },
+    {
+      "rettsomrade": "Arbeids- og sosialpolitikk",
+      "domain_id": "NEEDS_ROUTING",
+      "confidence": "high",
+      "note": "Mixed tag: labour→D12_EMPLOYMENT (in scope), social policy/benefits→out. Route by paragraph."
+    },
+    {
+      "rettsomrade": "Arbeidsavklaringspenger",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Social security benefit (NAV)"
+    },
+    {
+      "rettsomrade": "Arbeidsforhold",
+      "domain_id": "D12_EMPLOYMENT",
+      "confidence": "high",
+      "note": "Employment relationship"
+    },
+    {
+      "rettsomrade": "Arbeidsforhold. Sysselsetting",
+      "domain_id": "D12_EMPLOYMENT",
+      "confidence": "high",
+      "note": "Employment / sysselsetting"
+    },
+    {
+      "rettsomrade": "Arbeidsgiveravgift",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Employer's social security contribution — tax"
+    },
+    {
+      "rettsomrade": "Arbeidsmiljø",
+      "domain_id": "D12_EMPLOYMENT",
+      "confidence": "high",
+      "note": "Working environment (arbeidsmiljøloven)"
+    },
+    {
+      "rettsomrade": "Arbeidsrett",
+      "domain_id": "D12_EMPLOYMENT",
+      "confidence": "high",
+      "note": "Employment law — primary"
+    },
+    {
+      "rettsomrade": "Arbeidstvister",
+      "domain_id": "D12_EMPLOYMENT",
+      "confidence": "high",
+      "note": "Labour disputes — EL-05"
+    },
+    {
+      "rettsomrade": "Arkiv",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Archive law"
+    },
+    {
+      "rettsomrade": "Artistskatt",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Artist tax"
+    },
+    {
+      "rettsomrade": "Arv",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Inheritance law"
+    },
+    {
+      "rettsomrade": "Atomenergi",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Nuclear energy"
+    },
+    {
+      "rettsomrade": "Avhending",
+      "domain_id": "D05_OBLIGATIONS",
+      "confidence": "medium",
+      "note": "Sale of real property (avhendingslova) — remedies/breach; borderline D04"
+    },
+    {
+      "rettsomrade": "Avtaler",
+      "domain_id": "D04_CONTRACT",
+      "confidence": "high",
+      "note": "Contracts — core avtalerett"
+    },
+    {
+      "rettsomrade": "Bank, finans og regnskapsrett",
+      "domain_id": "NEEDS_ROUTING",
+      "confidence": "high",
+      "note": "Mixed tag: regnskapsrett→D03 (in scope), bank/finance→out. Do not auto-assign; route by paragraph so accounting acts reach D03 and banking acts are skipped."
+    },
+    {
+      "rettsomrade": "Banker",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Banking regulation"
+    },
+    {
+      "rettsomrade": "Barn og foreldre",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Child/parent family law"
+    },
+    {
+      "rettsomrade": "Barnehager",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Kindergartens"
+    },
+    {
+      "rettsomrade": "Barnetrygd",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Child benefit"
+    },
+    {
+      "rettsomrade": "Barnevern",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Child welfare"
+    },
+    {
+      "rettsomrade": "Beredskap",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Emergency preparedness"
+    },
+    {
+      "rettsomrade": "Beregning av pensjoner m.m.",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Pension calculation"
+    },
+    {
+      "rettsomrade": "Bergverk. Mineraler. Muting",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Mining/minerals"
+    },
+    {
+      "rettsomrade": "Betalingsformidling",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Payment services — out of v1 per legal review. NB: finansavtaleloven payment-dispute provisions touch MO-05; reach via paragraph routing if needed."
+    },
+    {
+      "rettsomrade": "Bevisførsel",
+      "domain_id": "D10_DISPUTE",
+      "confidence": "high",
+      "note": "Evidence — DR-06"
+    },
+    {
+      "rettsomrade": "Bibliotek",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Libraries"
+    },
+    {
+      "rettsomrade": "Bidragsforskudd",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Child support advance"
+    },
+    {
+      "rettsomrade": "Bilavgifter",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Vehicle taxes"
+    },
+    {
+      "rettsomrade": "Boligoppføring",
+      "domain_id": "D05_OBLIGATIONS",
+      "confidence": "medium",
+      "note": "Housing construction contracts (bustadoppføringslova) — OB-05"
+    },
+    {
+      "rettsomrade": "Borettslag. Boligbyggelag",
+      "domain_id": "D01_COMPANY",
+      "confidence": "medium",
+      "note": "Housing cooperatives (burettslagslova) — entity/company law."
+    },
+    {
+      "rettsomrade": "Byggesaksbehandling",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Building permit / planning"
+    },
+    {
+      "rettsomrade": "Børs- og verdipapir",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Securities/stock-exchange regulation — out of v1. (Consistent with insurance/financial-services out.)"
+    },
+    {
+      "rettsomrade": "Dekningsrett",
+      "domain_id": "D07_INSOLVENCY",
+      "confidence": "high",
+      "note": "Dekningsloven — IN-03/IN-05"
+    },
+    {
+      "rettsomrade": "Den offentlige ro, orden og sikkerhet",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Public order"
+    },
+    {
+      "rettsomrade": "Diskriminering",
+      "domain_id": "D12_EMPLOYMENT",
+      "confidence": "medium",
+      "note": "Discrimination — primarily employment (EL-01); can be broader"
+    },
+    {
+      "rettsomrade": "Dokumentavgift",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Document duty (tax)"
+    },
+    {
+      "rettsomrade": "Domstolloven",
+      "domain_id": "D10_DISPUTE",
+      "confidence": "high",
+      "note": "Courts Act — dispute resolution"
+    },
+    {
+      "rettsomrade": "Drap",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Homicide (criminal)"
+    },
+    {
+      "rettsomrade": "Dyrevern. Veterinær",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Animal welfare"
+    },
+    {
+      "rettsomrade": "EMK",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "ECHR — human rights"
+    },
+    {
+      "rettsomrade": "EU/EØS-rett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Cross-cutting EU/EEA tag — do not ingest by this tag. In-scope EU content reaches its domain via the substantive act's own rettsområde + paragraph routing."
+    },
+    {
+      "rettsomrade": "Eiendomsmegling",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Real estate brokerage"
+    },
+    {
+      "rettsomrade": "Eiendomsskatt",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Property tax"
+    },
+    {
+      "rettsomrade": "Ekspropriasjon",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Expropriation"
+    },
+    {
+      "rettsomrade": "Ekteskap og samboerskap (husstandsfellesskap)",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Marriage/cohabitation"
+    },
+    {
+      "rettsomrade": "Elektrisitetsproduksjon og -forsyning",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Electricity production/supply"
+    },
+    {
+      "rettsomrade": "Elektronisk handel. E-signatur",
+      "domain_id": "D04_CONTRACT",
+      "confidence": "high",
+      "note": "eCommerce/e-signature — CL-05"
+    },
+    {
+      "rettsomrade": "Energi",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Energy sector"
+    },
+    {
+      "rettsomrade": "Energirett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Energy law"
+    },
+    {
+      "rettsomrade": "Entrepriser",
+      "domain_id": "D05_OBLIGATIONS",
+      "confidence": "high",
+      "note": "Construction contracts (NS 8405 etc.) — OB-05"
+    },
+    {
+      "rettsomrade": "Erstatnings- og forsikringsrett",
+      "domain_id": "D05_OBLIGATIONS",
+      "confidence": "high",
+      "note": "Tort/damages → OB-01 (in scope). Insurance portion out of v1 per legal review; route by paragraph."
+    },
+    {
+      "rettsomrade": "Familie-, person- og barnerett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Family/person/child law"
+    },
+    {
+      "rettsomrade": "Fangst",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Hunting/catching"
+    },
+    {
+      "rettsomrade": "Fast eiendoms rettsforhold",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Real property law — out of v1. Husleie (D05) and tinglysing (D09) are tagged separately and stay in scope."
+    },
+    {
+      "rettsomrade": "Film",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Film regulation"
+    },
+    {
+      "rettsomrade": "Finansielle tjenester",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Financial services — out of v1 per legal review."
+    },
+    {
+      "rettsomrade": "Finnmark",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Finnmark land law"
+    },
+    {
+      "rettsomrade": "Fiske",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Fishing"
+    },
+    {
+      "rettsomrade": "Fiskeri",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Fisheries"
+    },
+    {
+      "rettsomrade": "Fiskeri- og fangstrett og havbruk",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Fisheries/aquaculture"
+    },
+    {
+      "rettsomrade": "Folkerett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Public international law"
+    },
+    {
+      "rettsomrade": "Folketrygdavgift",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "National insurance contribution"
+    },
+    {
+      "rettsomrade": "Fond",
+      "domain_id": "D01_COMPANY",
+      "confidence": "medium",
+      "note": "Funds as entities → D01 (entity law). Financial-regulation funds reach via paragraph routing if relevant."
+    },
+    {
+      "rettsomrade": "Forbruker-, kjøps- og konkurranserett",
+      "domain_id": "D04_CONTRACT",
+      "confidence": "medium",
+      "note": "Consumer/sale → CL/OB. Competition portion out (MA-05 notification only); route by paragraph."
+    },
+    {
+      "rettsomrade": "Forbrukerkjøp",
+      "domain_id": "D04_CONTRACT",
+      "confidence": "high",
+      "note": "Consumer sale (forbrukerkjøpsloven) — CL/OB B2C"
+    },
+    {
+      "rettsomrade": "Forbrukersaker",
+      "domain_id": "D04_CONTRACT",
+      "confidence": "medium",
+      "note": "Consumer matters — contract/obligations B2C"
+    },
+    {
+      "rettsomrade": "Foretak",
+      "domain_id": "D01_COMPANY",
+      "confidence": "high",
+      "note": "Enterprises/foretak — company law"
+    },
+    {
+      "rettsomrade": "Fornybar energi",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Renewable energy"
+    },
+    {
+      "rettsomrade": "Forsikring",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Insurance law — out of v1 per legal review."
+    },
+    {
+      "rettsomrade": "Forskning",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Research"
+    },
+    {
+      "rettsomrade": "Forskning og utdanning",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Research/education"
+    },
+    {
+      "rettsomrade": "Forsvaret",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Defence"
+    },
+    {
+      "rettsomrade": "Forurensninger",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Pollution"
+    },
+    {
+      "rettsomrade": "Forurensninger, klima og utslipp",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Pollution/climate/emissions"
+    },
+    {
+      "rettsomrade": "Forvaltnings- og kommunalrett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Administrative/municipal law"
+    },
+    {
+      "rettsomrade": "Fremmedrett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Immigration (older term)"
+    },
+    {
+      "rettsomrade": "Friluftsliv",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Outdoor recreation"
+    },
+    {
+      "rettsomrade": "Generelt",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Generic container tag — leave out per legal review; in-scope content reached via paragraph routing."
+    },
+    {
+      "rettsomrade": "Gjeldsforhandling. Konkurs",
+      "domain_id": "D07_INSOLVENCY",
+      "confidence": "high",
+      "note": "Debt negotiation/bankruptcy — IN-01/IN-02"
+    },
+    {
+      "rettsomrade": "Gjeldsordning",
+      "domain_id": "D07_INSOLVENCY",
+      "confidence": "medium",
+      "note": "Debt settlement (gjeldsordningsloven) — borderline D08; consumer insolvency"
+    },
+    {
+      "rettsomrade": "Gjenåpning",
+      "domain_id": "D10_DISPUTE",
+      "confidence": "medium",
+      "note": "Reopening of civil cases — procedural, D10."
+    },
+    {
+      "rettsomrade": "Grenser",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Borders"
+    },
+    {
+      "rettsomrade": "Grunnloven",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Constitution"
+    },
+    {
+      "rettsomrade": "HMS og beredskaps- og sikkerhetsrett",
+      "domain_id": "D12_EMPLOYMENT",
+      "confidence": "medium",
+      "note": "Workplace HSE — arbeidsmiljøloven kap 3-4; preparedness part out"
+    },
+    {
+      "rettsomrade": "Handel og tjenester",
+      "domain_id": "D04_CONTRACT",
+      "confidence": "medium",
+      "note": "Commercial trade/services contracts → CL/OB area."
+    },
+    {
+      "rettsomrade": "Handelsforenklinger",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Trade facilitation"
+    },
+    {
+      "rettsomrade": "Havner",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Ports"
+    },
+    {
+      "rettsomrade": "Havrett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Law of the sea"
+    },
+    {
+      "rettsomrade": "Helse",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Health"
+    },
+    {
+      "rettsomrade": "Helse, miljø og sikkerhet",
+      "domain_id": "D12_EMPLOYMENT",
+      "confidence": "medium",
+      "note": "HSE — workplace part is employment; broader part out"
+    },
+    {
+      "rettsomrade": "Helse- og omsorgsrett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Health/care law"
+    },
+    {
+      "rettsomrade": "Helseforetak",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Health enterprises"
+    },
+    {
+      "rettsomrade": "Helseforskning",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Health research"
+    },
+    {
+      "rettsomrade": "Helsepersonell",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Health personnel"
+    },
+    {
+      "rettsomrade": "Hotell og servering",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Hotel/serving sector"
+    },
+    {
+      "rettsomrade": "Husleie",
+      "domain_id": "D05_OBLIGATIONS",
+      "confidence": "high",
+      "note": "Lease/tenancy (husleieloven) — OB-05"
+    },
+    {
+      "rettsomrade": "Hvitvasking",
+      "domain_id": "D03_ACCOUNTS",
+      "confidence": "high",
+      "note": "AML (hvitvaskingsloven). In scope per legal review. Compliance area tied to accounting/audit duties."
+    },
+    {
+      "rettsomrade": "Håndverk",
+      "domain_id": "D05_OBLIGATIONS",
+      "confidence": "medium",
+      "note": "Craftsman services (håndverkertjenesteloven) — OB-05 B2C"
+    },
+    {
+      "rettsomrade": "IKT- og medierett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "ICT/media law out of v1 as a whole. Specific privacy/cookie provisions reach D12_PRIVACY via paragraph routing."
+    },
+    {
+      "rettsomrade": "Idrett. Sport",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Sports"
+    },
+    {
+      "rettsomrade": "Immaterialrett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "IP law — out of v1 per legal review."
+    },
+    {
+      "rettsomrade": "Indre marked og EØS",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Internal market/EEA"
+    },
+    {
+      "rettsomrade": "Industri",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Industry"
+    },
+    {
+      "rettsomrade": "Industrielt rettsvern",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Industrial IP protection — out of v1 per legal review."
+    },
+    {
+      "rettsomrade": "Informasjonssamfunnet",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Information-society area out of v1 as a whole; specific privacy provisions reach D12_PRIVACY via paragraph routing."
+    },
+    {
+      "rettsomrade": "Inkasso",
+      "domain_id": "D06_DEBT",
+      "confidence": "high",
+      "note": "Debt collection — DC-01/DC-02"
+    },
+    {
+      "rettsomrade": "Inn- og utførsel",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Import/export"
+    },
+    {
+      "rettsomrade": "Inntekts- og formueskatt",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Income/wealth tax"
+    },
+    {
+      "rettsomrade": "Internasjonal privatrett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Private international law / conflict of laws"
+    },
+    {
+      "rettsomrade": "Internasjonal rett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "International law"
+    },
+    {
+      "rettsomrade": "Internasjonale organisasjoner",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "International organisations"
+    },
+    {
+      "rettsomrade": "Internasjonale sanksjoner",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "International sanctions"
+    },
+    {
+      "rettsomrade": "Jakt og innlandsfiske",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Hunting/inland fishing"
+    },
+    {
+      "rettsomrade": "Jan Mayen-skatt",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Jan Mayen tax"
+    },
+    {
+      "rettsomrade": "Jernbane",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Railways"
+    },
+    {
+      "rettsomrade": "Jordskifte",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Land consolidation"
+    },
+    {
+      "rettsomrade": "Justering og tilbakeføring av inngående merverdiavgift",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "VAT adjustment"
+    },
+    {
+      "rettsomrade": "Justis og innenriks",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Justice/home affairs (broad)"
+    },
+    {
+      "rettsomrade": "Kjøp",
+      "domain_id": "D04_CONTRACT",
+      "confidence": "high",
+      "note": "Sale of goods (kjøpsloven) — CL formation / OB remedies B2B"
+    },
+    {
+      "rettsomrade": "Klimakvoter",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Climate quotas"
+    },
+    {
+      "rettsomrade": "Kommunehelsetjeneste",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Municipal health"
+    },
+    {
+      "rettsomrade": "Kommuner og fylkeskommuner",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Municipalities/counties"
+    },
+    {
+      "rettsomrade": "Kongehuset",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Royal house"
+    },
+    {
+      "rettsomrade": "Konkurranse",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Competition law — MA-05 notification only; substantive competition out"
+    },
+    {
+      "rettsomrade": "Konkurranse og statsstøtte",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Competition/state aid — MA-05 partial; otherwise out"
+    },
+    {
+      "rettsomrade": "Konkurs, gjeld og pant",
+      "domain_id": "D07_INSOLVENCY",
+      "confidence": "medium",
+      "note": "MULTI tag: konkurs→D07 (primary), gjeld→D08, pant→D09. Route by paragraph; primary domain D07."
+    },
+    {
+      "rettsomrade": "Konsesjon",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Concession/licensing (sector)"
+    },
+    {
+      "rettsomrade": "Kontantstøtte",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Cash-for-care benefit"
+    },
+    {
+      "rettsomrade": "Konvensjoner. Overenskomster",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Conventions/treaties"
+    },
+    {
+      "rettsomrade": "Krenkelse/ rettstridig tilegnelse av forretningshemmeligheter",
+      "domain_id": "D10_DISPUTE",
+      "confidence": "medium",
+      "note": "Trade secrets (forretningshemmelighetsloven) — DR-04 injunctions; borderline IP"
+    },
+    {
+      "rettsomrade": "Krigspensjon",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "War pension"
+    },
+    {
+      "rettsomrade": "Kringkasting",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Broadcasting"
+    },
+    {
+      "rettsomrade": "Kultur, idrett og underholdning",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Culture/sport/entertainment"
+    },
+    {
+      "rettsomrade": "Kulturminner",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Cultural heritage"
+    },
+    {
+      "rettsomrade": "Kunst",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Art"
+    },
+    {
+      "rettsomrade": "Landbruk, jakt og skogbruk",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Agriculture/hunting/forestry"
+    },
+    {
+      "rettsomrade": "Landbruk. Dyrehold",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Agriculture/livestock"
+    },
+    {
+      "rettsomrade": "Legemidler. Apotek",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Medicines/pharmacies"
+    },
+    {
+      "rettsomrade": "Likestilling og diskriminering",
+      "domain_id": "D12_EMPLOYMENT",
+      "confidence": "medium",
+      "note": "Equality/discrimination — primarily employment; broader part out"
+    },
+    {
+      "rettsomrade": "Livsforsikring",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Life insurance — out of v1 per legal review."
+    },
+    {
+      "rettsomrade": "Lokalstyre",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Local government"
+    },
+    {
+      "rettsomrade": "Lotteri. Pengespill. Innsamlinger",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Lottery/gambling"
+    },
+    {
+      "rettsomrade": "Lovens formål og prosessforutsetninger",
+      "domain_id": "D10_DISPUTE",
+      "confidence": "medium",
+      "note": "Procedural preconditions (tvisteloven) — D10."
+    },
+    {
+      "rettsomrade": "Luftfart",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Aviation"
+    },
+    {
+      "rettsomrade": "Markedsføring",
+      "domain_id": "D04_CONTRACT",
+      "confidence": "high",
+      "note": "Marketing law (markedsføringsloven). In scope per legal review. Routes to CL-03/CL-04 area; B2C protection."
+    },
+    {
+      "rettsomrade": "Mat og alkohol",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Food/alcohol"
+    },
+    {
+      "rettsomrade": "Mat og drikke",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Food/drink"
+    },
+    {
+      "rettsomrade": "Matrikkel",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Cadastre"
+    },
+    {
+      "rettsomrade": "Mattrygghet",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Food safety"
+    },
+    {
+      "rettsomrade": "Medier",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Media"
+    },
+    {
+      "rettsomrade": "Mekling og avklaring",
+      "domain_id": "D10_DISPUTE",
+      "confidence": "high",
+      "note": "Mediation — DR-01/DR-02"
+    },
+    {
+      "rettsomrade": "Menneskerettigheter",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Human rights"
+    },
+    {
+      "rettsomrade": "Merverdiavgift",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "VAT"
+    },
+    {
+      "rettsomrade": "Militær strafferett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Military criminal law"
+    },
+    {
+      "rettsomrade": "Miljø og klima",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Environment/climate"
+    },
+    {
+      "rettsomrade": "Miljøvern, natur og friluftsliv",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Environment/nature"
+    },
+    {
+      "rettsomrade": "Motorferdsel",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Motor traffic in nature"
+    },
+    {
+      "rettsomrade": "Musikk og teater",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Music/theatre"
+    },
+    {
+      "rettsomrade": "Mønster. Design",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Design rights (IP) — out of v1 per legal review."
+    },
+    {
+      "rettsomrade": "Naborett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Neighbour law (real property)"
+    },
+    {
+      "rettsomrade": "Naturmangfold/naturfredning",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Biodiversity"
+    },
+    {
+      "rettsomrade": "Naturskadeforsikring",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Natural disaster insurance — out of v1 per legal review."
+    },
+    {
+      "rettsomrade": "Næringsrett",
+      "domain_id": "NEEDS_ROUTING",
+      "confidence": "high",
+      "note": "Broad business-law catch-all. Do NOT auto-assign a single domain — fall through to paragraph-level keyword routing so each document routes by content (D01/D04/D05/D06 etc.). Prevents vague mis-routing."
+    },
+    {
+      "rettsomrade": "Obligasjoner",
+      "domain_id": "NEEDS_VERIFICATION",
+      "confidence": "high",
+      "note": "HOMONYM — confidence is in the ACTION not a guess. Query GET /v1/lovdata/lover?rettsomrade=Obligasjoner. gjeldsbrevloven/foreldelsesloven/kjøpsloven → D05_OBLIGATIONS. verdipapir/børs/finansforetaksloven → OUT_OF_SCOPE."
+    },
+    {
+      "rettsomrade": "Odels- og åsætesrett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Allodial/odel land rights"
+    },
+    {
+      "rettsomrade": "Offentlig forvaltning",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Public administration"
+    },
+    {
+      "rettsomrade": "Offentlige reguleringer",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Public regulations (broad)"
+    },
+    {
+      "rettsomrade": "Offentlige tjenestemenn",
+      "domain_id": "D12_EMPLOYMENT",
+      "confidence": "medium",
+      "note": "Public servants (statsansatteloven) — employment-adjacent; D12_EMPLOYMENT."
+    },
+    {
+      "rettsomrade": "Opphavsrett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Copyright (IP) — out of v1 per legal review."
+    },
+    {
+      "rettsomrade": "Pant",
+      "domain_id": "D09_SECURITY",
+      "confidence": "high",
+      "note": "Pledge/security (panteloven) — SE-01"
+    },
+    {
+      "rettsomrade": "Pasientrettigheter",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Patient rights"
+    },
+    {
+      "rettsomrade": "Patent",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Patent (IP) — out of v1 per legal review."
+    },
+    {
+      "rettsomrade": "Pensjons- og trygderett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Pension/social security"
+    },
+    {
+      "rettsomrade": "Person- og pasientskadeerstatning",
+      "domain_id": "D05_OBLIGATIONS",
+      "confidence": "medium",
+      "note": "Personal injury compensation → OB-01 (tort). Patient-injury scheme portion out; route by paragraph."
+    },
+    {
+      "rettsomrade": "Personopplysninger",
+      "domain_id": "D12_PRIVACY",
+      "confidence": "high",
+      "note": "Personal data — PR-01"
+    },
+    {
+      "rettsomrade": "Personrett. Personvern",
+      "domain_id": "D12_PRIVACY",
+      "confidence": "medium",
+      "note": "Personal/privacy law — PR; personrett (capacity) part borderline"
+    },
+    {
+      "rettsomrade": "Petroleumsskatt",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Petroleum tax"
+    },
+    {
+      "rettsomrade": "Petroleumsvirksomhet",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Petroleum activity"
+    },
+    {
+      "rettsomrade": "Politi",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Police"
+    },
+    {
+      "rettsomrade": "Post",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Postal services"
+    },
+    {
+      "rettsomrade": "Produktansvar",
+      "domain_id": "D05_OBLIGATIONS",
+      "confidence": "high",
+      "note": "Product liability (produktansvarsloven) — OB-01"
+    },
+    {
+      "rettsomrade": "Psykisk helsevern",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Mental health care"
+    },
+    {
+      "rettsomrade": "Redningsetater",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Rescue services"
+    },
+    {
+      "rettsomrade": "Regnskap",
+      "domain_id": "D03_ACCOUNTS",
+      "confidence": "high",
+      "note": "Accounting (regnskapsloven) — AC-01/AC-02"
+    },
+    {
+      "rettsomrade": "Reindrift",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Reindeer husbandry"
+    },
+    {
+      "rettsomrade": "Reiseliv",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Tourism"
+    },
+    {
+      "rettsomrade": "Rettsgebyrloven",
+      "domain_id": "D06_DEBT",
+      "confidence": "medium",
+      "note": "Court fees (rettsgebyrloven) — DC-05; also D10. Primary D06"
+    },
+    {
+      "rettsomrade": "Rettshjelploven",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Legal aid — out of v1 (administrative). Court-cost questions reach D06/D10 via paragraph routing."
+    },
+    {
+      "rettsomrade": "Rettslig handleevne. Vergemål",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Legal capacity/guardianship — out of v1. CL-02 authority reached via paragraph routing."
+    },
+    {
+      "rettsomrade": "Revisjon",
+      "domain_id": "D03_ACCOUNTS",
+      "confidence": "high",
+      "note": "Audit (revisorloven) — AC-04"
+    },
+    {
+      "rettsomrade": "Romrett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Space law"
+    },
+    {
+      "rettsomrade": "SP",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Unresolved acronym — leave out per legal review."
+    },
+    {
+      "rettsomrade": "Saksbehandlingsregler",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Procedural/casework rules (admin) — leave out per legal review."
+    },
+    {
+      "rettsomrade": "Sameie",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Co-ownership (sameigelova) — property; out of v1 per scope."
+    },
+    {
+      "rettsomrade": "Samerett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Sami law"
+    },
+    {
+      "rettsomrade": "Samfunnssikkerhet",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Societal security"
+    },
+    {
+      "rettsomrade": "Samvirkeforetak",
+      "domain_id": "D01_COMPANY",
+      "confidence": "high",
+      "note": "Cooperatives (samvirkelova) — entity/company law"
+    },
+    {
+      "rettsomrade": "Schengen",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Schengen"
+    },
+    {
+      "rettsomrade": "Seksuallovbrudd",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Sexual offences (criminal)"
+    },
+    {
+      "rettsomrade": "Selskaper, fond og foreninger",
+      "domain_id": "D01_COMPANY",
+      "confidence": "high",
+      "note": "Companies/funds/associations — company law"
+    },
+    {
+      "rettsomrade": "Selskaper. Statsforetak",
+      "domain_id": "D01_COMPANY",
+      "confidence": "high",
+      "note": "Companies/state enterprises — company law"
+    },
+    {
+      "rettsomrade": "Selskapsrett",
+      "domain_id": "D01_COMPANY",
+      "confidence": "high",
+      "note": "Company law — primary"
+    },
+    {
+      "rettsomrade": "Sivil- og straffeprosess",
+      "domain_id": "D10_DISPUTE",
+      "confidence": "medium",
+      "note": "Civil+criminal procedure — civil part D10; criminal out"
+    },
+    {
+      "rettsomrade": "Sivilprosess/tvisteloven",
+      "domain_id": "D10_DISPUTE",
+      "confidence": "high",
+      "note": "Civil procedure (tvisteloven) — D10"
+    },
+    {
+      "rettsomrade": "Skadeforsikring",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Non-life insurance — out of v1 per legal review."
+    },
+    {
+      "rettsomrade": "Skadeserstatning",
+      "domain_id": "D05_OBLIGATIONS",
+      "confidence": "high",
+      "note": "Tort/damages (skadeserstatningsloven) — OB-01"
+    },
+    {
+      "rettsomrade": "Skatte- og avgiftsrett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Tax and duties"
+    },
+    {
+      "rettsomrade": "Skatteavtaler",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Tax treaties"
+    },
+    {
+      "rettsomrade": "Skattebetaling",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Tax payment"
+    },
+    {
+      "rettsomrade": "Skatteforvaltning",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Tax administration"
+    },
+    {
+      "rettsomrade": "Skattesubjektene og skattepliktens omfang",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Tax subjects/scope"
+    },
+    {
+      "rettsomrade": "Skifte",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Estate/probate division — family/inheritance"
+    },
+    {
+      "rettsomrade": "Skipsfart",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Shipping/maritime"
+    },
+    {
+      "rettsomrade": "Skjønn",
+      "domain_id": "D10_DISPUTE",
+      "confidence": "medium",
+      "note": "Statutory appraisal proceedings (skjønnsprosessloven) — D10"
+    },
+    {
+      "rettsomrade": "Skogbruk",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Forestry"
+    },
+    {
+      "rettsomrade": "Skoler, universiteter og forskning",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Schools/universities"
+    },
+    {
+      "rettsomrade": "Skoler. Privatskoler",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Schools/private schools"
+    },
+    {
+      "rettsomrade": "Sosiale tjenester",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Social services"
+    },
+    {
+      "rettsomrade": "Statistikk. Registrering",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Statistics/registration"
+    },
+    {
+      "rettsomrade": "Stats-, statsforfatnings- og statsborgerrett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Constitutional/citizenship"
+    },
+    {
+      "rettsomrade": "Statsforfatningen",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Constitution"
+    },
+    {
+      "rettsomrade": "Stiftelser/legater og foreninger",
+      "domain_id": "D01_COMPANY",
+      "confidence": "medium",
+      "note": "Foundations/associations (stiftelsesloven) — entity law"
+    },
+    {
+      "rettsomrade": "Stortinget",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Parliament"
+    },
+    {
+      "rettsomrade": "Straffegjennomføring",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Execution of sentences"
+    },
+    {
+      "rettsomrade": "Straffeprosess/straffeprosessloven",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Criminal procedure"
+    },
+    {
+      "rettsomrade": "Strafferett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Criminal law"
+    },
+    {
+      "rettsomrade": "Supplerende stønad til personer med kort butid i Noreg",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Supplementary benefit"
+    },
+    {
+      "rettsomrade": "Svalbard og biland",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Svalbard/dependencies"
+    },
+    {
+      "rettsomrade": "Svalbardskatt",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Svalbard tax"
+    },
+    {
+      "rettsomrade": "Sykepenger",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Sickness benefit (NAV)"
+    },
+    {
+      "rettsomrade": "Særavgifter",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Excise duties"
+    },
+    {
+      "rettsomrade": "Tariffavtaler",
+      "domain_id": "D12_EMPLOYMENT",
+      "confidence": "high",
+      "note": "Collective agreements — employment"
+    },
+    {
+      "rettsomrade": "Telekommunikasjon",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Telecom sector out of v1. EXCEPTION: ekomloven § 3-15 cookie provisions → reach via paragraph routing to D12_PRIVACY / PR-08. Do not ingest the whole telecom area."
+    },
+    {
+      "rettsomrade": "Tilleggsstønader",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Supplementary benefits"
+    },
+    {
+      "rettsomrade": "Tinglysing. Registrering",
+      "domain_id": "D09_SECURITY",
+      "confidence": "medium",
+      "note": "Registration/perfection (tinglysingsloven) — SE-02; also property"
+    },
+    {
+      "rettsomrade": "Tjenester og etablering",
+      "domain_id": "D04_CONTRACT",
+      "confidence": "medium",
+      "note": "Services/establishment commercial contracts → CL area."
+    },
+    {
+      "rettsomrade": "Toll",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Customs"
+    },
+    {
+      "rettsomrade": "Tomtefeste",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Ground lease (tomtefesteloven) — property; borderline OB-05"
+    },
+    {
+      "rettsomrade": "Transport",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Transport"
+    },
+    {
+      "rettsomrade": "Transport og kommunikasjoner",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Transport/communications"
+    },
+    {
+      "rettsomrade": "Trossamfunn. Kirken",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Religious communities/church"
+    },
+    {
+      "rettsomrade": "Tvangsfullbyrdelse",
+      "domain_id": "D06_DEBT",
+      "confidence": "high",
+      "note": "Enforcement (tvangsfullbyrdelsesloven) — DC-03"
+    },
+    {
+      "rettsomrade": "Tvangsgrunnlag og tvangskraft",
+      "domain_id": "D06_DEBT",
+      "confidence": "high",
+      "note": "Enforcement basis — DC-03"
+    },
+    {
+      "rettsomrade": "Uføretrygd",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Disability benefit"
+    },
+    {
+      "rettsomrade": "Underholdning",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Entertainment"
+    },
+    {
+      "rettsomrade": "Underholdsbidrag",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Maintenance/child support"
+    },
+    {
+      "rettsomrade": "Universiteter og høyskoler",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Universities"
+    },
+    {
+      "rettsomrade": "Utdanningsstøtte",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Education support"
+    },
+    {
+      "rettsomrade": "Utenfor folketrygdloven",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Outside National Insurance Act"
+    },
+    {
+      "rettsomrade": "Utenfor straffeloven",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Outside Penal Code"
+    },
+    {
+      "rettsomrade": "Utenrikstjenesten",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Foreign service"
+    },
+    {
+      "rettsomrade": "Utlendingsrett",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Immigration law"
+    },
+    {
+      "rettsomrade": "Utlevering",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Extradition"
+    },
+    {
+      "rettsomrade": "Vakttjenester",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Security guard services"
+    },
+    {
+      "rettsomrade": "Valg",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Elections"
+    },
+    {
+      "rettsomrade": "Valuta",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "medium",
+      "note": "Currency/foreign exchange"
+    },
+    {
+      "rettsomrade": "Vannkraft",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Hydropower"
+    },
+    {
+      "rettsomrade": "Vannressurser",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Water resources"
+    },
+    {
+      "rettsomrade": "Varemerke. Firma",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "IP out of v1 per legal review. NB: 'firma' (foretaksnavn) touches D01 — handle company-name queries via paragraph routing in D01 if they arise."
+    },
+    {
+      "rettsomrade": "Veitrafikk",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Road traffic"
+    },
+    {
+      "rettsomrade": "Vern av informasjon og informasjonsutveksling",
+      "domain_id": "D12_PRIVACY",
+      "confidence": "medium",
+      "note": "Information protection/exchange — privacy/security PR"
+    },
+    {
+      "rettsomrade": "Vinning",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Property crime (criminal)"
+    },
+    {
+      "rettsomrade": "Vold",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Violence (criminal)"
+    },
+    {
+      "rettsomrade": "Voldgift og selvdømme",
+      "domain_id": "D10_DISPUTE",
+      "confidence": "high",
+      "note": "Arbitration (voldgiftsloven) — DR-05"
+    },
+    {
+      "rettsomrade": "Våpen og eksplosiver",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Weapons/explosives"
+    },
+    {
+      "rettsomrade": "Yrkesskadetrygd",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Occupational injury benefit (social security)"
+    },
+    {
+      "rettsomrade": "Ytelser ved sykdom m.m.",
+      "domain_id": "OUT_OF_SCOPE",
+      "confidence": "high",
+      "note": "Sickness benefits"
+    }
+  ],
+  "changelog": [
+    {
+      "version": "1.0.0-draft",
+      "changes": "Initial draft mapping of 279 rettsområde values."
+    },
+    {
+      "version": "1.1.0",
+      "changes": [
+        "Section A: Hvitvasking→D03 (in). Markedsføring→D04 (in). All IP (Varemerke/Firma, Mønster, Immaterialrett, Patent, Opphavsrett, Industrielt rettsvern)→OUT. All insurance→OUT.",
+        "Section B: Obligasjoner→NEEDS_VERIFICATION (homonym, query live xAPI). Næringsrett→NEEDS_ROUTING (broad catch-all, route by paragraph). Betalingsformidling + Finansielle tjenester→OUT. Telecom/ICT/Info-society→OUT except ekomloven §3-15 cookies via paragraph routing to PR-08.",
+        "Section C: Generelt, Alminnelige bestemmelser, SP, Saksbehandlingsregler→OUT (generic containers).",
+        "Cleared remaining low-confidence items by applying the above policies."
+      ]
+    }
+  ]
+}
