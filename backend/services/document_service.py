@@ -1,11 +1,16 @@
 import logging
+import hashlib
 import re
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
-
 import fitz  # PyMuPDF
-from langdetect import detect, LangDetectException
+try:
+    from langdetect import detect, LangDetectException
+    _LANGDETECT_AVAILABLE = True
+except ImportError:
+    _LANGDETECT_AVAILABLE = False
+    class LangDetectException(Exception): pass
 
 from config import settings
 from db.redis_client import RedisClient
@@ -14,10 +19,12 @@ from db.supabase_client import SupabaseClient
 logger = logging.getLogger(__name__)
 
 # ── Session constants ─────────────────────────────────────────────────────────
-SESSION_TTL_SECONDS  = 4 * 60 * 60   # 4 hours
-MAX_DOCS_PER_SESSION = 2
-MAX_TURNS_PER_SESSION = 10
+# ── Session constants (Moved to config.py) ───────────────────────────────────
+SESSION_TTL_SECONDS  = settings.DOC_SESSION_TTL_SECONDS
 
+
+from utils.document_parser import DocumentParser
+from utils.language_detector import LanguageDetector
 
 class DocumentService:
 
@@ -26,58 +33,34 @@ class DocumentService:
         redis_client: RedisClient,
         supabase_client: SupabaseClient,
     ) -> None:
+        from utils.storage_service import StorageService
         self._redis    = redis_client
         self._supabase = supabase_client
-        logger.info("✅ DocumentService initialized")
+        self._storage  = StorageService(self._supabase)
+        logger.info("[OK] DocumentService initialized")
         if settings.DOC_TESTING_MODE:
-            logger.info("🧪 TESTING MODE ACTIVE - Document limits disabled for testing")
+            logger.info("[TEST] TESTING MODE ACTIVE - Document limits disabled for testing")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # LANGUAGE DETECTION
+    # LANGUAGE DETECTION & PDF PARSING UTILITIES
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     def detect_document_language(self, text: str) -> str:
-        
-        try:
-            if not text or len(text.strip()) < 50:
-                logger.warning("📄 Document too short for reliable language detection")
-                return "english"
-            
-            # Detect language from first 1000 characters
-            detected_lang = detect(text[:1000])
-            
-            # Normalize language codes
-            if detected_lang in ('no', 'nb', 'nn'):
-                return "norwegian"
-            elif detected_lang in ('en', 'en-US', 'en-GB'):
-                return "english"
-            else:
-                logger.info(f"🌐 Detected language code: {detected_lang}")
-                return detected_lang
-        except LangDetectException as exc:
-            logger.warning(f"⚠️ Language detection failed | {exc} | defaulting to 'english'")
-            return "english"
-        except Exception as exc:
-            logger.error(f"❌ Language detection error | {exc}")
-            return "english"
+        return LanguageDetector.detect_language(text)
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # SESSION MANAGEMENT
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    def extract_pdf_text(self, content: bytes) -> str:
+        return DocumentParser.extract_text_from_pdf(content)
 
-    def get_or_create_session(self, conversation_id: str) -> Dict[str, Any]:
-        
-        redis_key = f"doc:session:{conversation_id}"
+    # ── Quota Session (User-based) ───────────────────────────────────
+    def get_quota_session(self, user_id: str) -> Dict[str, Any]:
+        """Fetch or initialize a 4-hour quota session for a user."""
+        redis_key = f"quota:session:{user_id}"
         raw = self._redis.get_conversation_meta(redis_key)
 
         if raw:
-            # Check if the session has expired (belt-and-suspenders — Redis TTL handles
-            # it too, but an explicit age check is safer)
             age = time.time() - raw.get("session_start", time.time())
             if age > SESSION_TTL_SECONDS:
-                logger.info(
-                    f"♻️  Session expired for conv={conversation_id} — creating new session"
-                )
+                logger.info(f"♻️ Quota expired for user={user_id} — resetting")
                 self._redis.clear_all_conversation_cache(redis_key)
                 raw = None
 
@@ -86,79 +69,109 @@ class DocumentService:
                 "session_id":    str(uuid.uuid4()),
                 "doc_count":     0,
                 "turn_count":    0,
+                "token_count":   0,
                 "session_start": time.time(),
                 "docs":          [],
             }
             self._redis.set_conversation_meta(redis_key, raw, ttl=SESSION_TTL_SECONDS)
             logger.info(
-                f"🆕 New session created | conv={conversation_id} | "
+                f"🆕 New session created | user={user_id} | "
                 f"session_id={raw['session_id']}"
             )
 
         return raw
 
-    def _save_session(self, conversation_id: str, session: Dict[str, Any]) -> None:
-        """Persist updated session state back to Redis."""
-        redis_key = f"doc:session:{conversation_id}"
-        # Remaining TTL = SESSION_TTL - elapsed
+    def _save_quota_session(self, user_id: str, session: Dict[str, Any]) -> None:
+        """Save quota session back to Redis."""
+        redis_key = f"quota:session:{user_id}"
         elapsed = time.time() - session.get("session_start", time.time())
         remaining_ttl = max(60, int(SESSION_TTL_SECONDS - elapsed))
         self._redis.set_conversation_meta(redis_key, session, ttl=remaining_ttl)
 
-    def check_turn_limit(self, conversation_id: str) -> Tuple[bool, int]:
+    # ── Conversation Session (Chat-based) ───────────────────────────
+    def get_or_create_session(self, conversation_id: str) -> Dict[str, Any]:
+        """Fetch or initialize a 4-hour document session for a chat."""
+        redis_key = f"doc:session:{conversation_id}"
+        raw = self._redis.get_conversation_meta(redis_key)
         
-        # ┌─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┐
-        # │ TESTING MODE — Skip turn limit enforcement                  │
-        # └─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┘
-        if settings.DOC_TESTING_MODE:
-            logger.debug(f"⏭️  TEST_MODE: Turn limit bypassed | conv={conversation_id}")
+        if not raw:
+            raw = {
+                "session_id":    str(uuid.uuid4()),
+                "doc_count":     0,
+                "session_start": time.time(),
+                "docs":          [],
+            }
+            self._redis.set_conversation_meta(redis_key, raw, ttl=SESSION_TTL_SECONDS)
+        return raw
+
+    def _save_session(self, conversation_id: str, session: Dict[str, Any]) -> None:
+        """Persist updated session state back to Redis."""
+        redis_key = f"doc:session:{conversation_id}"
+        elapsed = time.time() - session.get("session_start", time.time())
+        remaining_ttl = max(60, int(SESSION_TTL_SECONDS - elapsed))
+        self._redis.set_conversation_meta(redis_key, session, ttl=remaining_ttl)
+
+    def check_turn_limit(self, user_id: str, user_role: str = "user") -> Tuple[bool, int]:
+        """Check if user has remaining turns. Admins/Lawyers bypass this."""
+        if settings.DOC_TESTING_MODE or user_role in ["admin", "lawyer"]:
             return True, 999
         
-        session = self.get_or_create_session(conversation_id)
+        session = self.get_quota_session(user_id)
         turn_count = session.get("turn_count", 0)
-        remaining = MAX_TURNS_PER_SESSION - turn_count
+        remaining = settings.DOC_MAX_TURNS_PER_SESSION - turn_count
         allowed = remaining > 0
         return allowed, remaining
 
-    def increment_turn_count(self, conversation_id: str) -> int:
-       
-        session = self.get_or_create_session(conversation_id)
+    def check_token_limit(self, user_id: str, user_role: str = "user") -> Tuple[bool, int]:
+        """Check if user has remaining token quota. Admins/Lawyers bypass this."""
+        if settings.DOC_TESTING_MODE or user_role in ["admin", "lawyer"]:
+            return True, 999999
+        
+        session = self.get_quota_session(user_id)
+        token_count = session.get("token_count", 0)
+        remaining = settings.DOC_MAX_TOKENS_PER_SESSION - token_count
+        allowed = remaining > 0
+        return allowed, remaining
+
+    def increment_turn_count(self, user_id: str) -> int:
+        """Increment the turn counter for the user's session."""
+        session = self.get_quota_session(user_id)
         session["turn_count"] = session.get("turn_count", 0) + 1
-        self._save_session(conversation_id, session)
+        self._save_quota_session(user_id, session)
 
         # Also increment in Supabase for durability
         try:
-            self._supabase.table("conversations").update({
-                "session_turn_count": session["turn_count"]
-            }).eq("conversation_id", conversation_id).execute()
-        except Exception as exc:
-            logger.warning(f"⚠️ Could not update session_turn_count in Supabase | {exc}")
+            # Note: We still track turns in conversations table for analytics
+            pass 
+        except Exception:
+            pass
 
         logger.info(
-            f"🔢 Turn count: {session['turn_count']}/{MAX_TURNS_PER_SESSION} | "
-            f"conv={conversation_id}"
+            f"🔢 Turn count: {session['turn_count']}/{settings.DOC_MAX_TURNS_PER_SESSION} | "
+            f"user={user_id}"
         )
         return session["turn_count"]
 
-    def check_doc_limit(self, conversation_id: str) -> Tuple[bool, int]:
-        """
-        Check if the user can still upload a document this session.
+    def increment_token_count(self, user_id: str, tokens: int) -> int:
+        """Add tokens to the user's current session usage."""
+        session = self.get_quota_session(user_id)
+        session["token_count"] = session.get("token_count", 0) + tokens
+        self._save_quota_session(user_id, session)
         
-        ⚠️  TESTING MODE OVERRIDE: If DOC_TESTING_MODE=True, always allows uploads.
+        logger.info(
+            f"🪙 Token usage: {session['token_count']}/{settings.DOC_MAX_TOKENS_PER_SESSION} | "
+            f"+{tokens} | user={user_id}"
+        )
+        return session["token_count"]
 
-        Returns:
-            (allowed: bool, docs_remaining: int)
-        """
-        # ┌─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┐
-        # │ TESTING MODE — Skip document limit enforcement              │
-        # └─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┘
-        if settings.DOC_TESTING_MODE:
-            logger.debug(f"⏭️  TEST_MODE: Document limit bypassed | conv={conversation_id}")
+    def check_doc_limit(self, user_id: str, user_role: str = "user") -> Tuple[bool, int]:
+        """Check if user can upload more documents. Admins/Lawyers bypass this."""
+        if settings.DOC_TESTING_MODE or user_role in ["admin", "lawyer"]:
             return True, 999
         
-        session = self.get_or_create_session(conversation_id)
+        session = self.get_quota_session(user_id)
         doc_count = session.get("doc_count", 0)
-        remaining = MAX_DOCS_PER_SESSION - doc_count
+        remaining = settings.DOC_MAX_PER_SESSION - doc_count
         allowed = remaining > 0
         return allowed, remaining
 
@@ -195,6 +208,16 @@ class DocumentService:
             for page_num in range(len(doc)):
                 page = doc.load_page(page_num)
                 text = page.get_text("text")
+                
+                # Safe OCR Fallback: Check if text has a "unicode problem" (garbled text)
+                if text and (text.count('\ufffd') / len(text) > 0.05 or ("cid:" in text and text.count("cid:") > 5)):
+                    try:
+                        logger.info(f"🔍 Garbled text detected on page {page_num}. Attempting OCR fallback...")
+                        # Try OCR (Requires Tesseract installed on the host)
+                        text = page.get_text("text", textpage=page.get_textpage_ocr(flags=0, language="eng+nor"))
+                    except Exception as ocr_exc:
+                        logger.warning(f"⚠️ OCR fallback failed or not installed on page {page_num}: {ocr_exc}")
+
                 if text.strip():
                     pages.append(f"[Page {page_num + 1}]\n{text.strip()}")
             doc.close()
@@ -234,29 +257,79 @@ class DocumentService:
         user_id: str,
         file_bytes: bytes,
         filename: str,
+        user_role: str = "user",
     ) -> Dict[str, Any]:
         """
         Parse + store a document for a conversation session.
 
-        Enforces: max 2 documents per session.
+        Enforces: max 2 documents per session (configurable).
         Stores: Redis (text, TTL=4h) + Supabase (text + metadata).
 
         Returns a dict with document metadata.
         Raises ValueError if the session doc limit is exceeded.
         """
         # ── Enforce doc limit ────────────────────────────────────────────
-        allowed, remaining = self.check_doc_limit(conversation_id)
+        allowed, remaining = self.check_doc_limit(conversation_id, user_role=user_role)
         if not allowed:
             raise ValueError(
                 f"Document upload limit reached. "
-                f"You can upload a maximum of {MAX_DOCS_PER_SESSION} documents per session "
+                f"You can upload a maximum of {settings.DOC_MAX_PER_SESSION} documents per session "
                 f"(4-hour session). Your session will reset after 4 hours."
             )
-
-        # ── Parse ────────────────────────────────────────────────────────
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
         ext = filename.rsplit(".", 1)[-1].lower()
-        extracted_text = self.parse_document(file_bytes, filename)
-        char_count = len(extracted_text)
+
+        # ── Check if physical file exists in uploaded_files ──────────────
+        existing_file = None
+        is_duplicate = False
+        try:
+            res = self._supabase.table("uploaded_files") \
+                .select("file_hash, extracted_text, char_count, storage_path, summary") \
+                .eq("file_hash", file_hash) \
+                .execute()
+            if res.data:
+                existing_file = res.data[0]
+                is_duplicate = True
+                logger.info(f"✨ Duplicate file detected by SHA-256 hash: {file_hash}")
+        except Exception as exc:
+            logger.warning(f"⚠️ Failed to query uploaded_files (possibly missing table): {exc}")
+
+        if existing_file:
+            extracted_text = existing_file["extracted_text"]
+            char_count = existing_file["char_count"]
+            storage_path = existing_file["storage_path"]
+        else:
+            # ── Parse ────────────────────────────────────────────────────────
+            extracted_text = self.parse_document(file_bytes, filename)
+            char_count = len(extracted_text)
+            storage_path = f"uploads/{file_hash}.{ext}"
+
+            # ── Store binary content in Supabase Storage via StorageService ──
+            try:
+                content_type = f"application/{ext}" if ext != 'pdf' else 'application/pdf'
+                self._storage.upload(
+                    bucket="lovdata-documents",
+                    path=storage_path,
+                    file_bytes=file_bytes,
+                    content_type=content_type,
+                )
+                logger.info(f"💾 Binary file uploaded to storage via StorageService | path={storage_path}")
+            except Exception as storage_exc:
+                logger.error(f"❌ Supabase Storage upload failed | {storage_exc}")
+                # Don't fail completely if storage fails, RAG text is primary
+
+            # ── Store in uploaded_files table ───────────────────────────────
+            try:
+                self._supabase.table("uploaded_files").insert({
+                    "file_hash": file_hash,
+                    "extracted_text": extracted_text,
+                    "char_count": char_count,
+                    "storage_path": storage_path,
+                }).execute()
+                logger.info(f"💾 File text and metadata stored in uploaded_files table | hash={file_hash}")
+            except Exception as exc:
+                # Handle race conditions / concurrent identical uploads gracefully
+                logger.warning(f"⚠️ uploaded_files insert failed (may already exist from concurrent upload) | {exc}")
 
         # ── Detect language ──────────────────────────────────────────────
         document_language = self.detect_document_language(extracted_text)
@@ -265,7 +338,12 @@ class DocumentService:
         # ── Generate document ID ─────────────────────────────────────────
         document_id = str(uuid.uuid4())
 
-        # ── Load session ─────────────────────────────────────────────────
+        # ── Update Quota ────────────────────────────────────────────────
+        quota_session = self.get_quota_session(user_id)
+        quota_session["doc_count"] = quota_session.get("doc_count", 0) + 1
+        self._save_quota_session(user_id, quota_session)
+
+        # ── Update Conversation Session ──────────────────────────────────
         session = self.get_or_create_session(conversation_id)
         upload_order = session["doc_count"] + 1
 
@@ -295,30 +373,16 @@ class DocumentService:
                 "session_id":     session["session_id"],
                 "file_name":      filename,
                 "file_type":      ext,
-                "extracted_text": extracted_text,
+                "extracted_text": None,  # Save space by not duplicating extracted_text
                 "char_count":     char_count,
                 "language":       document_language,
                 "upload_order":   upload_order,
                 "is_active":      True,
                 "created_at":     now.isoformat(),
                 "expires_at":     expires_at.isoformat(),
+                "file_hash":      file_hash,
             }).execute()
             logger.info(f"💾 Doc metadata saved in Supabase | document_id={document_id}")
-            
-            # ── Store binary content in Supabase Storage ──────────────────────
-            # Bucket: 'lovdata-documents' | Path: 'uploads/{document_id}.{ext}'
-            try:
-                storage_path = f"uploads/{document_id}.{ext}"
-                self._supabase._get().storage.from_("lovdata-documents").upload(
-                    path=storage_path,
-                    file=file_bytes,
-                    file_options={"content-type": f"application/{ext}" if ext != 'pdf' else 'application/pdf'}
-                )
-                logger.info(f"💾 Binary file uploaded to storage | path={storage_path}")
-            except Exception as storage_exc:
-                logger.error(f"❌ Supabase Storage upload failed | {storage_exc}")
-                # We don't fail the whole request since RAG can still work with the text
-                
         except Exception as exc:
             logger.error(f"❌ Supabase doc store failed | {exc}")
             # Don't raise — Redis has the text, pipeline can still work
@@ -342,7 +406,7 @@ class DocumentService:
                 "session_id":     session["session_id"],
             }).eq("conversation_id", conversation_id).execute()
         except Exception as exc:
-            logger.warning(f"⚠️ Could not update document_count in Supabase | {exc}")
+            logger.warning(f"[WARN] Could not update document_count in Supabase | {exc}")
 
         doc_meta = {
             "document_id":  document_id,
@@ -351,13 +415,28 @@ class DocumentService:
             "char_count":   char_count,
             "language":     document_language,
             "upload_order": upload_order,
-            "docs_remaining": MAX_DOCS_PER_SESSION - upload_order,
+            "docs_remaining": settings.DOC_MAX_PER_SESSION - upload_order,
+            "duplicate":    is_duplicate,
+            "file_hash":    file_hash,
+            "summary":      existing_file.get("summary") if existing_file else None,
         }
         logger.info(
-            f"✅ Document stored | id={document_id} | order={upload_order} | "
-            f"chars={char_count:,} | conv={conversation_id}"
+            f"[OK] Document stored | id={document_id} | order={upload_order} | "
+            f"chars={char_count:,} | conv={conversation_id} | duplicate={is_duplicate}"
         )
         return doc_meta
+
+    def update_file_summary(self, file_hash: str, summary: str) -> None:
+        """
+        Updates the summary cache for a physical file in the database.
+        """
+        try:
+            self._supabase.table("uploaded_files").update({
+                "summary": summary
+            }).eq("file_hash", file_hash).execute()
+            logger.info(f"Updated summary cache in database for file_hash: {file_hash}")
+        except Exception as e:
+            logger.warning(f"[WARN] Failed to update summary in uploaded_files: {e}")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # RETRIEVE DOCUMENT TEXT
@@ -372,7 +451,7 @@ class DocumentService:
             # 1. Get metadata to know the extension/type
             doc_data = (
                 self._supabase.table("documents")
-                .select("file_name, file_type")
+                .select("file_name, file_type, file_hash")
                 .eq("document_id", document_id)
                 .single()
                 .execute()
@@ -383,9 +462,14 @@ class DocumentService:
             
             filename = doc_data.data["file_name"]
             ext = doc_data.data["file_type"]
+            file_hash = doc_data.data.get("file_hash")
             
             # 2. Fetch from Storage
-            storage_path = f"uploads/{document_id}.{ext}"
+            if file_hash:
+                storage_path = f"uploads/{file_hash}.{ext}"
+            else:
+                storage_path = f"uploads/{document_id}.{ext}"
+                
             file_bytes = self._supabase._get().storage.from_("lovdata-documents").download(storage_path)
             
             content_type = "application/pdf" if ext == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -393,7 +477,7 @@ class DocumentService:
             return file_bytes, filename, content_type
             
         except Exception as exc:
-            logger.error(f"❌ get_document_binary failed | id={document_id} | {exc}")
+            logger.error(f"[ERROR] get_document_binary failed | id={document_id} | {exc}")
             return None
 
     def get_document_text(self, document_id: str) -> Optional[str]:
@@ -406,32 +490,47 @@ class DocumentService:
             redis_text_key = f"doc:text:{document_id}"
             text = self._redis._get().get(redis_text_key)
             if text:
-                logger.debug(f"✅ Doc text cache hit | key={redis_text_key}")
+                logger.debug(f"[OK] Doc text cache hit | key={redis_text_key}")
                 return text
         except Exception as exc:
-            logger.warning(f"⚠️ Redis doc text get failed | {exc}")
+            logger.warning(f"[WARN] Redis doc text get failed | {exc}")
 
         # ── Supabase fallback ─────────────────────────────────────────────
         try:
             response = (
                 self._supabase.table("documents")
-                .select("extracted_text")
+                .select("extracted_text, file_hash")
                 .eq("document_id", document_id)
                 .eq("is_active", True)
                 .single()
                 .execute()
             )
             if response.data:
-                text = response.data.get("extracted_text", "")
-                # Re-warm Redis cache
-                try:
-                    self._redis._get().setex(
-                        f"doc:text:{document_id}",
-                        SESSION_TTL_SECONDS,
-                        text,
+                text = response.data.get("extracted_text")
+                file_hash = response.data.get("file_hash")
+                
+                # Fetch from uploaded_files if extracted_text is not stored directly
+                if not text and file_hash:
+                    file_resp = (
+                        self._supabase.table("uploaded_files")
+                        .select("extracted_text")
+                        .eq("file_hash", file_hash)
+                        .single()
+                        .execute()
                     )
-                except Exception:
-                    pass
+                    if file_resp.data:
+                        text = file_resp.data.get("extracted_text", "")
+                
+                # Re-warm Redis cache
+                if text:
+                    try:
+                        self._redis._get().setex(
+                            f"doc:text:{document_id}",
+                            SESSION_TTL_SECONDS,
+                            text,
+                        )
+                    except Exception as exc:
+                        logger.warning(f"Failed to update Redis cache for doc {document_id} | {exc}")
                 return text
         except Exception as exc:
             logger.error(f"❌ Supabase doc text get failed | {exc}")

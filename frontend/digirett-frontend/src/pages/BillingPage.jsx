@@ -1,0 +1,175 @@
+import React, { useEffect, useState } from "react";
+import { useUser } from "@clerk/clerk-react";
+import { useNavigate } from "react-router-dom";
+import { Loader2, X } from "lucide-react";
+import BackgroundLayer from "../components/common/BackgroundLayer";
+import { useTheme } from "../providers/ThemeProvider";
+import subscriptionService from "../services/subscriptionService";
+
+export default function BillingPage() {
+  const { user, isLoaded: userLoaded } = useUser();
+  const navigate = useNavigate();
+  const { theme, isDark } = useTheme();
+  const [isCancelling, setIsCancelling] = useState(false);
+
+  // Read environment keys for real Stripe Embedding
+  const stripePublishableKey = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY;
+  const stripePricingTableId = process.env.REACT_APP_STRIPE_PRICING_TABLE_ID;
+  const hasStripeConfig = !!(stripePublishableKey && stripePricingTableId);
+  // Log warning if Stripe configuration is missing
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production") {
+      if (!stripePublishableKey) {
+        console.warn(
+          "Missing environment variable: REACT_APP_STRIPE_PUBLISHABLE_KEY"
+        );
+      }
+
+      if (!stripePricingTableId) {
+        console.warn(
+          "Missing environment variable: REACT_APP_STRIPE_PRICING_TABLE_ID"
+        );
+      }
+
+      if (!hasStripeConfig) {
+        console.warn(
+          "Stripe Pricing Table is disabled because the required environment variables are missing."
+        );
+      }
+    }
+  }, [stripePublishableKey, stripePricingTableId, hasStripeConfig]);
+
+  useEffect(() => {
+    if (userLoaded && user) {
+      const role = user.publicMetadata?.role || "user";
+      if (role === "lawyer" || role === "admin" || role === "system_admin") {
+        navigate("/chat");
+        return;
+      }
+    }
+  }, [user, userLoaded, navigate]);
+
+  const role = user?.publicMetadata?.role || "user";
+  const isSubscribed = ["start_up", "vekst", "smb", "enterprise"].includes(role);
+
+  const handleManageSubscription = async () => {
+    setIsCancelling(true);
+    try {
+      await subscriptionService.cancelSubscription(user.id);
+    } catch (err) {
+      console.error("Redirecting to billing portal failed:", err);
+      alert(err.message || "Failed to load billing portal. Please try again.");
+      setIsCancelling(false);
+    }
+  };
+
+  // Load Stripe Pricing Table script
+  useEffect(() => {
+    if (hasStripeConfig) {
+      const script = document.createElement("script");
+      script.src = "https://js.stripe.com/v3/pricing-table.js";
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, [hasStripeConfig]);
+
+  const getStripeElementHtml = () => {
+    return {
+      __html: `<stripe-pricing-table 
+        pricing-table-id="${stripePricingTableId}" 
+        publishable-key="${stripePublishableKey}"
+        client-reference-id="${user?.id || ""}"
+        customer-email="${user?.primaryEmailAddress?.emailAddress || ""}"
+      ></stripe-pricing-table>`
+    };
+  };
+
+  if (!userLoaded) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-black text-white">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-10 w-10 animate-spin text-indigo-500" />
+          <p className="text-gray-400 font-medium">Loading billing center...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`relative min-h-screen w-full flex flex-col justify-between overflow-x-hidden ${isDark ? "text-white" : "text-gray-900"
+      }`}>
+      <BackgroundLayer theme={theme} />
+
+      {/* Floating Close Button in Top Right */}
+      <button
+        onClick={() => navigate("/chat")}
+        className={`absolute top-3 right-4 p-2 rounded-full border transition-all duration-200 z-50 shadow-md ${isDark
+          ? "bg-[#161622]/80 border-white/10 text-gray-400 hover:text-white hover:bg-slate-850/80"
+          : "bg-white/90 border-gray-200 text-gray-500 hover:text-gray-900 hover:bg-gray-100/90"
+          }`}
+        style={{ backdropFilter: "blur(8px)" }}
+        title="Close and return to chat"
+      >
+        <X size={18} />
+      </button>
+
+      {/* Main Content Area */}
+      <div className="flex-1 max-w-[1400px] w-full mx-auto px-6 py-2 md:py-3 flex flex-col items-center z-10">
+        {/* Top Header */}
+        <div className="font-serif text-center mb-3 md:mb-4">
+          <h1 className={`text-2xl md:text-3xl font-bold tracking-tight mb-1 ${isDark ? "text-white" : "text-gray-950"}`}>
+            Upgrade your plan
+          </h1>
+          <p className={`text-xs md:text-sm max-w-lg mx-auto opacity-80 mb-0 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+            Choose the billing tier that fits your legal consulting workload. All payments run securely via Stripe.
+          </p>
+        </div>
+
+        {/* Cancel Subscription Banner */}
+        {isSubscribed && (
+          <div className={`mb-1 p-3 rounded-xl border flex flex-col md:flex-row items-center justify-between gap-3 max-w-5xl w-full ${isDark
+            ? "bg-[#161622]/60 border-white/5 text-white"
+            : "bg-indigo-50/30 border-indigo-100 text-gray-900"
+            }`} style={{ backdropFilter: "blur(12px)" }}>
+            <div className="font-serif text-center md:text-left">
+              <h3 className="text-lg font-bold tracking-tight">Billing & Subscription</h3>
+              <p className={`font-serif text-sm mt-1 leading-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+                Your active plan: <strong className="capitalize text-indigo-500">{role.replace("_", " ")}</strong>. Manage payment methods, download invoices, or cancel your plan securely.
+              </p>
+            </div>
+            <button
+              onClick={handleManageSubscription}
+              disabled={isCancelling}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-serif hover:bg-indigo-700 disabled:opacity-50 transition-all flex items-center gap-2"
+            >
+              {isCancelling ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Loading Portal...
+                </>
+              ) : (
+                "Manage Subscription"
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* Pricing Cards Grid */}
+        <div className="w-full">
+          {hasStripeConfig ? (
+            <div className="w-full">
+              <div
+                className="w-full"
+                dangerouslySetInnerHTML={getStripeElementHtml()}
+              />
+            </div>
+          ) : (
+            <div className="text-center py-12 text-gray-500">
+              Stripe connection is not configured. Please contact the administrator.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

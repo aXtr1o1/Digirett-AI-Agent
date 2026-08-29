@@ -10,6 +10,8 @@ const MessageList = ({
   isStreaming,
   isProcessingDoc,
   theme = "dark",
+  conversationId,
+  conversationTitle,
 }) => {
   const messagesEndRef = useRef(null);
   const isDark = theme === "dark";
@@ -41,12 +43,14 @@ const MessageList = ({
 
   return (
     <div className="w-full px-4 py-6">
-      {/* Historical + live messages */}
-      {messages.map((message) => (
+      {/* Historical + live messages (excluding system logs) */}
+      {messages.filter(msg => msg.type !== "system").map((message) => (
         <Message
           key={message.id || Math.random()}
           message={message}
           theme={theme}
+          conversationId={conversationId}
+          conversationTitle={conversationTitle}
         />
       ))}
 

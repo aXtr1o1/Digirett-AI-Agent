@@ -34,6 +34,9 @@ class RedisClient:
     #     password: Optional[str] = None,
     #     max_connections: int = 50,
     # ) -> None:
+    KEY_PREFIX: str = "digirett:"
+    DEFAULT_TTL: int = 1800
+
     def connect(
         self,
         host: str,
@@ -42,36 +45,43 @@ class RedisClient:
         password: Optional[str] = None,
         max_connections: int = 50,
     ) -> None:
-
         try:
-            logger.info(f"🔌 Connecting to Redis at {host}:{port} (DB: {db})...")
+            logger.info(f"Connecting to Redis at {host}:{port} (DB: {db}, pool_max={max_connections})...")
+            is_upstash = "upstash.io" in host.lower()
+            
+            from redis.connection import ConnectionPool, SSLConnection, Connection
 
-            self._client = redis.Redis(
-                host=host,
-                port=port,
-                username="default",        # 🔥 REQUIRED
-                password=password,
-                db=db,
-                # ssl=True,                  # 🔥 MUST for Redis Cloud
-                # ssl_cert_reqs=None,        # 🔥 avoid cert issues
-                decode_responses=True,
-                socket_timeout=5,
-                socket_connect_timeout=5,
-                retry_on_timeout=True,
-            )
+            connection_kwargs = {
+                "host": host,
+                "port": port,
+                "username": "default",
+                "password": password,
+                "db": db,
+                "decode_responses": True,
+                "max_connections": max_connections,
+                "socket_timeout": 5,
+                "socket_connect_timeout": 5,
+                "retry_on_timeout": True,
+            }
+            if is_upstash:
+                connection_kwargs["connection_class"] = SSLConnection
+                connection_kwargs["ssl_cert_reqs"] = None
 
-            # Test connection
+            self._pool = ConnectionPool(**connection_kwargs)
+            self._client = redis.Redis(connection_pool=self._pool)
             self._client.ping()
 
-            self._ready = True
-            logger.info(f"✅ Redis connected | {host}:{port} | DB: {db}")
 
+            self._ready = True
+            logger.info(f"[OK] Redis connected with ConnectionPool | {host}:{port} | DB: {db}")
         except Exception as exc:
-            logger.error(
-                f"❌ Redis connection failed | {host}:{port} | {exc}",
-                exc_info=True,
-            )
+            logger.error(f"[ERROR] Redis connection failed | {host}:{port} | {exc}", exc_info=True)
             raise ConnectionError(f"Redis connection failed: {exc}") from exc
+
+    def _format_key(self, key_suffix: str) -> str:
+        if key_suffix.startswith(self.KEY_PREFIX):
+            return key_suffix
+        return f"{self.KEY_PREFIX}{key_suffix}"
 
     # ── Internal helpers ─────────────────────────────────────────────────
 
@@ -94,8 +104,11 @@ class RedisClient:
         try:
             if self._client:
                 self._client.close()
+            if self._pool:
+                self._pool.disconnect()
             self._ready = False
             self._client = None
+            self._pool = None
             logger.info(" Redis connection closed")
         except Exception as exc:
             logger.error(f" Error closing Redis: {exc}")
@@ -107,7 +120,8 @@ class RedisClient:
     def get_context(self, conversation_id: str) -> Optional[List[Dict[str, Any]]]:
         """Retrieve cached conversation messages. Returns None on cache miss."""
         try:
-            raw = self._get().get(f"chat:context:{conversation_id}")
+            key = self._format_key(f"chat:context:{conversation_id}")
+            raw = self._get().get(key)
             if not raw:
                 return None
             return json.loads(raw)
@@ -119,12 +133,13 @@ class RedisClient:
         self,
         conversation_id: str,
         messages: List[Dict[str, Any]],
-        ttl: int = 1800,
+        ttl: int = DEFAULT_TTL,
     ) -> bool:
         """Store conversation messages with an expiry (sliding window)."""
         try:
+            key = self._format_key(f"chat:context:{conversation_id}")
             self._get().setex(
-                f"chat:context:{conversation_id}",
+                key,
                 ttl,
                 json.dumps(messages, default=str),
             )
@@ -140,23 +155,37 @@ class RedisClient:
         content: str,
         timestamp: Optional[datetime] = None,
         max_messages: int = 20,
-        ttl: int = 1800,
+        ttl: int = DEFAULT_TTL,
     ) -> bool:
-        """Append a single message to the cached context list."""
+        """Append a single message to the cached context list atomically using Redis Pipeline."""
         try:
-            messages = self.get_context(conversation_id) or []
-            messages.append({
-                "role": role,
-                "content": content,
-                "timestamp": (timestamp or datetime.utcnow()).isoformat(),
-            })
-            # Keep only the most recent N messages
-            if len(messages) > max_messages:
-                messages = messages[-max_messages:]
-            return self.set_context(conversation_id, messages, ttl)
+            client = self._get()
+            key = self._format_key(f"chat:context:{conversation_id}")
+            
+            with client.pipeline() as pipe:
+                while True:
+                    try:
+                        pipe.watch(key)
+                        raw = pipe.get(key)
+                        messages = json.loads(raw) if raw else []
+                        messages.append({
+                            "role": role,
+                            "content": content,
+                            "timestamp": (timestamp or datetime.utcnow()).isoformat(),
+                        })
+                        if len(messages) > max_messages:
+                            messages = messages[-max_messages:]
+
+                        pipe.multi()
+                        pipe.setex(key, ttl, json.dumps(messages, default=str))
+                        pipe.execute()
+                        return True
+                    except redis.WatchError:
+                        continue
         except Exception as exc:
             logger.error(f"Redis append_message_to_context failed | {exc}")
             return False
+
 
     def extend_context_ttl(self, conversation_id: str, ttl: int = 1800) -> bool:
         """Refresh the TTL on an existing context key (sliding window)."""

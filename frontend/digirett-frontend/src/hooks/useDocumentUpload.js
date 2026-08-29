@@ -1,15 +1,10 @@
-import { useState, useCallback } from "react";
-import { DEFAULT_USER_ID, API_BASE_URL } from "../utils/constants";
+import { useState, useCallback, useEffect } from "react";
+import documentService from "../services/documentService";
 
 /**
  * useDocumentUpload
  *
  * Handles document upload and session status for Digirett.
- *
- * NOTE: addMessage is intentionally NOT called here for the summary.
- * The summary text is returned to useChat, which controls message ordering:
- *   1. File bubble (user)
- *   2. Summary (assistant)  ← correct GPT-style order
  */
 const useDocumentUpload = (conversationId, userId, addMessage) => {
   const [isUploading, setIsUploading] = useState(false);
@@ -23,12 +18,18 @@ const useDocumentUpload = (conversationId, userId, addMessage) => {
     if (!id) return;
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/documents/session/${id}`);
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await documentService.getSessionStatus(id);
       setSessionStatus(data);
     } catch (err) {
       console.error("[useDocumentUpload] fetchSessionStatus error:", err);
+    }
+  }, [conversationId]);
+
+  // Clear session status when conversation changes to prevent stale state
+  useEffect(() => {
+    setSessionStatus(null);
+    if (!conversationId) {
+      setUploadedDocs([]);
     }
   }, [conversationId]);
 
@@ -56,59 +57,36 @@ const useDocumentUpload = (conversationId, userId, addMessage) => {
     setUploadError(null);
 
     try {
-      const form = new FormData();
-      form.append("conversation_id", id);
-      form.append("user_id", userId || DEFAULT_USER_ID);
-      form.append("file", file);
+      const result = await documentService.uploadDocumentStream(file, id);
 
-      const res = await fetch(`${API_BASE_URL}/api/v1/documents/upload`, {
-        method: "POST",
-        body: form,
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        setUploadError(errData.detail ?? errData.message ?? "Upload failed.");
-        return null;
-      }
-
-      // ✅ Read file_name and document_id from response header BEFORE consuming the stream
-      const returnedFileName = res.headers.get("X-File-Name") || file.name;
-      const documentId       = res.headers.get("X-Document-Id");
-
-      // Stream the summary
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let summaryText = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        summaryText += decoder.decode(value, { stream: true });
-      }
-
-      // ✅ NOTE: We do NOT call addMessage here anymore.
-      // useChat controls the order: file bubble first, then summary below it.
-
-      setUploadError(null);
-      setUploadedDocs(prev => [...prev, { file_name: returnedFileName, document_id: documentId }]);
+      setUploadedDocs(prev => [...prev, { file_name: result.fileName, document_id: result.documentId }]);
       await fetchSessionStatus(id);
 
-      // ✅ Return everything needed by useChat
       return {
-        file_name: returnedFileName,
-        document_id: documentId,
-        summary_text: summaryText.trim()
+        file_name: result.fileName,
+        document_id: result.documentId,
+        summary_text: result.summaryText,
+        duplicate: result.duplicate
       };
 
     } catch (err) {
       console.error("[useDocumentUpload] uploadDocument error:", err);
-      setUploadError("Network error. Please try again.");
+      const msg = err.message || "";
+      if (
+        msg.toLowerCase().includes("unreadable") ||
+        msg.toLowerCase().includes("no text") ||
+        msg.toLowerCase().includes("could not extract") ||
+        msg.toLowerCase().includes("standard pdf")
+      ) {
+        setUploadError("This document contains unreadable text. Please upload a standard PDF.");
+      } else {
+        setUploadError(msg || "Network error. Please try again.");
+      }
       return null;
     } finally {
       setIsUploading(false);
     }
-  }, [conversationId, userId, fetchSessionStatus]);
+  }, [conversationId, fetchSessionStatus]);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const clearUploadError = useCallback(() => setUploadError(null), []);

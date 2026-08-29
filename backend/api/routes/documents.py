@@ -1,60 +1,109 @@
-"""
-Document upload + session status + document retrieval endpoints.
-
-POST /api/v1/documents/upload
-GET  /api/v1/documents/session/{conversation_id}
-GET  /api/v1/documents/conversation/{conversation_id}  
-"""
-
+import asyncio
 import logging
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from typing import List, Optional
+import re
+import time
+import urllib.parse
+from datetime import datetime
+from typing import Any, List, Optional, Tuple
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel, Field
+
+from config import settings
+from core.auth import ClerkUser, get_current_user
+from services.document_service import DocumentService
+from services.llm_service import LLMService
+from services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-_document_service = None
-_llm_service = None
+def get_document_service(request: Request) -> DocumentService:
+    svc = getattr(request.app.state, "document_service", None)
+    if svc is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="DocumentService is not initialized on application state.",
+        )
+    return svc
 
 
-def set_services(document_service, llm_service=None) -> None:
-    global _document_service, _llm_service
-    _document_service = document_service
-    _llm_service = llm_service
+def get_llm_service(request: Request) -> Optional[LLMService]:
+    return getattr(request.app.state, "llm_service", None)
 
 
-class DocumentUploadResponse(BaseModel):
-    document_id:    str
-    file_name:      str
-    file_type:      str
-    char_count:     int
-    upload_order:   int
-    docs_remaining: int
-    message:        str
+def get_user_service(request: Request) -> UserService:
+    svc = getattr(request.app.state, "user_service", None)
+    if svc is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="UserService is not initialized on application state.",
+        )
+    return svc
 
 
-class SessionStatusResponse(BaseModel):
-    conversation_id:  str
-    doc_count:        int
-    turn_count:       int
-    docs_remaining:   int
-    turns_remaining:  int
-    has_documents:    bool
-    session_active:   bool
-    docs:             list = []
+def get_current_internal_user(
+    user: ClerkUser = Depends(get_current_user),
+    user_service: UserService = Depends(get_user_service),
+) -> Tuple[ClerkUser, str]:
+    """Resolves current authenticated user and internal database user_id."""
+    internal_user_id = user_service.get_user_id_from_clerk_id(user.clerk_user_id, email=user.email)
+    if not internal_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User profile not found in database.",
+        )
+    return user, internal_user_id
+
+from schemas.requests import FileMessageRequest, SummaryMessageRequest
+from schemas.responses import DocumentUploadResponse, SessionStatusResponse
 
 
-class FileMessageRequest(BaseModel):
-    role:        str
-    content:     Optional[str] = None
-    type:        str = "file-with-text"
-    file_name:   str
-    document_id: Optional[str] = None
+_ALLOWED_EXTENSIONS = {"pdf", "docx", "doc"}
+_ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "application/x-pdf",
+    "binary/octet-stream",  # Fallback for raw byte uploads
+}
 
 
-# ── Upload endpoint ───────────────────────────────────────────────────────────
+def _validate_file_security(filename: str, content_type: str, file_bytes: bytes) -> str:
+    """3-Layer Comprehensive Validation: Extension + MIME Type + Magic Byte Signatures."""
+    # 1. Extension Check
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file type: .{ext}. Please upload a PDF or DOCX file.",
+        )
+
+    # 2. MIME Type Check
+    if content_type and content_type.lower() not in _ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid MIME type: '{content_type}'. Only PDF and DOCX documents are allowed.",
+        )
+
+    # 3. Magic Byte Signature Check
+    if ext == "pdf":
+        if not file_bytes.startswith(b"%PDF-"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File content does not match PDF signature.",
+            )
+    elif ext in ("docx", "doc"):
+        # DOCX is a ZIP container starting with PK\x03\x04 header
+        if not (file_bytes.startswith(b"PK\x03\x04") or file_bytes.startswith(b"\xd0\xcf\x11\xe0")):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File content does not match DOCX/DOC signature.",
+            )
+
+    return ext
+
 @router.post(
     "/documents/upload",
     tags=["Documents"],
@@ -62,118 +111,133 @@ class FileMessageRequest(BaseModel):
 )
 async def upload_document(
     conversation_id: str = Form(...),
-    user_id: str = Form(...),
     file: UploadFile = File(...),
+    user_context: Tuple[ClerkUser, str] = Depends(get_current_internal_user),
+    document_service: DocumentService = Depends(get_document_service),
+    llm_service: Optional[LLMService] = Depends(get_llm_service),
 ):
-    if _document_service is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Document service not available.",
-        )
-
+    user, internal_user_id = user_context
     filename = file.filename or ""
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if ext not in ("pdf", "docx", "doc"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported file type: .{ext}. Please upload a PDF or DOCX file.",
-        )
 
-    MAX_SIZE = 20 * 1024 * 1024
     file_bytes = await file.read()
-    if len(file_bytes) > MAX_SIZE:
+
+    # 1. 3-Layer File Validation
+    _validate_file_security(filename, file.content_type or "", file_bytes)
+
+    # 2. Size Limit Check (Centralized setting)
+    if len(file_bytes) > settings.MAX_DOCUMENT_SIZE:
+        max_mb = settings.MAX_DOCUMENT_SIZE // (1024 * 1024)
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="File too large. Maximum allowed size is 20MB.",
+            detail=f"File too large. Maximum allowed size is {max_mb}MB.",
         )
 
-    allowed, docs_remaining = _document_service.check_doc_limit(conversation_id)
+    # 3. Quota Check
+    allowed, docs_remaining = document_service.check_doc_limit(internal_user_id, user_role=user.role)
     if not allowed:
-        session = _document_service.get_or_create_session(conversation_id)
+        session = document_service.get_or_create_session(internal_user_id)
         elapsed = time.time() - session.get("session_start", time.time())
-        remaining_hours = max(0, round((4 * 3600 - elapsed) / 3600, 1))
+        remaining_hours = max(0, round((settings.DOC_SESSION_TTL_SECONDS - elapsed) / 3600, 1))
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(
                 f"Document upload limit reached. "
-                f"You can upload a maximum of 2 documents per 4-hour session. "
+                f"You can upload a maximum of {settings.DOC_MAX_PER_SESSION} documents per session. "
                 f"Your session resets in approximately {remaining_hours} hour(s)."
             ),
         )
 
     try:
-        doc_meta = _document_service.store_document(
+        doc_meta = document_service.store_document(
             conversation_id=conversation_id,
-            user_id=user_id,
+            user_id=internal_user_id,
             file_bytes=file_bytes,
             filename=filename,
+            user_role=user.role,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except Exception as exc:
-        logger.error(f"❌ Document upload failed | conv={conversation_id} | {exc}", exc_info=True)
+        logger.error(f" Document upload failed | conv={conversation_id} | {exc}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process document: {exc}",
         )
 
-    # ── Auto-summarize via streaming ──────────────────────────────────────
-    # KEY CHANGE: we now add file_name as a response header so the frontend
-    # can read it even from a StreamingResponse
-    if _llm_service is not None:
-        doc_text = _document_service.get_document_text(doc_meta["document_id"])
+    # Auto-summarize via streaming if LLMService or default summary is available
+    cached_summary = doc_meta.get("summary")
 
+    if cached_summary:
         async def stream_summary():
-            async for token in _llm_service.summarize_document_stream(doc_text):
-                yield token
+            words = cached_summary.split(" ")
+            for i in range(0, len(words), 5):
+                chunk = " ".join(words[i:i + 5]) + " "
+                yield chunk
+                await asyncio.sleep(0.01)
 
-        logger.info(f"📝 Streaming auto-summary | doc_id={doc_meta['document_id']}")
-        return StreamingResponse(
-            stream_summary(),
-            media_type="text/plain",
-            headers={
-                # Frontend reads these headers to know the upload succeeded
-                "X-Document-Id":   doc_meta["document_id"],
-                "X-File-Name":     filename,
-                "X-File-Type":     doc_meta["file_type"],
-                "X-Docs-Remaining": str(doc_meta["docs_remaining"]),
-                # Allow frontend JS to read these custom headers
-                "Access-Control-Expose-Headers": (
-                    "X-Document-Id, X-File-Name, X-File-Type, X-Docs-Remaining"
-                ),
-            },
-        )
+        logger.info(f"⚡ Streaming cached auto-summary | doc_id={doc_meta['document_id']}")
+    else:
+        # Generate summary using DocumentService text or LLMService
+        doc_text = document_service.get_document_text(doc_meta["document_id"])
+        
+        async def stream_summary():
+            accumulated = []
+            if llm_service is not None:
+                try:
+                    async for token in llm_service.summarize_document_stream(doc_text):
+                        accumulated.append(token)
+                        yield token
+                except Exception as exc:
+                    logger.warning(f" Live summary stream failed, generating fallback | {exc}")
 
-    # ── Fallback JSON if no LLM ───────────────────────────────────────────
-    remaining = doc_meta["docs_remaining"]
-    message = (
-        f"Document '{filename}' uploaded successfully."
+            if not accumulated:
+                # If LLM stream produced nothing, stream clean extracted text without page headers
+                raw_text = str(doc_text) if doc_text else ""
+                clean_text = re.sub(r"\[Page \d+\]", "", raw_text).strip()
+                clean_text = re.sub(r"\n{3,}", "\n\n", clean_text)
+                
+                full_content = clean_text if clean_text else "No extractable text content found."
+                yield full_content
+                accumulated.append(full_content)
+
+            summary_str = "".join(accumulated).strip()
+            if summary_str and doc_meta.get("file_hash"):
+                document_service.update_file_summary(doc_meta["file_hash"], summary_str)
+
+        logger.info(f" Streaming new auto-summary | doc_id={doc_meta['document_id']}")
+
+    filename_encoded = urllib.parse.quote(filename)
+    is_duplicate_str = "true" if doc_meta.get("duplicate", False) else "false"
+
+    return StreamingResponse(
+        stream_summary(),
+        media_type="text/plain",
+        headers={
+            "X-Document-Id": doc_meta["document_id"],
+            "X-File-Name": filename_encoded,
+            "X-File-Type": doc_meta["file_type"],
+            "X-Docs-Remaining": str(doc_meta["docs_remaining"]),
+            "X-Duplicate": is_duplicate_str,
+            "Access-Control-Expose-Headers": (
+                "X-Document-Id, X-File-Name, X-File-Type, X-Docs-Remaining, X-Duplicate"
+            ),
+        },
     )
-    return DocumentUploadResponse(
-        document_id=doc_meta["document_id"],
-        file_name=doc_meta["file_name"],
-        file_type=doc_meta["file_type"],
-        char_count=doc_meta["char_count"],
-        upload_order=doc_meta["upload_order"],
-        docs_remaining=remaining,
-        message=message,
-    )
 
 
-# ── Save file message endpoint ────────────────────────────────────────────────
 @router.post(
     "/documents/message/{conversation_id}",
     tags=["Documents"],
     summary="Persist a file-upload event as a chat message for history",
 )
-async def save_file_message(conversation_id: str, body: FileMessageRequest):
-    if _document_service is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Document service not available.",
-        )
+async def save_file_message(
+    conversation_id: str,
+    body: FileMessageRequest,
+    user_context: Tuple[ClerkUser, str] = Depends(get_current_internal_user),
+    document_service: DocumentService = Depends(get_document_service),
+):
     try:
-        message_id = _document_service.save_file_message(
+        message_id = document_service.save_file_message(
             conversation_id=conversation_id,
             role=body.role,
             content=body.content,
@@ -182,20 +246,11 @@ async def save_file_message(conversation_id: str, body: FileMessageRequest):
         )
         return {"message_id": message_id, "status": "saved"}
     except Exception as exc:
-        logger.error(
-            f"❌ save_file_message failed | conv={conversation_id} | {exc}",
-            exc_info=True,
-        )
+        logger.error(f" save_file_message failed | conv={conversation_id} | {exc}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to save file message: {exc}",
         )
-
-
-# ── Save summary message endpoint ────────────────────────────────────────────
-class SummaryMessageRequest(BaseModel):
-    content: str
-    document_id: Optional[str] = None
 
 
 @router.post(
@@ -203,82 +258,88 @@ class SummaryMessageRequest(BaseModel):
     tags=["Documents"],
     summary="Persist an AI document summary as an assistant message for history",
 )
-async def save_summary_message(conversation_id: str, body: SummaryMessageRequest):
-    """
-    Called by frontend after a document upload + summary generation.
-    Saves the AI summary as an assistant message so it reappears
-    correctly when the conversation is loaded from history (after refresh).
-    """
-    if _document_service is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Document service not available.",
-        )
+async def save_summary_message(
+    conversation_id: str,
+    body: SummaryMessageRequest,
+    user_context: Tuple[ClerkUser, str] = Depends(get_current_internal_user),
+    document_service: DocumentService = Depends(get_document_service),
+):
     try:
-        message_id = _document_service.save_summary_message(
+        message_id = document_service.save_summary_message(
             conversation_id=conversation_id,
             content=body.content,
             document_id=body.document_id,
         )
         return {"message_id": message_id, "status": "saved"}
     except Exception as exc:
-        logger.error(
-            f"❌ save_summary_message failed | conv={conversation_id} | {exc}",
-            exc_info=True,
-        )
+        logger.error(f" save_summary_message failed | conv={conversation_id} | {exc}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to save summary message: {exc}",
         )
 
 
-# ── Session status endpoint ───────────────────────────────────────────────────
 @router.get(
     "/documents/session/{conversation_id}",
     response_model=SessionStatusResponse,
     tags=["Documents"],
     summary="Get document session status for a conversation",
 )
-async def get_session_status(conversation_id: str):
-    if _document_service is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Document service not available.",
-        )
+async def get_session_status(
+    conversation_id: str,
+    user_context: Tuple[ClerkUser, str] = Depends(get_current_internal_user),
+    document_service: DocumentService = Depends(get_document_service),
+):
+    _, internal_user_id = user_context
 
-    session = _document_service.get_or_create_session(conversation_id)
-    doc_count  = session.get("doc_count", 0)
-    turn_count = session.get("turn_count", 0)
-    docs       = session.get("docs", [])
+    quota = document_service.get_quota_session(internal_user_id)
+    conv_session = document_service.get_or_create_session(conversation_id)
 
-    from services.document_service import MAX_DOCS_PER_SESSION, MAX_TURNS_PER_SESSION
+    session_start = quota.get("session_start", time.time()) if isinstance(quota, dict) else time.time()
+    reset_time = session_start + settings.DOC_SESSION_TTL_SECONDS
+    reset_at_iso = datetime.utcfromtimestamp(reset_time).isoformat() + "Z"
+
+    doc_count = quota.get("doc_count", 0) if isinstance(quota, dict) else 0
+    turn_count = quota.get("turn_count", 0) if isinstance(quota, dict) else 0
+    token_count = quota.get("token_count", 0) if isinstance(quota, dict) else 0
+    docs_list = conv_session.get("docs", []) if isinstance(conv_session, dict) else []
 
     return SessionStatusResponse(
         conversation_id=conversation_id,
         doc_count=doc_count,
         turn_count=turn_count,
-        docs_remaining=max(0, MAX_DOCS_PER_SESSION - doc_count),
-        turns_remaining=max(0, MAX_TURNS_PER_SESSION - turn_count),
-        has_documents=_document_service.has_documents(conversation_id),
+        token_count=token_count,
+        docs_remaining=max(0, settings.DOC_MAX_PER_SESSION - doc_count),
+        turns_remaining=max(0, settings.DOC_MAX_TURNS_PER_SESSION - turn_count),
+        tokens_remaining=max(0, settings.DOC_MAX_TOKENS_PER_SESSION - token_count),
+        has_documents=document_service.has_documents(conversation_id),
         session_active=True,
-        docs=docs,
+        reset_at=reset_at_iso,
+        docs=docs_list,
     )
 
 
-# ── View/Download endpoint ───────────────────────────────────────────────────
 @router.get(
     "/documents/view/{document_id}",
     tags=["Documents"],
     summary="View or download the original uploaded document",
 )
-async def get_document_view(document_id: str):
-    if _document_service is None:
+async def get_document_view(
+    document_id: str,
+    user_context: Tuple[ClerkUser, str] = Depends(get_current_internal_user),
+    document_service: DocumentService = Depends(get_document_service),
+):
+    user, internal_user_id = user_context
+
+    # Explicit Defense-in-Depth Ownership Check
+    owner_user_id = document_service.get_document_owner(document_id)
+    if owner_user_id and owner_user_id != internal_user_id and user.role not in ["admin", "system_admin"]:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Document service not available.",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to view or download this document.",
         )
 
-    result = _document_service.get_document_binary(document_id)
+    result = document_service.get_document_binary(document_id)
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -286,13 +347,8 @@ async def get_document_view(document_id: str):
         )
 
     file_bytes, filename, content_type = result
-
-    from fastapi.responses import Response
-    import urllib.parse
-
-    # UTF-8 encoded filename for Content-Disposition (handles non-ASCII chars)
     filename_encoded = urllib.parse.quote(filename)
-    
+
     return Response(
         content=file_bytes,
         media_type=content_type,

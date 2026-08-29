@@ -22,7 +22,7 @@ def _extract_score(full_text: str):
         score = min(max(float(match.group(1)), 0.0), 1.0)
         answer = pattern.sub("", full_text).rstrip("\n").strip()
     else:
-        logger.warning("  No [SCORE:x.x] found in legal response, defaulting to 0.5")
+        logger.warning("[WARN] No [SCORE:x.x] found in legal response, defaulting to 0.5")
         score = 0.5
         answer = full_text.strip()
 
@@ -55,19 +55,109 @@ class LLMService:
             self._generator_agent = GeneratorAgent(temperature=temperature)
 
             logger.info(
-                f" LLMService initialized | deployment={settings.AZURE_OPENAI_DEPLOYMENT}"
+                f"[OK] LLMService initialized | deployment={settings.AZURE_OPENAI_DEPLOYMENT}"
             )
         except Exception as exc:
-            logger.error(f" LLMService init failed | {exc}", exc_info=True)
+            logger.error(f"[ERROR] LLMService init failed | {exc}", exc_info=True)
             raise
 
-    # ── Factory methods (used by RAGService to wire OrchestratorAgent) ──
+    def get_llm_client(self) -> AzureChatOpenAI:
+        """Returns the underlying AzureChatOpenAI LLM client."""
+        return self._llm
+
+    def create_classifier_llm(self, temperature: float = 0.0) -> AzureChatOpenAI:
+        """Factory method creating an LLM client instance for classification tasks."""
+        return AzureChatOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+            temperature=temperature,
+        )
+
+    def create_qa_llm(self, temperature: float = 0.2, streaming: bool = True) -> AzureChatOpenAI:
+        """Factory method creating an LLM client instance for document QA & hybrid retrieval tasks."""
+        return AzureChatOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+            temperature=temperature,
+            streaming=streaming,
+        )
+
+    def get_document_qa_agent(self) -> Any:
+        """Factory method returning an initialized DocumentQAAgent with injected LLM."""
+        from agents.document_qa_agent import DocumentQAAgent
+        return DocumentQAAgent(llm=self.create_qa_llm(temperature=0.2, streaming=True))
+
+    def get_document_classifier_agent(self) -> Any:
+        """Factory method returning an initialized DocumentClassifierAgent with injected LLM."""
+        from agents.document_classifier_agent import DocumentClassifierAgent
+        return DocumentClassifierAgent(llm=self.create_classifier_llm(temperature=0.0))
+
+
+    def create_reasoning_llm(self, temperature: float = 0.0) -> AzureChatOpenAI:
+        """Factory method creating an LLM client instance for legal query reasoning tasks."""
+        return AzureChatOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+            temperature=temperature,
+        )
+
+    def get_query_reasoning_agent(self) -> Any:
+        """Factory method returning an initialized QueryReasoningAgent with injected LLM."""
+        from agents.query_reasoning_agent import QueryReasoningAgent
+        return QueryReasoningAgent(llm=self.create_reasoning_llm(temperature=0.0))
+
+    def create_router_llm(self, temperature: float = 0.0) -> AzureChatOpenAI:
+        """Factory method creating an LLM client instance for routing tasks."""
+        return AzureChatOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+            temperature=temperature,
+        )
+
+    def get_user_memory_agent(self, supabase_client: Any) -> Any:
+        """Factory method returning an initialized UserMemoryAgent with injected LLM."""
+        from agents.user_memory_agent import UserMemoryAgent
+        return UserMemoryAgent(supabase_client=supabase_client, llm=self.create_generator_llm(temperature=0.0))
+
+    def create_generator_llm(self, temperature: float = 0.7, streaming: bool = True) -> AzureChatOpenAI:
+
+
+
+        """Factory method creating an LLM client instance for response generation."""
+        return AzureChatOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+            temperature=temperature,
+            streaming=streaming,
+        )
+
+    def create_intent_llm(self, temperature: float = 0.1) -> AzureChatOpenAI:
+        """Factory method creating an LLM client instance for intent classification."""
+        return AzureChatOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+            temperature=temperature,
+        )
 
     def get_intent_agent(self) -> IntentAgent:
-        return self._intent_agent
+        return IntentAgent(llm=self.create_intent_llm(temperature=0.1))
 
     def get_generator_agent(self) -> GeneratorAgent:
-        return self._generator_agent
+        return GeneratorAgent(llm=self.create_generator_llm(temperature=0.7))
+
+
 
     # ── Public generation methods ─────────────────────────────────────────
 
@@ -77,6 +167,7 @@ class LLMService:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
         language: Optional[str] = None,
+        user_memory: str = "",
     ) -> AsyncIterator[str]:
         """Stream casual response tokens. No RAG context involved."""
         async with llm_span("casual_generation"):
@@ -85,6 +176,7 @@ class LLMService:
                 conversation_history=conversation_history,
                 temperature=temperature,
                 language=language,
+                user_memory=user_memory,
             ):
                 yield token
 
@@ -126,7 +218,7 @@ class LLMService:
         answer, score = _extract_score(full_text)
         confidence = _score_to_confidence(score)
 
-        logger.info(f" Legal answer scored | score={score} | confidence={confidence}")
+        logger.debug(f"Legal answer scored | score={score} | confidence={confidence}")
         return {
             "answer": answer,
             "score": score,
@@ -142,6 +234,7 @@ class LLMService:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
         response_style: str = "",
+        user_memory: str = "",
     ) -> AsyncIterator[str]:
         
         if not rag_context or not rag_context.strip():
@@ -150,12 +243,14 @@ class LLMService:
                 if language == "norwegian"
                 else "I cannot find any relevant legal excerpts from my knowledge."
             )
+            yield "__SCORE__0.1__"
             for char in error_msg:
                 yield char
             return
 
-        score_re = re.compile(r"\[SCORE:\s*[0-9.]+\]")
+        score_re = re.compile(r"\[SCORE:\s*([0-9.]+)\]")
         buffer = ""
+        score_emitted = False
 
         async with llm_span("legal_stream"):
             async for token in self._generator_agent.stream_legal(
@@ -165,29 +260,36 @@ class LLMService:
                 conversation_history=conversation_history,
                 temperature=temperature,
                 response_style=response_style,
+                user_memory=user_memory,
             ):
-                buffer += token
+                if not score_emitted:
+                    buffer += token
+                    match = score_re.search(buffer)
+                    if match:
+                        score_val = float(match.group(1))
+                        yield f"__SCORE__{score_val}__"
+                        score_emitted = True
+                        
+                        clean = score_re.sub("", buffer).lstrip()
+                        if clean:
+                            yield clean
+                        buffer = ""
+                    elif len(buffer) > 25 and "[" not in buffer:
+                        # Model missed the tag at the start! Default to 0.5
+                        yield "__SCORE__0.5__"
+                        score_emitted = True
+                        yield buffer
+                        buffer = ""
+                else:
+                    yield token
 
-                # Full score tag arrived — flush clean text, stop streaming
-                if score_re.search(buffer):
-                    clean = score_re.split(buffer)[0].rstrip("\n")
-                    if clean:
-                        yield clean
-                    logger.info("✅ Legal stream complete (score tag detected)")
-                    return
+            if not score_emitted:
+                # Fallback if stream ended and no score found
+                yield "__SCORE__0.5__"
+                if buffer:
+                    yield buffer
 
-                # Yield everything except the tail guard (catches partial tags)
-                if len(buffer) > 15:
-                    yield buffer[:-15]
-                    buffer = buffer[-15:]
-
-            # Flush remaining buffer (model might not append the tag)
-            if buffer:
-                clean = score_re.sub("", buffer).rstrip("\n")
-                if clean:
-                    yield clean
-
-        logger.info(" Legal stream complete")
+        logger.debug("Legal stream complete")
 
     async def generate_conversation_title(
         self,
@@ -221,10 +323,10 @@ class LLMService:
                 messages = [HumanMessage(content=prompt)]
                 response = await self._llm.agenerate([messages])
                 title = response.generations[0][0].text.strip().strip('"').strip("'")
-                logger.info(f" Generated conversation title: '{title}'")
+                logger.debug(f"Generated conversation title: '{title}'")
                 return title[:100]  # hard cap at 100 chars
         except Exception as exc:
-            logger.warning(f"  Title generation failed, using fallback | {exc}")
+            logger.warning(f"[WARN] Title generation failed, using fallback | {exc}")
             return first_user_message[:60]
 
     async def generate_conversation_summary(
@@ -279,19 +381,20 @@ class LLMService:
 
         messages = [
             SystemMessage(content=(
-                "You are a document summarizer. "
-                "Identify the language of the document and Strictly respond ONLY in that language. "
-                "English document → English summary. "
-                "Norwegian document → Norwegian summary. "
-                "Never translate. Never switch languages. and Never mix languages in your response."
+                "You are an expert legal document summarizer. "
+                "Identify the language of the document and strictly respond ONLY in that language. "
+                "English document → English summary. Norwegian document → Norwegian summary. "
+                "Format your summary cleanly using standard Markdown formatting: "
+                "use bold section headers (e.g., **Key Details**, **Main Purpose**, **Core Findings**) "
+                "and clean bullet points with line breaks between paragraphs. "
+                "Never output single monolithic blocks of unformatted text or inline bullet points with bullet symbols like '•'."
             )),
             HumanMessage(content=(
-                f"Summarize the following document in 3-5 sentences. "
-                f"Cover only the main purpose and key points. "
-                f"Do not use code blocks or backticks.\n\n"
+                f"Provide a structured summary of the following document using Markdown headings and bullet points.\n\n"
                 f"DOCUMENT:\n{truncated}"
             )),
         ]
+
 
         llm = AzureChatOpenAI(
             azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,

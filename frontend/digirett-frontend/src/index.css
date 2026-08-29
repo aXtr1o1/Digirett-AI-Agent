@@ -13,45 +13,26 @@
   code {
     font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
   }
-
-  /* Custom scrollbar for dark theme */
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background: #888;
-    border-radius: 4px;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: #555;
-  }
 }
-
 @layer components {
   .container {
     @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
   }
-  
+
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: #888 transparent;
   }
-  
+
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
   }
-  
+
   .scrollbar-thin::-webkit-scrollbar-track {
     background: transparent;
   }
-  
+
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background: #888;
     border-radius: 3px;
@@ -164,6 +145,7 @@
       opacity: 0;
       transform: translateY(10px);
     }
+
     to {
       opacity: 1;
       transform: translateY(0);
@@ -205,46 +187,18 @@
   }
 }
 
-/* Clerk component customization */
-.cl-internal-b3fm6y {
-  background-color: #0a0a0a !important;
+/* Remove default focus outline from Recharts */
+.recharts-wrapper,
+.recharts-wrapper *,
+.recharts-wrapper svg,
+.recharts-surface {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
-.cl-card {
-  background-color: #1a1a1a !important;
-  border-color: #374151 !important;
-}
-
-.cl-formButtonPrimary {
-  background-color: white !important;
-  color: black !important;
-}
-
-.cl-formButtonPrimary:hover {
-  background-color: #f3f4f6 !important;
-}
-
-/* Scrollbar — visible in both light and dark mode */
-::-webkit-scrollbar {
-  width: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #555;
-}
-
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #888 transparent;
+.h-dynamic-screen {
+  height: 100vh;
+  height: calc(var(--vh, 1vh) * 100);
 }
 
 .auth-container {
@@ -341,10 +295,79 @@
 
 /* Hide scrollbar in sidebar */
 .sidebar-scrollbar-hidden {
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE and Edge */
 }
 
 .sidebar-scrollbar-hidden::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
+  display: none;
+  /* Chrome, Safari, Opera */
+}
+
+cl-navbarMobileMenuRow__security {
+  display: none !important;
+}
+/* Hide scrollbar for the main chat/page and sidebar.
+   Scrolling remains functional. */
+.page-scrollbar-hidden,
+.sidebar-scrollbar-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.page-scrollbar-hidden::-webkit-scrollbar,
+.sidebar-scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Show scrollbar only inside the chat input when text overflows */
+.chat-input-scrollbar {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 transparent;
+}
+
+.chat-input-scrollbar::-webkit-scrollbar {
+  display: block;
+  width: 5px;
+}
+
+.chat-input-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-input-scrollbar::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 999px;
+}
+
+.chat-input-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+/* Chat input scrollbar for long messages */
+.chat-input-scrollbar {
+  scrollbar-width: thin !important;
+  scrollbar-color: #94a3b8 transparent !important;
+}
+
+.chat-input-scrollbar::-webkit-scrollbar {
+  display: block !important;
+  width: 5px !important;
+}
+
+.chat-input-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-input-scrollbar::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 999px;
+}
+
+.chat-input-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
 }

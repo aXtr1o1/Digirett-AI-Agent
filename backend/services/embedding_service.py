@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class EmbeddingService:
     
 
-    EMBEDDING_DIMENSION = 1536  # text-embedding-3-small
+    EMBEDDING_DIMENSION = getattr(settings, "AZURE_OPENAI_EMBEDDING_DIMENSION", 1536)
 
     def __init__(self) -> None:
         try:
@@ -53,6 +53,7 @@ class EmbeddingService:
             logger.error(f" embed_query failed | text='{text[:50]}' | {exc}", exc_info=True)
             raise
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=3), reraise=True)
     async def embed_batch(self, texts: List[str]) -> List[List[float]]:
         
         if not texts:
@@ -64,6 +65,5 @@ class EmbeddingService:
             logger.debug(f" Batch embedding complete | count={len(vectors)}")
             return vectors
         except Exception as exc:
-            logger.error(f"embed_batch failed | {exc}", exc_info=True)
-            # Return zero vectors on failure rather than crashing
-            return [[0.0] * self.EMBEDDING_DIMENSION] * len(texts)
+            logger.error(f"❌ embed_batch failed after retries | {exc}", exc_info=True)
+            raise

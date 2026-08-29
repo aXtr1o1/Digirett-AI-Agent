@@ -46,9 +46,11 @@ langdetect==1.0.9
 # =====================================================
 requests==2.32.5
 python-dotenv==1.2.1
+json-repair>=0.30.0
 pydantic==2.12.5
 pydantic-settings==2.13.0
 tenacity==9.1.4
+email-validator>=2.0.0
 
 # OpenTelemetry (API + LLM latency tracing)
 opentelemetry-api>=1.24.0
@@ -65,3 +67,18 @@ sseclient-py==1.9.0
 openpyxl==3.1.5
 
 rank_bm25
+
+# =====================================================
+# AUTH (Clerk)
+# =====================================================
+# JWT verification (RS256 — Clerk uses asymmetric signing)
+python-jose[cryptography]>=3.3.0
+# Clerk webhook signature verification (Svix-based)
+svix>=1.0.0
+# Clerk Python SDK — update publicMetadata, invite users
+clerk-backend-api>=2.0.0
+# Async HTTP client — JWKS fetching, Resend email API
+httpx>=0.28.0
+aiosmtplib==5.1.0
+stripe==9.8.0
+

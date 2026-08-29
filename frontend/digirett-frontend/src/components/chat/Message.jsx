@@ -1,15 +1,20 @@
-import React from "react";
-import { User, Bot, Copy, Check } from "lucide-react";
+import React, { useState } from "react";
+import { User, Bot, Copy, Check, Bookmark } from "lucide-react";
+import { useUser } from "@clerk/clerk-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import SourceLinks from "./SourceLinks";
 import useCopyToClipboard from "../../hooks/useCopyToClipboard";
-import { API_BASE_URL } from "../../utils/constants";
 
-const Message = ({ message, isStreaming = false, theme = "dark" }) => {
+const Message = ({ message, isStreaming = false, theme = "dark", conversationId, conversationTitle }) => {
+  const { user } = useUser();
   const { isCopied, copyToClipboard } = useCopyToClipboard();
   const isUser = message.role === "user";
   const isDark = theme === "dark";
+
+  const msgId = message.message_id || message.id;
+
+
   // ✅ FILE MESSAGE HANDLING (ADD THIS BLOCK)
   if (message.type === "file") {
     return (
@@ -18,11 +23,10 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
         {/* FILE MESSAGE UI */}
         <div className="flex flex-col items-end max-w-[85%]">
           <div
-            className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-sm ${
-              isDark
-                ? "bg-[#2f2f2f] text-white"
-                : "bg-gray-100 text-gray-900"
-            }`}
+            className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-sm ${isDark
+              ? "bg-[#2f2f2f] text-white"
+              : "bg-gray-100 text-gray-900"
+              }`}
           >
             <span>📄</span>
             <span className="truncate max-w-[200px]">
@@ -33,9 +37,8 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
 
         {/* USER AVATAR */}
         <div
-          className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center mt-1 ${
-            isDark ? "bg-gray-600" : "bg-gray-300"
-          }`}
+          className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center mt-1 ${isDark ? "bg-gray-600" : "bg-gray-300"
+            }`}
         >
           <User className={`h-4 w-4 ${isDark ? "text-gray-200" : "text-gray-600"}`} />
         </div>
@@ -53,27 +56,27 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
     return (
       <div className="flex gap-4 mb-6 justify-end">
         <div
-          className={`flex flex-col max-w-[85%] px-4 py-3 rounded-2xl text-sm gap-2 ${
-            isDark ? "bg-[#2f2f2f] text-white" : "bg-gray-100 text-gray-900"
-          }`}
+          className={`flex flex-col max-w-[85%] px-4 py-3 rounded-2xl text-sm gap-2 ${isDark ? "bg-[#2f2f2f] text-white" : "bg-gray-100 text-gray-900"
+            }`}
         >
           {/* File attachment pill */}
           <a
-            href={
-              message.documentId
-                ? `${API_BASE_URL}/api/v1/documents/view/${message.documentId}`
-                : "#"
-            }
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => {
-              if (!message.documentId) e.preventDefault();
+            href="#"
+            onClick={async (e) => {
+              e.preventDefault();
+              if (!message.documentId) return;
+              try {
+                const token = await window.Clerk?.session?.getToken();
+                const url = `${API_BASE_URL}/api/v1/documents/view/${message.documentId}${token ? `?token=${token}` : ""}`;
+                window.open(url, "_blank");
+              } catch (err) {
+                console.error("Failed to download document:", err);
+              }
             }}
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-colors ${
-              isDark
-                ? "bg-[#3a3a3a] text-gray-300 hover:bg-[#444]"
-                : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
-            } ${!message.documentId ? "cursor-default opacity-70" : "cursor-pointer"}`}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-colors ${isDark
+              ? "bg-[#3a3a3a] text-gray-300 hover:bg-[#444]"
+              : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+              } ${!message.documentId ? "cursor-default opacity-70" : "cursor-pointer"}`}
           >
             <span className="text-base" role="img" aria-label="file">📄</span>
             <span className="truncate max-w-[220px]">{message.fileName}</span>
@@ -88,9 +91,8 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
         </div>
 
         <div
-          className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center mt-1 ${
-            isDark ? "bg-gray-600" : "bg-gray-300"
-          }`}
+          className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center mt-1 ${isDark ? "bg-gray-600" : "bg-gray-300"
+            }`}
         >
           <User className={`h-4 w-4 ${isDark ? "text-gray-200" : "text-gray-600"}`} />
         </div>
@@ -99,25 +101,39 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
   }
 
   // ── Regular message ────────────────────────────────────────────────────
+  if (message.role === "system" || message.type === "system") {
+    return (
+      <div className="flex justify-center my-4 opacity-60">
+        <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${isDark
+          ? "bg-white/5 text-gray-400 border-white/10"
+          : "bg-gray-50 text-gray-500 border-gray-100 shadow-sm shadow-black/5"
+          }`}>
+          {message.content}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`flex gap-4 mb-6 ${isUser ? "justify-end" : "justify-start"}`}>
 
       {!isUser && (
         <div
-          className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center mt-1 ${
-            isDark ? "bg-white" : "bg-gray-900"
-          }`}
+          className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center mt-1 ${isDark ? "bg-white" : "bg-gray-900"
+            }`}
         >
           <Bot className={`h-4 w-4 ${isDark ? "text-black" : "text-white"}`} />
         </div>
       )}
 
       <div className={`flex flex-col min-w-0 ${isUser ? "items-end max-w-[85%]" : "flex-1"}`}>
+        <p className={`text-[10px] font-bold uppercase tracking-wider opacity-50 mb-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+          {isUser ? (user?.username || user?.firstName || 'User') : (message.metadata?.is_lawyer ? "Personal Lawyer" : "Digirett Agent")}
+        </p>
         {isUser ? (
           <div
-            className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
-              isDark ? "bg-[#2f2f2f] text-white" : "bg-gray-100 text-gray-900"
-            }`}
+            className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${isDark ? "bg-[#2f2f2f] text-white" : "bg-gray-100 text-gray-900"
+              }`}
           >
             {message.content}
           </div>
@@ -134,9 +150,8 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
                   table: (props) => (
                     <div className="overflow-x-auto my-4">
                       <table
-                        className={`border-collapse w-full text-sm ${
-                          isDark ? "border-gray-700" : "border-gray-300"
-                        }`}
+                        className={`border-collapse w-full text-sm ${isDark ? "border-gray-700" : "border-gray-300"
+                          }`}
                         {...props}
                       />
                     </div>
@@ -149,9 +164,8 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
                   ),
                   th: (props) => (
                     <th
-                      className={`px-3 py-2 text-left font-semibold border ${
-                        isDark ? "border-gray-700 bg-gray-800" : "border-gray-300 bg-gray-100"
-                      }`}
+                      className={`px-3 py-2 text-left font-semibold border ${isDark ? "border-gray-700 bg-gray-800" : "border-gray-300 bg-gray-100"
+                        }`}
                       {...props}
                     />
                   ),
@@ -178,9 +192,8 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
                     }
                     return (
                       <pre
-                        className={`rounded-xl p-4 my-3 overflow-x-auto text-xs font-mono ${
-                          isDark ? "bg-gray-900 text-gray-200" : "bg-gray-50 text-gray-800"
-                        }`}
+                        className={`rounded-xl p-4 my-3 overflow-x-auto text-xs font-mono ${isDark ? "bg-gray-900 text-gray-200" : "bg-gray-50 text-gray-800"
+                          }`}
                       >
                         <code>{children}</code>
                       </pre>
@@ -196,18 +209,21 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
             )}
 
             {!isStreaming && (
-              <button
-                onClick={() => copyToClipboard(message.content)}
-                className={`mt-1 flex items-center gap-1.5 text-xs ${
-                  isDark ? "text-gray-500 hover:text-gray-300" : "text-gray-400 hover:text-gray-600"
-                }`}
-              >
-                {isCopied ? (
-                  <><Check className="h-3 w-3" /><span>Copied</span></>
-                ) : (
-                  <><Copy className="h-3 w-3" /><span>Copy</span></>
-                )}
-              </button>
+              <div className="mt-2 flex items-center gap-4">
+                <button
+                  onClick={() => copyToClipboard(message.content)}
+                  className={`flex items-center gap-1.5 text-xs ${isDark ? "text-gray-500 hover:text-gray-300" : "text-gray-400 hover:text-gray-600"
+                    }`}
+                >
+                  {isCopied ? (
+                    <><Check className="h-3 w-3" /><span>Copied</span></>
+                  ) : (
+                    <><Copy className="h-3 w-3" /><span>Copy</span></>
+                  )}
+                </button>
+
+
+              </div>
             )}
 
             {!isStreaming && message.sources && message.sources.length > 0 && (
@@ -219,9 +235,8 @@ const Message = ({ message, isStreaming = false, theme = "dark" }) => {
 
       {isUser && (
         <div
-          className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center mt-1 ${
-            isDark ? "bg-gray-600" : "bg-gray-300"
-          }`}
+          className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center mt-1 ${isDark ? "bg-gray-600" : "bg-gray-300"
+            }`}
         >
           <User className={`h-4 w-4 ${isDark ? "text-gray-200" : "text-gray-600"}`} />
         </div>

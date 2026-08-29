@@ -1,9 +1,10 @@
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from uuid import uuid4
+from uuid import uuid4, UUID
 
-from supabase import create_client, Client
+from supabase import create_client, Client, ClientOptions
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -26,17 +27,32 @@ class SupabaseClient:
     def connect(self, url: str, key: str) -> None:
         
         try:
-            logger.info(f"🔌 Connecting to Supabase at {url[:40]}...")
-            self._client = create_client(url, key)
+            logger.info(f"Connecting to Supabase at {url[:40]}...")
+            
+            # Configure custom httpx.Client with http2=False to prevent connection drops/Server disconnected errors
+            http_client = httpx.Client(
+                http2=False,
+                limits=httpx.Limits(
+                    max_keepalive_connections=20,
+                    max_connections=100,
+                    keepalive_expiry=30.0
+                ),
+                timeout=httpx.Timeout(60.0, connect=30.0),  # Increase connect timeout to 30s to allow handshake under load
+                trust_env=False  # Speed up handshake by bypassing system proxy scanning
+            )
+            options = ClientOptions(httpx_client=http_client)
+            
+            self._client = create_client(url, key, options=options)
 
             # Smoke-test: query the users table
-            self._client.table("users").select("user_id").limit(1).execute()
+            smoke_query = self._client.table("users").select("user_id").limit(1)
+            self.execute_query(smoke_query)
 
             self._ready = True
-            logger.info(" Supabase connected")
+            logger.info("Supabase connected")
 
         except Exception as exc:
-            logger.error(f" Supabase connection failed | {exc}", exc_info=True)
+            logger.error(f"[ERROR] Supabase connection failed | {exc}", exc_info=True)
             raise ConnectionError(f"Supabase connection failed: {exc}") from exc
 
     # ── Internal helpers ─────────────────────────────────────────────────
@@ -56,8 +72,30 @@ class SupabaseClient:
             self._get().table("users").select("user_id").limit(1).execute()
             return True
         except Exception as exc:
-            logger.error(f" Supabase health check failed | {exc}")
+            logger.error(f"[ERROR] Supabase health check failed | {exc}")
             return False
+
+    def execute_query(self, query, max_retries: int = 3):
+        import time
+        import random
+        import httpx
+        last_exc = None
+        for attempt in range(max_retries):
+            try:
+                return query.execute()
+            except (httpx.HTTPError, Exception) as exc:
+                last_exc = exc
+                backoff = (0.2 * (2 ** attempt)) + random.uniform(0.05, 0.25)
+                logger.warning(
+                    f"[WARN] Supabase retry attempt {attempt+1}/{max_retries} after {backoff:.2f}s | {exc}"
+                )
+                time.sleep(backoff)
+        raise last_exc
+
+    def rpc(self, fn_name: str, params: Optional[Dict[str, Any]] = None):
+        """Execute a PostgreSQL Remote Procedure Call (RPC) function transactionally."""
+        return self._get().rpc(fn_name, params or {})
+
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # CONVERSATIONS
@@ -120,11 +158,11 @@ class SupabaseClient:
                 "updated_at": datetime.utcnow().isoformat(),
             }).eq("conversation_id", conversation_id).execute()
 
-            logger.info(f"✅ Updated summary for conversation {conversation_id}")
+            logger.info(f"[OK] Updated summary for conversation {conversation_id}")
             return True
 
         except Exception as exc:
-            logger.error(f"❌ update_conversation_summary failed | {exc}")
+            logger.error(f" update_conversation_summary failed | {exc}")
             return False
 
     def soft_delete_conversation(self, conversation_id: str) -> bool:
@@ -148,9 +186,60 @@ class SupabaseClient:
             logger.error(f" soft_delete_conversation failed | {exc}")
             return False
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # MESSAGES
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    def get_conversation_by_id(self, conversation_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch active (non-deleted) conversation record by ID."""
+        try:
+            resp = self.execute_query(
+                self._get().table("conversations")
+                .select("*")
+                .eq("conversation_id", conversation_id)
+                .eq("is_deleted", False)
+            )
+            return resp.data[0] if resp.data else None
+        except Exception as exc:
+            logger.error(f" get_conversation_by_id failed | {exc}")
+            return None
+
+    def touch_conversation(self, conversation_id: str) -> bool:
+        """Touch updated_at timestamp on a conversation."""
+        try:
+            now = datetime.utcnow().isoformat()
+            self.execute_query(
+                self._get().table("conversations")
+                .update({"updated_at": now})
+                .eq("conversation_id", conversation_id)
+            )
+            return True
+        except Exception as exc:
+            logger.error(f" touch_conversation failed | {exc}")
+            return False
+
+    def save_case_brief(self, ticket_id: str, brief_data: Dict[str, Any]) -> bool:
+        """Store AI case brief on a HITL ticket."""
+        try:
+            self.execute_query(
+                self._get().table("hitl_tickets")
+                .update({"ai_brief": brief_data})
+                .eq("ticket_id", ticket_id)
+            )
+            return True
+        except Exception as exc:
+            logger.error(f" save_case_brief failed for ticket {ticket_id} | {exc}")
+            return False
+
+    def get_document_by_id(self, document_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch user library document by ID."""
+        try:
+            resp = self.execute_query(
+                self._get().table("user_library_documents")
+                .select("*")
+                .eq("id", document_id)
+            )
+            return resp.data[0] if resp.data else None
+        except Exception as exc:
+            logger.error(f" get_document_by_id failed for {document_id} | {exc}")
+            return None
+
     def _deduplicate_sources(
         self,
         sources: Optional[List[Dict[str, Any]]]
@@ -174,6 +263,16 @@ class SupabaseClient:
 
         return unique_sources
 
+    def _sanitize_for_json(self, data: Any) -> Any:
+        """Recursively convert UUID objects (and non-serializable objects) to strings."""
+        if isinstance(data, UUID):
+            return str(data)
+        elif isinstance(data, dict):
+            return {k: self._sanitize_for_json(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self._sanitize_for_json(item) for item in data]
+        return data
+
     def save_message(
         self,
         conversation_id: str,
@@ -189,20 +288,26 @@ class SupabaseClient:
             clean_sources = None
             if role == "assistant" and sources:
                 clean_sources = self._deduplicate_sources(sources)
-            self._get().table("messages").insert({
+            
+            clean_sources = self._sanitize_for_json(clean_sources)
+            clean_metadata = self._sanitize_for_json(metadata)
+
+            query = self._get().table("messages").insert({
                 "message_id": message_id,
-                "conversation_id": conversation_id,
+                "conversation_id": str(conversation_id),
                 "role": role,
                 "content": content,
                 "sources": clean_sources,
-                "metadata": metadata,
+                "metadata": clean_metadata,
                 "created_at": now,
-            }).execute()
+            })
+            self.execute_query(query)
 
             # Keep conversation updated_at current
-            self._get().table("conversations").update({
+            update_query = self._get().table("conversations").update({
                 "updated_at": now,
-            }).eq("conversation_id", conversation_id).execute()
+            }).eq("conversation_id", conversation_id)
+            self.execute_query(update_query)
 
             logger.debug(f" Saved {role} message {message_id}")
             return message_id
@@ -222,7 +327,7 @@ class SupabaseClient:
     ) -> bool:
         """Insert a row into message_metadata."""
         try:
-            self._get().table("message_metadata").insert({
+            query = self._get().table("message_metadata").insert({
                 "message_id": message_id,
                 "model_name": model_name,
                 "token_input": token_input,
@@ -230,7 +335,8 @@ class SupabaseClient:
                 "latency_ms": latency_ms,
                 "is_cached": is_cached,
                 "created_at": datetime.utcnow().isoformat(),
-            }).execute()
+            })
+            self.execute_query(query)
             return True
         except Exception as exc:
             logger.error(f" save_message_metadata failed | {exc}")
@@ -254,18 +360,18 @@ class SupabaseClient:
                 }
                 for idx, chunk in enumerate(chunks, start=1)
             ]
-            if rows:
-                self._get().table("rag_retrievals").insert(rows).execute()
-                logger.debug(f"✅ Saved {len(rows)} RAG retrievals for message {message_id}")
+            if not rows:
+                return True
+
+            query = self._get().table("rag_retrievals").insert(rows)
+            self.execute_query(query)
+            logger.debug(f"[OK] Saved {len(rows)} RAG retrievals for message {message_id}")
             return True
         except Exception as exc:
             logger.error(f" save_rag_retrievals failed | {exc}")
             return False
 
-
-# Module-level singleton and DI factory
 supabase_client = SupabaseClient()
-
 
 def get_supabase() -> SupabaseClient:
     """Return the singleton SupabaseClient (for dependency injection in main.py)."""

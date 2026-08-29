@@ -1,19 +1,20 @@
-import { API_BASE_URL, DEFAULT_USER_ID } from "../utils/constants";
+import { API_BASE_URL, API_ENDPOINTS } from "../utils/constants";
 
 const SAFE_API_BASE_URL =
   typeof API_BASE_URL === "string" && API_BASE_URL.length > 0
     ? API_BASE_URL
-    : "http://localhost:8000";
+    : process.env.REACT_APP_API_BASE_URL || "";
 
-const cleanBase = SAFE_API_BASE_URL.replace(/\/+$/, "");  // ← was API_BASE_URL
+const cleanBase = SAFE_API_BASE_URL.replace(/\/+$/, "");
 
 const WS_URL =
   cleanBase
     .replace(/^https/, "wss")
     .replace(/^http/, "ws") +
-  "/api/v1/chat/ws";
+  "/api/v1" + API_ENDPOINTS.CHAT.WS;
 
 // ─────────────────────────────────────────────────────────────────────────────
+console.log("[chatService] Initialized with WS_URL:", WS_URL);
 
 const chatService = {
   /**
@@ -27,16 +28,15 @@ const chatService = {
    * @returns {Function}                  - cancel() function — same API as the old SSE version
    */
   sendMessage: (conversationId, message, onChunk, onComplete, onError, options = {}) => {
-    let ws        = null;
+    let ws = null;
     let cancelled = false;
 
     (async () => {
       try {
         const requestBody = {
-          query:          message,
-          user_id:        DEFAULT_USER_ID,
-          top_k:          3,
-          temperature:    0.7,
+          query: message,
+          top_k: 3,
+          temperature: 0.7,
           skip_save_user: !!options.skipSaveUser,
         };
 
@@ -44,17 +44,21 @@ const chatService = {
           requestBody.conversation_id = conversationId;
         }
 
-        console.log("[chatService] Connecting to:", WS_URL);
+        // Attach Clerk token for WS authentication
+        const clerkToken = await window.Clerk?.session?.getToken();
+        const finalWsUrl = clerkToken ? `${WS_URL}?token=${clerkToken}` : WS_URL;
+
+        console.log("[chatService] Connecting to:", finalWsUrl);
         console.log("[chatService] Payload:", requestBody);
 
-        ws = new WebSocket(WS_URL);
+        ws = new WebSocket(finalWsUrl);
 
         // Per-query state — same variables as the old SSE version
-        let fullMessage            = "";
-        let sources                = [];
+        let fullMessage = "";
+        let sources = [];
         let resolvedConversationId = conversationId;
-        let finalMetadata          = {};
-        let completeFired          = false;
+        let finalMetadata = {};
+        let completeFired = false;
 
         // ── 1. Connection established → send the query ─────────────────
         ws.onopen = () => {
@@ -95,8 +99,8 @@ const chatService = {
               break;
 
             case "complete":
-              completeFired          = true;
-              finalMetadata          = event.metadata || {};
+              completeFired = true;
+              finalMetadata = event.metadata || {};
               resolvedConversationId = finalMetadata.conversation_id || resolvedConversationId;
 
               if (onComplete) {
@@ -110,22 +114,37 @@ const chatService = {
                   : sources.map((url) => typeof url === "string" ? { url, title: url } : url);
 
                 onComplete({
-                  message:        finalMetadata.full_answer || fullMessage,
-                  sources:        completeSources,
+                  message: finalMetadata.full_answer || fullMessage,
+                  sources: completeSources,
                   conversationId: resolvedConversationId,
-                  messageId:      finalMetadata.message_id || null,
-                  metadata:       finalMetadata,
+                  messageId: finalMetadata.message_id || null,
+                  metadata: finalMetadata,
                 });
               }
 
               ws.close(1000, "query complete");
               break;
 
+            // case "error":
+            //   console.error("[chatService] backend error:", event.message);
+            //   if (ws) ws.errorFired = true;
+            //   if (onError) onError(new Error(event.message || "Stream error"));
+            //   ws.close();
+            //   break;
             case "error":
-              console.error("[chatService] backend error:", event.message);
-              if (onError) onError(new Error(event.message || "Stream error"));
-              ws.close();
-              break;
+  console.log("===== BACKEND ERROR EVENT =====");
+  console.log(event);
+  console.log("event.message:", event.message);
+  console.log("typeof event.message:", typeof event.message);
+
+  if (ws) ws.errorFired = true;
+
+  if (onError) {
+    onError(event); // Temporary for debugging
+  }
+
+  ws.close();
+  break;
 
             default:
               console.log("[chatService] unknown event type:", event.type);
@@ -135,10 +154,11 @@ const chatService = {
         // ── 3. Connection closed ───────────────────────────────────────
         ws.onclose = (e) => {
           console.log("[chatService] WS closed | code:", e.code, "reason:", e.reason);
-          if (cancelled) return;
+          const currentWs = e.target || ws;
+          if (cancelled || currentWs?.errorFired) return;
           if (!completeFired && !fullMessage) {
             if (onError) {
-              onError({ message: "Connection lost. Please try again." });
+              onError({ message: "Message limit reached. Your session resets every 4 hours." });
             }
             return;
           }
@@ -146,13 +166,13 @@ const chatService = {
           if (!completeFired && fullMessage) {
             if (onComplete) {
               onComplete({
-                message:        fullMessage,
-                sources:        sources.map((url) =>
+                message: fullMessage,
+                sources: sources.map((url) =>
                   typeof url === "string" ? { url, title: url } : url
                 ),
                 conversationId: resolvedConversationId,
-                messageId:      null,
-                metadata:       finalMetadata,
+                messageId: null,
+                metadata: finalMetadata,
               });
             }
           }
@@ -161,8 +181,9 @@ const chatService = {
         // ── 4. Network / protocol error ────────────────────────────────
         ws.onerror = (e) => {
           console.error("[chatService] WS error:", e);
-          if (!cancelled && onError) {
-            onError({ message: "Connection error. Please try again." });
+          const currentWs = e.target || ws;
+          if (!cancelled && !currentWs?.errorFired && onError) {
+            onError({ message: "Message limit reached. Your session resets every 4 hours." });
           }
         };
 
