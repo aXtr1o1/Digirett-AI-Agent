@@ -12,6 +12,19 @@ from ingestion.src.storage.supabase_store import SupabaseStore
 logger = logging.getLogger(__name__)
 
 
+def _safe_int(val: Any) -> Optional[int]:
+    """Safely converts a value to integer, returning None if non-numeric or missing."""
+    if val is None:
+        return None
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        try:
+            return int(float(str(val).strip()))
+        except (ValueError, TypeError):
+            return None
+
+
 @dataclass
 class ComparisonResult:
     """Encapsulates the differential comparison between live xAPI metadata and Supabase Bucket Ledger."""
@@ -229,6 +242,9 @@ class ComparingEngine:
             xapi_count = doc.get("antall_paragrafer") or doc.get("paragraph_count")
             ledger_count = ledger_entry.get("paragraph_count") or ledger_entry.get("antall_paragrafer")
 
+            xapi_pcount = _safe_int(xapi_count)
+            ledger_pcount = _safe_int(ledger_count)
+
             vdb_status = ledger_entry.get("vdb_status", "PENDING")
 
             is_modified = False
@@ -238,7 +254,17 @@ class ComparingEngine:
                 is_modified = True
             elif xapi_amended and ledger_amended and xapi_amended != ledger_amended:
                 is_modified = True
-            elif xapi_count is not None and ledger_count is not None and int(xapi_count) != int(ledger_count):
+            elif xapi_pcount is not None and ledger_pcount is not None and xapi_pcount != ledger_pcount:
+                is_modified = True
+            elif (xapi_count is not None and str(xapi_count).strip() and xapi_pcount is None) or (
+                ledger_count is not None and str(ledger_count).strip() and ledger_pcount is None
+            ):
+                logger.warning(
+                    "Non-numeric paragraph count for document %s (xapi: %r, ledger: %r); marking as modified",
+                    cid,
+                    xapi_count,
+                    ledger_count,
+                )
                 is_modified = True
 
             if is_modified:

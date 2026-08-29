@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List, Optional
+from bs4 import BeautifulSoup
 
 from ingestion.models.legal_section import LegalBlock, NormalizedLegalSection
 from ingestion.adapters.legal_html_parser import parse_legal_blocks
@@ -102,19 +103,48 @@ class LawSectionAdapter:
         raw_html = innhold_html
 
         if innhold_html:
-            structured_blocks = parse_legal_blocks(innhold_html)
+            parsed_blocks = parse_legal_blocks(innhold_html)
+            structured_blocks = [b for b in parsed_blocks if b.text and b.text.strip()]
 
-        # Fallback to innhold_text if HTML parsing yielded no blocks
-        if not structured_blocks and innhold_text:
+        html_text = "\n\n".join(b.text.strip() for b in structured_blocks).strip()
+
+        # Check if HTML extraction is significantly incomplete compared to available plain text
+        is_incomplete_html = (
+            bool(innhold_text)
+            and len(innhold_text) > 50
+            and len(html_text) < 0.4 * len(innhold_text)
+        )
+
+        # Fallback to innhold_text if HTML parsing yielded no valid text or incomplete text
+        if (not structured_blocks or not html_text or is_incomplete_html) and innhold_text:
+            if is_incomplete_html and html_text:
+                logger.warning(
+                    "HTML parse for %s yielded incomplete text (%d chars vs %d in innhold_text). Falling back to innhold_text.",
+                    source_section_key,
+                    len(html_text),
+                    len(innhold_text),
+                )
             raw_html = ""
+            structured_blocks = []
             lines = [l.strip() for l in innhold_text.splitlines() if l.strip()]
             for l_idx, line in enumerate(lines):
                 structured_blocks.append(
                     LegalBlock(block_type="TEXT", text=line, prefix=None, order=l_idx)
                 )
+            source_text = "\n\n".join(b.text for b in structured_blocks if b.text).strip()
+        else:
+            source_text = html_text
 
-        # Build faithful normalized source_text from structured blocks
-        source_text = "\n\n".join(b.text for b in structured_blocks if b.text).strip()
+        # Safety net: if source_text is still empty but innhold_html contains text
+        if not source_text and innhold_html:
+            clean_soup_text = BeautifulSoup(innhold_html, "html.parser").get_text(separator="\n", strip=True)
+            if clean_soup_text:
+                lines = [l.strip() for l in clean_soup_text.splitlines() if l.strip()]
+                structured_blocks = [
+                    LegalBlock(block_type="TEXT", text=l, prefix=None, order=idx)
+                    for idx, l in enumerate(lines)
+                ]
+                source_text = "\n\n".join(b.text for b in structured_blocks if b.text).strip()
 
         candidate_domains = list(law_metadata.get("candidate_domain_ids") or [])
         version_date = str(

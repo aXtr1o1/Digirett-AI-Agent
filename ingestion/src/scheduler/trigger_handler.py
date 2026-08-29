@@ -2,7 +2,6 @@ import argparse
 import asyncio
 import json
 import logging
-import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,7 +18,7 @@ for p in [str(PROJECT_ROOT), str(INGESTION_DIR)]:
 from ingestion.src.config import LOG_DIR, LOG_FILE
 from ingestion.src.processors.comparing_engine import ComparingEngine
 from ingestion.src.storage.supabase_store import SupabaseStore
-from ingestion.src.main import RealTimePipelineRunner, run_incremental
+from ingestion.src.main import RealTimePipelineRunner
 
 logger = logging.getLogger("digirett-trigger")
 logger.setLevel(logging.INFO)

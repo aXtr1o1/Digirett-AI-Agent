@@ -19,6 +19,8 @@ for folder in [DATA_DIR, LOG_DIR, CHECKPOINT_DIR, NORMALIZED_DIR, REPORTS_DIR]:
 
 LOG_FILE = LOG_DIR / "ingestion.log"
 
+DEFAULT_EMBEDDING_MODEL: str = "text-embedding-3-small"
+
 
 class Settings(BaseSettings):
     """Runtime configuration for DigiRett Legal Ingestion Pipeline.
@@ -63,7 +65,7 @@ class Settings(BaseSettings):
     # ── Azure OpenAI & AI Routing ────────────────────────────────────────
     AZURE_OPENAI_ENDPOINT: str = ""
     AZURE_OPENAI_KEY: str = ""
-    AZURE_OPENAI_DEPLOYMENT: str = "text-embedding-3-small"
+    AZURE_OPENAI_DEPLOYMENT: str = DEFAULT_EMBEDDING_MODEL
     AZURE_OPENAI_CHAT_DEPLOYMENT: str = "gpt-4o-mini"
     AZURE_OPENAI_API_VERSION: str = "2024-02-01"
     AI_ROUTING_ENABLED: bool = True
@@ -71,7 +73,7 @@ class Settings(BaseSettings):
     AI_SCOPE_VALIDATION_ENABLED: bool = True
 
     # ── Embedding Model & Pacing ─────────────────────────────────────────
-    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_MODEL: str = DEFAULT_EMBEDDING_MODEL
     EMBEDDING_BATCH_SIZE: int = 64
     EMBEDDING_CHUNK_DELAY: float = 0.05
 
@@ -253,7 +255,7 @@ class Settings(BaseSettings):
 
     @property
     def embedding_model(self) -> str:
-        return self.EMBEDDING_MODEL
+        return self.EMBEDDING_MODEL or self.AZURE_OPENAI_DEPLOYMENT or DEFAULT_EMBEDDING_MODEL
 
     @property
     def embedding_batch_size(self) -> int:
@@ -454,7 +456,8 @@ AI_ROUTING_ENABLED: bool = settings.AI_ROUTING_ENABLED
 AI_CONFIDENCE_THRESHOLD: float = settings.AI_CONFIDENCE_THRESHOLD
 AI_SCOPE_VALIDATION_ENABLED: bool = settings.AI_SCOPE_VALIDATION_ENABLED
 
-EMBEDDING_MODEL: str = settings.EMBEDDING_MODEL
+DEFAULT_EMBEDDING_MODEL: str = DEFAULT_EMBEDDING_MODEL
+EMBEDDING_MODEL: str = settings.EMBEDDING_MODEL or settings.AZURE_OPENAI_DEPLOYMENT
 EMBED_CPU_PAUSE_THRESHOLD: float = settings.EMBED_CPU_PAUSE_THRESHOLD
 EMBED_CPU_PAUSE_SECS: float = settings.EMBED_CPU_PAUSE_SECS
 EMBEDDING_BATCH_SIZE: int = settings.EMBEDDING_BATCH_SIZE
