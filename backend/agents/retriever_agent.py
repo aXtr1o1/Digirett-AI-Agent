@@ -1,29 +1,3 @@
-"""
-agents/retriever_agent.py
-
-Document-first multi-channel legal retrieval.
-
-Public API compatibility:
-    RetrieverAgent(...).run(...) -> List[chunk dict]
-
-The surrounding RAG pipeline does not need to change.
-
-Architecture:
-1. Embed the enriched query once.
-2. Discover legal DOCUMENTS through independent channels:
-   - exact/fuzzy title
-   - title BM25
-   - statute ANN
-   - routed subdomain ANN
-   - domain ANN
-   - broad ANN
-3. Fuse/dedupe by canonical_document_id.
-4. Search/rank chunks only inside the top legal documents.
-5. Return the same chunk-shaped dictionaries expected by RAGService.
-
-No channel is allowed to make another channel impossible.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -61,10 +35,6 @@ SEED_CHUNKS_PER_DOC_PER_CHANNEL = 4
 EMBED_CACHE_SECONDS = 20.0
 CHANNEL_CACHE_SECONDS = 20.0
 
-# Final document -> chunk selection policy.
-#
-# These constants affect ONLY the last selection stage after document discovery
-# and document ranking are already complete.
 TOP_DOCUMENT_MIN_RESERVED_CHUNKS = 1
 TOP_DOCUMENT_LOCAL_RERANK_LIMIT = 8
 
@@ -157,9 +127,6 @@ class RetrieverAgent:
             "mode=document-first multi-channel"
         )
 
-    # ------------------------------------------------------------------
-    # Public API — signature intentionally preserved.
-    # ------------------------------------------------------------------
     async def run(
         self,
         query: str,
@@ -208,10 +175,6 @@ class RetrieverAgent:
                 subdomain_candidates=subdomain_candidates,
                 b2b_b2c=b2b_b2c,
             )
-
-    # ------------------------------------------------------------------
-    # Main architecture
-    # ------------------------------------------------------------------
     async def _run_multichannel(
         self,
         *,
@@ -239,7 +202,6 @@ class RetrieverAgent:
         }
         channel_chunks: Dict[str, List[Dict[str, Any]]] = {}
 
-        # 1) Precise statute channel — support signal, never the whole universe.
         if statute_filter:
             statute_k = max(STATUTE_MIN_CHUNK_K, top_k * 12)
             statute_chunks = self._cached_ann(
@@ -265,7 +227,6 @@ class RetrieverAgent:
         else:
             channel_docs["statute_ann"] = []
 
-        # 2) Routed subdomain channel — highest precision, but not mandatory.
         if subdomain_candidates:
             sub_k = min(
                 SUBDOMAIN_MAX_CHUNK_K,
@@ -297,7 +258,6 @@ class RetrieverAgent:
         else:
             channel_docs["subdomain_ann"] = []
 
-        # 3) Domain-wide channel — survives wrong subdomain classification.
         if domain:
             domain_k = min(
                 DOMAIN_MAX_CHUNK_K,
@@ -326,7 +286,6 @@ class RetrieverAgent:
         else:
             channel_docs["domain_ann"] = []
 
-        # 4) Broad corpus channel — survives wrong domain classification.
         broad_k = min(
             BROAD_MAX_CHUNK_K,
             max(BROAD_MIN_CHUNK_K, top_k * 25),
@@ -387,7 +346,6 @@ class RetrieverAgent:
             ],
         )
 
-        # 6) Build a chunk universe only from winning documents.
         selected_k = min(
             SELECTED_DOC_MAX_CHUNK_K,
             max(SELECTED_DOC_MIN_CHUNK_K, top_k * 16),
@@ -415,9 +373,6 @@ class RetrieverAgent:
         )
         if not candidates:
             return []
-
-        # 7) Existing BM25/RRF remains the chunk-level reranker.
-        # Ask it for a wider intermediate window so document prior can still act.
         intermediate_k = min(
             len(candidates),
             max(top_k * 4, 20),
@@ -428,21 +383,6 @@ class RetrieverAgent:
             top_k=intermediate_k,
             rrf_k=RRF_K_CONSTANT,
         )
-
-        # 8) Document-aware final chunk selection.
-        #
-        # The document discovery/ranking layer has already decided which legal
-        # documents are strongest.  The old implementation could still return
-        # zero chunks from document rank #1 because one global chunk BM25 pass
-        # was allowed to consume every final slot.
-        #
-        # New rule:
-        #   - reserve >=1 relevant chunk from document rank #1;
-        #   - reserve up to 2 when rank #1 is an exact-title match and top_k>=3;
-        #   - fill every remaining slot from the existing global BM25/RRF order.
-        #
-        # This changes ONLY document -> chunk selection.  All retrieval channels,
-        # document fusion, routing, RAGService and generator contracts stay the same.
         final_ranked = self._select_final_chunks(
             query=query,
             reranked=reranked,
@@ -454,10 +394,6 @@ class RetrieverAgent:
         )
 
         return [self._validate_chunk(x) for x in final_ranked]
-
-    # ------------------------------------------------------------------
-    # Chunk pool / metadata propagation
-    # ------------------------------------------------------------------
     def _build_chunk_pool(
         self,
         *,
@@ -503,10 +439,6 @@ class RetrieverAgent:
         # Selected-document ANN supplies the main chunk universe.
         for row in selected_chunks:
             add(dict(row))
-
-        # Preserve a few strong seed chunks from every ANN channel.
-        # This prevents the second ANN search from erasing a document that was
-        # already discovered by an independent channel.
         for channel_name, rows in seed_channel_chunks.items():
             counts: Dict[str, int] = defaultdict(int)
             for row in rows:
@@ -529,21 +461,11 @@ class RetrieverAgent:
             )
         )
         return result
-
-
-    # ------------------------------------------------------------------
-    # Final document -> chunk selection
-    # ------------------------------------------------------------------
     def _decorate_final_chunk(
         self,
         item: Dict[str, Any],
         doc_meta: Dict[str, Dict[str, Any]],
     ) -> Dict[str, Any]:
-        """
-        Apply the existing bounded document prior and propagate document metadata.
-
-        This preserves the scoring behavior that already existed before this patch.
-        """
         row = dict(item)
         did = _doc_id(row)
         dmeta = doc_meta.get(did, {})
@@ -578,12 +500,6 @@ class RetrieverAgent:
         doc_meta: Dict[str, Dict[str, Any]],
         min_score: float,
     ) -> List[Dict[str, Any]]:
-        """
-        Rank chunks *inside* document rank #1.
-
-        A separate local rerank is important because the global chunk reranker can
-        otherwise give every available slot to chunks from competing documents.
-        """
         if not top_document_id or required_count <= 0:
             return []
 
@@ -595,11 +511,6 @@ class RetrieverAgent:
         ]
         if not top_doc_candidates:
             return []
-
-        # candidates are already stable-sorted by document rank and dense score.
-        # Use the existing BM25/RRF implementation again, but only inside the
-        # winning document.  If rank_bm25 is unavailable, its existing fallback
-        # preserves dense order.
         local_k = min(
             len(top_doc_candidates),
             max(
@@ -638,18 +549,6 @@ class RetrieverAgent:
         top_k: int,
         min_score: float,
     ) -> List[Dict[str, Any]]:
-        """
-        Select final chunks while respecting the already-computed document rank.
-
-        Policy:
-        - rank #1 document is guaranteed representation when it has eligible chunks;
-        - when rank #1 is an exact-title match and it has >= top_k eligible chunks,
-          all final slots come from that requested document;
-        - when an exact-title document has fewer than top_k eligible chunks, use all
-          of its eligible chunks and fill only the remaining slots globally;
-        - non-exact/natural queries keep the existing mixed-document behavior;
-        - no query-specific IDs, titles or legal concepts are hard-coded.
-        """
         if top_k <= 0:
             return []
 
@@ -672,11 +571,6 @@ class RetrieverAgent:
         top_doc_id = _doc_id(top_doc)
         exact_title = bool(top_doc.get("exact_title_match"))
 
-        # Rank the top document locally before deciding how many slots it owns.
-        #
-        # Exact-title match = high-confidence specific-document request.
-        # If it has enough eligible chunks, it should supply the whole final
-        # context rather than being contaminated by a forced diversity document.
         requested_local_count = (
             top_k
             if exact_title
@@ -720,22 +614,13 @@ class RetrieverAgent:
             if add(row):
                 reserved_added += 1
 
-        # Exact-title path:
-        # if the requested document already supplied enough eligible chunks,
-        # selection is complete. Do not force an unrelated "diversity" document.
         if exact_title and len(selected) >= top_k:
             final_selected = selected[:top_k]
         else:
-            # Non-exact queries, or exact-title documents with too few eligible
-            # chunks, keep the existing global BM25/RRF fill behavior.
             for row in global_ranked:
                 if len(selected) >= top_k:
                     break
                 add(row)
-
-            # Rare safety fallback: if the global rerank window was smaller than
-            # top_k, fill from the already-built candidate pool without another
-            # Milvus search.
             if len(selected) < top_k:
                 fallback_rows = [
                     self._decorate_final_chunk(row, doc_meta)
@@ -774,11 +659,6 @@ class RetrieverAgent:
         )
 
         return final_selected
-
-
-    # ------------------------------------------------------------------
-    # Caches
-    # ------------------------------------------------------------------
     async def _embed(self, enriched_query: str) -> List[float]:
         key = str(enriched_query)
         now = time.monotonic()
@@ -838,10 +718,6 @@ class RetrieverAgent:
                 if v[0] >= cutoff
             }
         return rows
-
-    # ------------------------------------------------------------------
-    # Compatibility rescue
-    # ------------------------------------------------------------------
     async def _compatibility_rescue(
         self,
         *,

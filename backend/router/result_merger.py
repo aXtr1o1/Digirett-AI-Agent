@@ -1,16 +1,3 @@
-"""
-router/result_merger.py — Deterministic Chunk Result Merger & Provenance Engine
-
-Production change:
-- `target_domain` is now a ranking preference, NOT a hard deletion gate.
-- Public API is unchanged.
-
-Why:
-The global retrieval diagnostic proved that domain/subdomain routing was the
-cause of 40/41 clean production misses.  A broad/domain rescue candidate must
-not be deleted after retrieval merely because query routing was wrong.
-"""
-
 import hashlib
 import logging
 from typing import Any, Dict, List, Optional
@@ -30,15 +17,6 @@ class ResultMerger:
     ) -> List[Dict[str, Any]]:
         if not results:
             return []
-
-        # Step 0: soft domain preference.
-        #
-        # OLD:
-        #   delete chunks whose domain != target_domain.
-        #
-        # NEW:
-        #   keep all independently discovered chunks; boost matching domain
-        #   slightly.  Wrong router output can no longer erase broad-ANN rescue.
         prepared: List[Dict[str, Any]] = []
         target_dom_lower = (target_domain or "").lower().strip()
 

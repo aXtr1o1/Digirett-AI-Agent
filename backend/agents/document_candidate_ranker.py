@@ -1,12 +1,3 @@
-"""
-agents/document_candidate_ranker.py
-
-Document-level multi-channel fusion.
-
-Router/domain/subdomain outputs are intentionally treated as ranking signals,
-not as the only legal-document candidate gate.
-"""
-
 from __future__ import annotations
 
 import logging

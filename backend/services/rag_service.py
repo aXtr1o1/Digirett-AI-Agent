@@ -56,10 +56,6 @@ logger = logging.getLogger(__name__)
 # Redis key template for storing reasoning context between turns
 _REASONING_META_KEY = "reasoning:statute:{conversation_id}"
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Statute ID → Lovdata URL resolver  (unchanged from Phase 1)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 _LOVDATA_BASE = "https://lovdata.no"
 
 _TYPE_PREFIX_MAP = {
@@ -112,17 +108,6 @@ def _resolve_statute_url(statute_id: Optional[str]) -> Optional[str]:
 
 
 def _is_statute_explicit(query: str) -> bool:
-    """
-    Detect if user explicitly named a law in the query.
-
-    Returns True if query contains patterns like:
-    - "Lov om..."
-    - "LOV-"
-    - "bestemmelse i"
-    - "§" (section symbol)
-
-    Returns False if statute is inferred from mechanism/domain.
-    """
     if not query:
         return False
 
@@ -191,9 +176,6 @@ class RAGService:
         self._doc_classifier = DocumentClassifierAgent(llm=llm_service.create_classifier_llm(temperature=0.0))
         self._doc_qa_agent = DocumentQAAgent(llm=llm_service.create_qa_llm(temperature=0.2, streaming=True))
 
-
-        # self._validation_agent = SourceValidationAgent()  # TEMPORARILY DISABLED
-
         logger.info(
             "[OK] RAGService initialized | "
             "retrieval=v3 (4-level fallback + BM25) | document agent active"
@@ -210,10 +192,6 @@ class RAGService:
 
         try:
             logger.info(f"RAGService: processing query '{query[:60]}'")
-
-            # Quotas are now handled at the route level (chat.py)
-
-            # ── Load history and user memory ───────────────────────────────────────────────
             history = self._orchestrator.load_history(
                 conversation_id=conversation_id,
                 limit=10,
@@ -232,13 +210,6 @@ class RAGService:
             intent = getattr(intent_result, "intent", None) or intent_result.get("intent", "CASUAL")
             language = getattr(intent_result, "language", None) or intent_result.get("language", "english")
             logger.info(f"Intent: {intent} | Language: {language}")
-
-
-            # ── [Removed] Language override with document language ────────────
-            # We no longer override query language with document language. 
-            # This ensures that if a user asks in English about a Norwegian doc, 
-            # they get an English response (and vice-versa), and explicit 
-            # language requests in the query are honored correctly.
 
             yield {"type": "intent", "data": {"intent": intent, "language": language}}
 
@@ -551,9 +522,6 @@ class RAGService:
         if not target_subdomains and resolved_subdomain:
             target_subdomains = [resolved_subdomain]
 
-        # ── BROAD OVERVIEW SUBDOMAIN EXPANSION ─────────────────────────────
-        # If the user query asks for a broad overview of a legal domain (e.g. "Explain Norway labour law"),
-        # expand target_subdomains to cover ALL subdomains in that domain family to guarantee chapter coverage.
         broad_keyword_request = "explain" in query.lower() or "oversikt" in query.lower()
         if query_scope == "BROAD_OVERVIEW" or (
             broad_keyword_request
@@ -598,21 +566,11 @@ class RAGService:
         statute_filter = ",".join(urls) if urls else None
         logger.info(f"statute_filter: primary={primary_statute_id}, secondary={secondary_statute_id} → '{statute_filter}'")
 
-        # ── [4] Multi-Pass Retrieval & Deduplication ──────────────────────
-        raw_retrieved_chunks = []
-        
-        # Keep broad-overview allocation proportional to the caller's requested
-        # top_k instead of hard-capping each subdomain at only two chunks. This
-        # preserves the same multi-pass workflow while preventing early recall
-        # loss before ResultMerger.
         if query_scope == "BROAD_OVERVIEW" and len(target_subdomains) > 1:
             per_pass_top_k = max(2, (top_k + len(target_subdomains) - 1) // len(target_subdomains))
         else:
             per_pass_top_k = top_k
 
-        # A deterministically identified named document must not be excluded by an
-        # inferred subdomain. For SPECIFIC_DOCUMENT queries, retrieve the named
-        # legal source directly and let BM25 rank sections inside that document.
         if (
             query_scope == "SPECIFIC_DOCUMENT"
             and statute_filter
@@ -731,28 +689,21 @@ class RAGService:
             }
             return
  
-        # ── [6] Build RAG context ──────────────────────────────────────────
-        # Reduce chunks to top 10 to prevent massive LLM context bloat and speed up TTFT
         rag_context = self._build_context(search_results[:10])
         if len(rag_context) > settings.CONTEXT_MAX_LENGTH:
             rag_context = rag_context[:settings.CONTEXT_MAX_LENGTH]
             logger.warning(f"[WARN] RAG context truncated to {settings.CONTEXT_MAX_LENGTH} chars")
  
-        # ── [7] Score gate & Stream answer ────────────────────────────────
         score = 0.5
         confidence = "Partially supported by sources"
         full_answer = ""
         token_count = 0
         first_token = True
 
-        # Check if the query asks for a specific section number
         is_specific_section_query = False
         section_nums = re.findall(r"§\s*(\d+(?:-\d+)?)", query) or re.findall(r"paragraf\s*(\d+(?:-\d+)?)", query, re.IGNORECASE)
         if section_nums:
             is_specific_section_query = True
-            
-        # Idea 2: Context Isolation
-        # If a specific section is requested, keep ONLY the chunks matching that section
         if is_specific_section_query and search_results:
             isolated_chunks = []
             for chunk in search_results:
@@ -927,7 +878,6 @@ class RAGService:
         if "[SCORE:" not in buffer and buffer:
             yield {"type": "token", "data": buffer}
 
-        # Strip [SCORE:x.x] from docqa answer
         score_pattern = re.compile(r"\[SCORE:\s*([0-9.]+)\]")
         score_match = score_pattern.search(full_answer)
         score = float(score_match.group(1)) if score_match else 0.7
@@ -988,8 +938,6 @@ class RAGService:
             b2b_b2c="BOTH",
             statute_from_registry=False,
         )
-
-        # Reduce chunks to top 10 to prevent massive LLM context bloat and speed up TTFT
         rag_context = self._build_context(search_results[:10]) if search_results else ""
         
         seen_urls: set = set()
@@ -1088,27 +1036,8 @@ class RAGService:
                 yield {"type": "complete", "metadata": meta}
             else:
                 yield event
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # CONTEXT BUILDER — section_ref used for human-readable citation anchor
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    
     @staticmethod
     def _build_context(chunks: List[Dict[str, Any]]) -> str:
-        """
-        Build the RAG context string passed to the generator.
-    
-        🔥 UPDATED: Excludes doc_title from the context to prevent LLM from 
-        generating inline source citations like "Source: [doc_title]"
-        
-        The doc_title is still preserved in the chunk dict for frontend display.
-    
-        Uses:
-        - section_ref  → human-readable citation anchor (e.g. "§ 6-1")
-        - source_url → full Lovdata URL for attribution header
-        - text         → chunk content
-        """
         parts = []
         for i, chunk in enumerate(chunks, 1):
             text = chunk.get("text", "").strip()

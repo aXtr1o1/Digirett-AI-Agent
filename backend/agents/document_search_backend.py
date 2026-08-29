@@ -1,22 +1,3 @@
-"""
-agents/document_search_backend.py
-
-Low-level, read-only Milvus access used by the document-first retriever.
-
-This module intentionally DOES NOT change db.milvus_client.MilvusClient's
-public contract.  It wraps the already-connected MilvusClient and exposes
-explicit retrieval channels so router output is a signal rather than a
-single hard gate.
-
-Channels:
-- statute constrained ANN
-- domain + subdomain ANN
-- domain ANN
-- broad corpus ANN
-- ANN restricted to an already-ranked set of documents
-- cached document catalogue for title/alias retrieval
-"""
-
 from __future__ import annotations
 
 import logging
@@ -53,14 +34,6 @@ def _escape_milvus_string(value: str) -> str:
 
 
 class DocumentSearchBackend:
-    """
-    Thin compatibility layer over the project's existing MilvusClient.
-
-    The existing MilvusClient stays untouched.  This class only relies on the
-    connection state already exposed by it (`_collection`, `_schema_fields`),
-    exactly like the diagnostic script that was successfully run against the
-    production collection.
-    """
 
     _OUTPUT_FIELDS = [
         "chunk_id",
@@ -96,10 +69,6 @@ class DocumentSearchBackend:
         self._catalog_cache: List[Dict[str, Any]] = []
         self._catalog_cached_at = 0.0
         self._catalog_entity_count: Optional[int] = None
-
-    # ------------------------------------------------------------------
-    # Connection/schema helpers
-    # ------------------------------------------------------------------
     @property
     def collection(self) -> Any:
         collection = getattr(self._milvus, "_collection", None)
@@ -127,16 +96,8 @@ class DocumentSearchBackend:
         fields = self.schema_fields
         return [f for f in self._OUTPUT_FIELDS if f in fields]
 
-    # ------------------------------------------------------------------
-    # Catalogue
-    # ------------------------------------------------------------------
     def get_document_catalog(self, force_refresh: bool = False) -> List[Dict[str, Any]]:
-        """
-        Return one representative row per retrieval-enabled legal document.
-
-        The current corpus is ~12.5k chunks, so a single <=16384 query is enough.
-        A warning is emitted if the collection grows beyond that boundary.
-        """
+        
         now = time.monotonic()
         entity_count: Optional[int] = None
         try:
@@ -241,10 +202,6 @@ class DocumentSearchBackend:
         self._catalog_cached_at = now
         self._catalog_entity_count = entity_count
         return result
-
-    # ------------------------------------------------------------------
-    # Filter builders
-    # ------------------------------------------------------------------
     def _domain_id(self, domain: Optional[str]) -> Optional[str]:
         if not domain:
             return None
@@ -254,15 +211,6 @@ class DocumentSearchBackend:
         return CANONICAL_DOMAIN_TO_ID.get(value.lower(), value)
 
     def _statute_expr(self, statute_filter: Optional[str]) -> Optional[str]:
-        """
-        Build precise statute clauses.
-
-        Important:
-        - comma-separated filters are split independently;
-        - a LAW may include explicitly linked regulations through parent_law;
-        - REGULATION never means "any regulation";
-        - no global `OR document_type == "REGULATION"` wildcard is emitted.
-        """
         if not statute_filter:
             return None
 

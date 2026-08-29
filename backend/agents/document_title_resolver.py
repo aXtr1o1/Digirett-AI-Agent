@@ -1,13 +1,3 @@
-"""
-agents/document_title_resolver.py
-
-Document-level exact/fuzzy/lexical title discovery.
-
-This deliberately searches the legal-document catalogue rather than chunks.
-An exact document title is therefore not dependent on router accuracy or ANN
-chunk competition.
-"""
-
 from __future__ import annotations
 
 import difflib

@@ -1,7 +1,3 @@
-"""
-router/bm25_reranker.py — Independent BM25 & Reciprocal Rank Fusion (RRF) Reranker
-"""
-
 import logging
 import re
 from typing import Any, Dict, List
@@ -162,9 +158,6 @@ class BM25Reranker:
                     match_ratio = matches / len(q_words_clean)
                     if match_ratio >= 0.5:
                         boost += 0.2 * match_ratio
-
-                # Additional, bounded title overlap signal. It helps named-document
-                # queries while remaining neutral when title metadata is absent.
                 title_lower = str(
                     r_doc.get("doc_title") or r_doc.get("law_title") or ""
                 ).lower()

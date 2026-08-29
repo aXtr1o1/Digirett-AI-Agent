@@ -15,12 +15,6 @@ class MilvusConfig(BaseModel):
     collection_name: str
     alias: str = Field(default="default")
     timeout: float = Field(default=10.0)
-
-
-# Application canonical domain -> production Milvus domain_id.
-# Kept here because this is the boundary where application values are converted
-# into storage-schema values. If a caller already supplies a Dxx_* value it is
-# passed through unchanged.
 _DOMAIN_CANONICAL_TO_ID = {
     "selskapsrett": "D01_COMPANY",
     "manda_fusjon_fisjon": "D02_MA",
@@ -61,14 +55,7 @@ class MilvusFilterBuilder:
 
     @staticmethod
     def _split_statute_filters(statute_filter: Optional[str]) -> List[str]:
-        """
-        Backwards-compatible parsing for the existing RAGService contract.
-
-        RAGService currently passes either one statute value or a comma-separated
-        list of Lovdata URLs. The old builder treated the whole comma-separated
-        string as a single URL. We keep the public string API but parse each legal
-        source independently here.
-        """
+        
         if not statute_filter:
             return []
         return [part.strip() for part in str(statute_filter).split(",") if part.strip()]
@@ -109,9 +96,6 @@ class MilvusFilterBuilder:
             return ""
 
         date_escaped = cls._escape(date_part)
-
-        # Prefer the stable document identity stored in production Milvus.
-        # `source_url` is section-level and therefore a weaker identity key.
         if "canonical_document_id" in schema_fields:
             if doc_type == "LAW":
                 own_doc_clause = (
@@ -127,19 +111,12 @@ class MilvusFilterBuilder:
                 )
         else:
             own_doc_clause = f'source_url like "%{date_escaped}%"'
-
-        # If document_type exists, use it to prevent a law and regulation with a
-        # coincidentally similar date-number from being treated as the same source.
         if "document_type" in schema_fields and doc_type in {"LAW", "REGULATION"}:
             own_doc_clause = (
                 f'({own_doc_clause} and document_type == "{doc_type}")'
             )
 
         clauses = [own_doc_clause]
-
-        # Only a LAW token may expand to regulations that explicitly reference it
-        # through parent_law_canonical_id. A regulation token must never mean
-        # "any regulation" or "all regulations in the subdomain".
         if (
             include_linked_regulations
             and doc_type == "LAW"
@@ -167,13 +144,6 @@ class MilvusFilterBuilder:
         schema_fields: Optional[Set[str]] = None,
         include_linked_regulations: bool = True,
     ) -> str:
-        """
-        Build an OR expression for one or more explicit legal sources.
-
-        IMPORTANT: this method intentionally does NOT append
-        `document_type == "REGULATION"` as a standalone OR clause. Doing so made
-        every regulation eligible whenever any statute filter was present.
-        """
         schema = schema_fields or set()
         tokens = cls._split_statute_filters(statute_filter)
         expressions: List[str] = []
@@ -256,17 +226,7 @@ class MilvusFilterBuilder:
         level: int = 0,
         exact_statute_only: bool = False,
     ) -> Optional[str]:
-        """
-        Build the documented five fallback levels exactly:
-
-        L0 = statute + domain + subdomain + jurisdiction + b2b
-        L1 = statute + domain
-        L2 = statute only
-        L3 = domain + subdomain + jurisdiction + b2b
-        L4 = domain only
-
-        `retrieval_enabled == True` is appended at every level when available.
-        """
+        
         if level not in {0, 1, 2, 3, 4}:
             raise ValueError(f"Unsupported Milvus fallback level: {level}")
 
@@ -321,9 +281,6 @@ class MilvusFilterBuilder:
                     f'"{cls._escape(s)}"' for s in unique_subs
                 )
                 parts.append(f"subdomain_id in [{subs_formatted}]")
-
-        # Jurisdiction is intentionally only used on L0/L3, matching the
-        # fallback definitions above.
         if level in {0, 3} and jurisdiction and "jurisdiction" in schema_fields:
             j_val = str(jurisdiction).upper()
             if j_val != "BOTH":
@@ -343,8 +300,6 @@ class MilvusFilterBuilder:
                     f'(b2b_b2c == "{b_val}" or b2b_b2c == "BOTH")'
                 )
 
-        # Active-status guardrail. We intentionally do not force is_current here
-        # because the existing product may need historical legal material.
         if "retrieval_enabled" in schema_fields:
             parts.append("retrieval_enabled == True")
 
@@ -411,7 +366,6 @@ class MilvusClient:
             raise ConnectionError(f"Milvus connection failed: {exc}") from exc
 
     def check_connection(self) -> bool:
-        """Ping Milvus by fetching entity count. Returns True when healthy."""
         try:
             if not self._ready or self._collection is None:
                 return False
@@ -535,8 +489,6 @@ class MilvusClient:
                 field for field in self._DESIRED_OUTPUT_FIELDS if self._has(field)
             ]
         else:
-            # A caller may request optional fields that are not present in an older
-            # collection. Filtering to the live schema preserves compatibility.
             output_fields = [field for field in output_fields if self._has(field)]
 
         expr = self._build_expr(
@@ -647,7 +599,6 @@ class MilvusClient:
             return {"status": "error", "error": str(exc)}
 
 
-# Module-level singleton and DI factory
 milvus_client = MilvusClient()
 
 

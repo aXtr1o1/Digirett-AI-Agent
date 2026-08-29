@@ -21,9 +21,6 @@ _STATUTE_JSON_PATH = os.path.join(
     "statutes.json",
 )
 
-# Generic legal-title words are useful for document-type detection but should not
-# dominate fuzzy title matching. Keeping this list intentionally small avoids
-# changing unrelated registry behavior.
 _TITLE_STOPWORDS = {
     "forskrift",
     "forskriften",
@@ -39,9 +36,6 @@ _TITLE_STOPWORDS = {
     "mv",
 }
 
-# Small, conservative equivalence set for common Norwegian legal-title wording.
-# This specifically treats "virkeområde" / "anvendelsesområde" as the same
-# title concept as "anvendelse" without rewriting arbitrary legal terminology.
 _LEGAL_TITLE_EQUIVALENTS = {
     "virkeomrade": "anvendelse",
     "anvendelsesomrade": "anvendelse",
@@ -129,22 +123,6 @@ class StatuteRegistry:
             )
 
     def lookup(self, query: str) -> Optional[StatuteEntry]:
-        """
-        Resolve an explicitly named Norwegian law/regulation.
-
-        Matching order is deliberately precision-first:
-        1. Exact normalized alias.
-        2. Exact alias after conservative legal-title synonym normalization.
-        3. Longest contained alias, restricted to the document type explicitly
-           requested by the user when possible.
-        4. Fuzzy title match with distinctive-token overlap guard.
-        5. Final unrestricted contained/fuzzy fallback for backwards compatibility.
-
-        The previous implementation returned the first substring match. That made
-        short law aliases such as "arbeidsmiljøloven" win inside a longer query
-        asking for a specific regulation. This implementation prevents that while
-        retaining the same public API.
-        """
         if not query:
             return None
 
@@ -176,16 +154,9 @@ class StatuteRegistry:
         if fuzzy_match:
             return fuzzy_match
 
-        # 5. If the user explicitly requested a document type (especially a
-        # regulation), never fall back to a document of the opposite type. A
-        # no-match is safer because QueryReasoning/semantic retrieval can then
-        # identify the correct instrument instead of being anchored to a wrong
-        # parent law.
+
         if requested_type:
             return None
-
-        # Backwards-compatible unrestricted fallback for queries that did not
-        # explicitly say law/regulation.
         all_aliases = list(self._normalized_alias_map.items())
         contained = self._best_contained_match(clean_q, semantic_q, all_aliases)
         if contained:
@@ -305,8 +276,6 @@ class StatuteRegistry:
                 ).ratio()
                 order_score = title_score
 
-            # Weighted toward token identity because Norwegian legal titles often
-            # differ by a short synonymous noun while preserving the statute name.
             combined = (0.55 * title_score) + (0.25 * order_score) + (20.0 * overlap_ratio)
             scored.append((combined, title_score, len(norm_alias), orig_alias))
 
@@ -405,11 +374,6 @@ def _id_to_url(statute_id: str) -> str:
         num_clean = str(int(num))
     except ValueError:
         num_clean = num
-
-    # The registry does not store Lovdata namespace (NL/SF/LTI) for every entry.
-    # This URL is therefore only a display/backwards-compatible hint. Retrieval
-    # uses the date-number identity against Milvus metadata and does not rely on
-    # this namespace being authoritative.
     return f"https://lovdata.no/dokument/NL/{path}/{year}-{month}-{day}-{num_clean}"
 
 

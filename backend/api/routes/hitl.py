@@ -357,7 +357,6 @@ async def _send_assignment_notification(ticket_id: str, lawyer_id: str):
 
 
 async def _send_escalation_notifications(ticket_id: str, user_id: str):
-    """Sends confirmation to the user and broadcasts notification to all lawyers."""
     try:
         ticket = _hitl_service.get_ticket_by_id(ticket_id)
         if ticket and _email_service:
@@ -505,9 +504,6 @@ def get_my_active_tickets(
 def get_my_resolved_history(
     current_lawyer: ClerkUser = Depends(require_db_role("lawyer", "admin")),
 ):
-    """
-    Lawyer views their full history of resolved/closed tickets.
-    """
     lawyer_id = _user_service.get_user_id_from_clerk_id(current_lawyer.clerk_user_id)
     tickets = _hitl_service.get_lawyer_resolved_history(lawyer_id)
     return tickets
@@ -585,9 +581,6 @@ async def _send_resolution_notification(ticket_id: str, content: str):
 async def get_lawyer_personal_analytics(
     current_user: ClerkUser = Depends(require_db_role("lawyer", "admin"))
 ):
-    """
-    Get personal performance analytics and metrics for the logged-in lawyer
-    """
     lawyer_id = _user_service.get_user_id_from_clerk_id(current_user.clerk_user_id)
     if not lawyer_id:
         raise HTTPException(status_code=404, detail="Lawyer database profile not found")

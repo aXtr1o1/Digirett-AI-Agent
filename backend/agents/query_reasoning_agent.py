@@ -282,9 +282,6 @@ class QueryReasoningAgent:
         document_type = getattr(stat_match, "document_type", "UNKNOWN")
         if document_type == "REGULATION" and re.search(r"\bforskrift(?:en|s)?\b", q):
             return True
-
-        # These mechanisms commonly ask for a related/amending/implementing
-        # instrument rather than the parent law merely mentioned in the query.
         relation_markers = (
             "overgangsregel",
             "overgangsbestemm",
@@ -310,17 +307,6 @@ class QueryReasoningAgent:
         stat_match: Optional[Any],
         parsed_scope: str,
     ) -> str:
-        """
-        Protect named-document queries from being expanded to an entire domain.
-
-        We only override the LLM scope when deterministic evidence is strong:
-        - the query asks for a specific section,
-        - it contains an explicit legal document ID, or
-        - it is phrased as a singular regulation/document request.
-
-        Broad queries such as "hvilke forskrifter gjelder under arbeidsmiljøloven"
-        remain eligible for BROAD_OVERVIEW.
-        """
         q = (query or "").lower()
 
         if re.search(r"§\s*\d+", q) or re.search(r"\bparagraf\s+\d+", q):
@@ -335,12 +321,6 @@ class QueryReasoningAgent:
         )
         if any(marker in q for marker in broad_markers):
             return parsed_scope
-
-        # A singular regulation request is a document-level intent even when the
-        # registry has no deterministic ID for it. This prevents the reasoning
-        # model from turning title-like regulation queries into an all-domain
-        # BROAD_OVERVIEW search. Exact-document retrieval is still enabled only
-        # when registry_target_match is true, so this does not invent an ID.
         if re.search(r"\bforskrift\b", q):
             return "SPECIFIC_DOCUMENT"
 
