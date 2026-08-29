@@ -1,171 +1,108 @@
-# Digirett-AI-Agent
-AI-powered Norwegian legal assistant with RAG pipeline, Lovdata integration, and multilingual support
+# Digirett AI Agent
 
+AI-powered Norwegian Legal Assistant with a Retrieval-Augmented Generation (RAG) pipeline, Lovdata API integration, role-based access control (RBAC), and cross-conversation persistent user memory.
 
-## 🎯 Project Objectives
-
-- **Accurate Legal Q&A**: Leverage Lovdata API for authoritative Norwegian legal information
-- **Full RAG Pipeline**: Contextual answers using vector embeddings and semantic search
-- **Multilingual Support**: English & Norwegian language support
-- **Secure Authentication**: Role-based access control (RBAC)
-- **Human-in-the-Loop**: Escalation workflow for complex legal queries
-- **Audit Logging**: Comprehensive compliance and traceability
-- **Scalable Infrastructure**: Foundation for Phase 2 document intelligence
-
-## 🏗️ Architecture Overview
-
-```
-┌─────────────┐      ┌──────────────┐      ┌─────────────┐
-│   Frontend  │─────▶│   Backend    │─────▶│  Ingestion  │
-│  (Next.js)  │      │  (Python)    │      │  (Python)   │
-│   Vercel    │      │              │      │             │
-└─────────────┘      └──────────────┘      └─────────────┘
-                            │                      │
-                            ▼                      ▼
-                     ┌──────────────┐      ┌─────────────┐
-                     │   Redis      │      │   Milvus    │
-                     │   Supabase   │      │     VDB     │
-                     └──────────────┘      └─────────────┘
-```
-
-## 📁 Repository Structure
-
-```
-.
-├── frontend/           # Next.js application
-├── backend/            # Python backend services
-├── ingestion/          # Data ingestion pipeline
-├── .github/
-│   └── workflows/      # CI/CD pipelines
-```
-
-## 🌿 Branch Strategy
-
-| Branch | Purpose | CI/CD | Deploy Target |
-|--------|---------|-------|---------------|
-| `production` | Production-ready code (default) | ✅ | Production environment |
-| `testing` | Integration testing & QA | ✅ | Testing environment |
-| `frontend` | Frontend development | ❌ | - |
-| `backend` | Backend development | ❌ | - |
-| `ingestion` | Data pipeline development | ❌ | - |
-
-### Workflow
-
-1. **Development**: Work on `frontend`, `backend`, or `ingestion` branches
-2. **Integration**: Merge all feature branches → `testing`
-3. **Testing**: Run comprehensive tests, raise issues, document
-4. **Production**: After successful testing → merge to `production`
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Node.js 18+ (Frontend)
-- Python 3.11+ (Backend & Ingestion)
-- Docker & Docker Compose
-- Git
-
-### Installation
-
-```bash
-# Clone repository
-git clone https://github.com/aXtr1o1/Digirett-AI-Agent.git 
-cd Digirett-AI-Agent
-
-# Checkout desired branch
-git checkout 
-
-# Install dependencies (see respective README files)
-```
-
-## 📚 Documentation
-
-- [Frontend Documentation](./frontend/README.md)
-- [Backend Documentation](./backend/README.md)
-- [Ingestion Pipeline Documentation](./ingestion/README.md)
-- [Deployment Guide](./docs/DEPLOYMENT.md)
-- [API Documentation](./docs/API.md)
-- [Contributing Guidelines](./docs/CONTRIBUTING.md)
-
-## 🔐 Environment Variables
-
-Create `.env` files in respective directories. See `.env.example` files for required variables.
-
-**Critical Variables:**
-- `LOVDATA_API_KEY`: Lovdata API access
-- `MILVUS_HOST`: Vector database connection
-- `REDIS_URL`: Cache and session storage
-- `SUPABASE_URL`: Database connection
-- `AUTH_SECRET`: Authentication secret
-
-## 🧪 Testing
-
-```bash
-# Run all tests
-make test
-
-# Run specific test suites
-make test-frontend
-make test-backend
-make test-ingestion
-make test-e2e
-```
-
-## 📦 Deployment
-
-### Production Deployment
-
-```bash
-# Automated via CI/CD on merge to production
-git checkout production
-git merge testing
-git push origin production
-```
-
-### Manual Deployment
-
-```bash
-# Frontend (Vercel)
-cd frontend && vercel --prod
-
-# Backend & Ingestion (Docker)
-docker-compose -f docker/production.yml up -d
-```
-
-## 🛠️ Technology Stack
-
-### Frontend
-- **Framework**: Next.js 14
-- **Styling**: Tailwind CSS
-- **Auth**: NextAuth.js
-- **Deployment**: Vercel
-
-### Backend
-- **Language**: Python 3.11+
-- **Framework**: FastAPI
-- **LLM Framework**: LangChain
-- **Database**: Supabase (PostgreSQL)
-- **Cache**: Redis
-- **Vector DB**: Milvus
-
-### Ingestion
-- **Language**: Python 3.11+
-- **API**: Lovdata API
-- **Embeddings**: OpenAI / Azure OpenAI
-- **Scheduling**: Cron / APScheduler
-
-
-## 🗺️ Roadmap
-
-### Phase 1 (Current)
-- ✅ Core RAG pipeline
-- ✅ Lovdata integration
-- ✅ Basic UI
-- 🔄 Human-in-the-loop workflow
-- 🔄 Audit logging
-
+**Deployed Application:** [https://digirett-ai-agent-chi.vercel.app/](https://digirett-ai-agent-chi.vercel.app/)
 
 ---
 
-**Last Updated**: January 2026  
-**Version**: 1.0.0
+## Project Objectives
+
+*   **Lovdata API Q&A**: Authority-backed Norwegian legal question answering.
+*   **Hybrid RAG Pipeline**: Context-aware queries using vector embeddings, semantic search, and keyword ranking.
+*   **Multilingual Interface**: Auto-detects and answers in both Norwegian and English.
+*   **Role-Based Security**: RBAC enforced via Clerk JWT signatures.
+*   **Human-in-the-Loop (HITL)**: Direct ticket escalation routing unresolved queries to human legal professionals.
+*   **User Fact Memory**: Asynchronously saves user preferences and attributes across sessions.
+
+---
+
+## Architecture Overview
+
+```
+                  ┌──────────────────────┐
+                  │       Frontend       │
+                  │   (Next.js 14 Web)   │
+                  └──────────┬───────────┘
+                             │ (WebSockets / HTTP)
+                             ▼
+                  ┌──────────────────────┐
+                  │       Backend        │◀──────────────────┐
+                  │   (FastAPI Python)   │                   │
+                  └────┬────────────┬────┘                   │ (Read Vector Data)
+                       │            │                        │
+        (Write Cache)  ▼            ▼  (Read/Write DB)       │
+                  ┌─────────┐  ┌──────────┐            ┌─────┴────┐
+                  │  Redis  │  │ Supabase │            │  Milvus  │
+                  └─────────┘  └──────────┘            └─────▲────┘
+                                                             │
+                                                             │ (Populate Embeddings)
+                                                       ┌─────┴────┐
+                                                       │Ingestion │
+                                                       │ (Python) │
+                                                       └──────────┘
+```
+
+### Component Directories
+*   [frontend/](frontend/): Next.js web application.
+*   [backend/](backend/): FastAPI application handling orchestrations, database synchronization, memory management, and token streaming.
+*   [ingestion/](ingestion/): Collector, parser, normalizer, and indexing script that populates the Milvus vector database.
+
+---
+
+## End-to-End System Workflow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant FE as Frontend (Next.js)
+    participant BE as Backend (FastAPI)
+    participant Redis as Redis Cache
+    participant DB as Supabase DB
+    participant VDB as Milvus Vector DB
+
+    User->>FE: Submits question (e.g., "What are overtid rules?")
+    FE->>BE: Establishes WebSocket connection (with Clerk JWT)
+    BE->>BE: Validates token and checks Rate Limits
+    BE->>DB: Loads cross-conversation memory (UserMemoryAgent)
+    BE->>BE: Classifies intent & language (LEGAL/CASUAL, NO/EN)
+    
+    rect rgba(128, 128, 128, 0.13)
+        Note over BE, VDB: If Intent is LEGAL
+        BE->>BE: Aligns query vocabulary (QueryReasoningAgent)
+        BE->>BE: Routes to legal subdomain (Deterministic Rules / Keyword Scorer / LLM Fallback)
+        BE->>VDB: Multi-pass vector retrieval + BM25 filtering (RetrieverAgent)
+        BE->>BE: Deduplicates & reranks chunks (ResultMerger & Reranker)
+        BE->>BE: Generates response using Azure OpenAI (GeneratorAgent)
+    end
+
+    BE->>FE: Streams answer tokens + structured Lovdata sources
+    BE->>DB: Saves messages to history (asynchronously)
+    BE->>DB: Extracts & updates persistent user facts (async task)
+    FE->>User: Renders streaming response & source citations
+```
+
+---
+
+## Prerequisites
+
+*   **Node.js**: `18.x` or higher
+*   **Python**: `3.11.x` or higher
+*   **Docker & Docker Compose** (for running local instances of Redis/Milvus)
+
+### Global Configuration
+Create `.env` configurations in the respective sub-folders (see `.env.example` templates in each folder). Crucial environment variables include:
+*   `LOVDATA_API_KEY`: Auth credentials to retrieve Lovdata API content.
+*   `MILVUS_HOST` & `MILVUS_PORT`: Connections to the Vector Database.
+*   `REDIS_HOST` & `REDIS_PORT`: Context cache, title translators, and session stores.
+*   `SUPABASE_URL` & `SUPABASE_KEY`: Persistent database schema and logs.
+*   `CLERK_SECRET_KEY` & `CLERK_JWKS_URL`: User authentication credentials.
+
+---
+
+## Service Documentation
+
+*   **Backend Service**: [backend/readme.md](backend/readme.md)
+*   **Frontend Service**: See `frontend/README.md`
+*   **Ingestion Service**: See `ingestion/README.md`

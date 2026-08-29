@@ -29,7 +29,7 @@ const SourceLinks = ({ sources, theme = 'dark' }) => {
         </span>
       </div>
 
-      <div className="space-y-2">
+      <div className="flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible gap-3 pb-1 md:pb-0 sidebar-scrollbar-hidden" style={{ WebkitOverflowScrolling: "touch", scrollbarWidth: "none", msOverflowStyle: "none" }}>
         {sources.map((source) => {
           const uniqueKey = source.url || source.title;
 
@@ -39,15 +39,15 @@ const SourceLinks = ({ sources, theme = 'dark' }) => {
               href={source.url}
               target="_blank"
               rel="noopener noreferrer"
-              className={`group block p-3 rounded-lg border transition-all duration-200 ${
+              className={`group block p-3 rounded-lg border transition-all duration-200 w-[200px] flex-shrink-0 md:w-full md:flex-shrink ${
                 isDark
                   ? 'bg-[#111111] border-gray-800 hover:border-blue-500 hover:bg-[#161616]'
                   : 'bg-gray-50 border-gray-200 hover:border-blue-400 hover:bg-blue-50'
               }`}
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4">
                 <span
-                  className={`text-sm truncate ${
+                  className={`text-xs font-medium truncate md:whitespace-normal md:break-words ${
                     isDark
                       ? 'text-blue-400 group-hover:text-blue-300'
                       : 'text-blue-600 group-hover:text-blue-500'
@@ -57,7 +57,7 @@ const SourceLinks = ({ sources, theme = 'dark' }) => {
                 </span>
 
                 <ExternalLink
-                  className={`h-4 w-4 transition-colors ${
+                  className={`h-3 w-3 flex-shrink-0 transition-colors ${
                     isDark
                       ? 'text-gray-500 group-hover:text-blue-400'
                       : 'text-gray-400 group-hover:text-blue-500'

@@ -13,9 +13,10 @@ Supabase  : table "lovdata_url_titles" (url TEXT PK, title TEXT, fetched_at TIME
 Redis TTL : 7 days (604 800 s) — Lovdata titles almost never change
 """
 
+import asyncio
 import logging
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import httpx
 
@@ -32,6 +33,16 @@ _SITE_SUFFIX_RE = re.compile(r"\s*[-–|]\s*Lovdata\s*$", re.IGNORECASE)
 
 _REDIS_TTL   = 604_800   # 7 days in seconds
 _HTTP_TIMEOUT = 6.0      # seconds per fetch
+
+
+def normalize_and_redirect_url(url: str) -> str:
+    """Redirect known invalid or experimental Lovdata URLs to their canonical, working versions."""
+    if not url:
+        return url
+    # Redirect experimental inkassoforskriften URL (which 404s) to the canonical working Lovdata page
+    if "1989-12-14-1153" in url:
+        return url.replace("1989-12-14-1153", "1989-07-14-562").replace("lovdata.no/forskrift/", "lovdata.no/dokument/SF/forskrift/")
+    return url
 
 
 def _base_url(url: str) -> str:
@@ -105,7 +116,8 @@ class LovdataTitleFetcher:
 
         # Layer 1 (Redis) then Layer 2 (Supabase)
         for url in urls:
-            base  = _base_url(url)
+            redirected = normalize_and_redirect_url(url)
+            base  = _base_url(redirected)
             title = self._redis_get(base)
             if title:
                 result[url] = title
@@ -121,25 +133,43 @@ class LovdataTitleFetcher:
 
             need_fetch.append(url)
 
-        # Layer 3: HTTP fetch — deduplicated by base URL
-        fetched_bases: Dict[str, str] = {}   # base_url -> resolved title
-        for url in need_fetch:
-            base = _base_url(url)
-            if base in fetched_bases:
-                result[url] = fetched_bases[base]
-                continue
+        # Layer 3: HTTP fetch using bounded concurrency (asyncio.Semaphore(5)) & shared client
+        need_fetch_bases = list(dict.fromkeys(_base_url(normalize_and_redirect_url(u)) for u in need_fetch))
+        if need_fetch_bases:
+            sem = asyncio.Semaphore(5)
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                "Accept-Language": "nb-NO,nb;q=0.9,no;q=0.8",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            }
 
-            title = await self._http_fetch(base)
-            if title:
-                self._redis_set(base, title)
-                self._supabase_set(base, title)
-                fetched_bases[base] = title
-                result[url] = title
-                logger.info(f"L3 fetched | {base} -> '{title[:70]}'")
-            else:
-                fetched_bases[base] = url   # raw URL as last resort
-                result[url] = url
-                logger.warning(f"Title fetch failed | {base} — using raw URL")
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
+                async def _fetch_single(base: str) -> Tuple[str, Optional[str]]:
+                    async with sem:
+                        title = await self._http_fetch_with_client(client, base, headers)
+                        return base, title
+
+                fetched_results = await asyncio.gather(*[_fetch_single(b) for b in need_fetch_bases], return_exceptions=True)
+
+                fetched_bases: Dict[str, str] = {}
+                for item in fetched_results:
+                    if isinstance(item, tuple):
+                        base, title = item
+                        if title:
+                            self._redis_set(base, title)
+                            self._supabase_set(base, title)
+                            fetched_bases[base] = title
+                            logger.info(f"L3 fetched | {base} -> '{title[:70]}'")
+
+                for url in need_fetch:
+                    redirected = normalize_and_redirect_url(url)
+                    base = _base_url(redirected)
+                    res_title = fetched_bases.get(base) or redirected
+                    result[url] = res_title
 
         return result
 
@@ -198,6 +228,24 @@ class LovdataTitleFetcher:
     # Layer 3 — httpx fetch                                               #
     # ------------------------------------------------------------------ #
 
+    async def _http_fetch_with_client(
+        self,
+        client: httpx.AsyncClient,
+        base_url: str,
+        headers: Dict[str, str],
+    ) -> Optional[str]:
+        try:
+            resp = await client.get(base_url, headers=headers)
+            resp.raise_for_status()
+            return _parse_title_from_html(resp.text)
+        except httpx.TimeoutException:
+            logger.warning(f"Lovdata fetch timeout | {base_url}")
+        except httpx.HTTPStatusError as exc:
+            logger.warning(f"Lovdata HTTP {exc.response.status_code} | {base_url}")
+        except Exception as exc:
+            logger.warning(f"Lovdata fetch error | {base_url} | {exc}")
+        return None
+
     async def _http_fetch(self, base_url: str) -> Optional[str]:
         headers = {
             "User-Agent": (
@@ -208,18 +256,5 @@ class LovdataTitleFetcher:
             "Accept-Language": "nb-NO,nb;q=0.9,no;q=0.8",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         }
-        try:
-            async with httpx.AsyncClient(
-                timeout=_HTTP_TIMEOUT,
-                follow_redirects=True,
-            ) as client:
-                resp = await client.get(base_url, headers=headers)
-                resp.raise_for_status()
-                return _parse_title_from_html(resp.text)
-        except httpx.TimeoutException:
-            logger.warning(f"Lovdata fetch timeout | {base_url}")
-        except httpx.HTTPStatusError as exc:
-            logger.warning(f"Lovdata HTTP {exc.response.status_code} | {base_url}")
-        except Exception as exc:
-            logger.warning(f"Lovdata fetch error | {base_url} | {exc}")
-        return None
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
+            return await self._http_fetch_with_client(client, base_url, headers)

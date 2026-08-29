@@ -1,395 +1,226 @@
-import json
+import asyncio
 import logging
-import re
 from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import AzureChatOpenAI
 
 from config import settings
-from config_domains import DOMAINS_CANONICAL, normalize_domain
+from config_domains import (
+    DOMAINS_CANONICAL,
+    VALID_B2B_B2C,
+    VALID_JURISDICTIONS,
+    VALID_REL_TYPES,
+    normalize_domain,
+)
+from router.taxonomy_loader import taxonomy_loader
+from prompts.router_prompts import ROUTER_BASE_PROMPT
+from utils.json_response_parser import parse_json_response
 
 logger = logging.getLogger(__name__)
 
 
-_TAXONOMY_TEXT = """
-DOMAIN: Avtalerett
-SUBDOMAINS (use EXACTLY these labels):
-  - Contract Formation & Interpretation
-  - Standard Terms (B2B / B2C)
-  - Specific Contract Types
-  - Perfection & Registration
-  - Electronic Contracting / eCom
-KEYWORDS: inngå avtale, avtaleinngåelse, tilbud og aksept, tolkning av avtale, urimelig avtalevilkår,
-  ugyldig avtale, avtaleloven § 36, standardvilkår, angrerett, e-signatur, netthandel, fullmakt,
-  signaturrett, prokura, stillingsfullmakt
+def _safe_int(val: Any, default: int) -> int:
+    return val if isinstance(val, int) else default
 
-DOMAIN: Arbeidsrett
-SUBDOMAINS (use EXACTLY these labels):
-  - Hiring & Employment Contracts
-  - Labour Court & Dispute Resolution
-  - Working Time, Leave & Furlough
-  - Business Transfers (Virksomhetsoverdragelse)
-  - Termination & Dismissal Procedure
-KEYWORDS: ansette, arbeidsavtale, oppsigelse av ansatt, arbeidstid, overtid, ferie, sykmelding,
-  permittering, virksomhetsoverdragelse, drøftelsesmøte, usaklig oppsigelse, prøvetid,
-  diskriminering, likestilling, pensjon, tariffavtale, allmenngjøring, sjøfolk, skip
+# Configurable constants loaded from settings with sane bounds
+val_conf = getattr(settings, "ROUTER_MIN_CONFIDENCE", 0.6)
+MIN_CONFIDENCE_THRESHOLD = min(max(val_conf, 0.0), 1.0) if isinstance(val_conf, (int, float)) else 0.6
+MAX_RETRIES = min(_safe_int(getattr(settings, "ROUTER_MAX_RETRIES", 2), 2), 5)
+RETRY_DELAY = getattr(settings, "ROUTER_RETRY_DELAY", 0.5) if isinstance(getattr(settings, "ROUTER_RETRY_DELAY", 0.5), (int, float)) else 0.5
 
-DOMAIN: Arsregnskap_og_selskapsrapporte
-SUBDOMAINS (use EXACTLY these labels):
-  - Annual Accounts & Notes
-  - Audit: Duty / Opting Out
-  - Accounting Duty & Reporting
-  - Distributions
-KEYWORDS: årsregnskap, årsberetning, noter, bokføring, revisjon, revisor, revisjonsplikt,
-  regnskapsplikt, regnskap, utbytte, konsernregnskap, IFRS, god regnskapsskikk
 
-DOMAIN: Inkasso_og_tvangsfullbyrdelse
-SUBDOMAINS (use EXACTLY these labels):
-  - Pre-Collection (Reminders & Notices)
-  - Collection (Inkasso Steps & Fees)
-  - Enforcement (Attachments & Forced Sale)
-  - Insolvency Thresholds & Filing
-KEYWORDS: inkasso, purring, betalingspåminnelse, tvangsfullbyrdelse, utlegg, tvangsdekning,
-  namsmann, tvangssalg, gjeldsordning, innkreving, pengekrav, tvangsbøter
-
-DOMAIN: Konkursrett_og_insolvens
-SUBDOMAINS (use EXACTLY these labels):
-  - Insolvency Thresholds & Filing
-  - Estate Process & Creditor Actions
-  - Avoidance / Priority / Dividends
-KEYWORDS: konkurs, gjeldsforhandling, insolvens, betalingsudyktighet, oppbud, bobehandling,
-  bobestyrer, omstøtelse, dekningsloven, kreditorer, dividende, rekonstruksjon
-
-DOMAIN: Manda_fusjon_fisjon
-SUBDOMAINS (use EXACTLY these labels):
-  - Competition Notifications
-KEYWORDS: fusjon, fisjon, M&A, virksomhetsoverdragelse, aksjesalg, selskapssammenslåing,
-  konkurransemelding, due diligence, transaksjoner
-
-DOMAIN: Obligasjonsrett
-SUBDOMAINS (use EXACTLY these labels):
-  - Remedies: Performance, Price Reduction, Termination, Damages
-KEYWORDS: mislighold, heving, prisavslag, erstatning, reklamasjon, force majeure,
-  kreditorrettigheter, ytelse, kontraktsbrudd, direkte krav
-
-DOMAIN: Panterett_og_sikkerhetsrett
-SUBDOMAINS (use EXACTLY these labels):
-  - Creating Security (Pledge Types)
-  - Perfection & Registration
-  - Payment Disputes
-KEYWORDS: pant, pantsettelse, sikkerhetsstillelse, pant i løsøre, fast eiendom,
-  avtalepant, utleggspant, rettsvern, finansiell sikkerhet, tinglysing, mortifikasjon
-
-DOMAIN: Pengekravsrett_fordringer
-SUBDOMAINS (use EXACTLY these labels):
-  - Payment Disputes
-  - Interest & Late Interest
-  - Assignment / Cessio & Debtor Change
-KEYWORDS: pengekrav, fordring, gjeldsbrev, rente, forsinkelsesrente, cesjon,
-  gjeldsoverføring, kausjon, regresskrav, motregning
-
-DOMAIN: Personvern_gdpr_business_compli
-SUBDOMAINS (use EXACTLY these labels):
-  - Lawful Basis & Internal Control
-  - Data Subject Rights
-  - Processor Agreements (DPA)
-  - Security Measures (TOMs)
-  - Cookies & eCom Overlay
-  - Formation & Registration
-  - Standard Terms (B2B / B2C)
-KEYWORDS: GDPR, personopplysninger, personvern, databehandler, behandlingsgrunnlag,
-  samtykke, registerføring, innsyn, sletting, databehandleravtale, cookies, informasjonsplikt
-
-DOMAIN: Selskapsrett
-SUBDOMAINS (use EXACTLY these labels):
-  - Formation & Registration
-  - Shareholder Rights & Records
-  - Share Capital & Equity Changes
-  - Board Liability & Loss of Equity
-  - Distributions
-KEYWORDS: aksjeselskap, ASA, styret, generalforsamling, aksjonærrettigheter, aksjekapital,
-  vedtekter, daglig leder, foretaksregisteret, fisjon, kapitalforhøyelse, utbytte
-
-DOMAIN: Tvistelosning_smb
-SUBDOMAINS (use EXACTLY these labels):
-  - Conciliation Board (Forliksråd)
-  - Small Claims / Simplified Procedure
-  - Arbitration & Agreed Venue
-KEYWORDS: forliksråd, tvistelosning, mekling, voldgift, søksmål, rettslig tvist,
-  forlik, stevning, konfliktråd, husleietvistutvalget, domstol
-"""
+class RouterResult(BaseModel):
+    domain: Optional[str] = Field(default=None)
+    subdomain_candidates: List[str] = Field(default_factory=list)
+    b2b_b2c: str = Field(default="BOTH")
+    relationship_type: str = Field(default="commercial")
+    jurisdiction: str = Field(default="NO")
+    matched_keywords: List[str] = Field(default_factory=list)
+    conflict_detected: bool = Field(default=False)
+    confidence: float = Field(default=0.85, ge=0.0, le=1.0)
+    low_confidence_fallback: bool = Field(default=False)
 
 
 class RouterAgent:
 
-    _SYSTEM_PROMPT = (
-        "You are a Legal Query Routing Engine for Norwegian law.\n"
-        "Your job is NOT to answer the legal question.\n"
-        "Your job is to classify the query into structured retrieval filters "
-        "using the provided taxonomy.\n\n"
-        "You MUST use ONLY the taxonomy domain keys and subdomain labels below.\n"
-        "DO NOT invent domains or subdomains.\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "TAXONOMY\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        + _TAXONOMY_TEXT
-        + "\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "CANONICAL DOMAIN KEYS — you MUST output one of these EXACTLY:\n"
-        "  arbeidsrett\n"
-        "  arsregnskap_og_selskapsrapporte\n"
-        "  avtalerett\n"
-        "  inkasso_og_tvangsfullbyrdelse\n"
-        "  konkursrett_og_insolvens\n"
-        "  manda_fusjon_fisjon\n"
-        "  obligasjonsrett\n"
-        "  panterett_og_sikkerhetsrett\n"
-        "  pengekravsrett_fordringer\n"
-        "  personvern_gdpr_business_compli\n"
-        "  selskapsrett\n"
-        "  tvistelosning_smb\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "YOUR STEPS\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "Step 1 — Accept DOMAIN HINT as primary anchor. Only override with clear evidence.\n"
-        "Step 2 — Match USER QUERY and ENRICHED QUERY against taxonomy keywords.\n"
-        "Step 3 — Select the matching canonical domain key (lowercase, underscore).\n"
-        "Step 4 — Select TOP 1-2 subdomains from that domain's list. Use exact subdomain labels.\n"
-        "Step 5 — Detect B2B/B2C: 'forbruker'/'privatperson' → B2C; unclear → BOTH; else → B2B.\n"
-        "Step 6 — Set jurisdiction from taxonomy (NO / EU-EEA / BOTH).\n"
-        "Step 7 — Score confidence 0.0–1.0.\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "OUTPUT — respond with ONLY this JSON, no extra text:\n"
-        "{\n"
-        '  "domain": "<canonical_domain_key>",\n'
-        '  "subdomain_candidates": ["<subdomain1>", "<subdomain2>"],\n'
-        '  "b2b_b2c": "B2B|B2C|BOTH",\n'
-        '  "relationship_type": "commercial|consumer|employment",\n'
-        '  "jurisdiction": "NO|EU-EEA|BOTH",\n'
-        '  "matched_keywords": ["<kw1>", "<kw2>"],\n'
-        '  "conflict_detected": false,\n'
-        '  "confidence": 0.85\n'
-        "}\n"
-    )
-
-    # Complete canonical subdomain list — ALL 12 domains
-    _VALID_SUBDOMAINS: Dict[str, List[str]] = {
-        "avtalerett": [
-            "Contract Formation & Interpretation",
-            "Standard Terms (B2B / B2C)",
-            "Specific Contract Types",
-            "Perfection & Registration",
-            "Electronic Contracting / eCom",
-        ],
-        "arbeidsrett": [
-            "Hiring & Employment Contracts",
-            "Labour Court & Dispute Resolution",
-            "Working Time, Leave & Furlough",
-            "Business Transfers (Virksomhetsoverdragelse)",
-            "Termination & Dismissal Procedure",
-        ],
-        "arsregnskap_og_selskapsrapporte": [
-            "Annual Accounts & Notes",
-            "Audit: Duty / Opting Out",
-            "Accounting Duty & Reporting",
-            "Distributions",
-        ],
-        "inkasso_og_tvangsfullbyrdelse": [
-            "Pre-Collection (Reminders & Notices)",
-            "Collection (Inkasso Steps & Fees)",
-            "Enforcement (Attachments & Forced Sale)",
-            "Insolvency Thresholds & Filing",
-        ],
-        "konkursrett_og_insolvens": [
-            "Insolvency Thresholds & Filing",
-            "Estate Process & Creditor Actions",
-            "Avoidance / Priority / Dividends",
-        ],
-        "manda_fusjon_fisjon": [
-            "Competition Notifications",
-        ],
-        "obligasjonsrett": [
-            "Remedies: Performance, Price Reduction, Termination, Damages",
-        ],
-        "panterett_og_sikkerhetsrett": [
-            "Creating Security (Pledge Types)",
-            "Perfection & Registration",
-            "Payment Disputes",
-        ],
-        "pengekravsrett_fordringer": [
-            "Payment Disputes",
-            "Interest & Late Interest",
-            "Assignment / Cessio & Debtor Change",
-        ],
-        "personvern_gdpr_business_compli": [
-            "Lawful Basis & Internal Control",
-            "Data Subject Rights",
-            "Processor Agreements (DPA)",
-            "Security Measures (TOMs)",
-            "Cookies & eCom Overlay",
-            "Formation & Registration",
-            "Standard Terms (B2B / B2C)",
-        ],
-        "selskapsrett": [
-            "Formation & Registration",
-            "Shareholder Rights & Records",
-            "Share Capital & Equity Changes",
-            "Board Liability & Loss of Equity",
-            "Distributions",
-        ],
-        "tvistelosning_smb": [
-            "Conciliation Board (Forliksråd)",
-            "Small Claims / Simplified Procedure",
-            "Arbitration & Agreed Venue",
-        ],
-    }
-
-    _VALID_DOMAINS = frozenset(DOMAINS_CANONICAL)
-    _VALID_B2B_B2C = {"B2B", "B2C", "BOTH"}
-    _VALID_REL_TYPES = {"commercial", "consumer", "employment"}
-    _VALID_JURISDICTIONS = {"NO", "EU-EEA", "BOTH"}
-
-    def __init__(self) -> None:
-        self._llm = AzureChatOpenAI(
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-            api_key=settings.AZURE_OPENAI_API_KEY,
-            api_version=settings.AZURE_OPENAI_API_VERSION,
-            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
-            temperature=0.0,
-            streaming=False,
-        )
-        logger.info("✅ RouterAgent initialized (v2 — full subdomain list)")
-
-    async def run(
-        self,
-        raw_query: str,
-        enriched_query: str,
-        domain_hint: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        logger.info(
-            f"🔀 RouterAgent: classifying | domain_hint={domain_hint!r} | "
-            f"enriched='{enriched_query[:60]}'"
-        )
-
-        try:
-            user_content = (
-                f"DOMAIN HINT (from reasoning agent — HIGH PRIORITY): {domain_hint or 'none'}\n\n"
-                f"USER QUERY:\n{raw_query}\n\n"
-                f"ENRICHED QUERY:\n{enriched_query}"
-            )
-
-            messages = [
-                SystemMessage(content=self._SYSTEM_PROMPT),
-                HumanMessage(content=user_content),
-            ]
-
-            response = await self._llm.agenerate([messages])
-            raw_output = response.generations[0][0].text.strip()
-
-            logger.debug(f"🔀 RouterAgent raw output: {raw_output}")
-
-            result = self._parse_and_validate(raw_output, domain_hint)
-
-            logger.info(
-                f"🔀 RouterAgent: domain={result['domain']} | "
-                f"subdomains={result['subdomain_candidates']} | "
-                f"b2b_b2c={result['b2b_b2c']} | "
-                f"jurisdiction={result['jurisdiction']} | "
-                f"confidence={result['confidence']}"
-            )
-            return result
-
-        except Exception as exc:
-            logger.warning(f"⚠️  RouterAgent failed | {exc}")
-            return self._fallback(domain_hint)
-
-    def _parse_and_validate(
-        self,
-        raw_output: str,
-        domain_hint: Optional[str],
-    ) -> Dict[str, Any]:
-
-        cleaned = re.sub(r"```(?:json)?\s*", "", raw_output)
-        cleaned = re.sub(r"```\s*", "", cleaned).strip()
-
-        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-        if not match:
-            logger.warning("🔀 RouterAgent: no JSON found")
-            return self._fallback(domain_hint)
-
-        try:
-            data = json.loads(match.group(0))
-        except json.JSONDecodeError as exc:
-            logger.warning(f"🔀 RouterAgent: JSON parse error | {exc}")
-            return self._fallback(domain_hint)
-
-        # ── Domain: normalize to canonical lowercase ───────────────────────
-        raw_domain = data.get("domain", "")
-        domain = normalize_domain(raw_domain)
-        if not domain or domain not in self._VALID_DOMAINS:
-            # Try hint
-            domain = normalize_domain(domain_hint)
-        domain = domain if domain in self._VALID_DOMAINS else ""
-
-        # ── Subdomains: validate against the domain's list ────────────────
-        valid_subs = self._VALID_SUBDOMAINS.get(domain, [])
-        raw_subs = data.get("subdomain_candidates", [])
-        if isinstance(raw_subs, list):
-            subdomain_candidates = [s for s in raw_subs if s in valid_subs][:2]
+    def __init__(self, llm: Optional[Any] = None) -> None:
+        if llm is not None:
+            self._llm = llm
         else:
-            subdomain_candidates = []
-
-        # If LLM returned no valid subdomains, try to infer from first valid
-        if not subdomain_candidates and valid_subs:
-            logger.debug(
-                f"🔀 RouterAgent: no valid subdomains from LLM for domain={domain}, "
-                f"valid={valid_subs}"
+            self._llm = AzureChatOpenAI(
+                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+                api_key=settings.AZURE_OPENAI_API_KEY,
+                api_version=settings.AZURE_OPENAI_API_VERSION,
+                deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+                temperature=0.0,
             )
+        # Dynamically derive taxonomy text & subdomains from single source-of-truth taxonomy_loader
+        self._taxonomy_text, self._valid_subdomains = self._build_derived_taxonomy()
+        self._system_prompt = (
+            f"{ROUTER_BASE_PROMPT}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"TAXONOMY\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"{self._taxonomy_text}\n"
+        )
+        logger.info("[OK] RouterAgent initialized with dynamic taxonomy derivation")
 
-        b2b_b2c = data.get("b2b_b2c", "BOTH")
-        if b2b_b2c not in self._VALID_B2B_B2C:
-            b2b_b2c = "BOTH"
+    def _build_derived_taxonomy(self) -> (str, Dict[str, List[str]]):
+        """Derives taxonomy prompt text and valid subdomain lists from taxonomy_loader."""
+        subdomain_map: Dict[str, List[str]] = {}
+        prompt_lines: List[str] = []
 
-        relationship_type = data.get("relationship_type", "commercial")
-        if relationship_type not in self._VALID_REL_TYPES:
-            relationship_type = "commercial"
-        if domain == "arbeidsrett":
-            relationship_type = "employment"
+        all_domains = taxonomy_loader._domains
+        for d_id, d in all_domains.items():
+            d_title = d.get("name_nb") or d.get("name_en") or d_id
+            canon_key = normalize_domain(d_title) or normalize_domain(d_id) or d_id.lower()
+            sub_ids = d.get("subdomains", [])
 
-        jurisdiction = data.get("jurisdiction", "NO")
-        if jurisdiction not in self._VALID_JURISDICTIONS:
-            jurisdiction = "NO"
+            sub_labels = []
+            kw_list = []
+            for sub_id in sub_ids:
+                sub_data = taxonomy_loader.get_subdomain(sub_id)
+                if sub_data:
+                    label = sub_data.get("name_en") or sub_id
+                    sub_labels.append(label)
+                    kw_list.extend(sub_data.get("routing_keywords", []))
 
-        matched_keywords = data.get("matched_keywords", [])
-        if not isinstance(matched_keywords, list):
-            matched_keywords = []
+            for key in (canon_key, d_title.lower(), d_id.lower(), d_id):
+                if key not in subdomain_map:
+                    subdomain_map[key] = []
+                subdomain_map[key].extend(list(dict.fromkeys(sub_labels)))
 
-        conflict_detected = bool(data.get("conflict_detected", False))
-        confidence = float(data.get("confidence", 0.5))
-        confidence = max(0.0, min(1.0, confidence))
+            kw_str = ", ".join(list(dict.fromkeys(kw_list))[:12])
 
-        return {
-            "domain": domain,
-            "subdomain_candidates": subdomain_candidates,
-            "matched_keywords": matched_keywords,
-            "conflict_detected": conflict_detected,
-            "b2b_b2c": b2b_b2c,
-            "relationship_type": relationship_type,
-            "jurisdiction": jurisdiction,
-            "confidence": confidence,
-        }
+            prompt_lines.append(f"DOMAIN: {d_title} (key: {canon_key})")
+            prompt_lines.append("SUBDOMAINS:")
+            for sl in sub_labels:
+                prompt_lines.append(f"  - {sl}")
+            if kw_str:
+                prompt_lines.append(f"KEYWORDS: {kw_str}")
+            prompt_lines.append("")
 
-    def _fallback(self, domain_hint: Optional[str]) -> Dict[str, Any]:
-        domain = normalize_domain(domain_hint)
-        domain = domain if domain in self._VALID_DOMAINS else ""
-        return {
-            "domain": domain,
-            "subdomain_candidates": [],
-            "matched_keywords": [],
-            "conflict_detected": False,
-            "b2b_b2c": "BOTH",
-            "relationship_type": "commercial",
-            "jurisdiction": "NO",
-            "confidence": 0.0,
-        }
+        return "\n".join(prompt_lines), subdomain_map
+
+
+
+
+
+    async def route(
+        self,
+        user_query: str = "",
+        enriched_query: str = "",
+        domain_hint: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
+        raw_query: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+
+        query = user_query or raw_query or ""
+        logger.info(f"RouterAgent: routing query '{query[:60]}'")
+
+        query_text = f"USER QUERY: {query}\nENRICHED QUERY: {enriched_query}"
+        if domain_hint:
+            query_text += f"\nDOMAIN HINT: {domain_hint}"
+
+
+        messages = [
+            SystemMessage(content=self._system_prompt),
+            HumanMessage(content=query_text),
+        ]
+
+        # LLM Execution with exponential backoff retries
+        response = None
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response = await self._llm.agenerate([messages])
+                break
+            except Exception as exc:
+                if attempt < MAX_RETRIES:
+                    logger.warning(f" RouterAgent: attempt {attempt + 1} failed: {exc}. Retrying...")
+                    await asyncio.sleep(RETRY_DELAY * (2 ** attempt))
+                else:
+                    logger.error(f" RouterAgent: LLM execution failed after retries: {exc}")
+
+        # Parse JSON with project-wide JsonResponseParser & RouterResult validation
+        if response and response.generations and response.generations[0]:
+            raw_text = response.generations[0][0].text.strip()
+            parsed_data = parse_json_response(raw_text)
+
+            if parsed_data:
+                raw_domain = parsed_data.get("domain")
+                norm_domain = normalize_domain(raw_domain) or domain_hint
+
+                # Validate subdomains against derived single-source subdomain map
+                raw_subs = parsed_data.get("subdomain_candidates", [])
+                valid_subs = []
+                if norm_domain in self._valid_subdomains:
+                    allowed = set(self._valid_subdomains[norm_domain])
+                    allowed_lower = {s.lower(): s for s in allowed}
+                    for s in raw_subs:
+                        if s in allowed:
+                            valid_subs.append(s)
+                        elif s.lower() in allowed_lower:
+                            valid_subs.append(allowed_lower[s.lower()])
+                else:
+                    # Keep raw subdomains if domain key is not in static validation map
+                    valid_subs = [str(s) for s in raw_subs]
+
+
+                confidence = float(parsed_data.get("confidence", 0.85))
+
+                b2b_b2c = str(parsed_data.get("b2b_b2c", "BOTH")).upper()
+                if b2b_b2c not in VALID_B2B_B2C:
+                    b2b_b2c = "BOTH"
+
+                rel_type = str(parsed_data.get("relationship_type", "commercial")).lower()
+                if rel_type not in VALID_REL_TYPES:
+                    rel_type = "commercial"
+
+                jurisdiction = str(parsed_data.get("jurisdiction", "NO")).upper()
+                if jurisdiction not in VALID_JURISDICTIONS:
+                    jurisdiction = "NO"
+
+                # Low-Confidence Routing Fallback Strategy (< 0.6)
+                low_conf_fallback = False
+                if confidence < MIN_CONFIDENCE_THRESHOLD:
+                    logger.warning(
+                        f" RouterAgent: low confidence score ({confidence:.2f} < {MIN_CONFIDENCE_THRESHOLD}) "
+                        f"— triggering domain-level broad search fallback"
+                    )
+                    valid_subs = []  # Clear restricted subdomains to force broad search
+                    low_conf_fallback = True
+
+                result = RouterResult(
+                    domain=norm_domain,
+                    subdomain_candidates=valid_subs,
+                    b2b_b2c=b2b_b2c,
+                    relationship_type=rel_type,
+                    jurisdiction=jurisdiction,
+                    matched_keywords=parsed_data.get("matched_keywords", []),
+                    conflict_detected=bool(parsed_data.get("conflict_detected", False)),
+                    confidence=confidence,
+                    low_confidence_fallback=low_conf_fallback,
+                )
+
+                logger.info(
+                    f"RouterAgent: domain={result.domain} | subdomains={result.subdomain_candidates} | "
+                    f"confidence={result.confidence:.2f} | low_conf_fallback={result.low_confidence_fallback}"
+                )
+                return result.model_dump()
+
+        # Fallback Result
+        fallback_domain = normalize_domain(domain_hint)
+        fallback_result = RouterResult(
+            domain=fallback_domain,
+            subdomain_candidates=[],
+            confidence=0.5,
+            low_confidence_fallback=True,
+        )
+        return fallback_result.model_dump()
+
+    async def run(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        """Backward-compatible alias for route()."""
+        return await self.route(*args, **kwargs)

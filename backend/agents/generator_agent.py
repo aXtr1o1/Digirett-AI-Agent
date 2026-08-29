@@ -1,100 +1,156 @@
+import asyncio
 import logging
-import json
-from typing import AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import AzureChatOpenAI
 
 from config import settings
+from prompts.generator_prompts import CASUAL_SYSTEM_PROMPT, LEGAL_SYSTEM_PROMPT, LANGUAGE_INSTRUCTION_TEMPLATE
+from utils.history_formatter import convert_history_to_messages
 
 logger = logging.getLogger(__name__)
 
+# ── NAMED CONSTANTS & TEMPERATURE CONFIGURATIONS ──────────────────────
+CASUAL_TEMPERATURE = getattr(settings, "CASUAL_TEMPERATURE", 0.7)
+LEGAL_TEMPERATURE = getattr(settings, "LEGAL_TEMPERATURE", 0.2)
+PRE_STREAM_MAX_RETRIES = getattr(settings, "PRE_STREAM_MAX_RETRIES", 2)
+PRE_STREAM_RETRY_DELAY = getattr(settings, "PRE_STREAM_RETRY_DELAY", 0.5)
+
+
+class LanguageInstructionBuilder:
+    """Builder class for language instructions with input validation and fallback."""
+
+    DEFAULT_LANGUAGE = "English"
+    ALLOWED_LANGUAGES = {"english", "norwegian", "no", "en"}
+
+    @classmethod
+    def build(cls, language: Optional[str]) -> str:
+        if not language or not isinstance(language, str) or not language.strip():
+            return ""
+
+        cleaned = language.strip().lower()
+        if cleaned not in cls.ALLOWED_LANGUAGES:
+            logger.warning(
+                f" LanguageInstructionBuilder: unknown language '{language}' — "
+                f"defaulting to '{cls.DEFAULT_LANGUAGE}'"
+            )
+            lang_name = cls.DEFAULT_LANGUAGE
+        else:
+            lang_name = "Norwegian" if cleaned in ("norwegian", "no") else "English"
+
+        return LANGUAGE_INSTRUCTION_TEMPLATE.format(lang_name=lang_name)
+
 
 class GeneratorAgent:
-    
 
-    CASUAL_SYSTEM_PROMPT = """You are a friendly, helpful AI assistant.
-
-Your personality:
-- Warm and conversational
-- Natural and human-like
-- Match the user's language (Norwegian ↔ English)
-- Keep responses brief and friendly
-- Use emojis sparingly (1-2 per message if appropriate)
-
-Response style:
-- For greetings: Greet back warmly and ask how you can help
-- For emotional support: Be empathetic and kind
-- For general help: Be friendly and offer assistance
-
-IMPORTANT RULES:
-- NEVER disclose internal model details or company behind the AI
-- NO formal legal language unless asked
-- Be natural and human
-- Match their energy and tone
-- Keep it conversational"""
-
-    LEGAL_SYSTEM_PROMPT = """You are a professional AI Legal Assistant specialized in Norwegian law from Lovdata.
-
-CRITICAL RULES:
-1. ONLY use information from the provided KILDER (sources) below
-2. NEVER use your general knowledge about Norwegian law
-3. NEVER invent, assume, or hallucinate legal information
-4. If sources don't contain the answer, say so clearly
-5. If another country law, say clear and soft refusion .
-
-RESPONSE STRUCTURE:
-- Respond in **plain readable text**, not JSON.
-- If a RESPONSE STYLE INSTRUCTION is present in the user message, follow it EXACTLY and ignore the default structure below.
-- Otherwise, use the default structure with these ### subheadings in the language of the user's query:
-  1. ### Legal Basis       (Norwegian: Hjemmel)
-  2. ### Assessment        (Norwegian: Vurdering)
-  3. ### Practical Steps   (Norwegian: Praktiske steg)
-  4. ### Reservations      (Norwegian: Forbehold)
-  5. ### Conclusion        (Norwegian: Konklusjon)
-- Use **only one language** for the subheadings, matching the user's query language.
-- Ensure each section summarizes the relevant information clearly, in plain text.
-
-
-OUTPUT FORMAT:
-{
-  "answer": {
-    "Regnskap og bokføringsplikt": "...",
-    "Skattebetaling": "...",
-    "Arbeidstakeres rettigheter": "...",
-    "Konsekvenser av brudd": "...",
-    "Regulerende lover": "..."
-  },
-  "score": 0.0
-}
-
-Then on the very last line append EXACTLY:
-[SCORE:0.9]
-(Replace 0.9 with actual score 0.0-1.0 based on how well sources answer the query)
-
-SCORING GUIDE:
-- 0.9-1.0: Sources fully and directly answer the query
-- 0.5-0.8: Sources partially answer or are somewhat relevant
-- 0.1-0.4: Sources are vague, barely relevant, or off-topic
-
-LANGUAGE RULE:
-- Always respond in the SAME language as the user's question
-- English question → English answer (even if sources are Norwegian)
-- Norwegian question → Norwegian answer"""
-
-    def __init__(self, temperature: float = 0.7) -> None:
+    def __init__(self, llm: Optional[Any] = None, temperature: float = CASUAL_TEMPERATURE) -> None:
         self._default_temperature = temperature
-        logger.info(" GeneratorAgent initialized")
+        if llm is not None:
+            self._streaming_llm = llm
+        else:
+            self._streaming_llm = AzureChatOpenAI(
+                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+                api_key=settings.AZURE_OPENAI_API_KEY,
+                api_version=settings.AZURE_OPENAI_API_VERSION,
+                deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
+                temperature=self._default_temperature,
+                streaming=True,
+            )
+        self._casual_system_prompt = CASUAL_SYSTEM_PROMPT
+        self._legal_system_prompt = LEGAL_SYSTEM_PROMPT
+        logger.info("[OK] GeneratorAgent initialized")
 
-    def _make_llm(self, temperature: float, streaming: bool = True) -> AzureChatOpenAI:
-        return AzureChatOpenAI(
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-            api_key=settings.AZURE_OPENAI_API_KEY,
-            api_version=settings.AZURE_OPENAI_API_VERSION,
-            deployment_name=settings.AZURE_OPENAI_DEPLOYMENT,
-            temperature=temperature,
-            streaming=streaming,
-        )
+    def _convert_history_to_messages(
+        self, conversation_history: Optional[List[Dict[str, str]]] = None
+    ) -> List[BaseMessage]:
+        """Delegates to shared history_formatter utility."""
+        return convert_history_to_messages(conversation_history)
+
+    async def _stream_llm_response(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        user_memory: str = "",
+        log_label: str = "CASUAL",
+    ) -> AsyncIterator[str]:
+        """
+        Shared streaming engine (DRY principle).
+        Applies immutable prompt composition (System Prompt -> Memory Block -> User Query)
+        and pre-stream connection retry strategy.
+        """
+        # Immutable Prompt Composition
+        prompt_content = system_prompt
+        if user_memory:
+            prompt_content = f"{system_prompt}\n\n{user_memory}"
+
+        messages: List[BaseMessage] = [SystemMessage(content=prompt_content)]
+        messages.extend(self._convert_history_to_messages(conversation_history))
+        messages.append(HumanMessage(content=user_prompt))
+
+        # Pre-stream connection attempt with retry strategy
+        first_chunk = None
+        stream_gen = None
+        last_exception: Optional[Exception] = None
+
+        for attempt in range(PRE_STREAM_MAX_RETRIES + 1):
+            try:
+                gen = self._streaming_llm.astream(messages)
+                first_chunk = await gen.__anext__()
+                stream_gen = gen
+                break
+            except StopAsyncIteration:
+                logger.info(f"ℹ️ GeneratorAgent: [{log_label}] LLM returned an empty stream response (StopAsyncIteration on initial chunk)")
+                stream_gen = None
+                first_chunk = None
+                break
+            except Exception as exc:
+                last_exception = exc
+                backoff_delay = min(PRE_STREAM_RETRY_DELAY * (2 ** attempt), 2.0)
+                if attempt < PRE_STREAM_MAX_RETRIES:
+                    logger.warning(
+                        f" GeneratorAgent: [{log_label}] pre-stream attempt failed | "
+                        f"attempt={attempt + 1}/{PRE_STREAM_MAX_RETRIES + 1} | "
+                        f"backoff_ms={int(backoff_delay * 1000)} | error={exc}"
+                    )
+                    await asyncio.sleep(backoff_delay)
+                else:
+                    logger.error(
+                        f" GeneratorAgent: [{log_label}] pre-stream failed after retries | "
+                        f"total_attempts={PRE_STREAM_MAX_RETRIES + 1} | final_error={exc}"
+                    )
+                    raise RuntimeError(
+                        f"GeneratorAgent [{log_label}] connection failed after {PRE_STREAM_MAX_RETRIES + 1} attempts. "
+                        f"Last error: {exc}"
+                    ) from exc
+
+
+        chunk_count = 0
+        try:
+            if first_chunk and hasattr(first_chunk, "content") and first_chunk.content:
+                chunk_count += 1
+                yield first_chunk.content
+
+            if stream_gen:
+                async for chunk in stream_gen:
+                    if hasattr(chunk, "content") and chunk.content:
+                        chunk_count += 1
+                        yield chunk.content
+        except GeneratorExit:
+            logger.debug(f"GeneratorAgent: [{log_label}] Client disconnected — closing stream generator")
+            raise
+        except Exception as exc:
+            logger.error(f" GeneratorAgent: [{log_label}] LLM streaming error: {exc}")
+            raise
+        finally:
+            if stream_gen and hasattr(stream_gen, "aclose"):
+                try:
+                    await stream_gen.aclose()
+                except Exception as close_exc:
+                    logger.debug(f"GeneratorAgent: [{log_label}] Non-fatal error closing generator: {close_exc}")
+            logger.debug(f"GeneratorAgent: {log_label} stream finalized | {chunk_count} chunks emitted")
+
 
     async def stream_casual(
         self,
@@ -102,33 +158,21 @@ LANGUAGE RULE:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
         language: Optional[str] = None,
+        user_memory: str = "",
     ) -> AsyncIterator[str]:
-        logger.info(" GeneratorAgent: casual stream starting")
+        logger.debug("GeneratorAgent: casual stream starting")
 
-        # Build system prompt with language instruction
-        system_prompt = self.CASUAL_SYSTEM_PROMPT
-        if language:
-            lang_name = "Norwegian" if language == "norwegian" else "English"
-            system_prompt += f"\n\nIMPORTANT: Respond ONLY in {lang_name}. Do not translate or mix languages."
+        lang_instruction = LanguageInstructionBuilder.build(language)
+        system_prompt = f"{self._casual_system_prompt}{lang_instruction}"
 
-        messages = [SystemMessage(content=system_prompt)]
-
-        if conversation_history:
-            for msg in conversation_history:
-                if msg["role"] == "user":
-                    messages.append(HumanMessage(content=msg["content"]))
-                elif msg["role"] == "assistant":
-                    messages.append(AIMessage(content=msg["content"]))
-
-        messages.append(HumanMessage(content=query))
-
-        llm = self._make_llm(temperature=temperature or self._default_temperature)
-
-        async for chunk in llm.astream(messages):
-            if hasattr(chunk, "content") and chunk.content:
-                yield chunk.content
-
-        logger.info(" GeneratorAgent: casual stream complete")
+        async for chunk in self._stream_llm_response(
+            system_prompt=system_prompt,
+            user_prompt=query,
+            conversation_history=conversation_history,
+            user_memory=user_memory,
+            log_label="CASUAL",
+        ):
+            yield chunk
 
     async def stream_legal(
         self,
@@ -138,11 +182,9 @@ LANGUAGE RULE:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
         response_style: str = "",
+        user_memory: str = "",
     ) -> AsyncIterator[str]:
-        import json
-        logger.info(" GeneratorAgent: legal stream starting")
-
-        buffer = ""  
+        logger.debug("GeneratorAgent: legal stream starting")
 
         if not rag_context or not rag_context.strip():
             error_msg = (
@@ -150,44 +192,30 @@ LANGUAGE RULE:
                 if language == "norwegian"
                 else "I cannot find any relevant legal excerpts from My knowledge"
             )
-            for char in error_msg:
-                yield char
+            # Yield single block instead of character-by-character loop
+            yield error_msg
             yield "\n[SCORE:0.1]"
             return
 
-        messages = [SystemMessage(content=self.LEGAL_SYSTEM_PROMPT)]
-
-        if conversation_history:
-            logger.info(
-                f" GeneratorAgent: injecting {len(conversation_history)} history messages"
-            )
-            for msg in conversation_history:
-                if msg["role"] == "user":
-                    messages.append(HumanMessage(content=msg["content"]))
-                elif msg["role"] == "assistant":
-                    messages.append(AIMessage(content=msg["content"]))
-
-        # Prepend style instruction when the reasoning agent detected a user preference
-        # e.g. "Brief overview requested. Keep under 150 words."
         style_block = f"RESPONSE STYLE INSTRUCTION:\n{response_style}\n\n" if response_style else ""
+        lang_name = language.capitalize() if language else "the requested language"
 
         user_prompt = (
             f"{style_block}"
             f"CRITICAL: Answer ONLY from the sources below.\n\n"
             f"KILDER (Sources):\n{rag_context}\n\n"
             f"SPØRSMÅL (Question):\n{query}\n\n"
-            f"Respond in {language}. Be direct and cite sources.\n"
-            f"Append [SCORE:x.x] on the very last line."
+            f"CRITICAL LANGUAGE INSTRUCTION: You MUST respond entirely in {lang_name} UNLESS the user explicitly requested a different language in their QUESTION.\n"
+            f"Even though the sources (KILDER) are in Norwegian, you must write your entire explanation and analysis in {lang_name}.\n"
+            f"Prepend [SCORE:x.x] on the very first line.\n"
             f"Respond in **normal readable text**, not JSON. Keep it human-readable for the frontend."
         )
-        messages.append(HumanMessage(content=user_prompt))
 
-        llm = self._make_llm(temperature=temperature or 0.2)
-
-        async for chunk in llm.astream(messages):
-            if hasattr(chunk, "content") and chunk.content:
-                buffer += chunk.content  # <-- append each chunk
-                yield chunk.content     # <-- send chunk directly to frontend
-
-        # No json parsing needed since frontend expects normal text
-        logger.info(" GeneratorAgent: legal stream complete")
+        async for chunk in self._stream_llm_response(
+            system_prompt=self._legal_system_prompt,
+            user_prompt=user_prompt,
+            conversation_history=conversation_history,
+            user_memory=user_memory,
+            log_label="LEGAL",
+        ):
+            yield chunk

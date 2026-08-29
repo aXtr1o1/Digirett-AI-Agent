@@ -1,10 +1,3 @@
-"""
-Health check endpoint.
-
-GET /health → returns system status for all connected services.
-Used by load balancers and monitoring tools.
-"""
-
 import logging
 
 from fastapi import APIRouter, HTTPException, status

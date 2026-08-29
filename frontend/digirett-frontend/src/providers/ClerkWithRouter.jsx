@@ -14,6 +14,20 @@ function ClerkWithRouter({ children }) {
     <ClerkProvider
       publishableKey={clerkPubKey}
       navigate={(to) => navigate(to)}
+      afterSignInUrl="/"
+      afterSignUpUrl="/"
+      signInUrl="/sign-in"
+      signUpUrl="/sign-up"
+      appearance={{
+        layout: {
+          unsafe_disableDevelopmentModeWarnings: true,
+        },
+        elements: {
+          footer: { display: "none" },
+          navbarItem__security: { display: "none" },
+          navbarMobileMenuRow__security: { display: "none" },
+        },
+      }}
     >
       {children}
     </ClerkProvider>

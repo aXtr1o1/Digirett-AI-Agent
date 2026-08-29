@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     VERSION: str = "2.0.0"
     DEBUG: bool = False
     ALLOWED_ORIGINS: List[str]
+    ROOT_PATH: str = ""
+    DOCS_USERNAME: str = "admin"
+    DOCS_PASSWORD: str = "DigirettAdmin@123"
+    BACKEND_API_KEY: str = "super_secret_dev_key"
 
     # ── Azure OpenAI ─────────────────────────────────────────────────────
     AZURE_OPENAI_ENDPOINT: str
@@ -63,11 +67,42 @@ class Settings(BaseSettings):
     MAX_CONTEXT_MESSAGES: int = 20
     CONVERSATION_META_TTL: int = 3600
     USER_CONVERSATIONS_TTL: int = 1800
+    MAX_DOCUMENT_SIZE: int = 20 * 1024 * 1024
 
     # ── Supabase ─────────────────────────────────────────────────────────
     SUPABASE_URL: str
     SUPABASE_KEY: str
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
+
+    # ── Clerk Auth ────────────────────────────────────────────────────────
+    # Secret key for Clerk SDK (update user metadata, admin API calls)
+    CLERK_SECRET_KEY: str = ""
+    # JWKS endpoint — verify Clerk JWTs (RS256 asymmetric signing)
+    # Format: https://<clerk-instance>.clerk.accounts.dev/.well-known/jwks.json
+    CLERK_JWKS_URL: str = ""
+    # Svix webhook signing secret — from Clerk Dashboard → Webhooks
+    # Required to validate incoming webhook payloads (prevents spoofing)
+    CLERK_WEBHOOK_SECRET: str = ""
+    
+    # ── Stripe Sandbox Billing ───────────────────────────────────────────
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    FRONTEND_URL: str = "http://localhost:3000"
+    
+    # Default tenant UUID — the single tenant row in the tenants table.
+    # Every new user is assigned this tenant on signup (webhook handler).
+    DEFAULT_TENANT_ID: str = ""
+    # ── SMTP (Phase 2 Migration from Resend) ──────────────────────────────
+    SMTP_HOST: str = "smtp.resend.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = "resend"
+    SMTP_PASS: str = ""
+    RESEND_API_KEY: Optional[str] = None
+    # From-address for invitation emails
+    INVITE_FROM_EMAIL: str = "sabari@axtr.in"
+    # Frontend base URL — used to build the invite link in emails
+    # Set to http://localhost:3000 in development, https://digirett.no in production
+    FRONTEND_URL: str = "http://localhost:3000"
 
     # ── Conversation ─────────────────────────────────────────────────────
     AUTO_SUMMARY_THRESHOLD: int = 50
@@ -83,18 +118,28 @@ class Settings(BaseSettings):
     # │ TESTING MODE — Commented out for document feature testing       │
     # │ Set DOC_TESTING_MODE = False to revert to production limits     │
     # └─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┘
-    DOC_TESTING_MODE: bool = True
+    # ┌─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┐
+    # │ PRODUCTION LIMITS — 4-hour reset cycle                          │
+    # └─━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┘
+    DOC_TESTING_MODE: bool = False
     
     # Max documents a user can upload within one 4-hour session.
-    # PRODUCTION: 2 | TESTING: 999 (unlimited for testing)
-    DOC_MAX_PER_SESSION: int = 999 if DOC_TESTING_MODE else 2
+    DOC_MAX_PER_SESSION: int = 2
     
     # Max query turns (user messages) allowed within one 4-hour session.
-    # PRODUCTION: 10 | TESTING: 999 (unlimited for testing)
-    DOC_MAX_TURNS_PER_SESSION: int = 999 if DOC_TESTING_MODE else 10
+    DOC_MAX_TURNS_PER_SESSION: int = 10
+
+    # Max tokens (input + output) allowed per session (Claude-style safety).
+    # ~100,000 tokens is roughly 75,000 words.
+    DOC_MAX_TOKENS_PER_SESSION: int = 100000
     
     # Max file size for document uploads (bytes). Default = 20 MB.
     DOC_MAX_FILE_SIZE_BYTES: int = 20 * 1024 * 1024
+
+    # Document context character truncation limits (with sane caps)
+    DOCQA_MAX_DOC_CHARS: int = 60000
+    HYBRID_MAX_DOC_CHARS: int = 40000
+
 
     # ── Logging ───────────────────────────────────────────────────────────
     # DEBUG level for detailed workflow visibility, INFO for production
@@ -110,8 +155,67 @@ class Settings(BaseSettings):
     ENRICHMENT_KEYWORDS_COUNT: int = 5
 
     # ── Retry ─────────────────────────────────────────────────────────────
+    
     MAX_RETRIES: int = 3
     RETRY_DELAY: float = 1.0
+
+    # ── Intent Agent Configuration ─────────────────────────────────────────
+    INTENT_MAX_RETRIES: int = 2
+    INTENT_RETRY_DELAY: float = 0.5
+    INTENT_LOG_QUERY_LEN: int = 80
+
+    # Number of recent dialogue turns passed to IntentAgent (1 turn = 2 messages: user + assistant)
+    INTENT_CONTEXT_MESSAGES: int = 2
+
+    # ── Query Reasoning Agent Configuration ───────────────────────────────
+    QUERY_REASONING_MAX_LOG_LEN: int = 70
+    QUERY_REASONING_MAX_PREV_LEN: int = 400
+    QUERY_REASONING_MAX_RETRIES: int = 2
+    QUERY_REASONING_RETRY_DELAY: float = 0.5
+
+    # ── Reranker Agent Configuration ──────────────────────────────────────
+    RERANKER_MAX_CHARS: int = 1500
+    RERANKER_DEFAULT_TOP_K: int = 5
+    RERANKER_MAX_RETRIES: int = 2
+    RERANKER_RETRY_DELAY: float = 0.5
+    # ── Router Agent Configuration ─────────────────────────────────────────
+    ROUTER_MIN_CONFIDENCE: float = 0.6
+    ROUTER_MAX_RETRIES: int = 2
+    ROUTER_RETRY_DELAY: float = 0.5
+
+# ── Document QA Agent Stream & History Parameters ─────────────────────
+    DOCQA_MAX_HISTORY_TURNS: int = 6
+    DOCQA_PRE_STREAM_MAX_RETRIES: int = 2
+    DOCQA_PRE_STREAM_RETRY_DELAY: float = 0.5
+    # ── Generator Agent Settings ─────────────────────────────────────────
+    CASUAL_TEMPERATURE: float = 0.7
+    LEGAL_TEMPERATURE: float = 0.2
+    PRE_STREAM_MAX_RETRIES: int = 2
+    PRE_STREAM_RETRY_DELAY: float = 0.5
+
+
+    # ── Rate Limiting Configuration ───────────────────────────────────────
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_MAX_REQUESTS: int = 250
+    # ── Document Library Allowed Uploads ──────────────────────────────────
+    ALLOWED_FILE_EXTENSIONS: List[str] = ["pdf", "docx", "doc"]
+    ALLOWED_MIME_TYPES: List[str] = [
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+        "application/x-pdf",
+        "binary/octet-stream",
+    ]
+
+    # ── Cal.com Integration ────────────────────────────────────────────────
+    # Shared webhook secret from Cal.com dashboard → Webhooks → Secret
+    # Used to verify X-Cal-Signature-256 header on incoming booking events
+    CAL_COM_WEBHOOK_SECRET: Optional[str] = None
+
+    # ── Admin Notifications ───────────────────────────────────────────────────
+    # Email to receive alerts about unassigned HITL tickets
+    ADMIN_ALERT_EMAIL: Optional[str]
+    ROOT_PATH: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -122,4 +226,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-print(f">>> DEFAULT_USER_ID loaded as: {settings.DEFAULT_USER_ID}")

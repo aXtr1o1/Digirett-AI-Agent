@@ -1,84 +1,44 @@
 import logging
+import re
 from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field
 
-try:
-    from rank_bm25 import BM25Okapi
-    _BM25_AVAILABLE = True
-except ImportError:
-    _BM25_AVAILABLE = False
-    logging.getLogger(__name__).warning(
-        "rank_bm25 not installed — BM25 re-ranking disabled. "
-        "pip install rank-bm25"
-    )
+from router.bm25_reranker import BM25Reranker, RRF_K_CONSTANT
 
 logger = logging.getLogger(__name__)
 
-# How many candidates to fetch before re-ranking (top_k × OVERFETCH_FACTOR)
-_OVERFETCH_FACTOR = 4
+# ── NAMED CONSTANTS ──────────────────────────────────────────────────
+OVERFETCH_FACTOR = 6
+
+FALLBACK_PENALTIES: Dict[int, float] = {
+    0: 1.0,
+    1: 0.9,
+    2: 0.8,
+    3: 0.7,
+    4: 0.5,
+}
 
 
-class _BM25Reranker:
-    _K = 60  # RRF constant
-
-    @classmethod
-    def rerank(
-        cls,
-        results: List[Dict[str, Any]],
-        raw_query: str,
-        top_k: int,
-    ) -> List[Dict[str, Any]]:
-        if not results:
-            return []
-
-        if not _BM25_AVAILABLE or not raw_query:
-            return results[:top_k]
-
-        try:
-            corpus = [r.get("text", "") or "" for r in results]
-            tok_c = [t.lower().split() for t in corpus]
-            tok_q = raw_query.lower().split()
-
-            bm25 = BM25Okapi(tok_c)
-            bm25_scores = bm25.get_scores(tok_q)
-
-            dense_ranked = {i: rank for rank, i in enumerate(range(len(results)))}
-            bm25_ranked_idx = sorted(
-                range(len(results)), key=lambda i: bm25_scores[i], reverse=True
-            )
-            bm25_rank_map = {idx: rank for rank, idx in enumerate(bm25_ranked_idx)}
-
-            rrf = [
-                (
-                    i,
-                    1 / (cls._K + dense_ranked.get(i, len(results)))
-                    + 1 / (cls._K + bm25_rank_map.get(i, len(results))),
-                )
-                for i in range(len(results))
-            ]
-            rrf.sort(key=lambda x: x[1], reverse=True)
-
-            reranked: List[Dict[str, Any]] = []
-            for i, rrf_val in rrf[:top_k]:
-                r = results[i].copy()
-                r["score"] = round(rrf_val, 6)
-                r["score_dense"] = round(float(results[i].get("score", 0.0)), 6)
-                r["score_bm25"] = round(float(bm25_scores[i]), 4)
-                reranked.append(r)
-
-            return reranked
-        except Exception as exc:
-            logger.warning(f"⚠️  BM25 rerank failed: {exc} — using dense-only")
-            return results[:top_k]
+class RetrievedChunk(BaseModel):
+    text: str = Field(default="")
+    score: float = Field(default=0.0)
+    score_dense: float = Field(default=0.0)
+    score_bm25: float = Field(default=0.0)
+    source_doc_url: str = Field(default="")
+    section_ref: str = Field(default="")
+    url: str = Field(default="")
+    domain: str = Field(default="")
+    subdomain: str = Field(default="")
+    chunk_id: str = Field(default="")
+    document_id: str = Field(default="")
+    fallback_level: int = Field(default=0)
 
 
 class RetrieverAgent:
     def __init__(self, embedding_service: Any, milvus_client: Any) -> None:
         self._embedding = embedding_service
         self._milvus = milvus_client
-        logger.info(
-            "✅ RetrieverAgent initialized "
-            "(v5 — registry-aware statute blocking + BM25)"
-        )
+        logger.info("[OK] RetrieverAgent initialized")
 
     async def run(
         self,
@@ -92,190 +52,130 @@ class RetrieverAgent:
         jurisdiction: Optional[str] = None,
         subdomain_candidates: Optional[List[str]] = None,
         b2b_b2c: Optional[str] = None,
-        # ── NEW parameter ───────────────────────────────────────────────
         statute_from_registry: bool = False,
-        # ── KEPT for backward compat but no longer controls hard-block ──
         statute_explicit: bool = False,
     ) -> List[Dict[str, Any]]:
-        """
-        Run the full retrieval pipeline and return re-ranked results.
-
-        Parameters
-        ----------
-        query           : raw user query (used for BM25 scoring)
-        enriched_query  : statute-anchored query from QueryReasoningAgent (used for embedding)
-        top_k           : number of results to return after re-ranking
-        statute_filter  : Lovdata URL or LOV-ID used for source_doc_url LIKE filter
-        domain          : Milvus `domain` field value
-        jurisdiction    : Milvus `jurisdiction` field value
-        subdomain_candidates : list of subdomain label strings from RouterAgent
-        b2b_b2c         : "B2B" / "B2C" / "BOTH"
-
-        Returns
-        -------
-        List of result dicts, each containing at minimum:
-            text, score, score_dense, score_bm25,
-            source_doc_url, section_ref, url (alias for source_doc_url),
-            domain, subdomain, chunk_id, document_id,
-            fallback_level
-        """
-        sep = "=" * 60
-        logger.info(f"\n{sep}\n🔍 RetrieverAgent.run | query='{query[:60]}'\n{sep}")
-        logger.info(f"  Enriched query      : {enriched_query[:100]}")
-        logger.info(f"  statute_filter      : {statute_filter}")
-        logger.info(f"  statute_from_registry: {statute_from_registry}")
-        logger.info(f"  domain              : {domain}")
-        logger.info(f"  jurisdiction        : {jurisdiction}")
-        logger.info(f"  subdomain_cands     : {subdomain_candidates}")
-        logger.info(f"  b2b_b2c             : {b2b_b2c}")
-
+        
         query_embedding = await self._embedding.embed_query(enriched_query)
-        logger.debug(f"  Embedding dim       : {len(query_embedding)}")
-
-        fetch_k = top_k * _OVERFETCH_FACTOR
+        fetch_k = top_k * OVERFETCH_FACTOR
         candidates: List[Dict[str, Any]] = []
-        fallback_level = 0
+        effective_fallback_level = 0
 
-        # ── L0: statute + domain + subdomain + jurisdiction + b2b ──────────
-        logger.info("[Fallback] Starting L0…")
-        candidates = self._milvus_search(
-            query_embedding=query_embedding,
-            top_k=fetch_k,
-            statute_filter=statute_filter,
-            domain=domain,
-            jurisdiction=jurisdiction,
-            subdomain_candidates=subdomain_candidates,
-            b2b_b2c=b2b_b2c,
-            fallback_level=0,
-        )
-        logger.info(f"  L0 → {len(candidates)} candidates")
+        # Define fallback strategy search configurations
+        strategies = [
+            # L0: statute + domain + subdomain + jurisdiction + b2b
+            {"level": 0, "statute": statute_filter, "domain": domain, "jurisdiction": jurisdiction, "subdomains": subdomain_candidates, "b2b": b2b_b2c},
+            # L1: statute + domain
+            {"level": 1, "statute": statute_filter, "domain": domain, "jurisdiction": None, "subdomains": None, "b2b": None},
+            # L2: statute only
+            {"level": 2, "statute": statute_filter, "domain": None, "jurisdiction": None, "subdomains": None, "b2b": None},
+            # L3: domain + subdomain + jurisdiction + b2b
+            {"level": 3, "statute": None, "domain": domain, "jurisdiction": jurisdiction, "subdomains": subdomain_candidates, "b2b": b2b_b2c},
+            # L4: domain only
+            {"level": 4, "statute": None, "domain": domain, "jurisdiction": None, "subdomains": None, "b2b": None},
+        ]
 
-        if not candidates:
-            fallback_level = 1
-            logger.info("[Fallback] L0 empty → trying L1 (statute + domain)…")
-            candidates = self._milvus_search(
+        for strat in strategies:
+            # Skip statute search if no statute_filter provided
+            if strat["level"] in (0, 1, 2) and not statute_filter:
+                continue
+
+            results = self._milvus_search(
                 query_embedding=query_embedding,
                 top_k=fetch_k,
-                statute_filter=statute_filter,
-                domain=domain,
-                jurisdiction=None,
-                subdomain_candidates=None,
-                b2b_b2c=None,
-                fallback_level=1,
+                statute_filter=strat["statute"],
+                domain=strat["domain"],
+                jurisdiction=strat["jurisdiction"],
+                subdomain_candidates=strat["subdomains"],
+                b2b_b2c=strat["b2b"],
+                fallback_level=strat["level"],
             )
-            logger.info(f"  L1 → {len(candidates)} candidates")
+
+            # Target statute guard check for L0
+            if strat["level"] == 0 and results and statute_filter:
+                match = re.search(r"(\d{4}-\d{2}-\d{2}-\d+)", statute_filter)
+                if match:
+                    statute_id = match.group(1)
+                    allowed_statutes = [statute_id]
+                    from router.taxonomy_loader import taxonomy_loader
+                    if subdomain_candidates:
+                        for sub_id in subdomain_candidates:
+                            sub_data = taxonomy_loader.get_subdomain(sub_id)
+                            if sub_data:
+                                for src in sub_data.get("required_sources", []):
+                                    sid = src.get("source_id")
+                                    if sid:
+                                        dp = re.sub(r"^(LOV|FOR|FORSKRIFT)-", "", sid, flags=re.IGNORECASE)
+                                        if dp and dp not in allowed_statutes:
+                                            allowed_statutes.append(dp)
+
+                    has_target = any(
+                        any(allowed_id in (c.get("source_doc_url") or "") for allowed_id in allowed_statutes)
+                        for c in results
+                    )
+                    if not has_target:
+                        results = []
+
+            if results:
+                candidates = results
+                effective_fallback_level = strat["level"]
+                break
 
         if not candidates:
-            fallback_level = 2
-            logger.info("[Fallback] L1 empty → trying L2 (statute only)…")
-            candidates = self._milvus_search(
-                query_embedding=query_embedding,
-                top_k=fetch_k,
-                statute_filter=statute_filter,
-                domain=None,
-                jurisdiction=None,
-                subdomain_candidates=None,
-                b2b_b2c=None,
-                fallback_level=2,
-            )
-            logger.info(f"  L2 → {len(candidates)} candidates")
-
-        # ── CRITICAL GATE: only hard-block when statute ID is CERTAIN ──────
-        # If the statute came from the deterministic registry, we KNOW the ID
-        # is correct. If the VDB has no chunks for it, there is nothing to
-        # return — falling through to L3/L4 would retrieve wrong-statute content.
-        #
-        # If the statute came from LLM inference, the ID may be wrong.
-        # Always fall through to domain-level search so the user gets
-        # some answer rather than empty context.
-        if not candidates and statute_filter:
-            if statute_from_registry:
-                logger.warning(
-                    "⚠️  Registry statute exhausted L0-L2. "
-                    "Statute is confirmed correct but NOT in VDB. "
-                    "Stopping retrieval — wrong-statute drift would harm accuracy."
-                )
-                return []
-            else:
-                logger.info(
-                    "ℹ️  LLM-inferred statute exhausted L0-L2. "
-                    "Statute ID may be wrong — continuing to domain-level fallback."
-                )
-
-        if not candidates:
-            fallback_level = 3
-            logger.info("[Fallback] → trying L3 (domain + subdomain, NO statute)…")
-            candidates = self._milvus_search(
-                query_embedding=query_embedding,
-                top_k=fetch_k,
-                statute_filter=None,
-                domain=domain,
-                jurisdiction=jurisdiction,
-                subdomain_candidates=subdomain_candidates,
-                b2b_b2c=b2b_b2c,
-                fallback_level=3,
-            )
-            logger.info(f"  L3 → {len(candidates)} candidates")
-
-        if not candidates:
-            fallback_level = 4
-            logger.info("[Fallback] L3 empty → trying L4 (pure vector, no filters)…")
-            candidates = self._milvus_search(
-                query_embedding=query_embedding,
-                top_k=fetch_k,
-                statute_filter=None,
-                domain=None,
-                jurisdiction=None,
-                subdomain_candidates=None,
-                b2b_b2c=None,
-                fallback_level=4,
-            )
-            logger.info(f"  L4 → {len(candidates)} candidates")
-
-        if not candidates:
-            logger.warning(
-                "⚠️  All 5 fallback levels returned 0 results. "
-                "Collection may be empty or query is fully out of domain."
-            )
+            logger.warning(f"RetrieverAgent: 0 candidates found across fallbacks for query '{query[:40]}'")
             return []
 
-        logger.info(
-            f"[BM25] Re-ranking {len(candidates)} candidates → top {top_k} "
-            f"(BM25: {'on' if _BM25_AVAILABLE else 'off'})…"
+        # Delegate BM25 re-ranking to independent BM25Reranker module
+        reranked = BM25Reranker.rerank(
+            results=candidates,
+            raw_query=query,
+            top_k=top_k,
+            rrf_k=RRF_K_CONSTANT,
         )
-        reranked = _BM25Reranker.rerank(results=candidates, raw_query=query, top_k=top_k)
 
-        for r in reranked:
-            r["fallback_level"] = fallback_level
+        # Apply config-driven fallback penalties
+        penalty = FALLBACK_PENALTIES.get(effective_fallback_level, 0.5)
+        final_results: List[Dict[str, Any]] = []
 
-        logger.info(
-            f"✅ RetrieverAgent done | {len(reranked)} results | "
-            f"fallback=L{fallback_level} | statute={statute_filter or 'none'}"
-        )
-        for i, r in enumerate(reranked[:3], 1):
-            logger.info(
-                f"  [{i}] score={r.get('score', 0):.5f} | "
-                f"domain={r.get('domain')} | subdomain={r.get('subdomain')} | "
-                f"section_ref={r.get('section_ref')}"
+        for item in reranked:
+            item["fallback_level"] = effective_fallback_level
+            if penalty < 1.0 and "score" in item:
+                item["score"] = round(float(item["score"]) * penalty, 6)
+
+            # Validate schema via RetrievedChunk Pydantic model
+            chunk_obj = RetrievedChunk(
+                text=str(item.get("text", "")),
+                score=float(item.get("score", 0.0)),
+                score_dense=float(item.get("score_dense", 0.0)),
+                score_bm25=float(item.get("score_bm25", 0.0)),
+                source_doc_url=str(item.get("source_doc_url", "") or item.get("url", "")),
+                section_ref=str(item.get("section_ref", "")),
+                url=str(item.get("url", "") or item.get("source_doc_url", "")),
+                domain=str(item.get("domain", "")),
+                subdomain=str(item.get("subdomain", "")),
+                chunk_id=str(item.get("chunk_id", "")),
+                document_id=str(item.get("document_id", "")),
+                fallback_level=int(effective_fallback_level),
             )
+            final_results.append(chunk_obj.model_dump())
 
-        return reranked
+        return final_results
 
     def _milvus_search(
         self,
         query_embedding: List[float],
         top_k: int,
-        statute_filter: Optional[str],
-        domain: Optional[str],
-        jurisdiction: Optional[str],
-        subdomain_candidates: Optional[List[str]],
-        b2b_b2c: Optional[str],
-        fallback_level: int,
+        statute_filter: Optional[str] = None,
+        domain: Optional[str] = None,
+        jurisdiction: Optional[str] = None,
+        subdomain_candidates: Optional[List[str]] = None,
+        b2b_b2c: Optional[str] = None,
+        fallback_level: int = 0,
     ) -> List[Dict[str, Any]]:
+        """Invokes underlying Milvus search client."""
         try:
             return self._milvus.search(
                 embedding=query_embedding,
-                metric_type="COSINE",
                 top_k=top_k,
                 statute_filter=statute_filter,
                 domain=domain,
@@ -285,5 +185,6 @@ class RetrieverAgent:
                 fallback_level=fallback_level,
             )
         except Exception as exc:
-            logger.error(f"❌ Milvus search (L{fallback_level}) failed: {exc}")
+
+            logger.error(f" Milvus search level L{fallback_level} failed: {exc}")
             return []

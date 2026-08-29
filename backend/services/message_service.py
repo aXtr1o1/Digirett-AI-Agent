@@ -50,31 +50,30 @@ class MessageService:
             )
             messages = response.data or []
 
+            import re
+            think_re = re.compile(r'<think>.*?</think>', flags=re.DOTALL)
+            source_re1 = re.compile(r'(?:^|\n)(?:Source|Kilde):\s*[^\n]+', flags=re.MULTILINE)
+            source_re2 = re.compile(r'[\[\(](?:Source|Kilde):.*?[\]\)]', flags=re.DOTALL)
+            newlines_re = re.compile(r'\n{3,}')
+
             for msg in messages:
                 if msg["role"] == "assistant":
                     msg["sources"] = self._normalize_sources(msg.get("sources") or [])
                     
                     # 🔥 PHASE 1: Strip inline source citations and <think> tags
                     if msg.get("content"):
-                        import re
                         # Strip <think> tags
-                        msg["content"] = re.sub(
-                            r'<think>.*?</think>', '', msg["content"], flags=re.DOTALL
-                        ).strip()
+                        msg["content"] = think_re.sub('', msg["content"]).strip()
                         
                         # Strip inline source citations (both English and Norwegian)
                         # Pattern 1: "Source: ..." or "Kilde: ..." at line start or after newline
-                        msg["content"] = re.sub(
-                            r'(?:^|\n)(?:Source|Kilde):\s*[^\n]+', '', msg["content"], flags=re.MULTILINE
-                        ).strip()
+                        msg["content"] = source_re1.sub('', msg["content"]).strip()
                         
                         # Pattern 2: [Source: ...] or (Source: ...) or [Kilde: ...] or (Kilde: ...)
-                        msg["content"] = re.sub(
-                            r'[\[\(](?:Source|Kilde):.*?[\]\)]', '', msg["content"], flags=re.DOTALL
-                        ).strip()
+                        msg["content"] = source_re2.sub('', msg["content"]).strip()
                         
                         # Clean up multiple consecutive newlines left after stripping
-                        msg["content"] = re.sub(r'\n{3,}', '\n\n', msg["content"])
+                        msg["content"] = newlines_re.sub('\n\n', msg["content"])
                 else:
                     msg["sources"] = []
 
@@ -132,7 +131,7 @@ class MessageService:
             # 1. Save user message
             user_msg_id = None
             if not skip_save_user:
-                user_msg_id = self._save_single_message(
+                user_msg_id = await self._save_single_message(
                     conversation_id=conversation_id,
                     role="user",
                     content=user_message,
@@ -171,7 +170,7 @@ class MessageService:
                 chunk["_resolved_title"] = title
 
             # 3. Save assistant message
-            assistant_msg_id = self._save_single_message(
+            assistant_msg_id = await self._save_single_message(
                 conversation_id=conversation_id,
                 role="assistant",
                 content=assistant_message,
@@ -179,22 +178,24 @@ class MessageService:
                 metadata=metadata,
             )
 
-            # 4. Save generation metadata
-            self._supabase.save_message_metadata(
-                message_id=assistant_msg_id,
-                model_name=metadata.get("model", settings.AZURE_OPENAI_DEPLOYMENT),
-                token_input=metadata.get("token_input", 0),
-                token_output=metadata.get("tokens_generated", 0),
-                latency_ms=int(metadata.get("query_time", 0) * 1000),
-                is_cached=metadata.get("cached", False),
-            )
-
-            # 5. Save RAG chunk provenance (LEGAL queries only)
-            if rag_chunks:
-                self._supabase.save_rag_retrievals(
+            # 4. Save generation metadata and RAG provenance in background thread
+            import asyncio
+            def _save_metadata():
+                self._supabase.save_message_metadata(
                     message_id=assistant_msg_id,
-                    chunks=rag_chunks,
+                    model_name=metadata.get("model", settings.AZURE_OPENAI_DEPLOYMENT),
+                    token_input=metadata.get("token_input", 0),
+                    token_output=metadata.get("tokens_generated", 0),
+                    latency_ms=int(metadata.get("query_time", 0) * 1000),
+                    is_cached=metadata.get("cached", False),
                 )
+                if rag_chunks:
+                    self._supabase.save_rag_retrievals(
+                        message_id=assistant_msg_id,
+                        chunks=rag_chunks,
+                    )
+            
+            await asyncio.to_thread(_save_metadata)
 
             logger.info(
                 f" Exchange saved | user={user_msg_id} | assistant={assistant_msg_id}"
@@ -229,7 +230,7 @@ class MessageService:
     # INTERNAL
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    def _save_single_message(
+    async def _save_single_message(
         self,
         conversation_id: str,
         role: str,
@@ -237,25 +238,28 @@ class MessageService:
         sources: Optional[List[Dict[str, Any]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
-       
-        message_id = self._supabase.save_message(
-            conversation_id=conversation_id,
-            role=role,
-            content=content,
-            sources=sources,
-            metadata=metadata,
-        )
+        
+        def _sync_work():
+            msg_id = self._supabase.save_message(
+                conversation_id=conversation_id,
+                role=role,
+                content=content,
+                sources=sources,
+                metadata=metadata,
+            )
 
-        # Keep Redis context current
-        self._cache.append_message_to_context(
-            conversation_id=conversation_id,
-            role=role,
-            content=content,
-            timestamp=datetime.utcnow(),
-        )
-        self._cache.extend_context_ttl(conversation_id)
+            # Keep Redis context current
+            self._cache.append_message_to_context(
+                conversation_id=conversation_id,
+                role=role,
+                content=content,
+                timestamp=datetime.utcnow(),
+            )
+            self._cache.extend_context_ttl(conversation_id)
+            return msg_id
 
-        return message_id
+        import asyncio
+        return await asyncio.to_thread(_sync_work)
 
     # ── Title translation ─────────────────────────────────────────────────────
     # WHY THIS METHOD EXISTS:
@@ -408,3 +412,41 @@ class MessageService:
             normalized.append({"title": title, "url": url})
 
         return normalized
+
+    def get_title_fetcher(self):
+        """Returns title_fetcher instance."""
+        return self._title_fetcher
+
+    def get_cache(self):
+        """Returns redis_client cache instance."""
+        return self._cache
+
+    def get_first_messages(self, conversation_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Fetches first N messages in chronological order for title generation."""
+        try:
+            resp = (
+                self._supabase.table("messages")
+                .select("role, content")
+                .eq("conversation_id", conversation_id)
+                .order("created_at", desc=False)
+                .limit(limit)
+                .execute()
+            )
+            return resp.data or []
+        except Exception as exc:
+            logger.warning(f"⚠️ get_first_messages failed | conv={conversation_id} | {exc}")
+            return []
+
+    def update_message_sources(self, message_id: str, sources: List[Dict[str, Any]]) -> bool:
+        """Updates translated sources for a message in database."""
+        try:
+            resp = (
+                self._supabase.table("messages")
+                .update({"sources": sources})
+                .eq("message_id", message_id)
+                .execute()
+            )
+            return bool(resp.data)
+        except Exception as exc:
+            logger.warning(f"⚠️ update_message_sources failed | msg={message_id} | {exc}")
+            return False

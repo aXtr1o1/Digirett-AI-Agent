@@ -1,8 +1,18 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import chatService from "../services/chatService";
 import conversationService from "../services/conversationService";
+import hitlService from "../services/hitlService";
+import { supabase, getSupabaseClient } from "../lib/supabase";
+import { useAuth } from "@clerk/clerk-react";
 import useDocumentUpload from "./useDocumentUpload";
-import { MESSAGE_ROLES, API_BASE_URL } from "../utils/constants";
+import documentService from "../services/documentService";
+import { MESSAGE_ROLES } from "../utils/constants";
+
+const isUuid = (str) => {
+  if (!str) return false;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+};
 
 const useChat = (
   conversationId,
@@ -10,6 +20,7 @@ const useChat = (
   moveConversationToTop,
   userId
 ) => {
+  const { getToken } = useAuth();
   const [messages, setMessages] = useState([]);
   const addMessage = useCallback((msg) => {
     setMessages((prev) => [...prev, msg]);
@@ -20,9 +31,12 @@ const useChat = (
   const [isStreaming, setIsStreaming] = useState(false);
   // ✅ NEW: tracks whether we're processing/uploading a document (shows loading indicator)
   const [isProcessingDoc, setIsProcessingDoc] = useState(false);
+  const [isEscalated, setIsEscalated] = useState(false);
 
   const activeConversationIdRef = useRef(conversationId);
   const abortRef = useRef(null);
+  const prevConversationIdRef = useRef(conversationId);
+  const isAutoCreatingRef = useRef(false);
 
   const {
     uploadDocument,
@@ -40,33 +54,86 @@ const useChat = (
     activeConversationIdRef.current = conversationId;
   }, [conversationId]);
 
-  // ── Load messages for an existing conversation ────────────────────────────
+  // ── Load messages for an existing conversation directly from Supabase ──────
   const loadMessages = useCallback(async () => {
     if (!conversationId) {
       setMessages([]);
+      setError(null);
+      setIsEscalated(false);
       return;
     }
+
+    // Safety: Ensure conversationId is a valid UUID before querying Supabase
+    if (!isUuid(conversationId)) {
+      console.warn("[useChat] Skipping loadMessages: invalid UUID format", conversationId);
+      setMessages([]);
+      setError(null);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
-      const data =
-        await conversationService.getConversationWithMessages(conversationId);
-      const msgs = Array.isArray(data.messages) ? data.messages : [];
-      const normalized = msgs.map((m) => ({
+      const authClient = await getSupabaseClient(getToken);
+
+      const { data: msgs, error: sbError } = await authClient
+        .from("messages")
+        .select("message_id, role, content, sources, created_at, metadata, type, file_name")
+        .eq("conversation_id", conversationId)
+        .eq("is_deleted", false)
+        .order("created_at", { ascending: true })
+        .limit(100);
+
+      if (sbError) throw sbError;
+
+      const normalized = (msgs || []).map((m) => ({
         id: m.message_id,
         role: m.role,
         content: m.content || "",
         sources: m.sources || [],
         timestamp: m.created_at || new Date().toISOString(),
         // ✅ Restore file messages correctly from DB
-        type: m.type || "text",
-        fileName: m.file_name || null,
+        type: m.type || m.metadata?.type || "text",
+        fileName: m.file_name || m.metadata?.file_name || null,
         documentId: m.metadata?.document_id || null,
       }));
       setMessages(normalized);
+
+      // ✅ Fetch escalation status via dedicated API (Sync on load)
+      try {
+        const statusData = await hitlService.getEscalationStatus(conversationId);
+        setIsEscalated(!!statusData.is_escalated);
+      } catch (err) {
+        console.warn("[useChat] Failed to fetch escalation status on load:", err);
+      }
     } catch (err) {
+      // ✅ Fallback: If Supabase direct fetch fails for any reason (RLS, CORS, network, or schema),
+      // use backend API which handles user mapping and access authorization securely.
+      try {
+        console.log("[useChat] Supabase direct fetch failed, falling back to API:", err?.message || err);
+        const data = await conversationService.getConversationWithMessages(conversationId);
+        const msgs = data.messages || [];
+        const normalized = msgs.map((m) => ({
+          id: m.message_id,
+          role: m.role,
+          content: m.content || "",
+          sources: m.sources || [],
+          timestamp: m.created_at || new Date().toISOString(),
+          type: m.type || m.metadata?.type || "text",
+          fileName: m.file_name || m.metadata?.file_name || null,
+          documentId: m.metadata?.document_id || null,
+        }));
+        setMessages(normalized);
+        if (data.conversation?.is_escalated !== undefined) {
+          setIsEscalated(data.conversation.is_escalated);
+        }
+        return; // Success via fallback
+      } catch (fallbackErr) {
+        console.error("[useChat] Fallback fetch also failed:", fallbackErr);
+      }
+
       console.error("[useChat] loadMessages error:", err);
-      setError("Failed to load messages");
+      setError(err.message || "Failed to load messages");
     } finally {
       setIsLoading(false);
     }
@@ -92,6 +159,43 @@ const useChat = (
       return null;
     }
   }, [onConversationCreated, moveConversationToTop]);
+  const getFriendlyErrorMessage = (err) => {
+  const raw =
+    err?.message ||
+    err?.response?.data?.message ||
+    "";
+
+  // AI Safety / Content Filter
+  if (
+    raw.includes("ResponsibleAIPolicyViolation") ||
+    raw.includes("content_filter") ||
+    raw.includes("content_filter_result")
+  ) {
+    return {
+      title: "Request Blocked",
+      message:
+        "Your request could not be processed because it was blocked by the AI safety policy. Please modify your message and try again.",
+    };
+  }
+
+  // Network errors
+  if (
+    raw.includes("Connection lost") ||
+    raw.includes("Connection error") ||
+    raw.includes("Stream error")
+  ) {
+    return {
+      title: "Connection Error",
+      message:
+        "Unable to connect to the server. Please check your connection and try again.",
+    };
+  }
+
+  return {
+    title: "System Notification",
+    message: raw || "Something went wrong. Please try again.",
+  };
+};
 
   // ── Send message ──────────────────────────────────────────────────────────
   const sendMessage = useCallback(
@@ -173,20 +277,17 @@ const useChat = (
         // ── Save to DB (sequence matters for correct reload order) ────────
         // 1. Save file message FIRST
         try {
-          await fetch(`${API_BASE_URL}/api/v1/documents/message/${convId}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              role: "user",
-              content: messageText.trim() || null,
-              type: "file-with-text",
-              file_name: uploadResult.file_name || file.name,
-              document_id: uploadResult.document_id,
-            }),
+          await documentService.saveFileMessage(convId, {
+            role: "user",
+            content: messageText.trim() || null,
+            type: "file-with-text",
+            file_name: uploadResult.file_name || file.name,
+            document_id: uploadResult.document_id,
           });
 
           // For new conversations, trigger creation AFTER first message is in DB
           if (!conversationId && onConversationCreated) {
+            isAutoCreatingRef.current = true;
             onConversationCreated(convId, null);
           }
         } catch (err) {
@@ -197,13 +298,9 @@ const useChat = (
         // Only save when there is NO query — with a query, doc_qa handles the response
         if (!hasQuery && uploadResult.summary_text) {
           try {
-            await fetch(`${API_BASE_URL}/api/v1/documents/summary-message/${convId}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                content: uploadResult.summary_text,
-                document_id: uploadResult.document_id,
-              }),
+            await documentService.saveSummaryMessage(convId, {
+              content: uploadResult.summary_text,
+              document_id: uploadResult.document_id,
             });
           } catch (err) {
             console.error("[useChat] ❌ save_summary_message call failed:", err);
@@ -251,17 +348,23 @@ const useChat = (
             if (data.conversationId) {
               activeConversationIdRef.current = data.conversationId;
               const backendTitle = data.metadata?.conversation_title || null;
-              if (!conversationId && onConversationCreated) onConversationCreated(data.conversationId, backendTitle);
-              if (moveConversationToTop) moveConversationToTop(data.conversationId);
+              if (!conversationId && onConversationCreated) {
+                isAutoCreatingRef.current = true;
+                onConversationCreated(data.conversationId, backendTitle);
+              }
+              if (moveConversationToTop) moveConversationToTop(data.conversationId, backendTitle);
               fetchSessionStatus(data.conversationId);
             }
           },
           (err) => {
             console.error("[useChat] stream error:", err);
-            setError(err?.message || "Failed to generate response");
+            const friendlyError = getFriendlyErrorMessage(err);
+            setError(friendlyError);
             setIsStreaming(false);
             setStreamingMessage("");
             setIsProcessingDoc(false);
+            // Remove the optimistic user message since it failed to send
+            setMessages((prev) => prev.filter(msg => msg.id !== fileMsgId));
           },
           { skipSaveUser: true }
         );
@@ -270,10 +373,11 @@ const useChat = (
       }
 
       // ── Text only path ──────────────────────────────────────────────────
+      const userMessageId = crypto.randomUUID();
       setMessages((prev) => [
         ...prev,
         {
-          id: crypto.randomUUID(),
+          id: userMessageId,
           role: MESSAGE_ROLES.USER,
           content: messageText,
           sources: [],
@@ -312,17 +416,26 @@ const useChat = (
           if (data.conversationId) {
             activeConversationIdRef.current = data.conversationId;
             const backendTitle = data.metadata?.conversation_title || null;
-            if (onConversationCreated) onConversationCreated(data.conversationId, backendTitle);
-            if (moveConversationToTop) moveConversationToTop(data.conversationId);
+            if (!conversationId && onConversationCreated) {
+              isAutoCreatingRef.current = true;
+              onConversationCreated(data.conversationId, backendTitle);
+            }
+            if (moveConversationToTop) moveConversationToTop(data.conversationId, backendTitle);
             fetchSessionStatus(data.conversationId);
           }
         },
         (err) => {
-          console.error("[useChat] stream error:", err);
-          setError(err?.message || "Failed to generate response");
-          setIsStreaming(false);
-          setStreamingMessage("");
-        }
+        console.error("[useChat] stream error:", err);
+
+        const friendlyError = getFriendlyErrorMessage(err);
+
+        setError(friendlyError);
+
+        setIsStreaming(false);
+        setStreamingMessage("");
+
+        setMessages((prev) => prev.filter(msg => msg.id !== userMessageId));
+      }
       );
     },
     [
@@ -364,13 +477,54 @@ const useChat = (
     setIsProcessingDoc(false);
   }, []);
 
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
+  // Initial load / Sync conversation transitions
   useEffect(() => {
+    // Update the ref to track current conversationId for next render
+    prevConversationIdRef.current = conversationId;
+
+    if (isAutoCreatingRef.current) {
+      console.log("[useChat] Transitioning from new chat to auto-created conversation. Skipping reload.");
+      isAutoCreatingRef.current = false; // Reset flag
+      return;
+    }
+
     loadMessages();
-  }, [loadMessages]);
+  }, [loadMessages, conversationId]);
 
   useEffect(() => {
-    if (conversationId) fetchSessionStatus(conversationId);
+    if (conversationId) {
+      fetchSessionStatus(conversationId);
+    }
   }, [conversationId, fetchSessionStatus]);
+
+  // Sync escalation status from backend sessionStatus or dedicated check
+  useEffect(() => {
+    const checkEscalation = async () => {
+      if (!isUuid(conversationId)) {
+        setIsEscalated(false);
+        return;
+      }
+      try {
+        const data = await hitlService.getEscalationStatus(conversationId);
+        console.log("[useChat] checkEscalation result:", data);
+        setIsEscalated(!!data.is_escalated);
+      } catch (err) {
+        console.error("Failed to check escalation status:", err);
+      }
+    };
+
+    checkEscalation();
+
+    if (isUuid(conversationId) && sessionStatus && sessionStatus.is_escalated !== undefined) {
+      setIsEscalated(sessionStatus.is_escalated);
+    }
+  }, [sessionStatus, conversationId]);
+
+  const isEscalatingRef = useRef(false);
 
   return {
     messages,
@@ -386,10 +540,34 @@ const useChat = (
     isUploading,
     uploadError,
     clearUploadError,
+    clearError,
     uploadedDocs,
     sessionStatus,
     isUploadDisabled,
     isChatDisabled,
+    isEscalated,
+    escalate: async (userNote, priority = "normal", urgentReason = null) => {
+      const activeId = activeConversationIdRef.current || conversationId;
+      if (!activeId || !isUuid(activeId)) {
+        throw new Error("No active conversation session found. Please wait or send a message first.");
+      }
+      if (isEscalated) return;
+      if (isEscalatingRef.current) return;
+
+      isEscalatingRef.current = true;
+      const lastMessage = messages[messages.length - 1];
+      const triggerId = lastMessage?.id;
+      try {
+        const result = await hitlService.escalateConversation(activeId, triggerId, userNote, priority, urgentReason);
+        setIsEscalated(true);
+        isEscalatingRef.current = false;
+        return result;
+      } catch (err) {
+        isEscalatingRef.current = false;
+        console.error("Escalation failed:", err);
+        throw err;
+      }
+    }
   };
 };
 
