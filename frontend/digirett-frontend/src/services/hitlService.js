@@ -92,9 +92,16 @@ const hitlService = {
    * Publicly check if a user is suspended by email/username
    */
   checkStatus: async (identifier) => {
-    const response = await api.get(`/hitl/check-status?identifier=${encodeURIComponent(identifier)}`);
+    // This is a PRE-LOGIN call — no Clerk token exists yet.
+    // Must use plain axios (no auth interceptors) to avoid 401.
+    const { default: axios } = await import('axios');
+    const { API_BASE_URL } = await import('../utils/constants');
+    const response = await axios.get(
+      `${API_BASE_URL}/api/v1/hitl/check-status?identifier=${encodeURIComponent(identifier)}`
+    );
     return response.data;
   },
+
 
   /**
    * Get lawyer Cal.com configuration

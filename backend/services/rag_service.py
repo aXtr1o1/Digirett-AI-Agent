@@ -3,6 +3,9 @@ import logging
 import re
 from typing import Any, AsyncIterator, Dict, List, Optional
 
+from openai import base_url
+from torch import chunk
+
 from agents.memory_agent import MemoryAgent
 from agents.user_memory_agent import UserMemoryAgent
 from agents.orchestrator_agent import OrchestratorAgent
@@ -62,6 +65,7 @@ _LOVDATA_BASE = "https://lovdata.no"
 _TYPE_PREFIX_MAP = {
     "LOV": "lov",
     "FOR": "forskrift",
+    "FORSKRIFT": "forskrift",
     "RES": "forskrift",
 }
 
@@ -74,7 +78,9 @@ def _resolve_statute_url(statute_id: Optional[str]) -> Optional[str]:
 
     if value.startswith("https://lovdata.no"):
         value = value.replace("/dokument/NL/lov/", "/lov/")
+        value = value.replace("/dokument/NL/forskrift/", "/forskrift/")
         value = value.replace("/dokument/SF/forskrift/", "/forskrift/")
+        value = value.replace("/dokument/LTI/forskrift/", "/forskrift/")
         value = value.replace("/dokument/lov/", "/lov/")
         value = value.replace("/dokument/forskrift/", "/forskrift/")
         return value
@@ -128,6 +134,7 @@ def _is_statute_explicit(query: str) -> bool:
         "loven for",
         "loven 20",  # LOV-YYYY format
         "lov-",
+        "forskrift",
         "for-",  # FOR = forskrift
         "res-",  # RES = resolution
         "bestemmelse i",
@@ -463,7 +470,10 @@ class RAGService:
         domain                = reasoning_result.get("domain")
         jurisdiction          = reasoning_result.get("jurisdiction")
         statute_from_registry = reasoning_result.get("statute_from_registry", False)
+        registry_target_match = reasoning_result.get("registry_target_match", False)
         query_scope           = reasoning_result.get("query_scope", "SPECIFIC_PROVISION")
+        # DIG-RAG-005: use spell-corrected query for BM25 reranking; falls back to raw query if not present.
+        corrected_query       = reasoning_result.get("corrected_query") or query
         logger.info(f"Query Scope: {query_scope}")
 
         if domain:
@@ -544,7 +554,11 @@ class RAGService:
         # ── BROAD OVERVIEW SUBDOMAIN EXPANSION ─────────────────────────────
         # If the user query asks for a broad overview of a legal domain (e.g. "Explain Norway labour law"),
         # expand target_subdomains to cover ALL subdomains in that domain family to guarantee chapter coverage.
-        if query_scope == "BROAD_OVERVIEW" or "explain" in query.lower() or "oversikt" in query.lower():
+        broad_keyword_request = "explain" in query.lower() or "oversikt" in query.lower()
+        if query_scope == "BROAD_OVERVIEW" or (
+            broad_keyword_request
+            and query_scope not in {"SPECIFIC_DOCUMENT", "SPECIFIC_PROVISION"}
+        ):
             current_domain_canonical = normalize_domain(final_domain or domain)
             if current_domain_canonical:
                 all_domain_subs = []
@@ -587,11 +601,35 @@ class RAGService:
         # ── [4] Multi-Pass Retrieval & Deduplication ──────────────────────
         raw_retrieved_chunks = []
         
-        # Determine per-subdomain fetch limit (2 chunks per subdomain for broad overview, top_k for targeted)
-        per_pass_top_k = 2 if query_scope == "BROAD_OVERVIEW" and len(target_subdomains) > 1 else top_k
+        # Keep broad-overview allocation proportional to the caller's requested
+        # top_k instead of hard-capping each subdomain at only two chunks. This
+        # preserves the same multi-pass workflow while preventing early recall
+        # loss before ResultMerger.
+        if query_scope == "BROAD_OVERVIEW" and len(target_subdomains) > 1:
+            per_pass_top_k = max(2, (top_k + len(target_subdomains) - 1) // len(target_subdomains))
+        else:
+            per_pass_top_k = top_k
+
+        # A deterministically identified named document must not be excluded by an
+        # inferred subdomain. For SPECIFIC_DOCUMENT queries, retrieve the named
+        # legal source directly and let BM25 rank sections inside that document.
+        if (
+            query_scope == "SPECIFIC_DOCUMENT"
+            and statute_filter
+            and registry_target_match
+        ):
+            retrieval_targets = [None]
+        else:
+            retrieval_targets = target_subdomains or [None]
+
+        statute_explicit = (
+            bool(registry_target_match)
+            and _is_statute_explicit(query)
+            and query_scope in {"SPECIFIC_DOCUMENT", "SPECIFIC_PROVISION"}
+        )
 
         # Execute a search pass for each target subdomain to prevent domain-level filtering issues
-        for sub_candidate in (target_subdomains or [None]):
+        for sub_candidate in retrieval_targets:
             sub_subdomain_candidates = [sub_candidate] if sub_candidate else None
             
             # Look up domain for this specific subdomain if it is co-retrieved from a different domain
@@ -617,7 +655,7 @@ class RAGService:
             try:
                 t0 = time.perf_counter()
                 sub_results = await self._retriever_agent.run(
-                    query=query,
+                    query=corrected_query,          # DIG-RAG-005: use spell-corrected query for BM25 token matching
                     enriched_query=enriched_query,
                     top_k=per_pass_top_k,
                     min_score=min_score,
@@ -628,6 +666,7 @@ class RAGService:
                     subdomain_candidates=sub_subdomain_candidates,
                     b2b_b2c=b2b_b2c,
                     statute_from_registry=statute_from_registry,
+                    statute_explicit=statute_explicit,
                 )
                 elapsed = time.perf_counter() - t0
                 logger.info(f"Vector search retrieval completed in {elapsed:.4f}s for subdomain '{sub_candidate}'")
@@ -774,15 +813,17 @@ class RAGService:
                     seen_urls = set()
                     visible_sources = []
                     for chunk in search_results:
-                        base_url    = chunk.get("source_doc_url") or chunk.get("url") or ""
+                        base_url    = (chunk.get("source_url") or chunk.get("url") or "").split('#')[0].rstrip('/')
                         raw_section_ref = (chunk.get("section_ref") or "").strip()
                         # Normalize non-breaking spaces (\xa0) and extra whitespace
                         section_ref = re.sub(r"\s+", " ", raw_section_ref.replace("\xa0", " ")).strip()
                         doc_title   = chunk.get("doc_title") or ""
                         
-                        # URL encode the section reference to prevent broken space-containing URLs
-                        encoded_section = urllib.parse.quote(section_ref) if section_ref else ""
-                        full_url = f"{base_url}/{encoded_section}" if encoded_section else base_url
+                        m = re.search(r'[\d\w\-]+', section_ref) if section_ref else None
+                        if m and not section_ref.startswith("sec-"):
+                            full_url = f"{base_url}#%C2%A7{m.group(0)}"
+                        else:
+                            full_url = base_url
                         
                         if full_url and full_url not in seen_urls:
                             seen_urls.add(full_url)
@@ -954,13 +995,16 @@ class RAGService:
         seen_urls: set = set()
         visible_sources: List[Dict[str, Any]] = []
         for chunk in (search_results or []):
-            base_url    = chunk.get("source_doc_url") or chunk.get("url") or ""
-            section_ref = (chunk.get("section_ref") or "").strip()
+            base_url    = (chunk.get("source_url") or chunk.get("url") or "").split('#')[0].rstrip('/')
+            raw_section_ref = (chunk.get("section_ref") or "").strip()
+            section_ref = re.sub(r"\s+", " ", raw_section_ref.replace("\xa0", " ")).strip()
             doc_title   = chunk.get("doc_title") or ""
-            
-            # URL encode the section reference
-            encoded_section = urllib.parse.quote(section_ref) if section_ref else ""
-            full_url = f"{base_url}/{encoded_section}" if encoded_section else base_url
+            m = re.search(r'[\d\w\-]+', section_ref) if section_ref else None
+            if m and not section_ref.startswith("sec-"):
+                full_url = f"{base_url}#%C2%A7{m.group(0)}"  # e.g. #%C2%A72 for § 2
+            else:
+                full_url = base_url  # unstructured sec-1: just return base URL
+
             
             if full_url and full_url not in seen_urls:
                 seen_urls.add(full_url)
@@ -1062,7 +1106,7 @@ class RAGService:
     
         Uses:
         - section_ref  → human-readable citation anchor (e.g. "§ 6-1")
-        - source_doc_url → full Lovdata URL for attribution header
+        - source_url → full Lovdata URL for attribution header
         - text         → chunk content
         """
         parts = []
@@ -1072,12 +1116,9 @@ class RAGService:
                 continue
     
             section_ref = chunk.get("section_ref") or ""
-            source_url = chunk.get("source_doc_url") or chunk.get("url") or ""
+            source_url = chunk.get("source_url") or chunk.get("url") or ""
             domain = chunk.get("domain") or ""
             subdomain = chunk.get("subdomain") or ""
-            
-            # 🔥 REMOVED: doc_title from header to prevent LLM inline citations
-            # The title is still in the chunk dict for save_exchange() to use
     
             header_parts = []
             if source_url:

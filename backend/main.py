@@ -287,6 +287,7 @@ app.include_router(webhooks.router,        prefix="/api/v1/webhooks")
 app.include_router(cal_webhooks.router,    prefix="/api/v1/webhooks")
 app.include_router(invite.router,          prefix="/api/v1")
 
+
 # Protected business logic routes (require token: Clerk JWT or Static API Key)
 protected_deps = [Depends(get_current_user)]
 app.include_router(chat.router,            prefix="/api/v1", dependencies=protected_deps)

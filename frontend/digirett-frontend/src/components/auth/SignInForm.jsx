@@ -116,8 +116,11 @@ const SignInForm = () => {
           localStorage.removeItem('rememberedIdentifier');
         }
       } else {
-        setError('Sign in incomplete. Please try again.');
+        // status is not 'complete' — most commonly caused by browser privacy
+        // settings (e.g. Brave Shields) blocking Clerk's third-party session cookies on localhost.
+        setError('Sign in could not be completed. If you are using Brave or Firefox with strict privacy settings, try disabling shields/enhanced protection for this site and try again.');
       }
+
     } catch (err) {
       console.error('Sign in error:', err);
 

@@ -11,6 +11,7 @@ const SignUpForm = () => {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [code, setCode] = useState('');
   const [needsVerification, setNeedsVerification] = useState(false);
   const [error, setError] = useState('');
@@ -20,6 +21,7 @@ const SignUpForm = () => {
   
   // UI State
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Timer Effect
   useEffect(() => {
@@ -48,11 +50,42 @@ const SignUpForm = () => {
       return;
     }
 
+    // DIG-AUTH-003: Validate email format before calling Clerk API.
+    // e.preventDefault() above suppresses browser-native type="email" checks,
+    // so this JS guard is required to block invalid emails reaching Clerk.
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      setError('Please enter a valid email address (e.g. name@example.com).');
+      setLoading(false);
+      return;
+    }
+
+    // DIG-AUTH-006: Confirm password mismatch check.
+    if (password !== confirmPassword) {
+      setError('Passwords do not match. Please re-enter your confirmation password.');
+      setLoading(false);
+      return;
+    }
+
+    // DIG-AUTH-007 & DIG-AUTH-008: Username sanitization and validation.
+    const trimmedUsername = username.trim();
+    if (!trimmedUsername) {
+      setError('Username cannot be empty or contain only spaces.');
+      setLoading(false);
+      return;
+    }
+    const usernameRegex = /^[a-zA-Z0-9._\-]+$/;
+    if (!usernameRegex.test(trimmedUsername)) {
+      setError('Username may only contain letters, numbers, underscores, hyphens, and dots.');
+      setLoading(false);
+      return;
+    }
+
     try {
       const createdSignUp = await signUp.create({
-        username,                 // ✅ UNIQUE (Clerk enforces)
-        emailAddress: email,
-        password,
+        username: trimmedUsername,      // DIG-AUTH-007: trimmed, DIG-AUTH-008: sanitized
+        emailAddress: email.trim(),     // DIG-AUTH-007: trim leading/trailing spaces
+        password,                       // intentionally NOT trimmed — spaces are valid
       });
 
       // Clerk automatically sends a verification code for the primary email if required.
@@ -176,7 +209,7 @@ const SignUpForm = () => {
                   <input
                     type="text"
                     value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9._\-]/g, ''))}
                     placeholder="Choose a username"
                     className="bg-[#1a1a1a] border border-gray-800 text-white focus:border-white rounded-xl h-9 transition-all px-4 w-full text-sm outline-none placeholder-gray-600"
                     required
@@ -212,6 +245,28 @@ const SignUpForm = () => {
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors focus:outline-none"
                     >
                       {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* DIG-AUTH-006: Confirm Password field */}
+                <div className="flex flex-col">
+                  <label className="text-gray-400 font-medium text-[10px] mb-1">Confirm Password</label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="bg-[#1a1a1a] border border-gray-800 text-white focus:border-white rounded-xl h-9 transition-all px-4 pr-10 w-full text-sm outline-none placeholder-gray-600"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors focus:outline-none"
+                    >
+                      {showConfirmPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
                   </div>
                 </div>

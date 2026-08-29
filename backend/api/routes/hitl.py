@@ -48,6 +48,7 @@ def set_services(
 @router.get(
     "/check-status",
     summary="Publicly check if a user is suspended (before login)",
+    dependencies=[],  # Override router-level auth — this endpoint is intentionally public
 )
 def check_user_status(identifier: str):
     """
