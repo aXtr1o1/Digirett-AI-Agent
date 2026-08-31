@@ -4,7 +4,6 @@ import re
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from openai import base_url
-from torch import chunk
 
 from agents.memory_agent import MemoryAgent
 from agents.user_memory_agent import UserMemoryAgent
@@ -586,6 +585,8 @@ class RAGService:
             and query_scope in {"SPECIFIC_DOCUMENT", "SPECIFIC_PROVISION"}
         )
 
+        raw_retrieved_chunks: List[Dict[str, Any]] = []
+
         # Execute a search pass for each target subdomain to prevent domain-level filtering issues
         for sub_candidate in retrieval_targets:
             sub_subdomain_candidates = [sub_candidate] if sub_candidate else None
@@ -689,11 +690,6 @@ class RAGService:
             }
             return
  
-        rag_context = self._build_context(search_results[:10])
-        if len(rag_context) > settings.CONTEXT_MAX_LENGTH:
-            rag_context = rag_context[:settings.CONTEXT_MAX_LENGTH]
-            logger.warning(f"[WARN] RAG context truncated to {settings.CONTEXT_MAX_LENGTH} chars")
- 
         score = 0.5
         confidence = "Partially supported by sources"
         full_answer = ""
@@ -715,6 +711,11 @@ class RAGService:
             if isolated_chunks:
                 logger.info(f"Context Isolation: filtering search results to keep only {len(isolated_chunks)} chunks for section(s) {section_nums}")
                 search_results = isolated_chunks
+
+        rag_context = self._build_context(search_results[:10])
+        if len(rag_context) > settings.CONTEXT_MAX_LENGTH:
+            rag_context = rag_context[:settings.CONTEXT_MAX_LENGTH]
+            logger.warning(f"[WARN] RAG context truncated to {settings.CONTEXT_MAX_LENGTH} chars")
 
         async for token in self._llm.generate_legal_stream(
             query=query,
