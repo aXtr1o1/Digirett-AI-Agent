@@ -37,9 +37,12 @@ _CI_ENV = {
     "MILVUS_HOST":                          "localhost",
     "MILVUS_PORT":                          "19530",
     "MILVUS_COLLECTION":                    "classified_data",
+    "MILVUS_BATCH_SIZE":                    "100",
+    "MILVUS_MAX_RETRIES":                   "3",
     "MILVUS_DIMENSION":                     "1536",
     "MILVUS_METRIC_TYPE":                   "IP",
     "MILVUS_INDEX_TYPE":                    "HNSW",
+
 
     # ── Chunking ──────────────────────────────────────────────────────────────
     "LEGAL_CHUNK_MAX_TOKENS":               "2000",

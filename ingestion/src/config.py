@@ -30,67 +30,68 @@ class Settings(BaseSettings):
     """
 
     # ── XAPI Connection & Auth ───────────────────────────────────────────
-    XAPI_BASE_URL: str = "https://xapi.no"
-    XAPI_API_KEY: str = ""
-    XAPI_BEARER_TOKEN: str = ""
-    XAPI_API_KEY_HEADER: str = "x-api-key"
+    XAPI_BASE_URL: str
+    XAPI_API_KEY: str
+    XAPI_BEARER_TOKEN: str
+    XAPI_API_KEY_HEADER: str
 
     # ── XAPI Pacing & Concurrency ────────────────────────────────────────
-    XAPI_LIMIT: int = 2500
-    XAPI_TIMEOUT_SECONDS: float = 120.0
-    XAPI_MAX_RETRIES: int = 4
-    XAPI_CONCURRENCY: int = 8
-    XAPI_BACKOFF_SECONDS: float = 2.0
-    XAPI_REQUEST_PACING_SECONDS: float = 0.02
+    XAPI_LIMIT: int
+    XAPI_TIMEOUT_SECONDS: float
+    XAPI_MAX_RETRIES: int
+    XAPI_CONCURRENCY: int
+    XAPI_BACKOFF_SECONDS: float
+    XAPI_REQUEST_PACING_SECONDS: float
 
     # ── Supabase PostgreSQL & Storage ────────────────────────────────────
-    SUPABASE_URL: str = ""
-    SUPABASE_KEY: str = ""
+    SUPABASE_URL: str
+    SUPABASE_KEY: str
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
-    SUPABASE_BUCKET: str = "raw_json_files"
+    SUPABASE_BUCKET: str
 
     # ── Document Batching ────────────────────────────────────────────────
-    DOCUMENT_BATCH_SIZE: int = 50
+    DOCUMENT_BATCH_SIZE: int
 
     # ── Milvus Vector Database ───────────────────────────────────────────
-    MILVUS_HOST: str = "localhost"
-    MILVUS_PORT: int = 19530
-    MILVUS_COLLECTION: str = "digirett_xapi_data"
-    MILVUS_BATCH_SIZE: int = 100
-    MILVUS_MAX_RETRIES: int = 3
-    MILVUS_DIMENSION: int = 1536
-    MILVUS_METRIC_TYPE: str = "COSINE"
-    MILVUS_INDEX_TYPE: str = "HNSW"
+    MILVUS_HOST: str
+    MILVUS_PORT: int
+    MILVUS_COLLECTION: str
+    MILVUS_BATCH_SIZE: int
+    MILVUS_MAX_RETRIES: int
+    MILVUS_DIMENSION: int
+    MILVUS_METRIC_TYPE: str
+    MILVUS_INDEX_TYPE: str
 
     # ── Azure OpenAI & AI Routing ────────────────────────────────────────
-    AZURE_OPENAI_ENDPOINT: str = ""
-    AZURE_OPENAI_KEY: str = ""
-    AZURE_OPENAI_DEPLOYMENT: str = DEFAULT_EMBEDDING_MODEL
-    AZURE_OPENAI_CHAT_DEPLOYMENT: str = "gpt-4o-mini"
-    AZURE_OPENAI_API_VERSION: str = "2024-02-01"
-    AI_ROUTING_ENABLED: bool = True
-    AI_CONFIDENCE_THRESHOLD: float = 0.65
-    AI_SCOPE_VALIDATION_ENABLED: bool = True
+    AZURE_OPENAI_ENDPOINT: str
+    AZURE_OPENAI_KEY: str
+    AZURE_OPENAI_DEPLOYMENT: str
+    AZURE_OPENAI_CHAT_DEPLOYMENT: str
+    AZURE_OPENAI_API_VERSION: str
+    AI_ROUTING_ENABLED: bool
+    AI_CONFIDENCE_THRESHOLD: float
+    AI_SCOPE_VALIDATION_ENABLED: bool
 
     # ── Embedding Model & Pacing ─────────────────────────────────────────
-    EMBEDDING_MODEL: str = DEFAULT_EMBEDDING_MODEL
-    EMBEDDING_BATCH_SIZE: int = 64
-    EMBEDDING_CHUNK_DELAY: float = 0.05
+    EMBEDDING_MODEL: str
+    EMBEDDING_BATCH_SIZE: int
+    EMBEDDING_CHUNK_DELAY: float
 
     # ── Legal Chunking Tokens ────────────────────────────────────────────
-    LEGAL_CHUNK_MAX_TOKENS: int = 2000
-    LEGAL_CHUNK_OVERLAP_TOKENS: int = 200
-    LEGAL_CHUNK_CHARS_PER_TOKEN: int = 4
+    LEGAL_CHUNK_MAX_TOKENS: int
+    LEGAL_CHUNK_OVERLAP_TOKENS: int
+    LEGAL_CHUNK_CHARS_PER_TOKEN: int
 
     # ── Scheduler ────────────────────────────────────────────────────────
-    SCHEDULER_CRON_HOUR: int = 2
-    SCHEDULER_CRON_MINUTE: int = 0
-    SCHEDULER_API_TIMEOUT: int = 30
+    SCHEDULER_CRON_HOUR: int
+    SCHEDULER_CRON_MINUTE: int
+    SCHEDULER_API_TIMEOUT: int
 
     # ── URL Validation Gate ──────────────────────────────────────────────
-    URL_VALIDATION_ENABLED: bool = True
-    URL_VALIDATION_CONCURRENCY: int = 5
-    URL_VALIDATION_TIMEOUT: int = 15
+    URL_VALIDATION_ENABLED: bool
+    URL_VALIDATION_CONCURRENCY: int
+    URL_VALIDATION_TIMEOUT: int
+
 
     # ── Fixed xAPI Protocol Routes & Internal Constants ──────────────────
     XAPI_AREAS_PATH: str = "/v1/lovdata/rettsomrader"
