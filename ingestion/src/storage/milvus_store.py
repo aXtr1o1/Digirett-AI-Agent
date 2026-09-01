@@ -1,618 +1,295 @@
-# from __future__ import annotations
-
-# import logging
-# import sys
-# import time
-# from typing import Any, Dict, List
-
-# import psutil
-# from pymilvus import (
-#     Collection,
-#     CollectionSchema,
-#     DataType,
-#     FieldSchema,
-#     connections,
-#     utility,
-# )
-
-# from ingestion.src.config import (
-#     MILVUS_COLLECTION,
-#     MILVUS_CONNECT_TIMEOUT,
-#     MILVUS_CPU_MAX_WAIT,
-#     MILVUS_CPU_PAUSE_THRESHOLD,
-#     MILVUS_DIMENSION,
-#     MILVUS_FLUSH_EVERY,
-#     MILVUS_HOST,
-#     MILVUS_INSERT_BATCH,
-#     MILVUS_INSERT_SLEEP,
-#     MILVUS_PORT,
-# )
-
-# logger = logging.getLogger(__name__)
-
-
-# def _wait_for_cpu(threshold: int, max_wait: int, label: str = "") -> None:
-#     waited = 0
-#     while waited < max_wait:
-#         cpu = psutil.cpu_percent(interval=1)
-#         if cpu < threshold:
-#             return
-#         logger.warning(
-#             f"Milvus CPU {cpu}% > {threshold}% [{label}] — waiting 3s"
-#         )
-#         time.sleep(3)
-#         waited += 3
-#     logger.warning(f"CPU still elevated after {max_wait}s — proceeding")
-
-
-# class MilvusTextStore:
-#     def __init__(self) -> None:
-#         self.collection_name = MILVUS_COLLECTION
-#         self.embedding_dim = MILVUS_DIMENSION
-#         self._connected = False
-#         self.collection: Collection | None = None
-#         self.insert_counter = 0
-
-#     def _ensure_connection(self) -> None:
-#         if not self._connected:
-#             connections.connect(
-#                 alias="default",
-#                 host=MILVUS_HOST,
-#                 port=MILVUS_PORT,
-#                 timeout=MILVUS_CONNECT_TIMEOUT,
-#             )
-#             self.collection = self._get_or_create_collection()
-#             self._connected = True
-
-#     def _fix_embedding(self, emb: Any) -> List[float]:
-#         if isinstance(emb, dict):
-#             emb = emb.get("dense_vecs") or emb.get("embedding") or emb.get("vector")
-#             if emb is None:
-#                 raise ValueError("Could not extract embedding from dict")
-
-#         if hasattr(emb, "tolist"):
-#             emb = emb.tolist()
-
-#         while isinstance(emb, list) and emb and isinstance(emb[0], list):
-#             emb = emb[0]
-
-#         if not isinstance(emb, list):
-#             raise TypeError(f"Embedding must be a list, got {type(emb)}")
-#         if not emb:
-#             raise ValueError("Embedding is empty")
-
-#         result = [float(x) for x in emb]
-#         if len(result) != self.embedding_dim:
-#             raise ValueError(
-#                 f"Embedding dimension mismatch: expected {self.embedding_dim}, got {len(result)}"
-#             )
-#         return result
-
-#     def _get_or_create_collection(self) -> Collection:
-#         if utility.has_collection(self.collection_name):
-#             logger.info(f"Loading existing collection: {self.collection_name}")
-#             collection = Collection(self.collection_name)
-#             collection.load()
-#             return collection
-
-#         logger.info(f"Creating collection: {self.collection_name}")
-#         fields = [
-#             FieldSchema(
-#                 name="milvus_id",
-#                 dtype=DataType.INT64,
-#                 is_primary=True,
-#                 auto_id=True,
-#             ),
-#             FieldSchema(name="chunk_id", dtype=DataType.VARCHAR, max_length=255),
-#             FieldSchema(name="document_id", dtype=DataType.VARCHAR, max_length=255),
-#             FieldSchema(name="source_doc_url", dtype=DataType.VARCHAR, max_length=1024),
-#             FieldSchema(name="section_ref", dtype=DataType.VARCHAR, max_length=128),
-#             FieldSchema(name="domain", dtype=DataType.VARCHAR, max_length=512),
-#             FieldSchema(name="subdomain", dtype=DataType.VARCHAR, max_length=1024),
-#             FieldSchema(name="b2b_b2c", dtype=DataType.VARCHAR, max_length=32),
-#             FieldSchema(name="tier", dtype=DataType.VARCHAR, max_length=64),
-#             FieldSchema(name="jurisdiction", dtype=DataType.VARCHAR, max_length=64),
-#             FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535),
-#             FieldSchema(
-#                 name="embedding",
-#                 dtype=DataType.FLOAT_VECTOR,
-#                 dim=self.embedding_dim,
-#             ),
-#         ]
-
-#         schema = CollectionSchema(
-#             fields=fields,
-#             description="Validated DigiRett legal chunks",
-#         )
-#         collection = Collection(name=self.collection_name, schema=schema)
-
-#         collection.create_index(
-#             field_name="embedding",
-#             index_params={
-#                 "index_type": "HNSW",
-#                 "metric_type": "COSINE",
-#                 "params": {"M": 8, "efConstruction": 200},
-#             },
-#         )
-#         collection.load()
-#         logger.info(f"Collection created and loaded: {self.collection_name}")
-#         return collection
-
-#     def delete_by_document_id(self, document_id: str) -> None:
-#         self._ensure_connection()
-#         if self.collection is None:
-#             raise RuntimeError("Milvus collection not initialised")
-
-#         try:
-#             self.collection.delete(f'document_id == "{document_id}"')
-#             self.collection.flush()
-#             logger.info(f"Deleted old rows for document_id={document_id}")
-#         except Exception as exc:
-#             logger.warning(f"Could not delete rows for document_id={document_id}: {exc}")
-
-#     def insert_chunks(
-#         self,
-#         chunks: List[Dict[str, Any]],
-#         metadata: Dict[str, Any],
-#     ) -> Dict[str, Any]:
-#         if not chunks:
-#             return {"inserted": 0}
-
-#         self._ensure_connection()
-#         if self.collection is None:
-#             raise RuntimeError("Milvus collection not initialised")
-
-#         required_metadata = [
-#             "document_id",
-#             "source_doc_url",
-#             "section_ref",
-#             "domain",
-#             "subdomain",
-#             "b2b_b2c",
-#             "tier",
-#             "jurisdiction",
-#         ]
-#         missing = [k for k in required_metadata if not metadata.get(k)]
-#         if missing:
-#             raise ValueError(f"Missing Milvus metadata fields: {missing}")
-
-#         document_id = metadata["document_id"]
-
-#         # Re-ingestion strategy: delete old rows for this document_id, then re-insert.
-#         try:
-#             existing = self.collection.query(
-#                 expr=f'document_id == "{document_id}"',
-#                 output_fields=["milvus_id"],
-#             )
-#             if existing:
-#                 self.collection.delete(f'document_id == "{document_id}"')
-#                 self.collection.flush()
-#                 logger.info(
-#                     f"Deleted {len(existing)} stale row(s) for document_id={document_id}"
-#                 )
-#         except Exception as exc:
-#             logger.warning(f"Could not delete stale rows for {document_id}: {exc}")
-
-#         normalized: List[Dict[str, Any]] = []
-#         for i, chunk in enumerate(chunks):
-#             try:
-#                 normalized.append(
-#                     {
-#                         "chunk_id": str(chunk["chunk_id"]),
-#                         "document_id": document_id,
-#                         "source_doc_url": str(metadata["source_doc_url"]),
-#                         "section_ref": str(metadata["section_ref"]),
-#                         "domain": str(metadata["domain"]),
-#                         "subdomain": str(metadata["subdomain"]),
-#                         "b2b_b2c": str(metadata["b2b_b2c"]),
-#                         "tier": str(metadata["tier"]),
-#                         "jurisdiction": str(metadata["jurisdiction"]),
-#                         "text": (chunk.get("text") or "")[:65000],
-#                         "embedding": self._fix_embedding(chunk["embedding"]),
-#                     }
-#                 )
-#             except Exception as exc:
-#                 logger.error(f"Failed to normalise chunk {i}: {exc}")
-#                 raise
-
-#         total_rows = len(normalized)
-#         total_inserted = 0
-#         all_pk: List[int] = []
-
-#         logger.info(
-#             f"Inserting {total_rows} row(s) into Milvus | "
-#             f"sub-batch={MILVUS_INSERT_BATCH}"
-#         )
-
-#         for batch_start in range(0, total_rows, MILVUS_INSERT_BATCH):
-#             batch = normalized[batch_start : batch_start + MILVUS_INSERT_BATCH]
-#             batch_num = batch_start // MILVUS_INSERT_BATCH + 1
-
-#             _wait_for_cpu(
-#                 threshold=MILVUS_CPU_PAUSE_THRESHOLD,
-#                 max_wait=MILVUS_CPU_MAX_WAIT,
-#                 label=f"sub-batch {batch_num}",
-#             )
-
-#             data = [
-#                 [c["chunk_id"] for c in batch],
-#                 [c["document_id"] for c in batch],
-#                 [c["source_doc_url"] for c in batch],
-#                 [c["section_ref"] for c in batch],
-#                 [c["domain"] for c in batch],
-#                 [c["subdomain"] for c in batch],
-#                 [c["b2b_b2c"] for c in batch],
-#                 [c["tier"] for c in batch],
-#                 [c["jurisdiction"] for c in batch],
-#                 [c["text"] for c in batch],
-#                 [c["embedding"] for c in batch],
-#             ]
-
-#             payload_mb = sys.getsizeof(data) / (1024 * 1024)
-#             cpu = psutil.cpu_percent()
-#             mem = psutil.virtual_memory().percent
-#             logger.info(
-#                 f"Batch {batch_num}: {len(batch)} rows | "
-#                 f"payload={payload_mb:.2f}MB | cpu={cpu}% | mem={mem}%"
-#             )
-
-#             start = time.time()
-#             try:
-#                 result = self.collection.insert(data)
-#                 elapsed = time.time() - start
-#                 logger.info(f"Batch {batch_num}: inserted in {elapsed:.2f}s")
-#                 total_inserted += len(batch)
-#                 all_pk.extend(result.primary_keys)
-#             except Exception as exc:
-#                 elapsed = time.time() - start
-#                 logger.error(
-#                     f"Batch {batch_num} INSERT FAILED after {elapsed:.2f}s: {exc}"
-#                 )
-#                 raise
-
-#             self.insert_counter += len(batch)
-#             if self.insert_counter % MILVUS_FLUSH_EVERY == 0:
-#                 logger.info("Periodic Milvus flush...")
-#                 self.collection.flush()
-
-#             if batch_start + MILVUS_INSERT_BATCH < total_rows:
-#                 time.sleep(MILVUS_INSERT_SLEEP)
-
-#         logger.info(f"Milvus insert complete: {total_inserted}/{total_rows} row(s)")
-#         return {"inserted": total_inserted, "milvus_ids": all_pk}
-
-#     def close(self) -> None:
-#         if self._connected:
-#             logger.info("Final Milvus flush before close...")
-#             if self.collection is not None:
-#                 try:
-#                     self.collection.flush()
-#                 except Exception as exc:
-#                     logger.warning(f"Flush failed during close: {exc}")
-#             connections.disconnect("default")
-#             self._connected = False
-
-"""
-storage/milvus_store.py
-=======================
-
-Lean production Milvus store for validated DigiRett ingestion.
-
-One row per chunk.
-
-Stored fields:
-- chunk_id
-- source_id
-- document_id
-- text
-- embedding
-- source_doc_url
-- source_url
-- section_ref
-- domain
-- subdomain
-- b2b_b2c
-- tier
-- jurisdiction
-"""
-
 from __future__ import annotations
 
 import logging
-import sys
+import os
 import time
-from typing import Any, Dict, List
-
-import psutil
+from typing import Any, Dict, List, Optional
 from pymilvus import (
     Collection,
-    CollectionSchema,
-    DataType,
-    FieldSchema,
     connections,
     utility,
 )
-
 from ingestion.src.config import (
-    MILVUS_COLLECTION,
-    MILVUS_CONNECT_TIMEOUT,
-    MILVUS_CPU_MAX_WAIT,
-    MILVUS_CPU_PAUSE_THRESHOLD,
-    MILVUS_DIMENSION,
-    MILVUS_FLUSH_EVERY,
     MILVUS_HOST,
-    MILVUS_INSERT_BATCH,
-    MILVUS_INSERT_SLEEP,
     MILVUS_PORT,
+    MILVUS_COLLECTION,
+    MILVUS_BATCH_SIZE,
+    MILVUS_MAX_RETRIES,
+    MILVUS_METRIC_TYPE,
+    MILVUS_INDEX_TYPE,
+)
+from ingestion.schema.milvus_schema import (
+    DEFAULT_VECTOR_DIM,
+    get_collection_schema,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def _wait_for_cpu(threshold: int, max_wait: int, label: str = "") -> None:
-    waited = 0
-    while waited < max_wait:
-        cpu = psutil.cpu_percent(interval=1)
-        if cpu < threshold:
-            return
-        logger.warning(
-            f"Milvus CPU {cpu}% > {threshold}% [{label}] — waiting 3s"
-        )
-        time.sleep(3)
-        waited += 3
-    logger.warning(f"CPU still elevated after {max_wait}s — proceeding")
+class MilvusChunkStore:
+    """Milvus Vector Store for digirett_legal_chunks_v1 collection."""
 
-
-class MilvusTextStore:
-    def __init__(self) -> None:
-        self.collection_name = MILVUS_COLLECTION
-        self.embedding_dim = MILVUS_DIMENSION
+    def __init__(
+        self,
+        collection_name: Optional[str] = None,
+        vector_dim: int = DEFAULT_VECTOR_DIM,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+    ):
+        self.collection_name = collection_name or MILVUS_COLLECTION
+        self.vector_dim = vector_dim
+        self.embedding_dim = vector_dim
+        self.host = host or MILVUS_HOST
+        self.port = port or MILVUS_PORT
         self._connected = False
-        self.collection: Collection | None = None
-        self.insert_counter = 0
-
-    def _ensure_connection(self) -> None:
-        if not self._connected:
-            connections.connect(
-                alias="default",
-                host=MILVUS_HOST,
-                port=MILVUS_PORT,
-                timeout=MILVUS_CONNECT_TIMEOUT,
-            )
-            self.collection = self._get_or_create_collection()
-            self._connected = True
+        self.collection: Optional[Collection] = None
 
     def _fix_embedding(self, emb: Any) -> List[float]:
-        if isinstance(emb, dict):
-            emb = emb.get("dense_vecs") or emb.get("embedding") or emb.get("vector")
-            if emb is None:
-                raise ValueError("Could not extract embedding from dict")
-
-        if hasattr(emb, "tolist"):
-            emb = emb.tolist()
-
-        while isinstance(emb, list) and emb and isinstance(emb[0], list):
-            emb = emb[0]
-
-        if not isinstance(emb, list):
-            raise TypeError(f"Embedding must be a list, got {type(emb)}")
+        """Validates and flattens/converts embedding to List[float]."""
+        if not isinstance(emb, (list, tuple)):
+            raise TypeError(f"Expected list/tuple embedding, got {type(emb).__name__}")
         if not emb:
-            raise ValueError("Embedding is empty")
+            raise ValueError("Embedding list is empty")
+        if isinstance(emb[0], (list, tuple)):
+            emb = emb[0]
+        expected_dim = getattr(self, "embedding_dim", getattr(self, "vector_dim", DEFAULT_VECTOR_DIM))
+        if len(emb) != expected_dim:
+            raise ValueError(f"Embedding dim mismatch: expected {expected_dim}, got {len(emb)}")
+        return [float(x) for x in emb]
 
-        result = [float(x) for x in emb]
-        if len(result) != self.embedding_dim:
-            raise ValueError(
-                f"Embedding dimension mismatch: expected {self.embedding_dim}, got {len(result)}"
-            )
-        return result
+    def _ensure_connection(self) -> bool:
+        if not self._connected:
+            try:
+                connections.connect(alias="default", host=self.host, port=self.port, timeout=30)
+                if not utility.has_collection(self.collection_name):
+                    schema = get_collection_schema(vector_dim=self.vector_dim)
+                    self.collection = Collection(name=self.collection_name, schema=schema)
+                    index_params = {
+                        "metric_type": MILVUS_METRIC_TYPE,
+                        "index_type": MILVUS_INDEX_TYPE,
+                        "params": {"M": 16, "efConstruction": 200},
+                    }
+                    self.collection.create_index(field_name="embedding", index_params=index_params)
+                else:
+                    self.collection = Collection(self.collection_name)
 
-    def _get_or_create_collection(self) -> Collection:
-        if utility.has_collection(self.collection_name):
-            logger.info(f"Loading existing collection: {self.collection_name}")
-            collection = Collection(self.collection_name)
-            collection.load()
-            return collection
+                self.collection.load()
+                self._connected = True
+                logger.info("MilvusChunkStore: Connected to %s:%s | Collection: %s", self.host, self.port, self.collection_name)
+            except Exception as exc:
+                logger.warning("MilvusChunkStore: Connection warning (%s:%s): %s", self.host, self.port, exc)
+                return False
+        return True
 
-        logger.info(f"Creating collection: {self.collection_name}")
-        fields = [
-            FieldSchema(
-                name="milvus_id",
-                dtype=DataType.INT64,
-                is_primary=True,
-                auto_id=True,
-            ),
-            FieldSchema(name="chunk_id", dtype=DataType.VARCHAR, max_length=255),
-            FieldSchema(name="source_id", dtype=DataType.VARCHAR, max_length=255),
-            FieldSchema(name="document_id", dtype=DataType.VARCHAR, max_length=255),
-            FieldSchema(name="source_doc_url", dtype=DataType.VARCHAR, max_length=1024),
-            FieldSchema(name="section_ref", dtype=DataType.VARCHAR, max_length=128),
-            FieldSchema(name="source_url", dtype=DataType.VARCHAR, max_length=1024),  # ADDED
-            FieldSchema(name="domain", dtype=DataType.VARCHAR, max_length=512),
-            FieldSchema(name="subdomain", dtype=DataType.VARCHAR, max_length=1024),
-            FieldSchema(name="b2b_b2c", dtype=DataType.VARCHAR, max_length=32),
-            FieldSchema(name="tier", dtype=DataType.VARCHAR, max_length=64),
-            FieldSchema(name="jurisdiction", dtype=DataType.VARCHAR, max_length=64),
-            FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535),
-            FieldSchema(
-                name="embedding",
-                dtype=DataType.FLOAT_VECTOR,
-                dim=self.embedding_dim,
-            ),
-        ]
+    def _extract_field_value(self, item: Dict[str, Any], field_name: str) -> Any:
+        """Extracts and formats a value for a specific Milvus canonical schema field."""
+        if field_name == "chunk_id":
+            return str(item.get("chunk_id", ""))[:128]
+        if field_name == "legal_document_id":
+            return str(item.get("legal_document_id") or item.get("canonical_document_id", ""))[:128]
+        if field_name == "legal_section_id":
+            return str(item.get("legal_section_id", ""))[:128]
+        if field_name == "canonical_document_id":
+            return str(item.get("canonical_document_id", ""))[:255]
+        if field_name == "source_section_key":
+            return str(item.get("source_section_key", ""))[:255]
+        if field_name == "chunk_index":
+            return int(item.get("chunk_index", 0))
+        if field_name == "embedding":
+            return self._fix_embedding(item["embedding"])
+        if field_name == "text":
+            return str(item.get("text", ""))[:65535]
+        if field_name == "document_type":
+            return str(item.get("document_type", "lov"))[:30]
+        if field_name == "doc_title":
+            return str(item.get("doc_title", "Untitled"))[:512]
+        if field_name == "section_number":
+            return str(item.get("section_number", ""))[:100]
+        if field_name == "section_title":
+            return str(item.get("section_title", ""))[:512]
+        if field_name == "citation_anchor":
+            return str(item.get("citation_anchor", ""))[:255]
+        if field_name == "source_url":
+            return str(item.get("source_url", ""))[:512]
+        if field_name == "domain_id":
+            return str(item.get("domain_id", ""))[:64]
+        if field_name == "domain_name":
+            return str(item.get("domain_name", ""))[:255]
+        if field_name == "subdomain_id":
+            return str(item.get("subdomain_id", ""))[:64]
+        if field_name == "subdomain_name":
+            return str(item.get("subdomain_name", ""))[:255]
+        if field_name == "taxonomy_version":
+            return str(item.get("taxonomy_version", "1.1.0"))[:20]
+        if field_name == "parent_law_canonical_id":
+            return str(item.get("parent_law_canonical_id", ""))[:255]
+        if field_name == "parent_law_title":
+            return str(item.get("parent_law_title", ""))[:512]
+        if field_name == "jurisdiction":
+            val = item.get("jurisdiction") or item.get("jurisdictions", "NO")
+            return (",".join(val) if isinstance(val, (list, tuple)) else str(val))[:100]
+        if field_name == "b2b_b2c":
+            val = item.get("b2b_b2c") or item.get("b2b_b2c_types", "BOTH")
+            return (",".join(val) if isinstance(val, (list, tuple)) else str(val))[:20]
+        if field_name == "relationship_type":
+            val = item.get("relationship_type") or item.get("relationship_types", "commercial")
+            return (",".join(val) if isinstance(val, (list, tuple)) else str(val))[:50]
+        if field_name == "source_type":
+            val = item.get("source_type", "lov")
+            return (",".join(val) if isinstance(val, (list, tuple)) else str(val))[:50]
+        if field_name == "tier":
+            val = item.get("tier", "1")
+            return (",".join(val) if isinstance(val, (list, tuple)) else str(val))[:30]
+        if field_name == "language":
+            return str(item.get("language", "no"))[:10]
+        if field_name == "version_date":
+            return str(item.get("version_date", ""))[:30]
+        if field_name == "content_hash":
+            return str(item.get("content_hash", ""))[:64]
+        if field_name == "is_current":
+            return bool(item.get("is_current", True))
+        if field_name == "retrieval_enabled":
+            return bool(item.get("retrieval_enabled", True))
+        return str(item.get(field_name, ""))
 
-        schema = CollectionSchema(
-            fields=fields,
-            description="Validated DigiRett legal chunks",
-        )
-        collection = Collection(name=self.collection_name, schema=schema)
+    def _wait_for_network_recovery(self, check_interval: float = 10.0, max_wait_seconds: float = 120.0) -> None:
+        """Pauses execution and probes network connectivity with a timeout until connection is restored."""
+        logger.warning("[NETWORK OFFLINE] Milvus connection lost. Pausing vector storage. Waiting for reconnection...")
+        import socket
+        start_time = time.time()
+        while time.time() - start_time < max_wait_seconds:
+            time.sleep(check_interval)
+            is_online = False
+            for host, port in [("8.8.8.8", 53), ("1.1.1.1", 53)]:
+                try:
+                    with socket.create_connection((host, port), timeout=4.0):
+                        is_online = True
+                        break
+                except OSError:
+                    pass
 
-        collection.create_index(
-            field_name="embedding",
-            index_params={
-                "index_type": "HNSW",
-                "metric_type": "COSINE",
-                "params": {"M": 8, "efConstruction": 200},
-            },
-        )
-        collection.load()
-        logger.info(f"Collection created and loaded: {self.collection_name}")
-        return collection
+            if is_online:
+                logger.info("[NETWORK RESTORED] Internet connection re-established. Reconnecting to Milvus...")
+                self._connected = False
+                self._ensure_connection()
+                return
+            logger.warning("[WAITING FOR CONNECTION] Still disconnected. Retrying in %ds...", int(check_interval))
+        raise ConnectionError(f"Milvus network recovery timed out after {int(max_wait_seconds)} seconds.")
 
-    def delete_by_document_id(self, document_id: str) -> None:
-        self._ensure_connection()
-        if self.collection is None:
-            raise RuntimeError("Milvus collection not initialised")
+    def _insert_single_batch(self, items: List[Dict[str, Any]]) -> int:
+        """Inserts a single columnar batch into Milvus strictly matching collection schema."""
+        if not items or not self.collection:
+            return 0
 
-        try:
-            self.collection.delete(f'document_id == "{document_id}"')
-            self.collection.flush()
-            logger.info(f"Deleted old rows for document_id={document_id}")
-        except Exception as exc:
-            logger.warning(f"Could not delete rows for document_id={document_id}: {exc}")
+        columnar_data = []
+        for field in self.collection.schema.fields:
+            max_len = getattr(field, "max_length", None)
+            if not max_len and hasattr(field, "params") and field.params:
+                max_len = field.params.get("max_length")
+
+            col = []
+            for item in items:
+                val = self._extract_field_value(item, field.name)
+                if max_len and isinstance(val, str) and len(val) > max_len:
+                    val = val[:max_len]
+                col.append(val)
+            columnar_data.append(col)
+
+        self.collection.insert(columnar_data, timeout=15.0)
+        self.collection.flush(timeout=15.0)
+        return len(items)
 
     def insert_chunks(
         self,
-        chunks: List[Dict[str, Any]],
-        metadata: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        if not chunks:
-            return {"inserted": 0}
+        items: List[Dict[str, Any]],
+        batch_size: int = MILVUS_BATCH_SIZE,
+        max_retries: int = MILVUS_MAX_RETRIES,
+    ) -> int:
+        """Inserts records into Milvus in safe micro-batches with automatic retries."""
+        if not items:
+            return 0
 
-        self._ensure_connection()
-        if self.collection is None:
-            raise RuntimeError("Milvus collection not initialised")
+        if not self._ensure_connection() or not self.collection:
+            logger.warning("Milvus connection not available — skipping chunk insertion.")
+            return 0
 
-        required_metadata = [
-            "document_id",
-            "source_id",
-            "source_doc_url",
-            "section_ref",
-            "domain",
-            "subdomain",
-            "b2b_b2c",
-            "tier",
-            "jurisdiction",
-        ]
-        missing = [k for k in required_metadata if not metadata.get(k)]
-        if missing:
-            raise ValueError(f"Missing Milvus metadata fields: {missing}")
-
-        document_id = metadata["document_id"]
-
-        # Re-ingestion strategy: delete old rows for this document_id, then re-insert.
-        try:
-            existing = self.collection.query(
-                expr=f'document_id == "{document_id}"',
-                output_fields=["milvus_id"],
-            )
-            if existing:
-                self.collection.delete(f'document_id == "{document_id}"')
-                self.collection.flush()
-                logger.info(
-                    f"Deleted {len(existing)} stale row(s) for document_id={document_id}"
-                )
-        except Exception as exc:
-            logger.warning(f"Could not delete stale rows for {document_id}: {exc}")
-
-        normalized: List[Dict[str, Any]] = []
-        for i, chunk in enumerate(chunks):
-            try:
-                normalized.append(
-                    {
-                        "chunk_id": str(chunk["chunk_id"]),
-                        "source_id": str(metadata.get("source_id", "")),
-                        "document_id": document_id,
-                        "source_doc_url": str(metadata["source_doc_url"]),
-                        "section_ref": str(metadata["section_ref"]),
-                        "source_url": str(chunk.get("source_url", "")),  # ADDED
-                        "domain": str(metadata["domain"]),
-                        "subdomain": str(metadata["subdomain"]),
-                        "b2b_b2c": str(metadata["b2b_b2c"]),
-                        "tier": str(metadata["tier"]),
-                        "jurisdiction": str(metadata["jurisdiction"]),
-                        "text": (chunk.get("text") or "")[:65000],
-                        "embedding": self._fix_embedding(chunk["embedding"]),
-                    }
-                )
-            except Exception as exc:
-                logger.error(f"Failed to normalise chunk {i}: {exc}")
-                raise
-
-        total_rows = len(normalized)
         total_inserted = 0
-        all_pk: List[int] = []
+        total_items = len(items)
+        total_batches = (total_items + batch_size - 1) // batch_size
 
-        logger.info(
-            f"Inserting {total_rows} row(s) into Milvus | "
-            f"sub-batch={MILVUS_INSERT_BATCH}"
-        )
-
-        for batch_start in range(0, total_rows, MILVUS_INSERT_BATCH):
-            batch = normalized[batch_start : batch_start + MILVUS_INSERT_BATCH]
-            batch_num = batch_start // MILVUS_INSERT_BATCH + 1
-
-            _wait_for_cpu(
-                threshold=MILVUS_CPU_PAUSE_THRESHOLD,
-                max_wait=MILVUS_CPU_MAX_WAIT,
-                label=f"sub-batch {batch_num}",
-            )
-
-            data = [
-                [c["chunk_id"] for c in batch],
-                [c["source_id"] for c in batch],
-                [c["document_id"] for c in batch],
-                [c["source_doc_url"] for c in batch],
-                [c["section_ref"] for c in batch],
-                [c["source_url"] for c in batch],   # ADDED
-                [c["domain"] for c in batch],
-                [c["subdomain"] for c in batch],
-                [c["b2b_b2c"] for c in batch],
-                [c["tier"] for c in batch],
-                [c["jurisdiction"] for c in batch],
-                [c["text"] for c in batch],
-                [c["embedding"] for c in batch],
-            ]
-
-            payload_mb = sys.getsizeof(data) / (1024 * 1024)
-            cpu = psutil.cpu_percent()
-            mem = psutil.virtual_memory().percent
-            logger.info(
-                f"Batch {batch_num}: {len(batch)} rows | "
-                f"payload={payload_mb:.2f}MB | cpu={cpu}% | mem={mem}%"
-            )
-
-            start = time.time()
-            try:
-                result = self.collection.insert(data)
-                elapsed = time.time() - start
-                logger.info(f"Batch {batch_num}: inserted in {elapsed:.2f}s")
-                total_inserted += len(batch)
-                all_pk.extend(result.primary_keys)
-            except Exception as exc:
-                elapsed = time.time() - start
-                logger.error(
-                    f"Batch {batch_num} INSERT FAILED after {elapsed:.2f}s: {exc}"
-                )
-                raise
-
-            self.insert_counter += len(batch)
-            if self.insert_counter % MILVUS_FLUSH_EVERY == 0:
-                logger.info("Periodic Milvus flush...")
-                self.collection.flush()
-
-            if batch_start + MILVUS_INSERT_BATCH < total_rows:
-                time.sleep(MILVUS_INSERT_SLEEP)
-
-        logger.info(f"Milvus insert complete: {total_inserted}/{total_rows} row(s)")
-        return {"inserted": total_inserted, "milvus_ids": all_pk}
-
-    def close(self) -> None:
-        if self._connected:
-            logger.info("Final Milvus flush before close...")
-            if self.collection is not None:
+        for b_idx in range(total_batches):
+            batch_items = items[b_idx * batch_size : (b_idx + 1) * batch_size]
+            success = False
+            for attempt in range(1, max_retries + 1):
                 try:
-                    self.collection.flush()
+                    self._insert_single_batch(batch_items)
+                    total_inserted += len(batch_items)
+                    success = True
+                    break
                 except Exception as exc:
-                    logger.warning(f"Flush failed during close: {exc}")
-            connections.disconnect("default")
-            self._connected = False
+                    logger.warning(
+                        "Milvus micro-batch %d/%d insertion attempt %d failed: %s",
+                        b_idx + 1, total_batches, attempt, exc
+                    )
+                    time.sleep(1.0 * attempt)
+                    self._connected = False
+                    if attempt >= max_retries:
+                        self._wait_for_network_recovery()
+                    else:
+                        self._ensure_connection()
+
+            if not success:
+                logger.error("Milvus micro-batch %d/%d failed after retries.", b_idx + 1, total_batches)
+
+        logger.info("MilvusChunkStore: Successfully inserted %d/%d chunks into collection '%s'", total_inserted, total_items, self.collection_name)
+        return total_inserted
+
+    def delete_chunks_by_document_id(self, canonical_document_id: str) -> bool:
+        """Deletes all vector chunks associated with a canonical document ID."""
+        if not canonical_document_id:
+            return False
+        if not self._ensure_connection() or not self.collection:
+            logger.warning("Milvus connection not available — skipping chunk deletion.")
+            return False
+        try:
+            field_names = [f.name for f in self.collection.schema.fields]
+            if "canonical_source_id" in field_names:
+                expr = f'canonical_source_id == "{canonical_document_id}"'
+            elif "document_id" in field_names:
+                expr = f'document_id == "{canonical_document_id}"'
+            elif "canonical_document_id" in field_names:
+                expr = f'canonical_document_id == "{canonical_document_id}"'
+            else:
+                expr = f'chunk_id like "{canonical_document_id}%"'
+
+            self.collection.delete(expr)
+            self.collection.flush()
+            logger.info("Milvus: Purged existing vector chunks for document '%s'", canonical_document_id)
+            return True
+        except Exception as exc:
+            logger.warning("Milvus: Failed to delete chunks for document '%s': %s", canonical_document_id, exc)
+            return False
+
+    def delete_chunks_by_document_ids(self, doc_ids: List[str]) -> int:
+        """Deletes vector chunks for multiple canonical document IDs."""
+        if not doc_ids:
+            return 0
+        deleted_count = 0
+        for doc_id in doc_ids:
+            if self.delete_chunks_by_document_id(doc_id):
+                deleted_count += 1
+        return deleted_count
+
+    def purge_unmapped_subdomain_chunks(self) -> bool:
+        """Deletes all vector chunks with subdomain_id == 'NO_SUBDOMAIN' or empty from the collection."""
+        if not self._ensure_connection() or not self.collection:
+            return False
+        try:
+            expr = 'subdomain_id == "NO_SUBDOMAIN" or subdomain_id == ""'
+            self.collection.delete(expr)
+            self.collection.flush()
+            logger.info("Milvus: Purged unmapped NO_SUBDOMAIN chunks from collection '%s'", self.collection_name)
+            return True
+        except Exception as exc:
+            logger.warning("Milvus: Failed to purge NO_SUBDOMAIN chunks: %s", exc)
+            return False

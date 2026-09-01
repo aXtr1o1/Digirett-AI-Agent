@@ -1,468 +1,492 @@
-# from __future__ import annotations
-
-# import logging
-# import os
-# from pathlib import Path
-
-# from dotenv import load_dotenv
-
-# # -----------------------------------------------------------------------------
-# # Load environment
-# # -----------------------------------------------------------------------------
-
-# load_dotenv()
-
-
-# def _required_env(name: str) -> str:
-#     value = os.getenv(name, "").strip()
-#     if not value:
-#         raise RuntimeError(f"{name} missing")
-#     return value
-
-
-# def _optional_env(name: str, default: str = "") -> str:
-#     return os.getenv(name, default).strip()
-
-
-# def _int_env(name: str, default: int) -> int:
-#     value = os.getenv(name, str(default)).strip()
-#     return int(value)
-
-
-# def _float_env(name: str, default: float) -> float:
-#     value = os.getenv(name, str(default)).strip()
-#     return float(value)
-
-
-# # -----------------------------------------------------------------------------
-# # Base directories
-# # -----------------------------------------------------------------------------
-
-# BASE_DIR = Path(__file__).resolve().parent.parent
-# DATA_DIR = BASE_DIR / "data"
-# LOG_DIR = BASE_DIR / "logs"
-# CHECKPOINT_DIR = DATA_DIR / "checkpoints"
-# CLEAN_TEXT_DIR = DATA_DIR / "cleaned_text"
-# RAW_XML_DIR = DATA_DIR / "raw_xml"
-# ARCHIVE_DIR = DATA_DIR / "archives"
-
-# for folder in [DATA_DIR, LOG_DIR, CHECKPOINT_DIR, CLEAN_TEXT_DIR, RAW_XML_DIR, ARCHIVE_DIR]:
-#     folder.mkdir(parents=True, exist_ok=True)
-
-# LOG_FILE = LOG_DIR / "ingestion.log"
-
-# # -----------------------------------------------------------------------------
-# # Workbook / input
-# # -----------------------------------------------------------------------------
-
-# XL_DATASET_FOLDER = Path(_required_env("XL_DATASET_FOLDER"))
-
-# # -----------------------------------------------------------------------------
-# # Supabase
-# # -----------------------------------------------------------------------------
-
-# SUPABASE_URL = _required_env("SUPABASE_URL")
-# SUPABASE_SERVICE_KEY = _required_env("SUPABASE_SERVICE_KEY")
-# SUPABASE_BUCKET = _required_env("SUPABASE_BUCKET")
-
-# # Final output metadata table
-# SUPABASE_TABLE = _required_env("SUPABASE_TABLE")
-
-# # Source lookup tables
-# SUPABASE_SOURCE_TABLE_AI = _required_env("SUPABASE_SOURCE_TABLE_AI")
-# SUPABASE_SOURCE_TABLE_PREDEFINED = _required_env("SUPABASE_SOURCE_TABLE_PREDEFINED")
-
-# # New XAPI Ingestion Metadata table
-# SUPABASE_RAW_METADATA_TABLE = _optional_env("SUPABASE_RAW_METADATA_TABLE", "raw_ingestion_metadata")
-
-
-# # -----------------------------------------------------------------------------
-# # Azure OpenAI / embeddings
-# # -----------------------------------------------------------------------------
-
-# EMBEDDING_PROVIDER = _optional_env("EMBEDDING_PROVIDER", "azure_openai")
-# EMBEDDING_MODEL = _optional_env("EMBEDDING_MODEL", "text-embedding-3-small")
-# EMBEDDING_DIMENSION = _int_env("EMBEDDING_DIMENSION", 1536)
-
-# AZURE_OPENAI_ENDPOINT = _required_env("AZURE_OPENAI_ENDPOINT")
-# AZURE_OPENAI_KEY = _required_env("AZURE_OPENAI_KEY")
-# AZURE_OPENAI_API_VERSION = _required_env("AZURE_OPENAI_API_VERSION")
-# AZURE_OPENAI_DEPLOYMENT = _required_env("AZURE_OPENAI_DEPLOYMENT")
-
-# EMBEDDING_BATCH_SIZE = _int_env("EMBEDDING_BATCH_SIZE", 4)
-# EMBEDDING_CHUNK_DELAY = _float_env("EMBEDDING_CHUNK_DELAY", 0.5)
-
-# # -----------------------------------------------------------------------------
-# # Chunking
-# # -----------------------------------------------------------------------------
-
-# MAX_TOKENS_PER_CHUNK = _int_env("MAX_TOKENS_PER_CHUNK", 512)
-# OVERLAP_TOKENS = _int_env("OVERLAP_TOKENS", 50)
-# CHUNK_SIZE = _int_env("CHUNK_SIZE", 1000)
-# CHUNK_OVERLAP = _int_env("CHUNK_OVERLAP", 200)
-
-# # New section-aware chunker settings
-# MAX_CHUNK_SIZE_CHARS = _int_env("MAX_CHUNK_SIZE_CHARS", 12000)
-# MILVUS_TEXT_LIMIT = _int_env("MILVUS_TEXT_LIMIT", 32768)
-
-# # -----------------------------------------------------------------------------
-# # Milvus
-# # -----------------------------------------------------------------------------
-
-# MILVUS_HOST = _required_env("MILVUS_HOST")
-# MILVUS_PORT = _int_env("MILVUS_PORT", 19530)
-# MILVUS_COLLECTION = _required_env("MILVUS_COLLECTION")
-# MILVUS_DIMENSION = _int_env("MILVUS_DIMENSION", EMBEDDING_DIMENSION)
-
-# MILVUS_INDEX_TYPE = _optional_env("MILVUS_INDEX_TYPE", "HNSW")
-# MILVUS_METRIC_TYPE = _optional_env("MILVUS_METRIC_TYPE", "COSINE")
-# MILVUS_NLIST = _int_env("MILVUS_NLIST", 1536)
-
-# MILVUS_INSERT_BATCH = _int_env("MILVUS_INSERT_BATCH", 500)
-# MILVUS_INSERT_SLEEP = _float_env("MILVUS_INSERT_SLEEP", 0.0)
-# MILVUS_CONNECT_TIMEOUT = _int_env("MILVUS_CONNECT_TIMEOUT", 90)
-# MILVUS_FLUSH_EVERY = _int_env("MILVUS_FLUSH_EVERY", 5000)
-
-# MILVUS_CPU_WARN_THRESHOLD = _int_env("MILVUS_CPU_WARN_THRESHOLD", 65)
-# MILVUS_CPU_PAUSE_THRESHOLD = _int_env("MILVUS_CPU_PAUSE_THRESHOLD", 70)
-# MILVUS_CPU_MAX_WAIT = _int_env("MILVUS_CPU_MAX_WAIT", 60)
-# MILVUS_MEM_WARN_THRESHOLD = _int_env("MILVUS_MEM_WARN_THRESHOLD", 80)
-# MILVUS_LOG_PAYLOAD = _optional_env("MILVUS_LOG_PAYLOAD", "true").lower() == "true"
-
-# # -----------------------------------------------------------------------------
-# # Embedder CPU thresholds
-# # -----------------------------------------------------------------------------
-
-# EMBED_CPU_PAUSE_THRESHOLD = _int_env("EMBED_CPU_PAUSE_THRESHOLD", 70)
-# EMBED_CPU_PAUSE_SECS = _float_env("EMBED_CPU_PAUSE_SECS", 3.0)
-
-# # -----------------------------------------------------------------------------
-# # Pipeline CPU thresholds
-# # -----------------------------------------------------------------------------
-
-# PIPELINE_CPU_WARN = _int_env("PIPELINE_CPU_WARN", 65)
-# PIPELINE_CPU_PAUSE = _int_env("PIPELINE_CPU_PAUSE", 75)
-# PIPELINE_CPU_MAX = _int_env("PIPELINE_CPU_MAX", 85)
-# PIPELINE_DOC_SLEEP = _float_env("PIPELINE_DOC_SLEEP", 0.3)
-
-# # -----------------------------------------------------------------------------
-# # Optional legacy settings
-# # -----------------------------------------------------------------------------
-
-# LOVDATA_API_URL = _optional_env("LOVDATA_API_URL", "")
-# LOVDATA_GET_ENDPOINT = _optional_env("LOVDATA_GET_ENDPOINT", "/get")
-# XML_PROCESS_WORKERS = _int_env("XML_PROCESS_WORKERS", 2)
-
-# SCHEDULER_BATCH_SIZE = _int_env("SCHEDULER_BATCH_SIZE", 50)
-# SCHEDULER_CRON_HOUR = _int_env("SCHEDULER_CRON_HOUR", 2)
-# SCHEDULER_CRON_MINUTE = _int_env("SCHEDULER_CRON_MINUTE", 0)
-# SCHEDULER_API_TIMEOUT = _int_env("SCHEDULER_API_TIMEOUT", 30)
-# MAX_WORKERS = 4
-
-# # -----------------------------------------------------------------------------
-# # XAPI Settings
-# # -----------------------------------------------------------------------------
-
-# XAPI_BASE_URL = _optional_env("XAPI_BASE_URL", "")
-# XAPI_KEY = _optional_env("XAPI_KEY", "")
-# XAPI_NAME = _optional_env("XAPI_NAME", "XAPI_SOURCE")
-# XAPI_FETCH_LIMIT = _int_env("XAPI_FETCH_LIMIT", 50)
-# # -----------------------------------------------------------------------------
-# # Validation
-# # -----------------------------------------------------------------------------
-
-# def validate_runtime_config() -> None:
-#     if not XL_DATASET_FOLDER.exists():
-#         raise RuntimeError(
-#             f"XL_DATASET_FOLDER path does not exist → {XL_DATASET_FOLDER}"
-#         )
-
-#     required_values = {
-#         "SUPABASE_URL": SUPABASE_URL,
-#         "SUPABASE_SERVICE_KEY": SUPABASE_SERVICE_KEY,
-#         "SUPABASE_BUCKET": SUPABASE_BUCKET,
-#         "SUPABASE_TABLE": SUPABASE_TABLE,
-#         "SUPABASE_SOURCE_TABLE_AI": SUPABASE_SOURCE_TABLE_AI,
-#         "SUPABASE_SOURCE_TABLE_PREDEFINED": SUPABASE_SOURCE_TABLE_PREDEFINED,
-#         "MILVUS_HOST": MILVUS_HOST,
-#         "MILVUS_COLLECTION": MILVUS_COLLECTION,
-#         "AZURE_OPENAI_ENDPOINT": AZURE_OPENAI_ENDPOINT,
-#         "AZURE_OPENAI_KEY": AZURE_OPENAI_KEY,
-#         "AZURE_OPENAI_API_VERSION": AZURE_OPENAI_API_VERSION,
-#         "AZURE_OPENAI_DEPLOYMENT": AZURE_OPENAI_DEPLOYMENT,
-#     }
-
-#     missing = [key for key, value in required_values.items() if not str(value).strip()]
-#     if missing:
-#         raise RuntimeError(f"Missing required config values: {', '.join(missing)}")
-
-# # -----------------------------------------------------------------------------
-# # Logging
-# # -----------------------------------------------------------------------------
-
-# logging.basicConfig(
-#     level=logging.INFO,
-#     format="%(asctime)s | %(levelname)s | %(message)s",
-#     handlers=[
-#         logging.FileHandler(LOG_FILE, encoding="utf-8"),
-#         logging.StreamHandler(),
-#     ],
-#     force=True,
-# )
-
-# logger = logging.getLogger("digirett-ingestion")
-
-# if __name__ == "__main__":
-#     validate_runtime_config()
-#     logger.info("✅ Configuration loaded successfully")
-#     logger.info("Workbook folder → %s", XL_DATASET_FOLDER)
-#     logger.info("Supabase bucket → %s", SUPABASE_BUCKET)
-#     logger.info("Milvus → %s:%s | collection=%s", MILVUS_HOST, MILVUS_PORT, MILVUS_COLLECTION)
-
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
+from typing import Optional
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from dotenv import load_dotenv
-
-# -----------------------------------------------------------------------------
-# Load environment
-# -----------------------------------------------------------------------------
-
-load_dotenv()
-
-
-def _required_env(name: str) -> str:
-    value = os.getenv(name, "").strip()
-    if not value:
-        raise RuntimeError(f"{name} missing")
-    return value
-
-
-def _optional_env(name: str, default: str = "") -> str:
-    return os.getenv(name, default).strip()
-
-
-def _int_env(name: str, default: int) -> int:
-    value = os.getenv(name, str(default)).strip()
-    return int(value)
-
-
-def _float_env(name: str, default: float) -> float:
-    value = os.getenv(name, str(default)).strip()
-    return float(value)
-
-
-# -----------------------------------------------------------------------------
-# Base directories
-# -----------------------------------------------------------------------------
-
+# Base Directory Paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 LOG_DIR = BASE_DIR / "logs"
 CHECKPOINT_DIR = DATA_DIR / "checkpoints"
-CLEAN_TEXT_DIR = DATA_DIR / "cleaned_text"
-RAW_XML_DIR = DATA_DIR / "raw_xml"
-ARCHIVE_DIR = DATA_DIR / "archives"
+NORMALIZED_DIR = DATA_DIR / "normalized"
+REPORTS_DIR = BASE_DIR / "reports"
 
-for folder in [DATA_DIR, LOG_DIR, CHECKPOINT_DIR, CLEAN_TEXT_DIR, RAW_XML_DIR, ARCHIVE_DIR]:
+for folder in [DATA_DIR, LOG_DIR, CHECKPOINT_DIR, NORMALIZED_DIR, REPORTS_DIR]:
     folder.mkdir(parents=True, exist_ok=True)
 
 LOG_FILE = LOG_DIR / "ingestion.log"
 
-# -----------------------------------------------------------------------------
-# Workbook / input
-# -----------------------------------------------------------------------------
-
-XL_DATASET_FOLDER = Path(_required_env("XL_DATASET_FOLDER"))
-
-# -----------------------------------------------------------------------------
-# Supabase — existing pipeline (DO NOT CHANGE THESE)
-# -----------------------------------------------------------------------------
-
-SUPABASE_URL = _required_env("SUPABASE_URL")
-SUPABASE_SERVICE_KEY = _required_env("SUPABASE_SERVICE_KEY")
-
-# Old XML bucket — existing flow
-SUPABASE_BUCKET = _required_env("SUPABASE_BUCKET")
-
-# Final output metadata table — existing flow
-SUPABASE_TABLE = _required_env("SUPABASE_TABLE")
-
-# Source lookup tables — existing flow
-SUPABASE_SOURCE_TABLE_AI = _required_env("SUPABASE_SOURCE_TABLE_AI")
-SUPABASE_SOURCE_TABLE_PREDEFINED = _required_env("SUPABASE_SOURCE_TABLE_PREDEFINED")
-
-# Raw ingestion metadata table — existing flow
-SUPABASE_RAW_METADATA_TABLE = _optional_env("SUPABASE_RAW_METADATA_TABLE", "raw_ingestion_metadata")
-
-# -----------------------------------------------------------------------------
-# Supabase — XAPI new flow (NEW)
-# Bucket for JSON files: raw_json_files
-# Metadata table:        xapi_lovdata_metadata
-# -----------------------------------------------------------------------------
-
-SUPABASE_XAPI_BUCKET = _optional_env("SUPABASE_XAPI_BUCKET", "raw_json_files")
-SUPABASE_XAPI_TABLE = _optional_env("SUPABASE_XAPI_TABLE", "xapi_lovdata_metadata")
-
-# -----------------------------------------------------------------------------
-# Azure OpenAI / embeddings
-# -----------------------------------------------------------------------------
-
-EMBEDDING_PROVIDER = _optional_env("EMBEDDING_PROVIDER", "azure_openai")
-EMBEDDING_MODEL = _optional_env("EMBEDDING_MODEL", "text-embedding-3-small")
-EMBEDDING_DIMENSION = _int_env("EMBEDDING_DIMENSION", 1536)
-
-AZURE_OPENAI_ENDPOINT = _required_env("AZURE_OPENAI_ENDPOINT")
-AZURE_OPENAI_KEY = _required_env("AZURE_OPENAI_KEY")
-AZURE_OPENAI_API_VERSION = _required_env("AZURE_OPENAI_API_VERSION")
-AZURE_OPENAI_DEPLOYMENT = _required_env("AZURE_OPENAI_DEPLOYMENT")
-
-EMBEDDING_BATCH_SIZE = _int_env("EMBEDDING_BATCH_SIZE", 4)
-EMBEDDING_CHUNK_DELAY = _float_env("EMBEDDING_CHUNK_DELAY", 0.5)
-
-# -----------------------------------------------------------------------------
-# Chunking
-# -----------------------------------------------------------------------------
-
-MAX_TOKENS_PER_CHUNK = _int_env("MAX_TOKENS_PER_CHUNK", 512)
-OVERLAP_TOKENS = _int_env("OVERLAP_TOKENS", 50)
-CHUNK_SIZE = _int_env("CHUNK_SIZE", 1000)
-CHUNK_OVERLAP = _int_env("CHUNK_OVERLAP", 200)
-
-# New section-aware chunker settings
-MAX_CHUNK_SIZE_CHARS = _int_env("MAX_CHUNK_SIZE_CHARS", 12000)
-MILVUS_TEXT_LIMIT = _int_env("MILVUS_TEXT_LIMIT", 32768)
-
-# -----------------------------------------------------------------------------
-# Milvus
-# -----------------------------------------------------------------------------
-
-MILVUS_HOST = _required_env("MILVUS_HOST")
-MILVUS_PORT = _int_env("MILVUS_PORT", 19530)
-MILVUS_COLLECTION = _required_env("MILVUS_COLLECTION")
-MILVUS_DIMENSION = _int_env("MILVUS_DIMENSION", EMBEDDING_DIMENSION)
-
-MILVUS_INDEX_TYPE = _optional_env("MILVUS_INDEX_TYPE", "HNSW")
-MILVUS_METRIC_TYPE = _optional_env("MILVUS_METRIC_TYPE", "COSINE")
-MILVUS_NLIST = _int_env("MILVUS_NLIST", 1536)
-
-MILVUS_INSERT_BATCH = _int_env("MILVUS_INSERT_BATCH", 500)
-MILVUS_INSERT_SLEEP = _float_env("MILVUS_INSERT_SLEEP", 0.0)
-MILVUS_CONNECT_TIMEOUT = _int_env("MILVUS_CONNECT_TIMEOUT", 90)
-MILVUS_FLUSH_EVERY = _int_env("MILVUS_FLUSH_EVERY", 5000)
-
-MILVUS_CPU_WARN_THRESHOLD = _int_env("MILVUS_CPU_WARN_THRESHOLD", 65)
-MILVUS_CPU_PAUSE_THRESHOLD = _int_env("MILVUS_CPU_PAUSE_THRESHOLD", 70)
-MILVUS_CPU_MAX_WAIT = _int_env("MILVUS_CPU_MAX_WAIT", 60)
-MILVUS_MEM_WARN_THRESHOLD = _int_env("MILVUS_MEM_WARN_THRESHOLD", 80)
-MILVUS_LOG_PAYLOAD = _optional_env("MILVUS_LOG_PAYLOAD", "true").lower() == "true"
-
-# -----------------------------------------------------------------------------
-# Embedder CPU thresholds
-# -----------------------------------------------------------------------------
-
-EMBED_CPU_PAUSE_THRESHOLD = _int_env("EMBED_CPU_PAUSE_THRESHOLD", 70)
-EMBED_CPU_PAUSE_SECS = _float_env("EMBED_CPU_PAUSE_SECS", 3.0)
-
-# -----------------------------------------------------------------------------
-# Pipeline CPU thresholds
-# -----------------------------------------------------------------------------
-
-PIPELINE_CPU_WARN = _int_env("PIPELINE_CPU_WARN", 65)
-PIPELINE_CPU_PAUSE = _int_env("PIPELINE_CPU_PAUSE", 75)
-PIPELINE_CPU_MAX = _int_env("PIPELINE_CPU_MAX", 85)
-PIPELINE_DOC_SLEEP = _float_env("PIPELINE_DOC_SLEEP", 0.3)
-
-# -----------------------------------------------------------------------------
-# Optional legacy settings
-# -----------------------------------------------------------------------------
-
-LOVDATA_API_URL = _optional_env("LOVDATA_API_URL", "")
-LOVDATA_GET_ENDPOINT = _optional_env("LOVDATA_GET_ENDPOINT", "/get")
-XML_PROCESS_WORKERS = _int_env("XML_PROCESS_WORKERS", 2)
-
-SCHEDULER_BATCH_SIZE = _int_env("SCHEDULER_BATCH_SIZE", 50)
-SCHEDULER_CRON_HOUR = _int_env("SCHEDULER_CRON_HOUR", 2)
-SCHEDULER_CRON_MINUTE = _int_env("SCHEDULER_CRON_MINUTE", 0)
-SCHEDULER_API_TIMEOUT = _int_env("SCHEDULER_API_TIMEOUT", 30)
-MAX_WORKERS = 4
-
-# -----------------------------------------------------------------------------
-# XAPI Settings
-# Read from env only — no hardcoded keys.
-# Used by xapi_lovdata_collector.py.
-#
-# XAPI_BASE_URL : https://xapi.no
-# XAPI_KEY      : API key — sent as header X-API-Key (NOT Authorization Bearer)
-# XAPI_NAME     : internal label for this source
-# XAPI_FETCH_LIMIT : legacy fetch limit
-# -----------------------------------------------------------------------------
-
-XAPI_BASE_URL = _optional_env("XAPI_BASE_URL", "https://xapi.no")
-XAPI_KEY = _optional_env("XAPI_KEY", "")
-XAPI_NAME = _optional_env("XAPI_NAME", "XAPI_SOURCE_V1")
-XAPI_FETCH_LIMIT = _int_env("XAPI_FETCH_LIMIT", 50)
-
-# -----------------------------------------------------------------------------
-# Validation — only called by the existing Excel/XML pipeline (main.py)
-# NOT called by xapi_lovdata_collector.py — that script validates its own env.
-# -----------------------------------------------------------------------------
+DEFAULT_EMBEDDING_MODEL: str = "text-embedding-3-small"
 
 
-def validate_runtime_config() -> None:
-    if not XL_DATASET_FOLDER.exists():
-        raise RuntimeError(
-            f"XL_DATASET_FOLDER path does not exist → {XL_DATASET_FOLDER}"
-        )
+class Settings(BaseSettings):
+    """Runtime configuration for DigiRett Legal Ingestion Pipeline.
+    
+    Acts as the Single Configuration Interface (SSOT). All environment variables
+    from .env are automatically loaded, validated, and typed by Pydantic.
+    """
 
-    required_values = {
-        "SUPABASE_URL": SUPABASE_URL,
-        "SUPABASE_SERVICE_KEY": SUPABASE_SERVICE_KEY,
-        "SUPABASE_BUCKET": SUPABASE_BUCKET,
-        "SUPABASE_TABLE": SUPABASE_TABLE,
-        "SUPABASE_SOURCE_TABLE_AI": SUPABASE_SOURCE_TABLE_AI,
-        "SUPABASE_SOURCE_TABLE_PREDEFINED": SUPABASE_SOURCE_TABLE_PREDEFINED,
-        "MILVUS_HOST": MILVUS_HOST,
-        "MILVUS_COLLECTION": MILVUS_COLLECTION,
-        "AZURE_OPENAI_ENDPOINT": AZURE_OPENAI_ENDPOINT,
-        "AZURE_OPENAI_KEY": AZURE_OPENAI_KEY,
-        "AZURE_OPENAI_API_VERSION": AZURE_OPENAI_API_VERSION,
-        "AZURE_OPENAI_DEPLOYMENT": AZURE_OPENAI_DEPLOYMENT,
-    }
+    # ── XAPI Connection & Auth ───────────────────────────────────────────
+    XAPI_BASE_URL: str
+    XAPI_API_KEY: str
+    XAPI_BEARER_TOKEN: str
+    XAPI_API_KEY_HEADER: str
 
-    missing = [key for key, value in required_values.items() if not str(value).strip()]
-    if missing:
-        raise RuntimeError(f"Missing required config values: {', '.join(missing)}")
+    # ── XAPI Pacing & Concurrency ────────────────────────────────────────
+    XAPI_LIMIT: int
+    XAPI_TIMEOUT_SECONDS: float
+    XAPI_MAX_RETRIES: int
+    XAPI_CONCURRENCY: int
+    XAPI_BACKOFF_SECONDS: float
+    XAPI_REQUEST_PACING_SECONDS: float
+
+    # ── Supabase PostgreSQL & Storage ────────────────────────────────────
+    SUPABASE_URL: str
+    SUPABASE_KEY: str
+    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
+    SUPABASE_BUCKET: str
+
+    # ── Document Batching ────────────────────────────────────────────────
+    DOCUMENT_BATCH_SIZE: int
+
+    # ── Milvus Vector Database ───────────────────────────────────────────
+    MILVUS_HOST: str
+    MILVUS_PORT: int
+    MILVUS_COLLECTION: str
+    MILVUS_BATCH_SIZE: int
+    MILVUS_MAX_RETRIES: int
+    MILVUS_DIMENSION: int
+    MILVUS_METRIC_TYPE: str
+    MILVUS_INDEX_TYPE: str
+
+    # ── Azure OpenAI & AI Routing ────────────────────────────────────────
+    AZURE_OPENAI_ENDPOINT: str
+    AZURE_OPENAI_KEY: str
+    AZURE_OPENAI_DEPLOYMENT: str
+    AZURE_OPENAI_CHAT_DEPLOYMENT: str
+    AZURE_OPENAI_API_VERSION: str
+    AI_ROUTING_ENABLED: bool
+    AI_CONFIDENCE_THRESHOLD: float
+    AI_SCOPE_VALIDATION_ENABLED: bool
+
+    # ── Embedding Model & Pacing ─────────────────────────────────────────
+    EMBEDDING_MODEL: str
+    EMBEDDING_BATCH_SIZE: int
+    EMBEDDING_CHUNK_DELAY: float
+
+    # ── Legal Chunking Tokens ────────────────────────────────────────────
+    LEGAL_CHUNK_MAX_TOKENS: int
+    LEGAL_CHUNK_OVERLAP_TOKENS: int
+    LEGAL_CHUNK_CHARS_PER_TOKEN: int
+
+    # ── Scheduler ────────────────────────────────────────────────────────
+    SCHEDULER_CRON_HOUR: int
+    SCHEDULER_CRON_MINUTE: int
+    SCHEDULER_API_TIMEOUT: int
+
+    # ── URL Validation Gate ──────────────────────────────────────────────
+    URL_VALIDATION_ENABLED: bool
+    URL_VALIDATION_CONCURRENCY: int
+    URL_VALIDATION_TIMEOUT: int
 
 
-# -----------------------------------------------------------------------------
-# Logging
-# -----------------------------------------------------------------------------
+    # ── Fixed xAPI Protocol Routes & Internal Constants ──────────────────
+    XAPI_AREAS_PATH: str = "/v1/lovdata/rettsomrader"
+    XAPI_LAWS_PATH: str = "/v1/lovdata/lover"
+    XAPI_LAW_DETAIL_PATH: str = "/v1/lovdata/lover/{id}"
+    XAPI_LAW_PARAGRAPHS_PATH: str = "/v1/lovdata/lover/{id}/paragrafer"
+    XAPI_REGULATIONS_PATH: str = "/v1/lovdata/forskrifter"
+    XAPI_LAW_REGULATIONS_PATH: str = "/v1/lovdata/forskrifter/{law_doc_id}"
+    XAPI_LAW_AREA_PARAM: str = "rettsomrade"
+    XAPI_REGULATION_AREA_PARAM: str = "rettsomrade"
+    XAPI_LAW_TYPE: str = "lov"
+    XAPI_CENTRAL_REGULATION_TYPE: str = "sentral"
+    XAPI_INCLUDE_REGULATION_FULLTEXT: int = 1
+    XAPI_INCLUDE_REMOVED_PARAGRAPHS: bool = False
+    FILTER_LINKED_REGULATIONS_BY_DOMAIN: bool = False
+    XAPI_MAX_PAGES: int = 1000
+    LOVDATA_API_URL: str = "https://api.lovdata.no"
+    LOVDATA_BASE_URL: str = "https://lovdata.no/dokument"
+    SUPABASE_DB_URL: str = ""
+    TAXONOMY_VERSION: str = "1.1.0"
+    MILVUS_TEXT_LIMIT: int = 65000
+    MAX_CHUNK_SIZE_CHARS: int = 2000
+    EMBED_CPU_PAUSE_THRESHOLD: float = 70.0
+    EMBED_CPU_PAUSE_SECS: float = 5.0
+    EMBEDDING_MAX_RETRIES: int = 3
+    EMBEDDING_RETRY_DELAY: int = 15
+    MAPPING_PATH: Path = BASE_DIR / "configs" / "rettsomrade_domain_mapping.json"
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding="utf-8"),
-        logging.StreamHandler(),
-    ],
-    force=True,
-)
+    # ── Clean Pydantic Validators ────────────────────────────────────────
+    @field_validator("XAPI_BASE_URL")
+    @classmethod
+    def clean_base_url(cls, value: str) -> str:
+        return value.rstrip("/")
 
+    @field_validator("XAPI_LIMIT")
+    @classmethod
+    def validate_limit(cls, value: int) -> int:
+        if not 1 <= value <= 2500:
+            raise ValueError("XAPI_LIMIT must be between 1 and 2500")
+        return value
+
+    # ── Backward-Compatibility Accessors (lowercase properties) ──────────
+    @property
+    def xapi_base_url(self) -> str:
+        return self.XAPI_BASE_URL
+
+    @property
+    def xapi_bearer_token(self) -> str:
+        return self.XAPI_BEARER_TOKEN
+
+    @property
+    def xapi_api_key(self) -> str:
+        return self.XAPI_API_KEY
+
+    @property
+    def xapi_api_key_header(self) -> str:
+        return self.XAPI_API_KEY_HEADER
+
+    @property
+    def xapi_limit(self) -> int:
+        return self.XAPI_LIMIT
+
+    @property
+    def xapi_timeout_seconds(self) -> float:
+        return self.XAPI_TIMEOUT_SECONDS
+
+    @property
+    def xapi_max_retries(self) -> int:
+        return self.XAPI_MAX_RETRIES
+
+    @property
+    def xapi_concurrency(self) -> int:
+        return self.XAPI_CONCURRENCY
+
+    @property
+    def xapi_backoff_seconds(self) -> float:
+        return self.XAPI_BACKOFF_SECONDS
+
+    @property
+    def xapi_request_pacing_seconds(self) -> float:
+        return self.XAPI_REQUEST_PACING_SECONDS
+
+    @property
+    def supabase_url(self) -> str:
+        return self.SUPABASE_URL
+
+    @property
+    def supabase_service_key(self) -> str:
+        return self.SUPABASE_SERVICE_ROLE_KEY or self.SUPABASE_KEY
+
+    @property
+    def supabase_bucket(self) -> str:
+        return self.SUPABASE_BUCKET
+
+    @property
+    def document_batch_size(self) -> int:
+        return self.DOCUMENT_BATCH_SIZE
+
+    @property
+    def milvus_host(self) -> str:
+        return self.MILVUS_HOST
+
+    @property
+    def milvus_port(self) -> int:
+        return self.MILVUS_PORT
+
+    @property
+    def milvus_collection(self) -> str:
+        return self.MILVUS_COLLECTION
+
+    @property
+    def milvus_batch_size(self) -> int:
+        return self.MILVUS_BATCH_SIZE
+
+    @property
+    def milvus_max_retries(self) -> int:
+        return self.MILVUS_MAX_RETRIES
+
+    @property
+    def milvus_dimension(self) -> int:
+        return self.MILVUS_DIMENSION
+
+    @property
+    def milvus_metric_type(self) -> str:
+        return self.MILVUS_METRIC_TYPE
+
+    @property
+    def milvus_index_type(self) -> str:
+        return self.MILVUS_INDEX_TYPE
+
+    @property
+    def azure_openai_endpoint(self) -> str:
+        return self.AZURE_OPENAI_ENDPOINT
+
+    @property
+    def azure_openai_key(self) -> str:
+        return self.AZURE_OPENAI_KEY
+
+    @property
+    def azure_openai_deployment(self) -> str:
+        return self.AZURE_OPENAI_DEPLOYMENT
+
+    @property
+    def azure_openai_chat_deployment(self) -> str:
+        return self.AZURE_OPENAI_CHAT_DEPLOYMENT
+
+    @property
+    def azure_openai_api_version(self) -> str:
+        return self.AZURE_OPENAI_API_VERSION
+
+    @property
+    def ai_routing_enabled(self) -> bool:
+        return self.AI_ROUTING_ENABLED
+
+    @property
+    def ai_confidence_threshold(self) -> float:
+        return self.AI_CONFIDENCE_THRESHOLD
+
+    @property
+    def ai_scope_validation_enabled(self) -> bool:
+        return self.AI_SCOPE_VALIDATION_ENABLED
+
+    @property
+    def embedding_model(self) -> str:
+        return self.EMBEDDING_MODEL or self.AZURE_OPENAI_DEPLOYMENT or DEFAULT_EMBEDDING_MODEL
+
+    @property
+    def embedding_batch_size(self) -> int:
+        return self.EMBEDDING_BATCH_SIZE
+
+    @property
+    def embedding_chunk_delay(self) -> float:
+        return self.EMBEDDING_CHUNK_DELAY
+
+    @property
+    def legal_chunk_max_tokens(self) -> int:
+        return self.LEGAL_CHUNK_MAX_TOKENS
+
+    @property
+    def legal_chunk_overlap_tokens(self) -> int:
+        return self.LEGAL_CHUNK_OVERLAP_TOKENS
+
+    @property
+    def legal_chunk_chars_per_token(self) -> int:
+        return self.LEGAL_CHUNK_CHARS_PER_TOKEN
+
+    @property
+    def scheduler_cron_hour(self) -> int:
+        return self.SCHEDULER_CRON_HOUR
+
+    @property
+    def scheduler_cron_minute(self) -> int:
+        return self.SCHEDULER_CRON_MINUTE
+
+    @property
+    def scheduler_api_timeout(self) -> int:
+        return self.SCHEDULER_API_TIMEOUT
+
+    @property
+    def url_validation_enabled(self) -> bool:
+        return self.URL_VALIDATION_ENABLED
+
+    @property
+    def url_validation_concurrency(self) -> int:
+        return self.URL_VALIDATION_CONCURRENCY
+
+    @property
+    def url_validation_timeout(self) -> int:
+        return self.URL_VALIDATION_TIMEOUT
+
+    @property
+    def xapi_areas_path(self) -> str:
+        return self.XAPI_AREAS_PATH
+
+    @property
+    def xapi_laws_path(self) -> str:
+        return self.XAPI_LAWS_PATH
+
+    @property
+    def xapi_law_detail_path(self) -> str:
+        return self.XAPI_LAW_DETAIL_PATH
+
+    @property
+    def xapi_law_paragraphs_path(self) -> str:
+        return self.XAPI_LAW_PARAGRAPHS_PATH
+
+    @property
+    def xapi_regulations_path(self) -> str:
+        return self.XAPI_REGULATIONS_PATH
+
+    @property
+    def xapi_law_regulations_path(self) -> str:
+        return self.XAPI_LAW_REGULATIONS_PATH
+
+    @property
+    def xapi_law_area_param(self) -> str:
+        return self.XAPI_LAW_AREA_PARAM
+
+    @property
+    def xapi_regulation_area_param(self) -> str:
+        return self.XAPI_REGULATION_AREA_PARAM
+
+    @property
+    def xapi_law_type(self) -> str:
+        return self.XAPI_LAW_TYPE
+
+    @property
+    def xapi_central_regulation_type(self) -> str:
+        return self.XAPI_CENTRAL_REGULATION_TYPE
+
+    @property
+    def xapi_include_regulation_fulltext(self) -> int:
+        return self.XAPI_INCLUDE_REGULATION_FULLTEXT
+
+    @property
+    def xapi_include_removed_paragraphs(self) -> bool:
+        return self.XAPI_INCLUDE_REMOVED_PARAGRAPHS
+
+    @property
+    def filter_linked_regulations_by_domain(self) -> bool:
+        return self.FILTER_LINKED_REGULATIONS_BY_DOMAIN
+
+    @property
+    def xapi_max_pages(self) -> int:
+        return self.XAPI_MAX_PAGES
+
+    @property
+    def lovdata_api_url(self) -> str:
+        return self.LOVDATA_API_URL
+
+    @property
+    def lovdata_base_url(self) -> str:
+        return self.LOVDATA_BASE_URL
+
+    @property
+    def supabase_db_url(self) -> str:
+        return self.SUPABASE_DB_URL
+
+    @property
+    def taxonomy_version(self) -> str:
+        return self.TAXONOMY_VERSION
+
+    @property
+    def milvus_text_limit(self) -> int:
+        return self.MILVUS_TEXT_LIMIT
+
+    @property
+    def max_chunk_size_chars(self) -> int:
+        return self.MAX_CHUNK_SIZE_CHARS
+
+    @property
+    def embed_cpu_pause_threshold(self) -> float:
+        return self.EMBED_CPU_PAUSE_THRESHOLD
+
+    @property
+    def embed_cpu_pause_secs(self) -> float:
+        return self.EMBED_CPU_PAUSE_SECS
+
+    @property
+    def embedding_max_retries(self) -> int:
+        return self.EMBEDDING_MAX_RETRIES
+
+    @property
+    def embedding_retry_delay(self) -> int:
+        return self.EMBEDDING_RETRY_DELAY
+
+    @property
+    def mapping_path(self) -> Path:
+        return self.MAPPING_PATH
+
+    model_config = SettingsConfigDict(
+        env_file=BASE_DIR / ".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
+    )
+
+
+# Single Global Settings Instance
+settings = Settings()
+
+# Consolidated Module-Level Backward-Compatible Aliases
+XAPI_BASE_URL: str = settings.XAPI_BASE_URL
+XAPI_API_KEY: str = settings.XAPI_API_KEY
+XAPI_BEARER_TOKEN: str = settings.XAPI_BEARER_TOKEN
+XAPI_API_KEY_HEADER: str = settings.XAPI_API_KEY_HEADER
+XAPI_LIMIT: int = settings.XAPI_LIMIT
+XAPI_TIMEOUT_SECONDS: float = settings.XAPI_TIMEOUT_SECONDS
+XAPI_MAX_RETRIES: int = settings.XAPI_MAX_RETRIES
+XAPI_CONCURRENCY: int = settings.XAPI_CONCURRENCY
+XAPI_BACKOFF_SECONDS: float = settings.XAPI_BACKOFF_SECONDS
+XAPI_REQUEST_PACING_SECONDS: float = settings.XAPI_REQUEST_PACING_SECONDS
+
+SUPABASE_URL: str = settings.SUPABASE_URL
+SUPABASE_KEY: str = settings.SUPABASE_KEY
+SUPABASE_SERVICE_ROLE_KEY: Optional[str] = settings.SUPABASE_SERVICE_ROLE_KEY
+SUPABASE_BUCKET: str = settings.SUPABASE_BUCKET
+SUPABASE_DB_URL: str = settings.SUPABASE_DB_URL
+
+LOVDATA_API_URL: str = settings.LOVDATA_API_URL
+LOVDATA_BASE_URL: str = settings.LOVDATA_BASE_URL
+MILVUS_COLLECTION: str = settings.MILVUS_COLLECTION
+MILVUS_HOST: str = settings.MILVUS_HOST
+MILVUS_PORT: int = settings.MILVUS_PORT
+MILVUS_BATCH_SIZE: int = settings.MILVUS_BATCH_SIZE
+MILVUS_MAX_RETRIES: int = settings.MILVUS_MAX_RETRIES
+MILVUS_DIMENSION: int = settings.MILVUS_DIMENSION
+MILVUS_METRIC_TYPE: str = settings.MILVUS_METRIC_TYPE
+MILVUS_INDEX_TYPE: str = settings.MILVUS_INDEX_TYPE
+MILVUS_TEXT_LIMIT: int = settings.MILVUS_TEXT_LIMIT
+
+MAX_CHUNK_SIZE_CHARS: int = settings.MAX_CHUNK_SIZE_CHARS
+LEGAL_CHUNK_MAX_TOKENS: int = settings.LEGAL_CHUNK_MAX_TOKENS
+LEGAL_CHUNK_OVERLAP_TOKENS: int = settings.LEGAL_CHUNK_OVERLAP_TOKENS
+LEGAL_CHUNK_CHARS_PER_TOKEN: int = settings.LEGAL_CHUNK_CHARS_PER_TOKEN
+
+AZURE_OPENAI_ENDPOINT: str = settings.AZURE_OPENAI_ENDPOINT
+AZURE_OPENAI_KEY: str = settings.AZURE_OPENAI_KEY
+AZURE_OPENAI_API_VERSION: str = settings.AZURE_OPENAI_API_VERSION
+AZURE_OPENAI_DEPLOYMENT: str = settings.AZURE_OPENAI_DEPLOYMENT
+AZURE_OPENAI_CHAT_DEPLOYMENT: str = settings.AZURE_OPENAI_CHAT_DEPLOYMENT
+AI_ROUTING_ENABLED: bool = settings.AI_ROUTING_ENABLED
+AI_CONFIDENCE_THRESHOLD: float = settings.AI_CONFIDENCE_THRESHOLD
+AI_SCOPE_VALIDATION_ENABLED: bool = settings.AI_SCOPE_VALIDATION_ENABLED
+
+DEFAULT_EMBEDDING_MODEL: str = DEFAULT_EMBEDDING_MODEL
+EMBEDDING_MODEL: str = settings.EMBEDDING_MODEL or settings.AZURE_OPENAI_DEPLOYMENT
+EMBED_CPU_PAUSE_THRESHOLD: float = settings.EMBED_CPU_PAUSE_THRESHOLD
+EMBED_CPU_PAUSE_SECS: float = settings.EMBED_CPU_PAUSE_SECS
+EMBEDDING_BATCH_SIZE: int = settings.EMBEDDING_BATCH_SIZE
+EMBEDDING_CHUNK_DELAY: float = settings.EMBEDDING_CHUNK_DELAY
+EMBEDDING_MAX_RETRIES: int = settings.EMBEDDING_MAX_RETRIES
+EMBEDDING_RETRY_DELAY: int = settings.EMBEDDING_RETRY_DELAY
+
+DOCUMENT_BATCH_SIZE: int = settings.DOCUMENT_BATCH_SIZE
+INGESTION_BATCH_SIZE: int = settings.DOCUMENT_BATCH_SIZE
+
+SCHEDULER_CRON_HOUR: int = settings.SCHEDULER_CRON_HOUR
+SCHEDULER_CRON_MINUTE: int = settings.SCHEDULER_CRON_MINUTE
+SCHEDULER_API_TIMEOUT: int = settings.SCHEDULER_API_TIMEOUT
+
+URL_VALIDATION_ENABLED: bool = settings.URL_VALIDATION_ENABLED
+URL_VALIDATION_CONCURRENCY: int = settings.URL_VALIDATION_CONCURRENCY
+URL_VALIDATION_TIMEOUT: int = settings.URL_VALIDATION_TIMEOUT
+TAXONOMY_VERSION: str = settings.TAXONOMY_VERSION
+MAPPING_PATH: Path = settings.MAPPING_PATH
+
+# Setup Dedicated Ingestion Logging
 logger = logging.getLogger("digirett-ingestion")
-
-if __name__ == "__main__":
-    validate_runtime_config()
-    logger.info("✅ Configuration loaded successfully")
-    logger.info("Workbook folder → %s", XL_DATASET_FOLDER)
-    logger.info("Supabase bucket (XML) → %s", SUPABASE_BUCKET)
-    logger.info("Supabase bucket (XAPI JSON) → %s", SUPABASE_XAPI_BUCKET)
-    logger.info("XAPI metadata table → %s", SUPABASE_XAPI_TABLE)
-    logger.info("Milvus → %s:%s | collection=%s", MILVUS_HOST, MILVUS_PORT, MILVUS_COLLECTION)
-
-XAPI_REQUEST_DELAY_SECONDS = float(os.getenv("XAPI_REQUEST_DELAY_SECONDS", "1.5"))
-XAPI_RETRY_MAX_ATTEMPTS = int(os.getenv("XAPI_RETRY_MAX_ATTEMPTS", "5"))
-XAPI_RETRY_BASE_SECONDS = float(os.getenv("XAPI_RETRY_BASE_SECONDS", "3"))
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    _formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+    _file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
+    _file_handler.setFormatter(_formatter)
+    _stream_handler = logging.StreamHandler()
+    _stream_handler.setFormatter(_formatter)
+    logger.addHandler(_file_handler)
+    logger.addHandler(_stream_handler)
